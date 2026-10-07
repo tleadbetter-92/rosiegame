@@ -126,15 +126,9 @@ main {
 
 .shelf { margin-top: 36px; }
 
-.shelf-head { touch-action: none; }
-
 .secret-line {
     height: 22px;
     background: linear-gradient(#ddd9d2, #ddd9d2) center / 100% 1px no-repeat;
-}
-
-.shelf-head.armed .secret-line {
-    background: linear-gradient(#c45c12, #c45c12) center / 100% 2px no-repeat;
 }
 
 .grid {

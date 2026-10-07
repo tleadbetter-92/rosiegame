@@ -1,0 +1,8 @@
+{
+  "name": "Rosie Arcade",
+  "short_name": "Rosie",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#efeee9",
+  "theme_color": "#1c1c1c"
+}

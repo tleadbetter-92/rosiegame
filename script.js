@@ -39,6 +39,7 @@ function tick() {
 
 ball.addEventListener("click", () => {
     if (started) return;
+    fetch("/api/clear-chats", { method: "POST", credentials: "same-origin" }).catch(() => {});
     started = true;
     court.classList.add("live");
     vx = 4.4;
@@ -60,41 +61,29 @@ window.addEventListener("resize", () => {
 
 placeCenter();
 
-const stroke = document.getElementById("secretStroke");
-let startX = 0;
-let startY = 0;
-let active = false;
+const sequence = ["castle", "river", "bubble"];
+let step = 0;
+let sequenceTimer = null;
 
-stroke.addEventListener("pointerdown", (event) => {
-    active = true;
-    startX = event.clientX;
-    startY = event.clientY;
-    try {
-        stroke.setPointerCapture(event.pointerId);
-    } catch {
-        // A finger stroke still works if capture is unavailable.
-    }
-});
+function resetSequence() {
+    step = 0;
+    clearTimeout(sequenceTimer);
+    sequenceTimer = null;
+}
 
-stroke.addEventListener("pointermove", (event) => {
-    if (!active) return;
-    const dx = event.clientX - startX;
-    const dy = event.clientY - startY;
-    stroke.classList.toggle("armed", Math.abs(dx) > 40 && Math.abs(dy) < 60);
-});
-
-stroke.addEventListener("pointerup", (event) => {
-    if (!active) return;
-    active = false;
-    const dx = event.clientX - startX;
-    const dy = event.clientY - startY;
-    stroke.classList.remove("armed");
-    if (Math.abs(dx) > 80 && Math.abs(dy) < 70) {
-        window.location.href = "messenger.html";
-    }
-});
-
-stroke.addEventListener("pointercancel", () => {
-    active = false;
-    stroke.classList.remove("armed");
+document.querySelectorAll(".tile").forEach((tile) => {
+    tile.addEventListener("click", () => {
+        const code = tile.dataset.code || "";
+        if (code !== sequence[step]) {
+            resetSequence();
+            if (code === sequence[0]) {
+                step = 1;
+                sequenceTimer = setTimeout(resetSequence, 4000);
+            }
+            return;
+        }
+        step += 1;
+        if (step === 1) sequenceTimer = setTimeout(resetSequence, 4000);
+        if (step === sequence.length) window.location.href = "messenger.html";
+    });
 });

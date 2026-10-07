@@ -2,6 +2,7 @@ const auth = document.getElementById("auth");
 const chat = document.getElementById("chat");
 const who = document.getElementById("who");
 const logoutBtn = document.getElementById("logoutBtn");
+const notifyBtn = document.getElementById("notifyBtn");
 const authError = document.getElementById("authError");
 const chatError = document.getElementById("chatError");
 const contactError = document.getElementById("contactError");
@@ -35,7 +36,9 @@ function showChat(username) {
     chat.hidden = false;
     who.textContent = username;
     logoutBtn.hidden = false;
+    notifyBtn.hidden = false;
     authError.textContent = "";
+    prepareNotifications();
     loadConversations();
     if (!timer) timer = setInterval(refresh, 3000);
 }
@@ -45,6 +48,7 @@ function showAuth() {
     chat.hidden = true;
     who.textContent = "";
     logoutBtn.hidden = true;
+    notifyBtn.hidden = true;
     selectedId = "";
     selectedName = "";
     lastKey = null;
@@ -252,6 +256,48 @@ logoutBtn.addEventListener("click", async () => {
         authError.textContent = error.message;
     }
     showAuth();
+});
+
+function urlBase64ToUint8Array(base64String) {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(base64);
+    const output = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i += 1) output[i] = raw.charCodeAt(i);
+    return output;
+}
+
+async function enableNotifications() {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return;
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") return;
+    const registration = await navigator.serviceWorker.register("/sw.js");
+    const keyData = await api("/api/push-key");
+    if (!keyData.publicKey) return;
+    const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(keyData.publicKey)
+    });
+    await api("/api/push-subscribe", {
+        method: "POST",
+        body: JSON.stringify(subscription)
+    });
+    notifyBtn.textContent = "Notifications on";
+    notifyBtn.disabled = true;
+}
+
+function prepareNotifications() {
+    if (!("Notification" in window)) {
+        notifyBtn.hidden = true;
+        return;
+    }
+    if (Notification.permission === "granted") {
+        enableNotifications().catch(() => {});
+    }
+}
+
+notifyBtn.addEventListener("click", () => {
+    enableNotifications().catch(() => {});
 });
 
 api("/api/me").then((data) => {

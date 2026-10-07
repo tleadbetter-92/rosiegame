@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rosie's Chat</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <link rel="stylesheet" href="messenger.css">
 </head>
 <body>
@@ -16,6 +19,7 @@
             </div>
             <div class="who">
                 <span id="who"></span>
+                <button id="notifyBtn" type="button" hidden>Notify me</button>
                 <button id="logoutBtn" type="button" hidden>Log out</button>
             </div>
         </header>

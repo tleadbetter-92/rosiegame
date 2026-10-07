@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rosie Arcade</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -33,17 +36,17 @@
         </section>
 
         <section class="shelf" aria-label="More games">
-            <div id="secretStroke" class="shelf-head">
+            <div class="shelf-head">
                 <h2>More games</h2>
                 <div class="secret-line"></div>
             </div>
             <ul class="grid">
                 <li class="tile c1"><span class="cover"></span><span class="name">Moon Hopper</span><span class="kind">Jump</span></li>
-                <li class="tile c2"><span class="cover"></span><span class="name">Bubble Harbor</span><span class="kind">Puzzle</span></li>
-                <li class="tile c3"><span class="cover"></span><span class="name">Castle Dash</span><span class="kind">Run</span></li>
+                <li class="tile c2" data-code="bubble"><span class="cover"></span><span class="name">Bubble Harbor</span><span class="kind">Puzzle</span></li>
+                <li class="tile c3" data-code="castle"><span class="cover"></span><span class="name">Castle Dash</span><span class="kind">Run</span></li>
                 <li class="tile c4"><span class="cover"></span><span class="name">Pixel Picnic</span><span class="kind">Match</span></li>
                 <li class="tile c5"><span class="cover"></span><span class="name">Star Sweep</span><span class="kind">Arcade</span></li>
-                <li class="tile c6"><span class="cover"></span><span class="name">River Raft</span><span class="kind">Race</span></li>
+                <li class="tile c6" data-code="river"><span class="cover"></span><span class="name">River Raft</span><span class="kind">Race</span></li>
                 <li class="tile c7"><span class="cover"></span><span class="name">Candy Clouds</span><span class="kind">Match</span></li>
                 <li class="tile c8"><span class="cover"></span><span class="name">Dino Dig</span><span class="kind">Dig</span></li>
                 <li class="tile c9"><span class="cover"></span><span class="name">Neon Maze</span><span class="kind">Maze</span></li>

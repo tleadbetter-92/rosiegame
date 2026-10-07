@@ -1,6 +1,7 @@
 const { ObjectId } = require("mongodb");
 const { getDb } = require("../lib/db");
 const { currentUser, readJson } = require("../lib/auth");
+const { notifyUser } = require("../lib/push");
 
 function toMessage(doc) {
     return {
@@ -71,6 +72,17 @@ module.exports = async function handler(req, res) {
                 { _id: conversation._id },
                 { $set: { updatedAt: createdAt } }
             );
+            const otherId = conversation.participants.find((id) => String(id) !== String(user._id));
+            const preview = text.length > 80 ? text.slice(0, 77) + "..." : text;
+            try {
+                await notifyUser(otherId, {
+                    title: user.username,
+                    body: preview,
+                    url: "/messenger.html"
+                });
+            } catch (error) {
+                console.error(error);
+            }
             res.status(201).json({
                 message: toMessage({
                     _id: created.insertedId,
