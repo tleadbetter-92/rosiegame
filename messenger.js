@@ -141,15 +141,11 @@ function renderContacts(conversations) {
                 if (conversation.lastTime) metrics.append(metric("Time", conversation.lastTime));
                 top.append(metrics);
             }
-            if (conversation.readState === "unread") {
-                const state = document.createElement("span");
-                state.className = "read-state unread";
-                state.setAttribute("aria-label", "Unread");
-                top.append(state);
-            } else if (conversation.readState) {
+            const readLabel = { unread: "Unread", read: "Read", notread: "Not read" }[conversation.readState];
+            if (readLabel) {
                 const state = document.createElement("span");
                 state.className = "read-state " + conversation.readState;
-                state.textContent = conversation.readState === "read" ? "Read" : "Not read";
+                state.setAttribute("aria-label", readLabel);
                 top.append(state);
             }
             button.append(top);

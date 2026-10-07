@@ -267,19 +267,26 @@ input:focus, select:focus {
 
 .read-state {
     flex: 0 0 auto;
-    color: #8a857c;
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-}
-
-.read-state.unread {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #c45c12;
-    letter-spacing: 0;
+}
+
+.read-state.unread { background: #c45c12; }
+
+.read-state.read {
+    width: 6px;
+    height: 10px;
+    margin-bottom: 4px;
+    border-radius: 0;
+    border-right: 2px solid #1e7a46;
+    border-bottom: 2px solid #1e7a46;
+    transform: rotate(40deg);
+}
+
+.read-state.notread {
+    border: 2px solid #8a857c;
+    background: transparent;
 }
 
 #contacts button.has-unread strong { font-weight: 750; }
