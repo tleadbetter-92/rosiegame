@@ -84,6 +84,10 @@ document.querySelectorAll(".tile").forEach((tile) => {
         }
         step += 1;
         if (step === 1) sequenceTimer = setTimeout(resetSequence, 4000);
-        if (step === sequence.length) window.location.href = "messenger.html";
+        if (step === sequence.length) window.location.href = "messenger.html?enter=1";
     });
 });
+
+if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+}

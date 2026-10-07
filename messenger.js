@@ -1,3 +1,15 @@
+const openedChat = new URLSearchParams(location.search).get("chat") || "";
+history.replaceState(null, "", "messenger.html");
+
+let leftPage = false;
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") leftPage = true;
+    if (document.visibilityState === "visible" && leftPage) location.replace("index.html");
+});
+window.addEventListener("pageshow", (event) => {
+    if (event.persisted) location.replace("index.html");
+});
+
 const auth = document.getElementById("auth");
 const chat = document.getElementById("chat");
 const logoutBtn = document.getElementById("logoutBtn");
@@ -41,7 +53,7 @@ function showChat(username) {
     notifyBtn.hidden = false;
     authError.textContent = "";
     prepareNotifications();
-    loadConversations().then(() => openChatFromId(new URLSearchParams(location.search).get("chat"))).catch(() => {});
+    loadConversations().then(() => openChatFromId(openedChat)).catch(() => {});
     if (!timer) timer = setInterval(refresh, 3000);
 }
 
@@ -101,7 +113,7 @@ function renderContacts(conversations) {
             const name = document.createElement("strong");
             name.textContent = conversation.username;
             button.appendChild(name);
-            if (conversation.lastUsername === me) {
+            if (conversation.lastUsername === me && conversation.lastScore && conversation.lastTime) {
                 const preview = document.createElement("span");
                 preview.className = "preview";
                 preview.textContent = conversation.lastReply || ".......";
@@ -198,17 +210,18 @@ function renderMessages(messages) {
             if (message.time) stats.append(metric("Time", message.time));
             bubble.append(stats);
         }
-        if (mine) {
+        const challenge = Boolean(message.score && message.time);
+        if (challenge && mine) {
             const answer = document.createElement("p");
             answer.className = "answer " + (message.reply || "waiting");
             answer.textContent = message.reply || ".......";
             bubble.append(answer);
-        } else if (message.reply === "accepted" || message.reply === "rejected") {
+        } else if (challenge && (message.reply === "accepted" || message.reply === "rejected")) {
             const answer = document.createElement("p");
             answer.className = "answer " + message.reply;
             answer.textContent = message.reply;
             bubble.append(answer);
-        } else {
+        } else if (challenge) {
             const choices = document.createElement("div");
             choices.className = "choices";
             const accept = document.createElement("button");
@@ -384,15 +397,22 @@ function urlBase64ToUint8Array(base64String) {
 
 async function enableNotifications() {
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return;
-    const permission = await Notification.requestPermission();
-    if (permission !== "granted") return;
+    if (Notification.permission !== "granted") {
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") return;
+    }
     const registration = await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.ready;
     const keyData = await api("/api/push-key");
     if (!keyData.publicKey) return;
-    const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(keyData.publicKey)
-    });
+    const applicationServerKey = urlBase64ToUint8Array(keyData.publicKey);
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey
+        });
+    }
     await api("/api/push-subscribe", {
         method: "POST",
         body: JSON.stringify(subscription)
@@ -402,17 +422,20 @@ async function enableNotifications() {
 }
 
 function prepareNotifications() {
-    if (!("Notification" in window)) {
+    if (!("Notification" in window) || !("PushManager" in window)) {
         notifyBtn.hidden = true;
         return;
     }
     if (Notification.permission === "granted") {
-        enableNotifications().catch(() => {});
+        notifyBtn.textContent = "Finish notifications";
     }
 }
 
 notifyBtn.addEventListener("click", () => {
-    enableNotifications().catch(() => {});
+    enableNotifications().catch(() => {
+        notifyBtn.disabled = false;
+        notifyBtn.textContent = "Tap again";
+    });
 });
 
 async function openChatFromId(chatId) {
@@ -442,6 +465,7 @@ chatPop.addEventListener("close", () => {
 });
 
 if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
     navigator.serviceWorker.addEventListener("message", (event) => {
         const chatId = event.data && event.data.chat;
         if (chatId && me) openChatFromId(chatId).catch(() => {});

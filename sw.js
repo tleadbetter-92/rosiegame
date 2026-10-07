@@ -1,3 +1,11 @@
+self.addEventListener("install", () => {
+    self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+    event.waitUntil(self.clients.claim());
+});
+
 self.addEventListener("push", (event) => {
     let data = { title: "Rosie", body: "You have a new message", url: "/messenger.html" };
     try {
@@ -7,6 +15,9 @@ self.addEventListener("push", (event) => {
     }
     event.waitUntil(self.registration.showNotification("new challenge for you to beat", {
         body: "new challenge for you to beat",
+        icon: "/icon-192.png",
+        badge: "/icon-192.png",
+        tag: "rosie-challenge-" + Date.now(),
         data: {
             url: data.url || "/messenger.html",
             chat: data.chat || ""
