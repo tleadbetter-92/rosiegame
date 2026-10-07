@@ -48,6 +48,11 @@ async function api(path, options) {
     return data;
 }
 
+function leaveContactBox() {
+    const contactInput = document.getElementById("contactInput");
+    if (document.activeElement === contactInput) contactInput.blur();
+}
+
 function showChat(username) {
     auth.hidden = true;
     chat.hidden = false;
@@ -55,6 +60,9 @@ function showChat(username) {
     logoutBtn.hidden = false;
     notifyBtn.hidden = false;
     authError.textContent = "";
+    leaveContactBox();
+    setTimeout(leaveContactBox, 0);
+    setTimeout(leaveContactBox, 250);
     prepareNotifications();
     loadConversations().then(() => openChatFromId(openedChat)).catch(() => {});
     if (!timer) timer = setInterval(refresh, 3000);
@@ -312,6 +320,19 @@ document.getElementById("loginForm").addEventListener("submit", async (event) =>
     } catch (error) {
         authError.textContent = error.message;
     }
+});
+
+const contactInput = document.getElementById("contactInput");
+let contactChosen = false;
+contactInput.addEventListener("pointerdown", () => {
+    contactChosen = true;
+    contactInput.tabIndex = 0;
+});
+contactInput.addEventListener("focus", () => {
+    if (contactChosen) return;
+    setTimeout(() => {
+        if (!contactChosen && document.activeElement === contactInput) contactInput.blur();
+    }, 0);
 });
 
 document.getElementById("addForm").addEventListener("submit", async (event) => {

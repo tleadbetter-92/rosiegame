@@ -15,6 +15,22 @@ function toMessage(doc) {
     };
 }
 
+async function unreadChallenges(db, userId) {
+    if (!userId) return 0;
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const conversations = await db.collection("conversations")
+        .find({ participants: userId })
+        .project({ _id: 1 })
+        .toArray();
+    if (!conversations.length) return 0;
+    return db.collection("messages").countDocuments({
+        conversationId: { $in: conversations.map((item) => item._id) },
+        userId: { $ne: userId },
+        createdAt: { $gte: since },
+        seenBy: { $ne: userId }
+    });
+}
+
 function requestedId(req) {
     if (req.query && req.query.conversationId) return String(req.query.conversationId);
     const bodyId = readJson(req).conversationId;
@@ -48,6 +64,14 @@ module.exports = async function handler(req, res) {
             return;
         }
         if (req.method === "GET") {
+            await db.collection("messages").updateMany(
+                {
+                    conversationId: conversation._id,
+                    userId: { $ne: user._id },
+                    seenBy: { $ne: user._id }
+                },
+                { $addToSet: { seenBy: user._id } }
+            );
             const docs = await db.collection("messages")
                 .find({
                     conversationId: conversation._id,
@@ -102,15 +126,18 @@ module.exports = async function handler(req, res) {
             );
             const otherId = conversation.participants.find((id) => String(id) !== String(user._id));
             const chatId = String(conversation._id);
-            try {
-                await notifyUser(otherId, {
-                    title: "new challenge for you to beat",
-                    body: "new challenge for you to beat",
-                    url: "/messenger.html?chat=" + encodeURIComponent(chatId),
-                    chat: chatId
-                });
-            } catch (error) {
-                console.error(error);
+            const unread = await unreadChallenges(db, otherId);
+            if (otherId && unread <= 7) {
+                try {
+                    await notifyUser(otherId, {
+                        title: "new challenge for you to beat",
+                        body: "new challenge for you to beat",
+                        url: "/messenger.html?chat=" + encodeURIComponent(chatId),
+                        chat: chatId
+                    });
+                } catch (error) {
+                    console.error(error);
+                }
             }
             res.status(201).json({
                 message: toMessage({
