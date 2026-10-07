@@ -36,6 +36,19 @@ h2 { margin: 0 0 12px; font-size: 1.1rem; }
 
 .hint a { color: #e67e22; }
 
+button.quiet {
+    background: none;
+    color: #e67e22;
+    margin-left: 14px;
+    padding: 0;
+    font: inherit;
+}
+
+button.quiet:hover {
+    background: none;
+    text-decoration: underline;
+}
+
 .who {
     display: flex;
     align-items: center;

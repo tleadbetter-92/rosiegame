@@ -2,6 +2,7 @@ const auth = document.getElementById("auth");
 const chat = document.getElementById("chat");
 const who = document.getElementById("who");
 const logoutBtn = document.getElementById("logoutBtn");
+const seeAllBtn = document.getElementById("seeAllBtn");
 const notifyBtn = document.getElementById("notifyBtn");
 const authError = document.getElementById("authError");
 const chatError = document.getElementById("chatError");
@@ -246,6 +247,30 @@ sendForm.addEventListener("submit", async (event) => {
         await loadConversations();
     } catch (error) {
         chatError.textContent = error.message;
+    }
+});
+
+function clearVisibleChats() {
+    selectedId = "";
+    selectedName = "";
+    lastKey = null;
+    contactKey = null;
+    messagesEl.replaceChildren();
+    contactsEl.replaceChildren();
+    sendForm.hidden = true;
+    threadTitle.textContent = "Add a username to start a private chat.";
+    const empty = document.createElement("li");
+    empty.className = "empty";
+    empty.textContent = "No contacts yet.";
+    contactsEl.appendChild(empty);
+}
+
+seeAllBtn.addEventListener("click", async () => {
+    try {
+        await api("/api/clear-chats", { method: "POST" });
+        clearVisibleChats();
+    } catch {
+        // The screen stays as it is, with no message.
     }
 });
 
