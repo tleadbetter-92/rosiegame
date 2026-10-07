@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checkout — The Print Shop</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,650&family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <a class="skip" href="#main">Skip to content</a>
+    <div class="preview-ribbon">Preview shop. You can click through an order. Payment is added later.</div>
+    <header class="wrap site-header">
+        <a class="logo" href="index.html">The Print Shop</a>
+        <nav aria-label="Shop">
+            <a href="shop.html">Shop</a>
+            <a href="index.html#custom">Custom</a>
+            <a href="bag.html">Bag <span class="bag-count" data-bag-count>0</span></a>
+        </nav>
+    </header>
+    <main id="main" class="wrap page">
+        <div class="page-head">
+            <p class="eyebrow">Checkout</p>
+            <h1>Preview checkout</h1>
+            <p>Fill this in to show the last step. Nothing is sent and nothing is charged.</p>
+        </div>
+        <div data-checkout></div>
+    </main>
+    <footer class="wrap site-footer">
+        <div>
+            <strong>The Print Shop</strong>
+            <p>A preview on this site. Photos and real payment come later. <a href="../index.html">Back to the main site</a>.</p>
+        </div>
+        <nav aria-label="Footer">
+            <a href="shop.html">Shop</a>
+            <a href="index.html#custom">Custom</a>
+            <a href="bag.html">Bag</a>
+            <a href="checkout.html">Checkout</a>
+        </nav>
+    </footer>
+    <script src="shop.js"></script>
+</body>
+</html>

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Print Shop</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,650&family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <a class="skip" href="#main">Skip to content</a>
+    <div class="preview-ribbon">Preview shop. You can click through an order. Payment is added later.</div>
+    <header class="wrap site-header">
+        <a class="logo" href="index.html">The Print Shop</a>
+        <nav aria-label="Shop">
+            <a href="shop.html">Shop</a>
+            <a href="index.html#custom">Custom</a>
+            <a href="bag.html">Bag <span class="bag-count" data-bag-count>0</span></a>
+        </nav>
+    </header>
+    <main id="main">
+        <section class="wrap hero">
+            <div>
+                <p class="eyebrow">Made to order</p>
+                <h1>Objects for the desk, the door, and the shelf.</h1>
+                <p class="lede">The Print Shop makes small-batch 3D prints when you order them. Pick a piece and a colour here. If you want the shape changed, we do that in our printing software and check it with you first.</p>
+                <div class="hero-actions">
+                    <a class="btn" href="shop.html">Browse the shop</a>
+                    <a class="btn secondary" href="#custom">How custom works</a>
+                </div>
+                <ul class="filaments" aria-label="Filament colours">
+                    <li><i style="background:#c4512c"></i>Clay</li>
+                    <li><i style="background:#241f1b"></i>Ink</li>
+                    <li><i style="background:#c8b48a"></i>Bone</li>
+                    <li><i style="background:#3d6b56"></i>Sage</li>
+                    <li><i style="background:#2c5d73"></i>Sea</li>
+                    <li><i style="background:#d4a017"></i>Butter</li>
+                </ul>
+            </div>
+            <div>
+                <div class="art hero-art" style="color:#c4512c" aria-hidden="true">
+                    <svg viewBox="0 0 200 200">
+                        <ellipse cx="100" cy="172" rx="46" ry="8" fill="#1a1714" opacity="0.12"/>
+                        <path d="M46 78c8 48 18 70 54 74 36-4 46-26 54-74" fill="currentColor" fill-opacity="0.22" stroke="currentColor" stroke-width="2.5"/>
+                        <ellipse cx="100" cy="78" rx="56" ry="16" fill="none" stroke="currentColor" stroke-width="2.5"/>
+                        <path d="M52 102h96M56 124h88" fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.75"/>
+                    </svg>
+                </div>
+                <p class="hero-caption">Orbit planter, shown in Clay.</p>
+            </div>
+        </section>
+
+        <section class="wrap section">
+            <div class="section-head">
+                <h2>A few pieces</h2>
+                <a href="shop.html">See the whole shop</a>
+            </div>
+            <div class="grid" data-featured></div>
+        </section>
+
+        <section class="wrap section" id="custom">
+            <div class="section-head">
+                <h2>How a custom piece works</h2>
+            </div>
+            <div class="steps">
+                <article class="step">
+                    <p class="step-num">1</p>
+                    <h3>Choose a piece</h3>
+                    <p>Start from something we already print. Planters, hooks, stands, and a few others.</p>
+                </article>
+                <article class="step">
+                    <p class="step-num">2</p>
+                    <h3>Set the finish</h3>
+                    <p>Colour, size, and material are chosen on the product page. A desk plate can take a name.</p>
+                </article>
+                <article class="step">
+                    <p class="step-num">3</p>
+                    <h3>Change the shape in the studio</h3>
+                    <p>Shape edits happen in the 3D printing software, not on this site. Leave a note and we confirm the model before printing.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="wrap closer">
+            <h2>Walk through an order.</h2>
+            <a class="btn" href="shop.html">Browse the shop</a>
+        </section>
+    </main>
+    <footer class="wrap site-footer">
+        <div>
+            <strong>The Print Shop</strong>
+            <p>A preview on this site. Photos and real payment come later. <a href="../index.html">Back to the main site</a>.</p>
+        </div>
+        <nav aria-label="Footer">
+            <a href="shop.html">Shop</a>
+            <a href="index.html#custom">Custom</a>
+            <a href="bag.html">Bag</a>
+            <a href="checkout.html">Checkout</a>
+        </nav>
+    </footer>
+    <script src="shop.js"></script>
+</body>
+</html>
