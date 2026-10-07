@@ -20,14 +20,18 @@ body {
 
 .top {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     justify-content: space-between;
-    gap: 16px;
-    align-items: flex-start;
+    gap: 8px 12px;
 }
+
+.under { flex: 1 0 100%; }
 
 h1 {
     margin: 0;
     color: #e67e22;
+    white-space: nowrap;
 }
 
 h2 { margin: 0 0 12px; font-size: 1.1rem; }
@@ -64,8 +68,24 @@ button.quiet:hover {
 
 .who {
     display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+    max-width: 100%;
+    margin-left: auto;
+    text-align: right;
+}
+
+.who button { padding: 8px 12px; }
+
+#seeAllBtn {
+    margin-top: 16px;
+    padding: 14px 18px;
+    width: 100%;
+    font-size: 1.15rem;
+    font-weight: bold;
 }
 
 #auth {
@@ -120,23 +140,6 @@ button:hover { background: #d35400; }
     margin-top: 16px;
     display: flex;
     flex-direction: column;
-    flex: 1;
-    min-height: 0;
-}
-
-.layout {
-    display: grid;
-    grid-template-columns: 230px 1fr;
-    gap: 12px;
-    min-height: 0;
-    flex: 1;
-}
-
-aside, .thread {
-    min-width: 0;
-}
-
-aside {
     background: white;
     border-radius: 12px;
     padding: 12px;
@@ -145,13 +148,14 @@ aside {
 #addForm {
     display: flex;
     gap: 8px;
+    margin-top: 12px;
 }
 
 #addForm input { margin: 0; }
 
 #contacts {
     list-style: none;
-    margin: 12px 0 0;
+    margin: 0;
     padding: 0;
 }
 
@@ -182,20 +186,40 @@ aside {
 
 #contacts button.active .preview { color: white; }
 
-.thread {
+#chatPop {
+    width: min(560px, calc(100% - 24px));
+    max-height: min(86vh, 720px);
+    border: none;
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 16px 50px rgba(0, 0, 0, 0.28);
+}
+
+#chatPop::backdrop { background: rgba(20, 20, 20, 0.45); }
+
+.pop {
     display: flex;
     flex-direction: column;
+    max-height: calc(86vh - 32px);
+}
+
+.pop-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
 }
 
 #messages {
     list-style: none;
     margin: 0 0 12px;
     padding: 12px;
-    background: white;
+    background: #f7f5f2;
     border-radius: 12px;
     flex: 1;
-    min-height: 320px;
-    max-height: 60vh;
+    min-height: 180px;
+    max-height: 42vh;
     overflow-y: auto;
 }
 
@@ -215,7 +239,7 @@ aside {
 
 #sendForm {
     display: grid;
-    grid-template-columns: 1fr 1fr auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) auto;
     gap: 8px;
     align-items: center;
 }
@@ -223,6 +247,47 @@ aside {
 #sendForm input { margin: 0; }
 
 #messageInput { grid-column: 1 / -1; }
+
+.time-field {
+    display: flex;
+    gap: 8px;
+    min-width: 0;
+}
+
+.time-field input {
+    width: 4.5rem;
+    flex: 1 1 4.5rem;
+    min-width: 3.5rem;
+}
+
+#sendForm select {
+    margin: 0;
+    padding: 10px 8px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background: white;
+    font: inherit;
+}
+
+.choices {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.choices button { padding: 6px 12px; }
+
+button.reject { background: #f4f1ec; color: #2b2b2b; }
+
+button.reject:hover { background: #e7e1d8; }
+
+.answer { margin: 6px 0 0; font-weight: bold; }
+
+.answer.waiting { color: #888; font-weight: normal; }
+
+.answer.accepted { color: #1e7a46; }
+
+.answer.rejected { color: #b03a2e; }
 
 #messages button.row {
     display: flex;
@@ -242,6 +307,8 @@ aside {
 }
 
 @media (max-width: 700px) {
-    #auth, .layout { grid-template-columns: 1fr; }
-    .top { flex-direction: column; }
+    #auth { grid-template-columns: 1fr; }
+    .who { max-width: 100%; }
+    #sendForm { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
+    #sendForm button { grid-column: 1 / -1; }
 }

@@ -20,9 +20,18 @@ async function listConversations(db, user) {
     const names = new Map(people.map((person) => [String(person._id), person.username]));
     const latest = conversations.length
         ? await db.collection("messages").aggregate([
-            { $match: { conversationId: { $in: conversations.map((conversation) => conversation._id) } } },
+            { $match: {
+                conversationId: { $in: conversations.map((conversation) => conversation._id) },
+                createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+            } },
             { $sort: { createdAt: -1 } },
-            { $group: { _id: "$conversationId", score: { $first: "$score" }, time: { $first: "$time" } } }
+            { $group: {
+                _id: "$conversationId",
+                score: { $first: "$score" },
+                time: { $first: "$time" },
+                reply: { $first: "$reply" },
+                username: { $first: "$username" }
+            } }
         ]).toArray()
         : [];
     const previews = new Map(latest.map((item) => [String(item._id), item]));
@@ -32,7 +41,9 @@ async function listConversations(db, user) {
             id: String(conversation._id),
             username: names.get(String(otherId(conversation, user._id))) || "Unknown",
             lastScore: latestItem.score || "",
-            lastTime: latestItem.time || ""
+            lastTime: latestItem.time || "",
+            lastReply: latestItem.reply || "",
+            lastUsername: latestItem.username || ""
         };
     });
 }

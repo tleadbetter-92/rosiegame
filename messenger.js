@@ -12,6 +12,7 @@ const threadTitle = document.getElementById("threadTitle");
 const messagesEl = document.getElementById("messages");
 const messageInput = document.getElementById("messageInput");
 const sendForm = document.getElementById("sendForm");
+const chatPop = document.getElementById("chatPop");
 
 let timer = null;
 let lastKey = null;
@@ -40,7 +41,7 @@ function showChat(username) {
     notifyBtn.hidden = false;
     authError.textContent = "";
     prepareNotifications();
-    loadConversations();
+    loadConversations().then(() => openChatFromId(new URLSearchParams(location.search).get("chat"))).catch(() => {});
     if (!timer) timer = setInterval(refresh, 3000);
 }
 
@@ -57,7 +58,7 @@ function showAuth() {
     messagesEl.replaceChildren();
     contactsEl.replaceChildren();
     sendForm.hidden = true;
-    threadTitle.textContent = "Add a username to start a private chat.";
+    if (chatPop.open) chatPop.close();
     if (timer) {
         clearInterval(timer);
         timer = null;
@@ -71,8 +72,9 @@ function openConversation(id, username) {
         lastKey = null;
         messagesEl.replaceChildren();
     }
-    threadTitle.textContent = "Chat with " + username;
+    threadTitle.textContent = username;
     sendForm.hidden = false;
+    if (!chatPop.open) chatPop.showModal();
     for (const button of contactsEl.querySelectorAll("button")) {
         button.classList.toggle("active", button.dataset.id === selectedId);
     }
@@ -80,7 +82,7 @@ function openConversation(id, username) {
 }
 
 function renderContacts(conversations) {
-    const key = conversations.map((conversation) => conversation.id + ":" + conversation.lastScore + ":" + conversation.lastTime).join("|");
+    const key = conversations.map((conversation) => conversation.id + ":" + conversation.lastScore + ":" + conversation.lastTime + ":" + conversation.lastReply + ":" + conversation.lastUsername).join("|");
     if (key !== contactKey) {
         contactKey = key;
         contactsEl.replaceChildren();
@@ -99,12 +101,14 @@ function renderContacts(conversations) {
             const name = document.createElement("strong");
             name.textContent = conversation.username;
             button.appendChild(name);
-            if (conversation.lastScore || conversation.lastTime) {
-                const preview = document.createElement("span");
-                preview.className = "preview";
+            const preview = document.createElement("span");
+            preview.className = "preview";
+            if (conversation.lastUsername === who.textContent) {
+                preview.textContent = conversation.lastReply || ".......";
+            } else if (conversation.lastScore || conversation.lastTime) {
                 preview.textContent = "score " + (conversation.lastScore || "–") + "  time " + (conversation.lastTime || "–");
-                button.appendChild(preview);
             }
+            if (preview.textContent) button.appendChild(preview);
             button.addEventListener("click", () => openConversation(conversation.id, conversation.username));
             item.appendChild(button);
             contactsEl.appendChild(item);
@@ -115,8 +119,24 @@ function renderContacts(conversations) {
     }
 }
 
+async function answerMessage(messageId, reply) {
+    chatError.textContent = "";
+    try {
+        await api("/api/messages", {
+            method: "PATCH",
+            body: JSON.stringify({ conversationId: selectedId, messageId, reply })
+        });
+        lastKey = "";
+        contactKey = "";
+        await loadMessages();
+        await loadConversations();
+    } catch (error) {
+        chatError.textContent = error.message;
+    }
+}
+
 function renderMessages(messages) {
-    const key = messages.map((message) => message.id).join(",");
+    const key = messages.map((message) => message.id + ":" + message.reply).join(",");
     if (key === lastKey) return;
     const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 40;
     lastKey = key;
@@ -124,7 +144,7 @@ function renderMessages(messages) {
     if (!messages.length) {
         const empty = document.createElement("li");
         empty.className = "empty";
-        empty.textContent = "No messages yet. Say hello.";
+        empty.textContent = "No scores yet.";
         messagesEl.appendChild(empty);
         return;
     }
@@ -140,13 +160,42 @@ function renderMessages(messages) {
         stats.className = "stats";
         stats.textContent = "score " + (message.score || "–") + "  time " + (message.time || "–");
         row.append(name, stats);
-        const text = document.createElement("p");
-        text.hidden = true;
-        text.textContent = message.text;
-        row.addEventListener("click", () => {
-            text.hidden = !text.hidden;
-        });
-        item.append(row, text);
+        item.append(row);
+        if (message.text) {
+            const text = document.createElement("p");
+            text.hidden = true;
+            text.textContent = message.text;
+            row.addEventListener("click", () => {
+                text.hidden = !text.hidden;
+            });
+            item.append(text);
+        }
+        const mine = message.username === who.textContent;
+        if (mine) {
+            const answer = document.createElement("p");
+            answer.className = "answer " + (message.reply || "waiting");
+            answer.textContent = message.reply || ".......";
+            item.append(answer);
+        } else if (message.reply === "accepted" || message.reply === "rejected") {
+            const answer = document.createElement("p");
+            answer.className = "answer " + message.reply;
+            answer.textContent = message.reply;
+            item.append(answer);
+        } else {
+            const choices = document.createElement("div");
+            choices.className = "choices";
+            const accept = document.createElement("button");
+            accept.type = "button";
+            accept.textContent = "Accept";
+            accept.addEventListener("click", () => answerMessage(message.id, "accepted"));
+            const reject = document.createElement("button");
+            reject.type = "button";
+            reject.className = "reject";
+            reject.textContent = "Reject";
+            reject.addEventListener("click", () => answerMessage(message.id, "rejected"));
+            choices.append(accept, reject);
+            item.append(choices);
+        }
         messagesEl.appendChild(item);
     }
     if (nearBottom || messagesEl.scrollTop === 0) {
@@ -245,10 +294,11 @@ sendForm.addEventListener("submit", async (event) => {
     const text = messageInput.value;
     const score = document.getElementById("scoreInput").value;
     const time = document.getElementById("timeInput").value;
+    const unit = document.getElementById("timeUnit").value;
     try {
         await api("/api/messages", {
             method: "POST",
-            body: JSON.stringify({ conversationId: selectedId, text, score, time })
+            body: JSON.stringify({ conversationId: selectedId, text, score, time, unit })
         });
         messageInput.value = "";
         document.getElementById("scoreInput").value = "";
@@ -270,7 +320,7 @@ function clearVisibleChats() {
     messagesEl.replaceChildren();
     contactsEl.replaceChildren();
     sendForm.hidden = true;
-    threadTitle.textContent = "Add a username to start a private chat.";
+    if (chatPop.open) chatPop.close();
     const empty = document.createElement("li");
     empty.className = "empty";
     empty.textContent = "No contacts yet.";
@@ -336,6 +386,39 @@ function prepareNotifications() {
 notifyBtn.addEventListener("click", () => {
     enableNotifications().catch(() => {});
 });
+
+async function openChatFromId(chatId) {
+    if (!chatId) return;
+    const conversations = await loadConversations();
+    const found = conversations.find((conversation) => conversation.id === chatId);
+    if (found) openConversation(found.id, found.username);
+}
+
+document.getElementById("closePop").addEventListener("click", () => {
+    chatPop.close();
+});
+
+chatPop.addEventListener("click", (event) => {
+    if (event.target === chatPop) chatPop.close();
+});
+
+chatPop.addEventListener("close", () => {
+    selectedId = "";
+    selectedName = "";
+    lastKey = null;
+    sendForm.hidden = true;
+    messagesEl.replaceChildren();
+    for (const button of contactsEl.querySelectorAll("button")) {
+        button.classList.remove("active");
+    }
+});
+
+if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", (event) => {
+        const chatId = event.data && event.data.chat;
+        if (chatId && who.textContent) openChatFromId(chatId).catch(() => {});
+    });
+}
 
 api("/api/me").then((data) => {
     if (data.user) showChat(data.user.username);

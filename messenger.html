@@ -12,20 +12,18 @@
 <body>
     <main class="app">
         <header class="top">
-            <div>
-                <h1>Leaderboard</h1>
-                <p class="hint">Open a score to read the message.</p>
-                <p class="hint links">
-                    <a href="index.html">Back to the game</a>
-                    <button id="seeAllBtn" class="quiet" type="button">See all messages</button>
-                </p>
-            </div>
+            <h1>Leaderboard</h1>
             <div class="who">
                 <span id="who"></span>
                 <button id="notifyBtn" type="button" hidden>Notify me</button>
                 <button id="logoutBtn" type="button" hidden>Log out</button>
             </div>
+            <div class="under">
+                <p class="hint">Score and time are enough.</p>
+                <p class="hint"><a href="index.html">Back to the game</a></p>
+            </div>
         </header>
+        <button id="seeAllBtn" type="button">See all messages</button>
 
         <section id="auth">
             <form id="signupForm" class="card">
@@ -44,28 +42,36 @@
         </section>
 
         <section id="chat" hidden>
-            <div class="layout">
-                <aside>
-                    <form id="addForm">
-                        <input id="contactInput" maxlength="20" placeholder="Username" autocomplete="off" required>
-                        <button type="submit">Add</button>
-                    </form>
-                    <p id="contactError" class="error" role="alert"></p>
-                    <ul id="contacts"></ul>
-                </aside>
-                <div class="thread">
-                    <p id="threadTitle" class="hint">Add a username to start a private chat.</p>
-                    <ol id="messages"></ol>
-                    <form id="sendForm" hidden>
-                        <input id="messageInput" maxlength="500" placeholder="Write a message" autocomplete="off" required>
-                        <input id="scoreInput" maxlength="20" placeholder="Score" autocomplete="off" required>
-                        <input id="timeInput" maxlength="20" placeholder="Time" autocomplete="off" required>
-                        <button type="submit">Send</button>
-                    </form>
-                    <p id="chatError" class="error" role="alert"></p>
-                </div>
-            </div>
+            <p class="hint">Pick a name to open the chat.</p>
+            <ul id="contacts"></ul>
+            <form id="addForm">
+                <input id="contactInput" maxlength="20" placeholder="Username" autocomplete="off" required>
+                <button type="submit">Add</button>
+            </form>
+            <p id="contactError" class="error" role="alert"></p>
         </section>
+        <dialog id="chatPop">
+            <div class="pop">
+                <div class="pop-bar">
+                    <p id="threadTitle" class="hint">Chat</p>
+                    <button id="closePop" class="quiet" type="button">Close</button>
+                </div>
+                <ol id="messages"></ol>
+                <form id="sendForm" hidden>
+                    <input id="messageInput" maxlength="500" placeholder="Message (optional)" autocomplete="off">
+                    <input id="scoreInput" maxlength="20" placeholder="Score" autocomplete="off" required>
+                    <div class="time-field">
+                        <input id="timeInput" type="number" min="0" max="999" step="1" inputmode="numeric" placeholder="Time" aria-label="Time" required>
+                        <select id="timeUnit" aria-label="Minutes or hours">
+                            <option value="mins">mins</option>
+                            <option value="hours">hours</option>
+                        </select>
+                    </div>
+                    <button type="submit">Send</button>
+                </form>
+                <p id="chatError" class="error" role="alert"></p>
+            </div>
+        </dialog>
     </main>
     <script src="messenger.js"></script>
 </body>
