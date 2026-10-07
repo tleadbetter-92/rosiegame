@@ -8,6 +8,8 @@ function toMessage(doc) {
         id: String(doc._id),
         username: doc.username,
         text: doc.text,
+        score: doc.score || "",
+        time: doc.time || "",
         createdAt: doc.createdAt
     };
 }
@@ -55,9 +57,16 @@ module.exports = async function handler(req, res) {
             return;
         }
         if (req.method === "POST") {
-            const text = String(readJson(req).text || "").trim();
+            const body = readJson(req);
+            const text = String(body.text || "").trim();
+            const score = String(body.score || "").trim();
+            const time = String(body.time || "").trim();
             if (!text || text.length > 500) {
                 res.status(400).json({ error: "Message must be 1 to 500 characters." });
+                return;
+            }
+            if (!score || score.length > 20 || !time || time.length > 20) {
+                res.status(400).json({ error: "Add a score and a time." });
                 return;
             }
             const createdAt = new Date();
@@ -66,6 +75,8 @@ module.exports = async function handler(req, res) {
                 userId: user._id,
                 username: user.username,
                 text,
+                score,
+                time,
                 createdAt
             });
             await db.collection("conversations").updateOne(
@@ -73,11 +84,10 @@ module.exports = async function handler(req, res) {
                 { $set: { updatedAt: createdAt } }
             );
             const otherId = conversation.participants.find((id) => String(id) !== String(user._id));
-            const preview = text.length > 80 ? text.slice(0, 77) + "..." : text;
             try {
                 await notifyUser(otherId, {
                     title: user.username,
-                    body: preview,
+                    body: "score " + score + "  time " + time,
                     url: "/messenger.html"
                 });
             } catch (error) {
@@ -88,6 +98,8 @@ module.exports = async function handler(req, res) {
                     _id: created.insertedId,
                     username: user.username,
                     text,
+                    score,
+                    time,
                     createdAt
                 })
             });

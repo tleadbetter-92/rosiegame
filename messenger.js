@@ -80,7 +80,7 @@ function openConversation(id, username) {
 }
 
 function renderContacts(conversations) {
-    const key = conversations.map((conversation) => conversation.id + ":" + conversation.lastText).join("|");
+    const key = conversations.map((conversation) => conversation.id + ":" + conversation.lastScore + ":" + conversation.lastTime).join("|");
     if (key !== contactKey) {
         contactKey = key;
         contactsEl.replaceChildren();
@@ -99,10 +99,10 @@ function renderContacts(conversations) {
             const name = document.createElement("strong");
             name.textContent = conversation.username;
             button.appendChild(name);
-            if (conversation.lastText) {
+            if (conversation.lastScore || conversation.lastTime) {
                 const preview = document.createElement("span");
                 preview.className = "preview";
-                preview.textContent = conversation.lastText;
+                preview.textContent = "score " + (conversation.lastScore || "–") + "  time " + (conversation.lastTime || "–");
                 button.appendChild(preview);
             }
             button.addEventListener("click", () => openConversation(conversation.id, conversation.username));
@@ -130,15 +130,23 @@ function renderMessages(messages) {
     }
     for (const message of messages) {
         const item = document.createElement("li");
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "row";
         const name = document.createElement("span");
         name.className = "name";
         name.textContent = message.username;
-        const time = document.createElement("time");
-        time.dateTime = message.createdAt;
-        time.textContent = new Date(message.createdAt).toLocaleString();
+        const stats = document.createElement("span");
+        stats.className = "stats";
+        stats.textContent = "score " + (message.score || "–") + "  time " + (message.time || "–");
+        row.append(name, stats);
         const text = document.createElement("p");
+        text.hidden = true;
         text.textContent = message.text;
-        item.append(name, time, text);
+        row.addEventListener("click", () => {
+            text.hidden = !text.hidden;
+        });
+        item.append(row, text);
         messagesEl.appendChild(item);
     }
     if (nearBottom || messagesEl.scrollTop === 0) {
@@ -235,12 +243,16 @@ sendForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     chatError.textContent = "";
     const text = messageInput.value;
+    const score = document.getElementById("scoreInput").value;
+    const time = document.getElementById("timeInput").value;
     try {
         await api("/api/messages", {
             method: "POST",
-            body: JSON.stringify({ conversationId: selectedId, text })
+            body: JSON.stringify({ conversationId: selectedId, text, score, time })
         });
         messageInput.value = "";
+        document.getElementById("scoreInput").value = "";
+        document.getElementById("timeInput").value = "";
         lastKey = "";
         contactKey = "";
         await loadMessages();

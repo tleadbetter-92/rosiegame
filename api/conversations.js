@@ -22,15 +22,19 @@ async function listConversations(db, user) {
         ? await db.collection("messages").aggregate([
             { $match: { conversationId: { $in: conversations.map((conversation) => conversation._id) } } },
             { $sort: { createdAt: -1 } },
-            { $group: { _id: "$conversationId", text: { $first: "$text" } } }
+            { $group: { _id: "$conversationId", score: { $first: "$score" }, time: { $first: "$time" } } }
         ]).toArray()
         : [];
-    const previews = new Map(latest.map((item) => [String(item._id), item.text]));
-    return conversations.map((conversation) => ({
-        id: String(conversation._id),
-        username: names.get(String(otherId(conversation, user._id))) || "Unknown",
-        lastText: previews.get(String(conversation._id)) || ""
-    }));
+    const previews = new Map(latest.map((item) => [String(item._id), item]));
+    return conversations.map((conversation) => {
+        const latestItem = previews.get(String(conversation._id)) || {};
+        return {
+            id: String(conversation._id),
+            username: names.get(String(otherId(conversation, user._id))) || "Unknown",
+            lastScore: latestItem.score || "",
+            lastTime: latestItem.time || ""
+        };
+    });
 }
 
 module.exports = async function handler(req, res) {

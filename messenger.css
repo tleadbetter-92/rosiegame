@@ -214,12 +214,32 @@ aside {
 .empty { color: #888; }
 
 #sendForm {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
     gap: 8px;
     align-items: center;
 }
 
 #sendForm input { margin: 0; }
+
+#messageInput { grid-column: 1 / -1; }
+
+#messages button.row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    background: #f7f5f2;
+    color: #2b2b2b;
+    text-align: left;
+}
+
+#messages button.row:hover { background: #efeae4; }
+
+#messages .stats {
+    color: #666;
+    font-weight: normal;
+}
 
 @media (max-width: 700px) {
     #auth, .layout { grid-template-columns: 1fr; }
