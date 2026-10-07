@@ -36,10 +36,23 @@ h2 { margin: 0 0 12px; font-size: 1.1rem; }
 
 .hint a { color: #e67e22; }
 
+.links {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: baseline;
+    gap: 14px;
+    white-space: nowrap;
+}
+
+.links a,
+button.quiet {
+    flex: 0 0 auto;
+}
+
 button.quiet {
     background: none;
     color: #e67e22;
-    margin-left: 14px;
+    margin: 0;
     padding: 0;
     font: inherit;
 }
@@ -210,4 +223,5 @@ aside {
 
 @media (max-width: 700px) {
     #auth, .layout { grid-template-columns: 1fr; }
+    .top { flex-direction: column; }
 }
