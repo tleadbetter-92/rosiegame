@@ -1,0 +1,92 @@
+const { ObjectId } = require("mongodb");
+const { getDb } = require("../lib/db");
+const { currentUser, readJson } = require("../lib/auth");
+
+const USERNAME = /^[a-zA-Z0-9_]{3,20}$/;
+
+function otherId(conversation, userId) {
+    return conversation.participants.find((id) => String(id) !== String(userId));
+}
+
+async function listConversations(db, user) {
+    const conversations = await db.collection("conversations")
+        .find({ participants: user._id })
+        .sort({ updatedAt: -1 })
+        .toArray();
+    const ids = conversations.map((conversation) => otherId(conversation, user._id)).filter(Boolean);
+    const people = await db.collection("users")
+        .find({ _id: { $in: ids } }, { projection: { username: 1 } })
+        .toArray();
+    const names = new Map(people.map((person) => [String(person._id), person.username]));
+    const latest = conversations.length
+        ? await db.collection("messages").aggregate([
+            { $match: { conversationId: { $in: conversations.map((conversation) => conversation._id) } } },
+            { $sort: { createdAt: -1 } },
+            { $group: { _id: "$conversationId", text: { $first: "$text" } } }
+        ]).toArray()
+        : [];
+    const previews = new Map(latest.map((item) => [String(item._id), item.text]));
+    return conversations.map((conversation) => ({
+        id: String(conversation._id),
+        username: names.get(String(otherId(conversation, user._id))) || "Unknown",
+        lastText: previews.get(String(conversation._id)) || ""
+    }));
+}
+
+module.exports = async function handler(req, res) {
+    try {
+        const user = await currentUser(req);
+        if (!user) {
+            res.status(401).json({ error: "Log in first." });
+            return;
+        }
+        const db = await getDb();
+        if (req.method === "GET") {
+            res.status(200).json({ conversations: await listConversations(db, user) });
+            return;
+        }
+        if (req.method === "POST") {
+            const username = String(readJson(req).username || "").trim();
+            if (!USERNAME.test(username)) {
+                res.status(400).json({ error: "Enter a username of 3 to 20 letters, numbers, or underscores." });
+                return;
+            }
+            if (username.toLowerCase() === user.username.toLowerCase()) {
+                res.status(400).json({ error: "You cannot add yourself." });
+                return;
+            }
+            const other = await db.collection("users").findOne({ usernameLower: username.toLowerCase() });
+            if (!other) {
+                res.status(404).json({ error: "No account with that username." });
+                return;
+            }
+            const ids = [user._id, other._id].map((id) => String(id)).sort();
+            const participantKey = ids.join(":");
+            const participants = ids.map((id) => new ObjectId(id));
+            const now = new Date();
+            let conversation = await db.collection("conversations").findOne({ participantKey });
+            if (!conversation) {
+                try {
+                    const created = await db.collection("conversations").insertOne({
+                        participants,
+                        participantKey,
+                        createdAt: now,
+                        updatedAt: now
+                    });
+                    conversation = { _id: created.insertedId };
+                } catch (error) {
+                    if (!error || error.code !== 11000) throw error;
+                    conversation = await db.collection("conversations").findOne({ participantKey });
+                }
+            }
+            res.status(201).json({
+                conversation: { id: String(conversation._id), username: other.username }
+            });
+            return;
+        }
+        res.status(405).json({ error: "Use GET or POST" });
+    } catch (error) {
+        console.error(error);
+        res.status(error.status || 500).json({ error: "Could not use contacts." });
+    }
+};

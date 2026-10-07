@@ -3,14 +3,56 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome to Rosie's Game</title>
+    <title>Rosie Arcade</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>Welcome to Rosie&#39;s Game!</h1>
-    <p>This is a simple one-page site. You can edit this text to make it your own.</p>
-    <p><a href="print-shop/index.html">The Print Shop</a> — preview of the 3D print shop.</p>
-    <button id="helloBtn">Click me!</button>
+    <header class="topbar">
+        <div class="brand">
+            <h1>Rosie Arcade</h1>
+            <p>A small collection of games</p>
+        </div>
+        <nav>
+            <a href="print-shop/index.html">Print Shop</a>
+        </nav>
+    </header>
+
+    <main>
+        <section class="stage" aria-label="Bounce">
+            <div class="stage-head">
+                <div>
+                    <p class="eyebrow">Now playing</p>
+                    <h2>Bounce</h2>
+                </div>
+                <p class="stage-note">Click the ball once. It keeps bouncing.</p>
+            </div>
+            <div id="court" class="court">
+                <button id="ball" type="button" aria-label="Click the ball to start bouncing"></button>
+                <p id="hint" class="hint">Click the ball</p>
+            </div>
+        </section>
+
+        <section class="shelf" aria-label="More games">
+            <div id="secretStroke" class="shelf-head">
+                <h2>More games</h2>
+                <div class="secret-line"></div>
+            </div>
+            <ul class="grid">
+                <li class="tile c1"><span class="cover"></span><span class="name">Moon Hopper</span><span class="kind">Jump</span></li>
+                <li class="tile c2"><span class="cover"></span><span class="name">Bubble Harbor</span><span class="kind">Puzzle</span></li>
+                <li class="tile c3"><span class="cover"></span><span class="name">Castle Dash</span><span class="kind">Run</span></li>
+                <li class="tile c4"><span class="cover"></span><span class="name">Pixel Picnic</span><span class="kind">Match</span></li>
+                <li class="tile c5"><span class="cover"></span><span class="name">Star Sweep</span><span class="kind">Arcade</span></li>
+                <li class="tile c6"><span class="cover"></span><span class="name">River Raft</span><span class="kind">Race</span></li>
+                <li class="tile c7"><span class="cover"></span><span class="name">Candy Clouds</span><span class="kind">Match</span></li>
+                <li class="tile c8"><span class="cover"></span><span class="name">Dino Dig</span><span class="kind">Dig</span></li>
+                <li class="tile c9"><span class="cover"></span><span class="name">Neon Maze</span><span class="kind">Maze</span></li>
+                <li class="tile c10"><span class="cover"></span><span class="name">Treasure Tiles</span><span class="kind">Find</span></li>
+                <li class="tile c11"><span class="cover"></span><span class="name">Sky Kites</span><span class="kind">Fly</span></li>
+                <li class="tile c12"><span class="cover"></span><span class="name">Puzzle Pond</span><span class="kind">Puzzle</span></li>
+            </ul>
+        </section>
+    </main>
     <script src="script.js"></script>
 </body>
-</html> 
+</html>

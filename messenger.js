@@ -1,0 +1,259 @@
+const auth = document.getElementById("auth");
+const chat = document.getElementById("chat");
+const who = document.getElementById("who");
+const logoutBtn = document.getElementById("logoutBtn");
+const authError = document.getElementById("authError");
+const chatError = document.getElementById("chatError");
+const contactError = document.getElementById("contactError");
+const contactsEl = document.getElementById("contacts");
+const threadTitle = document.getElementById("threadTitle");
+const messagesEl = document.getElementById("messages");
+const messageInput = document.getElementById("messageInput");
+const sendForm = document.getElementById("sendForm");
+
+let timer = null;
+let lastKey = null;
+let contactKey = null;
+let selectedId = "";
+let selectedName = "";
+
+async function api(path, options) {
+    const response = await fetch(path, {
+        credentials: "same-origin",
+        headers: options && options.body ? { "Content-Type": "application/json" } : undefined,
+        ...options
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.error || "Something went wrong.");
+    }
+    return data;
+}
+
+function showChat(username) {
+    auth.hidden = true;
+    chat.hidden = false;
+    who.textContent = username;
+    logoutBtn.hidden = false;
+    authError.textContent = "";
+    loadConversations();
+    if (!timer) timer = setInterval(refresh, 3000);
+}
+
+function showAuth() {
+    auth.hidden = false;
+    chat.hidden = true;
+    who.textContent = "";
+    logoutBtn.hidden = true;
+    selectedId = "";
+    selectedName = "";
+    lastKey = null;
+    contactKey = null;
+    messagesEl.replaceChildren();
+    contactsEl.replaceChildren();
+    sendForm.hidden = true;
+    threadTitle.textContent = "Add a username to start a private chat.";
+    if (timer) {
+        clearInterval(timer);
+        timer = null;
+    }
+}
+
+function openConversation(id, username) {
+    if (selectedId !== id) {
+        selectedId = id;
+        selectedName = username;
+        lastKey = null;
+        messagesEl.replaceChildren();
+    }
+    threadTitle.textContent = "Chat with " + username;
+    sendForm.hidden = false;
+    for (const button of contactsEl.querySelectorAll("button")) {
+        button.classList.toggle("active", button.dataset.id === selectedId);
+    }
+    loadMessages();
+}
+
+function renderContacts(conversations) {
+    const key = conversations.map((conversation) => conversation.id + ":" + conversation.lastText).join("|");
+    if (key !== contactKey) {
+        contactKey = key;
+        contactsEl.replaceChildren();
+        if (!conversations.length) {
+            const empty = document.createElement("li");
+            empty.className = "empty";
+            empty.textContent = "No contacts yet.";
+            contactsEl.appendChild(empty);
+            return;
+        }
+        for (const conversation of conversations) {
+            const item = document.createElement("li");
+            const button = document.createElement("button");
+            button.type = "button";
+            button.dataset.id = conversation.id;
+            const name = document.createElement("strong");
+            name.textContent = conversation.username;
+            button.appendChild(name);
+            if (conversation.lastText) {
+                const preview = document.createElement("span");
+                preview.className = "preview";
+                preview.textContent = conversation.lastText;
+                button.appendChild(preview);
+            }
+            button.addEventListener("click", () => openConversation(conversation.id, conversation.username));
+            item.appendChild(button);
+            contactsEl.appendChild(item);
+        }
+    }
+    for (const button of contactsEl.querySelectorAll("button")) {
+        button.classList.toggle("active", button.dataset.id === selectedId);
+    }
+}
+
+function renderMessages(messages) {
+    const key = messages.map((message) => message.id).join(",");
+    if (key === lastKey) return;
+    const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 40;
+    lastKey = key;
+    messagesEl.replaceChildren();
+    if (!messages.length) {
+        const empty = document.createElement("li");
+        empty.className = "empty";
+        empty.textContent = "No messages yet. Say hello.";
+        messagesEl.appendChild(empty);
+        return;
+    }
+    for (const message of messages) {
+        const item = document.createElement("li");
+        const name = document.createElement("span");
+        name.className = "name";
+        name.textContent = message.username;
+        const time = document.createElement("time");
+        time.dateTime = message.createdAt;
+        time.textContent = new Date(message.createdAt).toLocaleString();
+        const text = document.createElement("p");
+        text.textContent = message.text;
+        item.append(name, time, text);
+        messagesEl.appendChild(item);
+    }
+    if (nearBottom || messagesEl.scrollTop === 0) {
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+}
+
+async function loadConversations() {
+    const data = await api("/api/conversations");
+    const conversations = data.conversations || [];
+    renderContacts(conversations);
+    const selected = conversations.find((conversation) => conversation.id === selectedId);
+    if (selected) selectedName = selected.username;
+    return conversations;
+}
+
+async function loadMessages() {
+    if (!selectedId) return;
+    try {
+        const data = await api("/api/messages?conversationId=" + encodeURIComponent(selectedId));
+        chatError.textContent = "";
+        renderMessages(data.messages || []);
+    } catch (error) {
+        chatError.textContent = error.message;
+    }
+}
+
+async function refresh() {
+    try {
+        await loadConversations();
+        await loadMessages();
+    } catch (error) {
+        contactError.textContent = error.message;
+    }
+}
+
+document.getElementById("signupForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    authError.textContent = "";
+    const form = new FormData(event.target);
+    try {
+        const data = await api("/api/signup", {
+            method: "POST",
+            body: JSON.stringify({
+                username: form.get("username"),
+                password: form.get("password")
+            })
+        });
+        event.target.reset();
+        showChat(data.user.username);
+    } catch (error) {
+        authError.textContent = error.message;
+    }
+});
+
+document.getElementById("loginForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    authError.textContent = "";
+    const form = new FormData(event.target);
+    try {
+        const data = await api("/api/login", {
+            method: "POST",
+            body: JSON.stringify({
+                username: form.get("username"),
+                password: form.get("password")
+            })
+        });
+        event.target.reset();
+        showChat(data.user.username);
+    } catch (error) {
+        authError.textContent = error.message;
+    }
+});
+
+document.getElementById("addForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    contactError.textContent = "";
+    const username = document.getElementById("contactInput").value;
+    try {
+        const data = await api("/api/conversations", {
+            method: "POST",
+            body: JSON.stringify({ username })
+        });
+        document.getElementById("contactInput").value = "";
+        contactKey = "";
+        await loadConversations();
+        openConversation(data.conversation.id, data.conversation.username);
+    } catch (error) {
+        contactError.textContent = error.message;
+    }
+});
+
+sendForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    chatError.textContent = "";
+    const text = messageInput.value;
+    try {
+        await api("/api/messages", {
+            method: "POST",
+            body: JSON.stringify({ conversationId: selectedId, text })
+        });
+        messageInput.value = "";
+        lastKey = "";
+        contactKey = "";
+        await loadMessages();
+        await loadConversations();
+    } catch (error) {
+        chatError.textContent = error.message;
+    }
+});
+
+logoutBtn.addEventListener("click", async () => {
+    try {
+        await api("/api/logout", { method: "POST" });
+    } catch (error) {
+        authError.textContent = error.message;
+    }
+    showAuth();
+});
+
+api("/api/me").then((data) => {
+    if (data.user) showChat(data.user.username);
+}).catch(() => showAuth());

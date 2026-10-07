@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rosie's Chat</title>
+    <link rel="stylesheet" href="messenger.css">
+</head>
+<body>
+    <main class="app">
+        <header class="top">
+            <div>
+                <h1>Rosie's Chat</h1>
+                <p class="hint">Private chats. Add someone by their username.</p>
+                <p class="hint"><a href="index.html">Back to the game</a></p>
+            </div>
+            <div class="who">
+                <span id="who"></span>
+                <button id="logoutBtn" type="button" hidden>Log out</button>
+            </div>
+        </header>
+
+        <section id="auth">
+            <form id="signupForm" class="card">
+                <h2>Create an account</h2>
+                <label>Username<input name="username" autocomplete="username" required minlength="3" maxlength="20"></label>
+                <label>Password<input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="72"></label>
+                <button type="submit">Sign up</button>
+            </form>
+            <form id="loginForm" class="card">
+                <h2>Log in</h2>
+                <label>Username<input name="username" autocomplete="username" required></label>
+                <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+                <button type="submit">Log in</button>
+            </form>
+            <p id="authError" class="error" role="alert"></p>
+        </section>
+
+        <section id="chat" hidden>
+            <div class="layout">
+                <aside>
+                    <form id="addForm">
+                        <input id="contactInput" maxlength="20" placeholder="Username" autocomplete="off" required>
+                        <button type="submit">Add</button>
+                    </form>
+                    <p id="contactError" class="error" role="alert"></p>
+                    <ul id="contacts"></ul>
+                </aside>
+                <div class="thread">
+                    <p id="threadTitle" class="hint">Add a username to start a private chat.</p>
+                    <ol id="messages"></ol>
+                    <form id="sendForm" hidden>
+                        <input id="messageInput" maxlength="500" placeholder="Write a message" autocomplete="off" required>
+                        <button type="submit">Send</button>
+                    </form>
+                    <p id="chatError" class="error" role="alert"></p>
+                </div>
+            </div>
+        </section>
+    </main>
+    <script src="messenger.js"></script>
+</body>
+</html>
