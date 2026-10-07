@@ -1,6 +1,5 @@
 const auth = document.getElementById("auth");
 const chat = document.getElementById("chat");
-const who = document.getElementById("who");
 const logoutBtn = document.getElementById("logoutBtn");
 const seeAllBtn = document.getElementById("seeAllBtn");
 const notifyBtn = document.getElementById("notifyBtn");
@@ -19,6 +18,7 @@ let lastKey = null;
 let contactKey = null;
 let selectedId = "";
 let selectedName = "";
+let me = "";
 
 async function api(path, options) {
     const response = await fetch(path, {
@@ -36,7 +36,7 @@ async function api(path, options) {
 function showChat(username) {
     auth.hidden = true;
     chat.hidden = false;
-    who.textContent = username;
+    me = username;
     logoutBtn.hidden = false;
     notifyBtn.hidden = false;
     authError.textContent = "";
@@ -48,7 +48,7 @@ function showChat(username) {
 function showAuth() {
     auth.hidden = false;
     chat.hidden = true;
-    who.textContent = "";
+    me = "";
     logoutBtn.hidden = true;
     notifyBtn.hidden = true;
     selectedId = "";
@@ -89,7 +89,7 @@ function renderContacts(conversations) {
         if (!conversations.length) {
             const empty = document.createElement("li");
             empty.className = "empty";
-            empty.textContent = "No contacts yet.";
+            empty.textContent = "No challenges yet.";
             contactsEl.appendChild(empty);
             return;
         }
@@ -101,14 +101,17 @@ function renderContacts(conversations) {
             const name = document.createElement("strong");
             name.textContent = conversation.username;
             button.appendChild(name);
-            const preview = document.createElement("span");
-            preview.className = "preview";
-            if (conversation.lastUsername === who.textContent) {
+            if (conversation.lastUsername === me) {
+                const preview = document.createElement("span");
+                preview.className = "preview";
                 preview.textContent = conversation.lastReply || ".......";
+                button.appendChild(preview);
             } else if (conversation.lastScore || conversation.lastTime) {
-                preview.textContent = "score " + (conversation.lastScore || "–") + "  time " + (conversation.lastTime || "–");
+                const metrics = document.createElement("span");
+                metrics.className = "metrics";
+                metrics.append(metric("Score", conversation.lastScore), metric("Time", conversation.lastTime));
+                button.appendChild(metrics);
             }
-            if (preview.textContent) button.appendChild(preview);
             button.addEventListener("click", () => openConversation(conversation.id, conversation.username));
             item.appendChild(button);
             contactsEl.appendChild(item);
@@ -135,6 +138,18 @@ async function answerMessage(messageId, reply) {
     }
 }
 
+function metric(label, value) {
+    const item = document.createElement("span");
+    item.className = "metric";
+    const name = document.createElement("span");
+    name.className = "label";
+    name.textContent = label;
+    const number = document.createElement("strong");
+    number.textContent = value || "–";
+    item.append(name, number);
+    return item;
+}
+
 function renderMessages(messages) {
     const key = messages.map((message) => message.id + ":" + message.reply).join(",");
     if (key === lastKey) return;
@@ -144,33 +159,32 @@ function renderMessages(messages) {
     if (!messages.length) {
         const empty = document.createElement("li");
         empty.className = "empty";
-        empty.textContent = "No scores yet.";
+        empty.textContent = "No challenges yet.";
         messagesEl.appendChild(empty);
         return;
     }
     for (const message of messages) {
+        const mine = message.username === me;
         const item = document.createElement("li");
-        const row = document.createElement("button");
-        row.type = "button";
-        row.className = "row";
-        const name = document.createElement("span");
-        name.className = "name";
-        name.textContent = message.username;
-        const stats = document.createElement("span");
-        stats.className = "stats";
-        stats.textContent = "score " + (message.score || "–") + "  time " + (message.time || "–");
-        row.append(name, stats);
-        item.append(row);
+        item.className = mine ? "mine" : "theirs";
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        if (!mine) {
+            const name = document.createElement("span");
+            name.className = "name";
+            name.textContent = message.username;
+            bubble.append(name);
+        }
         if (message.text) {
             const text = document.createElement("p");
-            text.hidden = true;
             text.textContent = message.text;
-            row.addEventListener("click", () => {
-                text.hidden = !text.hidden;
-            });
-            item.append(text);
+            bubble.append(text);
         }
-        const mine = message.username === who.textContent;
+        const stats = document.createElement("div");
+        stats.className = "stats";
+        stats.append(metric("Score", message.score), metric("Time", message.time));
+        bubble.append(stats);
+        item.append(bubble);
         if (mine) {
             const answer = document.createElement("p");
             answer.className = "answer " + (message.reply || "waiting");
@@ -323,7 +337,7 @@ function clearVisibleChats() {
     if (chatPop.open) chatPop.close();
     const empty = document.createElement("li");
     empty.className = "empty";
-    empty.textContent = "No contacts yet.";
+    empty.textContent = "No challenges yet.";
     contactsEl.appendChild(empty);
 }
 
@@ -416,7 +430,7 @@ chatPop.addEventListener("close", () => {
 if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("message", (event) => {
         const chatId = event.data && event.data.chat;
-        if (chatId && who.textContent) openChatFromId(chatId).catch(() => {});
+        if (chatId && me) openChatFromId(chatId).catch(() => {});
     });
 }
 

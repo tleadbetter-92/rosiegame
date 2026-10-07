@@ -175,16 +175,39 @@ button:hover { background: #d35400; }
     color: white;
 }
 
-#contacts .preview {
+#contacts .preview,
+#contacts .metrics {
     max-width: 100%;
-    overflow: hidden;
-    color: #777;
-    font-size: 0.8rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    color: #666;
+    font-size: 0.85rem;
 }
 
-#contacts button.active .preview { color: white; }
+#contacts .metrics {
+    display: flex;
+    gap: 16px;
+    margin-top: 6px;
+}
+
+.metric {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+}
+
+.metric .label {
+    color: #888;
+    font-size: 0.68rem;
+    font-weight: bold;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.metric strong { font-size: 1rem; color: #2b2b2b; }
+
+#contacts button.active .preview,
+#contacts button.active .label,
+#contacts button.active .metric strong { color: white; }
 
 #chatPop {
     width: min(560px, calc(100% - 24px));
@@ -223,9 +246,28 @@ button:hover { background: #d35400; }
     overflow-y: auto;
 }
 
-#messages li { margin-bottom: 14px; }
+#messages li { margin-bottom: 14px; display: flex; flex-direction: column; }
+
+#messages li.mine { align-items: flex-end; }
+
+#messages li.theirs { align-items: flex-start; }
+
+#messages .bubble {
+    max-width: 85%;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: white;
+}
+
+#messages li.mine .bubble { background: #fff4ea; }
 
 #messages .name { font-weight: bold; color: #e67e22; }
+
+#messages .stats {
+    display: flex;
+    gap: 16px;
+    margin-top: 8px;
+}
 
 #messages time {
     margin-left: 8px;
@@ -288,23 +330,6 @@ button.reject:hover { background: #e7e1d8; }
 .answer.accepted { color: #1e7a46; }
 
 .answer.rejected { color: #b03a2e; }
-
-#messages button.row {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    width: 100%;
-    background: #f7f5f2;
-    color: #2b2b2b;
-    text-align: left;
-}
-
-#messages button.row:hover { background: #efeae4; }
-
-#messages .stats {
-    color: #666;
-    font-weight: normal;
-}
 
 @media (max-width: 700px) {
     #auth { grid-template-columns: 1fr; }
