@@ -7,6 +7,8 @@ body {
     font-family: "Segoe UI", system-ui, sans-serif;
     background: #efeee9;
     color: #1c1c1c;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
 }
 
 .app {
@@ -164,7 +166,7 @@ label {
     font-weight: 650;
 }
 
-input, select {
+input, select, textarea {
     display: block;
     width: 100%;
     margin-top: 6px;
@@ -174,6 +176,7 @@ input, select {
     background: #fafaf8;
     color: #1c1c1c;
     font: inherit;
+    font-size: 16px;
 }
 
 input:focus, select:focus {
@@ -348,7 +351,7 @@ input:focus, select:focus {
 #contacts button.active .label,
 #contacts button.active .metric strong { color: #1c1c1c; }
 
-#chatPop {
+#chatPop, #notesPop {
     width: min(480px, calc(100% - 24px));
     max-height: min(86vh, 720px);
     margin: auto;
@@ -360,7 +363,7 @@ input:focus, select:focus {
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
 }
 
-#chatPop::backdrop { background: rgba(16, 16, 16, 0.46); }
+#chatPop::backdrop, #notesPop::backdrop { background: rgba(16, 16, 16, 0.46); }
 
 .pop {
     display: flex;
@@ -534,6 +537,53 @@ button.reject:hover { background: #e7e1d8; }
 .answer.accepted { color: #1e7a46; }
 
 .answer.rejected { color: #b03a2e; }
+
+.notes-body {
+    padding: 16px;
+    overflow: auto;
+    background: #f6f5f2;
+}
+
+#noteText {
+    width: 100%;
+    min-height: 140px;
+    margin: 0 0 12px;
+    resize: vertical;
+}
+
+#noteTable { margin-bottom: 12px; }
+
+.note-row, .note-total {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 6.5rem auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.note-row { margin-bottom: 8px; }
+
+.note-row input { margin: 0; }
+
+.note-row button {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 10px;
+    background: white;
+    color: #1c1c1c;
+    border: 1px solid #e4e0da;
+}
+
+.note-total {
+    margin: 4px 0 12px;
+    padding-top: 10px;
+    border-top: 1px solid #e4e0da;
+    font-weight: 700;
+}
+
+.note-total strong { grid-column: 2; }
+
+#toggleTable { width: 100%; }
 
 @media (max-width: 700px) {
     #auth { grid-template-columns: 1fr; }

@@ -30,7 +30,8 @@ const routes = {
     "/api/conversations": require("./api/conversations"),
     "/api/clear-chats": require("./api/clear-chats"),
     "/api/push-key": require("./api/push-key"),
-    "/api/push-subscribe": require("./api/push-subscribe")
+    "/api/push-subscribe": require("./api/push-subscribe"),
+    "/api/notes": require("./api/notes")
 };
 
 const root = __dirname;

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
     <title>Leaderboard</title>
     <link rel="manifest" href="/manifest.json">
     <link rel="apple-touch-icon" href="/icon-192.png">
@@ -25,6 +25,7 @@
                 <h1>Leaderboard</h1>
             </div>
             <div class="who">
+                <button id="notesBtn" class="ghost" type="button" hidden>Notes</button>
                 <button id="notifyBtn" class="ghost" type="button" hidden>Notify me</button>
                 <button id="logoutBtn" class="ghost" type="button" hidden>Log out</button>
             </div>
@@ -79,6 +80,26 @@
                     <button type="submit">Send</button>
                 </form>
                 <p id="chatError" class="error" role="alert"></p>
+            </div>
+        </dialog>
+        <dialog id="notesPop">
+            <div class="pop">
+                <div class="pop-bar">
+                    <p class="hint">Notes</p>
+                    <button id="closeNotes" class="quiet" type="button">Close</button>
+                </div>
+                <div class="notes-body">
+                    <textarea id="noteText" maxlength="5000" placeholder="Write a note"></textarea>
+                    <div id="noteTable" hidden>
+                        <div id="noteRows"></div>
+                        <div class="note-total">
+                            <span>Total</span>
+                            <strong id="noteTotal">0</strong>
+                        </div>
+                        <button id="addNoteRow" type="button">Add a row</button>
+                    </div>
+                    <button id="toggleTable" class="ghost" type="button">Add a table</button>
+                </div>
             </div>
         </dialog>
     </main>

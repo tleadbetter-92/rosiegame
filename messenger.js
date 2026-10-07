@@ -15,6 +15,8 @@ window.addEventListener("pageshow", (event) => {
 const auth = document.getElementById("auth");
 const chat = document.getElementById("chat");
 const logoutBtn = document.getElementById("logoutBtn");
+const notesBtn = document.getElementById("notesBtn");
+const notesPop = document.getElementById("notesPop");
 const seeAllBtn = document.getElementById("seeAllBtn");
 const notifyBtn = document.getElementById("notifyBtn");
 const authError = document.getElementById("authError");
@@ -28,6 +30,8 @@ const sendForm = document.getElementById("sendForm");
 const chatPop = document.getElementById("chatPop");
 
 let pushReady = null;
+let pendingSubscription = null;
+let pushStarting = null;
 let timer = null;
 let lastKey = null;
 let contactKey = null;
@@ -43,7 +47,9 @@ async function api(path, options) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-        throw new Error(data.error || "Something went wrong.");
+        const error = new Error(data.error || "Something went wrong.");
+        error.status = response.status;
+        throw error;
     }
     return data;
 }
@@ -58,12 +64,14 @@ function showChat(username) {
     chat.hidden = false;
     me = username;
     logoutBtn.hidden = false;
+    notesBtn.hidden = false;
     notifyBtn.hidden = false;
     authError.textContent = "";
     leaveContactBox();
     setTimeout(leaveContactBox, 0);
     setTimeout(leaveContactBox, 250);
     prepareNotifications();
+    loadNotes().catch(() => {});
     loadConversations().then(() => openChatFromId(openedChat)).catch(() => {});
     if (!timer) timer = setInterval(refresh, 3000);
 }
@@ -73,6 +81,7 @@ function showAuth() {
     chat.hidden = true;
     me = "";
     logoutBtn.hidden = true;
+    notesBtn.hidden = true;
     notifyBtn.hidden = true;
     selectedId = "";
     selectedName = "";
@@ -82,6 +91,7 @@ function showAuth() {
     contactsEl.replaceChildren();
     sendForm.hidden = true;
     if (chatPop.open) chatPop.close();
+    if (notesPop.open) notesPop.close();
     if (timer) {
         clearInterval(timer);
         timer = null;
@@ -300,6 +310,7 @@ async function refresh() {
 
 document.getElementById("signupForm").addEventListener("submit", async (event) => {
     event.preventDefault();
+    armNotifications();
     authError.textContent = "";
     const form = new FormData(event.target);
     try {
@@ -319,6 +330,7 @@ document.getElementById("signupForm").addEventListener("submit", async (event) =
 
 document.getElementById("loginForm").addEventListener("submit", async (event) => {
     event.preventDefault();
+    armNotifications();
     authError.textContent = "";
     const form = new FormData(event.target);
     try {
@@ -464,6 +476,29 @@ async function saveSubscription(subscription) {
     });
 }
 
+function armNotifications() {
+    if (!pushReady || !("Notification" in window) || Notification.permission !== "granted") return;
+    pendingSubscription = pushReady.registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: pushReady.key
+    });
+}
+
+function startPush() {
+    if (pushStarting) return pushStarting;
+    pushStarting = (async () => {
+        if (!("Notification" in window) || !("PushManager" in window) || !("serviceWorker" in navigator)) return null;
+        const registration = await navigator.serviceWorker.register("/sw.js");
+        await navigator.serviceWorker.ready;
+        const keyData = await api("/api/push-key");
+        const key = notificationKey(keyData.publicKey);
+        if (!key) return null;
+        pushReady = { registration, key };
+        return pushReady;
+    })().catch(() => null);
+    return pushStarting;
+}
+
 async function prepareNotifications() {
     if (!("Notification" in window) || !("PushManager" in window) || !("serviceWorker" in navigator)) {
         notifyBtn.hidden = true;
@@ -479,28 +514,28 @@ async function prepareNotifications() {
     notifyBtn.disabled = true;
     notifyBtn.textContent = "Notify me";
     try {
-        const registration = await navigator.serviceWorker.register("/sw.js");
-        await navigator.serviceWorker.ready;
-        const keyData = await api("/api/push-key");
-        const key = notificationKey(keyData.publicKey);
-        if (!key) {
+        const ready = await startPush();
+        if (!ready) {
             notifyBtn.textContent = "Notifications are not ready";
             return;
         }
-        pushReady = { registration, key };
         if (Notification.permission === "granted") {
-            const existing = await registration.pushManager.getSubscription();
-            if (existing) {
-                await saveSubscription(existing);
-                markNotificationsOn();
-                return;
+            let subscription = await ready.registration.pushManager.getSubscription();
+            if (!subscription && pendingSubscription) subscription = await pendingSubscription.catch(() => null);
+            if (!subscription) {
+                subscription = await ready.registration.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: ready.key
+                });
             }
-            notifyBtn.textContent = "Finish notifications";
+            await saveSubscription(subscription);
+            markNotificationsOn();
+            return;
         }
         notifyBtn.disabled = false;
     } catch {
         notifyBtn.disabled = false;
-        notifyBtn.textContent = "Tap again";
+        notifyBtn.textContent = Notification.permission === "granted" ? "Finish notifications" : "Notify me";
     }
 }
 
@@ -549,6 +584,130 @@ document.getElementById("closePop").addEventListener("click", () => {
     chatPop.close();
 });
 
+let noteRows = [];
+let noteTimer = null;
+
+function noteTotal() {
+    const total = noteRows.reduce((sum, row) => {
+        const value = Number(String(row.amount).replace(/,/g, ""));
+        return sum + (Number.isFinite(value) ? value : 0);
+    }, 0);
+    const rounded = Math.round(total * 100) / 100;
+    document.getElementById("noteTotal").textContent = String(rounded);
+}
+
+function showNoteTable(show) {
+    document.getElementById("noteTable").hidden = !show;
+    document.getElementById("toggleTable").textContent = show ? "Remove table" : "Add a table";
+}
+
+function renderNoteRows() {
+    const box = document.getElementById("noteRows");
+    box.replaceChildren();
+    noteRows.forEach((row, index) => {
+        const line = document.createElement("div");
+        line.className = "note-row";
+        const text = document.createElement("input");
+        text.type = "text";
+        text.maxLength = 200;
+        text.placeholder = "Text";
+        text.value = row.text;
+        text.addEventListener("input", () => {
+            noteRows[index].text = text.value;
+            saveNotes();
+        });
+        const amount = document.createElement("input");
+        amount.type = "text";
+        amount.inputMode = "decimal";
+        amount.maxLength = 20;
+        amount.placeholder = "0";
+        amount.setAttribute("aria-label", "Number");
+        amount.value = row.amount;
+        amount.addEventListener("input", () => {
+            noteRows[index].amount = amount.value;
+            noteTotal();
+            saveNotes();
+        });
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.textContent = "×";
+        remove.setAttribute("aria-label", "Remove row");
+        remove.addEventListener("click", () => {
+            noteRows.splice(index, 1);
+            if (!noteRows.length) showNoteTable(false);
+            else renderNoteRows();
+            noteTotal();
+            saveNotes();
+        });
+        line.append(text, amount, remove);
+        box.append(line);
+    });
+}
+
+function saveNotes() {
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => {
+        const tableHidden = document.getElementById("noteTable").hidden;
+        api("/api/notes", {
+            method: "PUT",
+            body: JSON.stringify({
+                text: document.getElementById("noteText").value,
+                rows: tableHidden ? [] : noteRows
+            })
+        }).catch(() => {});
+    }, 400);
+}
+
+async function loadNotes() {
+    const data = await api("/api/notes");
+    document.getElementById("noteText").value = data.text || "";
+    noteRows = (data.rows || []).map((row) => ({
+        text: row.text || "",
+        amount: row.amount || ""
+    }));
+    if (noteRows.length) {
+        showNoteTable(true);
+        renderNoteRows();
+    } else {
+        showNoteTable(false);
+    }
+    noteTotal();
+}
+
+notesBtn.addEventListener("click", () => {
+    if (!notesPop.open) notesPop.showModal();
+});
+
+document.getElementById("closeNotes").addEventListener("click", () => {
+    notesPop.close();
+});
+
+notesPop.addEventListener("click", (event) => {
+    if (event.target === notesPop) notesPop.close();
+});
+
+document.getElementById("noteText").addEventListener("input", saveNotes);
+
+document.getElementById("toggleTable").addEventListener("click", () => {
+    const hidden = document.getElementById("noteTable").hidden;
+    if (hidden) {
+        if (!noteRows.length) noteRows.push({ text: "", amount: "" });
+        showNoteTable(true);
+        renderNoteRows();
+    } else {
+        noteRows = [];
+        showNoteTable(false);
+    }
+    noteTotal();
+    saveNotes();
+});
+
+document.getElementById("addNoteRow").addEventListener("click", () => {
+    noteRows.push({ text: "", amount: "" });
+    renderNoteRows();
+    saveNotes();
+});
+
 chatPop.addEventListener("click", (event) => {
     if (event.target === chatPop) chatPop.close();
 });
@@ -574,4 +733,9 @@ if ("serviceWorker" in navigator) {
 
 api("/api/me").then((data) => {
     if (data.user) showChat(data.user.username);
-}).catch(() => showAuth());
+    else showAuth();
+}).catch((error) => {
+    if (!error.status || error.status === 401) showAuth();
+});
+
+startPush();

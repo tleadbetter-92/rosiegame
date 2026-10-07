@@ -78,7 +78,7 @@ async function listConversations(db, user) {
 
 module.exports = async function handler(req, res) {
     try {
-        const user = await currentUser(req);
+        const user = await currentUser(req, res);
         if (!user) {
             res.status(401).json({ error: "Log in first." });
             return;
