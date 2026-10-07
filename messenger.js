@@ -2,7 +2,9 @@ const openedChat = new URLSearchParams(location.search).get("chat") || "";
 history.replaceState(null, "", "messenger.html");
 
 let leftPage = false;
+let stayForNotifications = false;
 document.addEventListener("visibilitychange", () => {
+    if (stayForNotifications) return;
     if (document.visibilityState === "hidden") leftPage = true;
     if (document.visibilityState === "visible" && leftPage) location.replace("index.html");
 });
@@ -25,6 +27,7 @@ const messageInput = document.getElementById("messageInput");
 const sendForm = document.getElementById("sendForm");
 const chatPop = document.getElementById("chatPop");
 
+let pushReady = null;
 let timer = null;
 let lastKey = null;
 let contactKey = null;
@@ -395,48 +398,110 @@ function urlBase64ToUint8Array(base64String) {
     return output;
 }
 
-async function enableNotifications() {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return;
-    if (Notification.permission !== "granted") {
-        const permission = await Notification.requestPermission();
-        if (permission !== "granted") return;
+function notificationKey(value) {
+    const raw = String(value || "").trim();
+    const choices = [raw, raw.replace(/=/g, "")];
+    for (const choice of choices) {
+        try {
+            const bytes = urlBase64ToUint8Array(choice);
+            if (bytes.length === 65 && bytes[0] === 4) return bytes;
+        } catch {
+            // Try the next spelling of the key.
+        }
     }
-    const registration = await navigator.serviceWorker.register("/sw.js");
-    await navigator.serviceWorker.ready;
-    const keyData = await api("/api/push-key");
-    if (!keyData.publicKey) return;
-    const applicationServerKey = urlBase64ToUint8Array(keyData.publicKey);
-    let subscription = await registration.pushManager.getSubscription();
-    if (!subscription) {
-        subscription = await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey
-        });
-    }
-    await api("/api/push-subscribe", {
-        method: "POST",
-        body: JSON.stringify(subscription)
-    });
+    return null;
+}
+
+function onHomeScreen() {
+    return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+}
+
+function markNotificationsOn() {
     notifyBtn.textContent = "Notifications on";
     notifyBtn.disabled = true;
 }
 
-function prepareNotifications() {
-    if (!("Notification" in window) || !("PushManager" in window)) {
+async function saveSubscription(subscription) {
+    const body = typeof subscription.toJSON === "function" ? subscription.toJSON() : subscription;
+    await api("/api/push-subscribe", {
+        method: "POST",
+        body: JSON.stringify(body)
+    });
+}
+
+async function prepareNotifications() {
+    if (!("Notification" in window) || !("PushManager" in window) || !("serviceWorker" in navigator)) {
         notifyBtn.hidden = true;
         return;
     }
-    if (Notification.permission === "granted") {
-        notifyBtn.textContent = "Finish notifications";
+    const iphone = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    if (iphone && !onHomeScreen()) {
+        notifyBtn.hidden = false;
+        notifyBtn.disabled = true;
+        notifyBtn.textContent = "Open the home screen icon";
+        return;
+    }
+    notifyBtn.disabled = true;
+    notifyBtn.textContent = "Notify me";
+    try {
+        const registration = await navigator.serviceWorker.register("/sw.js");
+        await navigator.serviceWorker.ready;
+        const keyData = await api("/api/push-key");
+        const key = notificationKey(keyData.publicKey);
+        if (!key) {
+            notifyBtn.textContent = "Notifications are not ready";
+            return;
+        }
+        pushReady = { registration, key };
+        if (Notification.permission === "granted") {
+            const existing = await registration.pushManager.getSubscription();
+            if (existing) {
+                await saveSubscription(existing);
+                markNotificationsOn();
+                return;
+            }
+            notifyBtn.textContent = "Finish notifications";
+        }
+        notifyBtn.disabled = false;
+    } catch {
+        notifyBtn.disabled = false;
+        notifyBtn.textContent = "Tap again";
     }
 }
 
 notifyBtn.addEventListener("click", () => {
-    enableNotifications().catch(() => {
-        notifyBtn.disabled = false;
-        notifyBtn.textContent = "Tap again";
+    if (!pushReady) {
+        prepareNotifications();
+        return;
+    }
+    stayForNotifications = true;
+    const granted = Notification.permission === "granted";
+    const pending = granted
+        ? pushReady.registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: pushReady.key
+        })
+        : Notification.requestPermission();
+    finishNotifications(pending, granted).finally(() => {
+        stayForNotifications = false;
     });
 });
+
+async function finishNotifications(pending, granted) {
+    try {
+        if (!granted) {
+            const permission = await pending;
+            notifyBtn.disabled = false;
+            notifyBtn.textContent = permission === "granted" ? "Finish notifications" : "Notify me";
+            return;
+        }
+        await saveSubscription(await pending);
+        markNotificationsOn();
+    } catch (error) {
+        notifyBtn.disabled = false;
+        notifyBtn.textContent = error && error.name === "NotAllowedError" ? "Open the home screen icon" : "Tap again";
+    }
+}
 
 async function openChatFromId(chatId) {
     if (!chatId) return;
