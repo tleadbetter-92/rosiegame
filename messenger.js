@@ -109,7 +109,8 @@ function renderContacts(conversations) {
             } else if (conversation.lastScore || conversation.lastTime) {
                 const metrics = document.createElement("span");
                 metrics.className = "metrics";
-                metrics.append(metric("Score", conversation.lastScore), metric("Time", conversation.lastTime));
+                if (conversation.lastScore) metrics.append(metric("Score", conversation.lastScore));
+                if (conversation.lastTime) metrics.append(metric("Time", conversation.lastTime));
                 button.appendChild(metrics);
             }
             button.addEventListener("click", () => openConversation(conversation.id, conversation.username));
@@ -136,6 +137,12 @@ async function answerMessage(messageId, reply) {
     } catch (error) {
         chatError.textContent = error.message;
     }
+}
+
+function sentWhen(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "–";
+    return date.toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 function metric(label, value) {
@@ -169,32 +176,38 @@ function renderMessages(messages) {
         item.className = mine ? "mine" : "theirs";
         const bubble = document.createElement("div");
         bubble.className = "bubble";
+        const head = document.createElement("div");
+        head.className = "bubble-top";
         if (!mine) {
             const name = document.createElement("span");
             name.className = "name";
             name.textContent = message.username;
-            bubble.append(name);
+            head.append(name);
         }
+        head.append(metric("Sent", sentWhen(message.createdAt)));
+        bubble.append(head);
         if (message.text) {
             const text = document.createElement("p");
             text.textContent = message.text;
             bubble.append(text);
         }
-        const stats = document.createElement("div");
-        stats.className = "stats";
-        stats.append(metric("Score", message.score), metric("Time", message.time));
-        bubble.append(stats);
-        item.append(bubble);
+        if (message.score || message.time) {
+            const stats = document.createElement("div");
+            stats.className = "stats";
+            if (message.score) stats.append(metric("Score", message.score));
+            if (message.time) stats.append(metric("Time", message.time));
+            bubble.append(stats);
+        }
         if (mine) {
             const answer = document.createElement("p");
             answer.className = "answer " + (message.reply || "waiting");
             answer.textContent = message.reply || ".......";
-            item.append(answer);
+            bubble.append(answer);
         } else if (message.reply === "accepted" || message.reply === "rejected") {
             const answer = document.createElement("p");
             answer.className = "answer " + message.reply;
             answer.textContent = message.reply;
-            item.append(answer);
+            bubble.append(answer);
         } else {
             const choices = document.createElement("div");
             choices.className = "choices";
@@ -208,8 +221,9 @@ function renderMessages(messages) {
             reject.textContent = "Reject";
             reject.addEventListener("click", () => answerMessage(message.id, "rejected"));
             choices.append(accept, reject);
-            item.append(choices);
+            bubble.append(choices);
         }
+        item.append(bubble);
         messagesEl.appendChild(item);
     }
     if (nearBottom || messagesEl.scrollTop === 0) {

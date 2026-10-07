@@ -70,11 +70,22 @@ module.exports = async function handler(req, res) {
                 res.status(400).json({ error: "Message must be 1 to 500 characters." });
                 return;
             }
-            if (!score || score.length > 20 || !/^\d{1,3}$/.test(amount) || !unit) {
-                res.status(400).json({ error: "Add a score and a time." });
+            if (score.length > 20) {
+                res.status(400).json({ error: "Score must be 20 characters or less." });
                 return;
             }
-            const time = amount + " " + unit;
+            let time = "";
+            if (amount) {
+                if (!/^\d{1,3}$/.test(amount) || !unit) {
+                    res.status(400).json({ error: "Time needs a number of mins or hours." });
+                    return;
+                }
+                time = amount + " " + unit;
+            }
+            if (!text && !score && !time) {
+                res.status(400).json({ error: "Write a message, a score, or a time." });
+                return;
+            }
             const createdAt = new Date();
             const created = await db.collection("messages").insertOne({
                 conversationId: conversation._id,
