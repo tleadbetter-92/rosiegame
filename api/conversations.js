@@ -8,6 +8,19 @@ function otherId(conversation, userId) {
     return conversation.participants.find((id) => String(id) !== String(userId));
 }
 
+function wasSeen(seenBy, userId) {
+    return (seenBy || []).some((id) => String(id) === String(userId));
+}
+
+function readState(latest, unreadCount, userId, otherUserId) {
+    if (unreadCount > 0) return "unread";
+    if (!latest.userId) return "";
+    if (String(latest.userId) === String(userId)) {
+        return wasSeen(latest.seenBy, otherUserId) ? "read" : "notread";
+    }
+    return "read";
+}
+
 async function listConversations(db, user) {
     const conversations = await db.collection("conversations")
         .find({ participants: user._id })
@@ -18,32 +31,47 @@ async function listConversations(db, user) {
         .find({ _id: { $in: ids } }, { projection: { username: 1 } })
         .toArray();
     const names = new Map(people.map((person) => [String(person._id), person.username]));
-    const latest = conversations.length
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const conversationIds = conversations.map((conversation) => conversation._id);
+    const latest = conversationIds.length
         ? await db.collection("messages").aggregate([
-            { $match: {
-                conversationId: { $in: conversations.map((conversation) => conversation._id) },
-                createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
-            } },
+            { $match: { conversationId: { $in: conversationIds }, createdAt: { $gte: since } } },
             { $sort: { createdAt: -1 } },
             { $group: {
                 _id: "$conversationId",
                 score: { $first: "$score" },
                 time: { $first: "$time" },
                 reply: { $first: "$reply" },
-                username: { $first: "$username" }
+                username: { $first: "$username" },
+                userId: { $first: "$userId" },
+                seenBy: { $first: "$seenBy" }
             } }
         ]).toArray()
         : [];
+    const unread = conversationIds.length
+        ? await db.collection("messages").aggregate([
+            { $match: {
+                conversationId: { $in: conversationIds },
+                createdAt: { $gte: since },
+                userId: { $ne: user._id },
+                seenBy: { $ne: user._id }
+            } },
+            { $group: { _id: "$conversationId", count: { $sum: 1 } } }
+        ]).toArray()
+        : [];
     const previews = new Map(latest.map((item) => [String(item._id), item]));
+    const unreadCounts = new Map(unread.map((item) => [String(item._id), item.count]));
     return conversations.map((conversation) => {
         const latestItem = previews.get(String(conversation._id)) || {};
+        const other = otherId(conversation, user._id);
         return {
             id: String(conversation._id),
-            username: names.get(String(otherId(conversation, user._id))) || "Unknown",
+            username: names.get(String(other)) || "Unknown",
             lastScore: latestItem.score || "",
             lastTime: latestItem.time || "",
             lastReply: latestItem.reply || "",
-            lastUsername: latestItem.username || ""
+            lastUsername: latestItem.username || "",
+            readState: readState(latestItem, unreadCounts.get(String(conversation._id)) || 0, user._id, other)
         };
     });
 }

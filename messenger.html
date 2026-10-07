@@ -8,6 +8,7 @@
     <link rel="apple-touch-icon" href="/icon-192.png">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Roulette">
     <link rel="stylesheet" href="messenger.css">
     <script>
         (function () {
@@ -19,14 +20,16 @@
 <body>
     <main class="app">
         <header class="top">
-            <h1>Leaderboard</h1>
+            <div class="brand">
+                <p class="eyebrow">Challenges proposed</p>
+                <h1>Leaderboard</h1>
+            </div>
             <div class="who">
-                <button id="notifyBtn" type="button" hidden>Notify me</button>
-                <button id="logoutBtn" type="button" hidden>Log out</button>
+                <button id="notifyBtn" class="ghost" type="button" hidden>Notify me</button>
+                <button id="logoutBtn" class="ghost" type="button" hidden>Log out</button>
             </div>
             <div class="under">
-                <p class="hint">Challenges proposed</p>
-                <p class="hint"><a href="index.html">Back to the game</a></p>
+                <a href="index.html">Back to the game</a>
             </div>
         </header>
         <button id="seeAllBtn" type="button">See all challenges</button>

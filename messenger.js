@@ -101,11 +101,14 @@ function openConversation(id, username) {
     for (const button of contactsEl.querySelectorAll("button")) {
         button.classList.toggle("active", button.dataset.id === selectedId);
     }
-    loadMessages();
+    loadMessages().then(() => {
+        contactKey = "";
+        return loadConversations();
+    }).catch(() => {});
 }
 
 function renderContacts(conversations) {
-    const key = conversations.map((conversation) => conversation.id + ":" + conversation.lastScore + ":" + conversation.lastTime + ":" + conversation.lastReply + ":" + conversation.lastUsername).join("|");
+    const key = conversations.map((conversation) => conversation.id + ":" + conversation.lastScore + ":" + conversation.lastTime + ":" + conversation.lastReply + ":" + conversation.lastUsername + ":" + conversation.readState).join("|");
     if (key !== contactKey) {
         contactKey = key;
         contactsEl.replaceChildren();
@@ -121,21 +124,36 @@ function renderContacts(conversations) {
             const button = document.createElement("button");
             button.type = "button";
             button.dataset.id = conversation.id;
+            const top = document.createElement("span");
+            top.className = "row-top";
             const name = document.createElement("strong");
             name.textContent = conversation.username;
-            button.appendChild(name);
+            top.append(name);
             if (conversation.lastUsername === me && conversation.lastScore && conversation.lastTime) {
                 const preview = document.createElement("span");
                 preview.className = "preview";
                 preview.textContent = conversation.lastReply || ".......";
-                button.appendChild(preview);
+                top.append(preview);
             } else if (conversation.lastScore || conversation.lastTime) {
                 const metrics = document.createElement("span");
                 metrics.className = "metrics";
                 if (conversation.lastScore) metrics.append(metric("Score", conversation.lastScore));
                 if (conversation.lastTime) metrics.append(metric("Time", conversation.lastTime));
-                button.appendChild(metrics);
+                top.append(metrics);
             }
+            if (conversation.readState === "unread") {
+                const state = document.createElement("span");
+                state.className = "read-state unread";
+                state.setAttribute("aria-label", "Unread");
+                top.append(state);
+            } else if (conversation.readState) {
+                const state = document.createElement("span");
+                state.className = "read-state " + conversation.readState;
+                state.textContent = conversation.readState === "read" ? "Read" : "Not read";
+                top.append(state);
+            }
+            button.append(top);
+            if (conversation.readState === "unread") button.classList.add("has-unread");
             button.addEventListener("click", () => openConversation(conversation.id, conversation.username));
             item.appendChild(button);
             contactsEl.appendChild(item);
@@ -277,8 +295,8 @@ async function loadMessages() {
 
 async function refresh() {
     try {
-        await loadConversations();
         await loadMessages();
+        await loadConversations();
     } catch (error) {
         contactError.textContent = error.message;
     }

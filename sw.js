@@ -7,7 +7,7 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("push", (event) => {
-    let data = { title: "Rosie", body: "You have a new message", url: "/messenger.html" };
+    let data = { title: "Roulette", body: "You have a new message", url: "/messenger.html" };
     try {
         if (event.data) data = { ...data, ...event.data.json() };
     } catch {

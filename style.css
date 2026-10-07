@@ -9,6 +9,7 @@ body {
 
 .topbar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 16px;
@@ -16,6 +17,25 @@ body {
     margin: 0 auto;
     padding: 28px 24px 8px;
 }
+
+#stopBtn {
+    flex: 1 0 100%;
+    width: 100%;
+    margin: 0;
+    padding: 16px 18px;
+    border: none;
+    border-radius: 14px;
+    background: #1c1c1c;
+    color: white;
+    font: inherit;
+    font-size: 1.15rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    cursor: pointer;
+    box-shadow: 0 8px 18px rgba(28, 28, 28, 0.12);
+}
+
+#stopBtn:hover { background: #2a2a2a; }
 
 h1 {
     margin: 0;

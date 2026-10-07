@@ -4,16 +4,16 @@
 
 body {
     margin: 0;
-    font-family: Arial, sans-serif;
-    background: #f4f1ec;
-    color: #2b2b2b;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: #efeee9;
+    color: #1c1c1c;
 }
 
 .app {
-    max-width: 760px;
+    max-width: 560px;
     margin: 0 auto;
     min-height: 100vh;
-    padding: 24px 16px 32px;
+    padding: 28px 18px 36px;
     display: flex;
     flex-direction: column;
 }
@@ -21,50 +21,48 @@ body {
 .top {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
-    gap: 8px 12px;
+    gap: 10px 12px;
+}
+
+.brand { min-width: 0; }
+
+.eyebrow {
+    margin: 0 0 4px;
+    color: #c45c12;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
 }
 
 .under { flex: 1 0 100%; }
 
+.under a {
+    color: #6b6862;
+    font-size: 0.92rem;
+    text-decoration: none;
+}
+
+.under a:hover { color: #c45c12; }
+
 h1 {
     margin: 0;
-    color: #e67e22;
+    color: #1c1c1c;
+    font-size: 1.7rem;
+    font-weight: 650;
+    letter-spacing: -0.03em;
     white-space: nowrap;
 }
 
-h2 { margin: 0 0 12px; font-size: 1.1rem; }
-
-.hint, .who { color: #666; }
-
-.hint a { color: #e67e22; }
-
-.links {
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: baseline;
-    gap: 14px;
-    white-space: nowrap;
+h2 {
+    margin: 0 0 14px;
+    font-size: 1.05rem;
+    letter-spacing: -0.02em;
 }
 
-.links a,
-button.quiet {
-    flex: 0 0 auto;
-}
-
-button.quiet {
-    background: none;
-    color: #e67e22;
-    margin: 0;
-    padding: 0;
-    font: inherit;
-}
-
-button.quiet:hover {
-    background: none;
-    text-decoration: underline;
-}
+.hint { color: #6b6862; }
 
 .who {
     display: flex;
@@ -75,59 +73,114 @@ button.quiet:hover {
     gap: 8px;
     max-width: 100%;
     margin-left: auto;
-    text-align: right;
 }
 
-.who button { padding: 8px 12px; }
+button {
+    background: #1c1c1c;
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 11px 16px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+button:hover { background: #333; }
+
+button.ghost,
+.who button {
+    background: white;
+    color: #1c1c1c;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 999px;
+    padding: 7px 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(28, 28, 28, 0.04);
+}
+
+button.ghost:hover,
+.who button:hover { background: #fafaf8; }
+
+button.quiet {
+    background: white;
+    color: #3d3a36;
+    border: 1px solid #e6e2dc;
+    border-radius: 999px;
+    margin: 0;
+    padding: 6px 12px;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    box-shadow: none;
+}
+
+button.quiet:hover {
+    background: #f7f5f2;
+    text-decoration: none;
+}
 
 #seeAllBtn {
-    margin-top: 16px;
+    margin-top: 18px;
     padding: 14px 18px;
     width: 100%;
-    font-size: 1.15rem;
-    font-weight: bold;
+    border-radius: 14px;
+    background: #1c1c1c;
+    color: white;
+    font-size: 1rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    box-shadow: 0 8px 18px rgba(28, 28, 28, 0.12);
 }
+
+#seeAllBtn:hover { background: #2a2a2a; }
 
 #auth {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 16px;
-    margin-top: 24px;
+    margin-top: 22px;
 }
 
 .card, #sendForm {
     background: white;
-    border-radius: 12px;
-    padding: 16px;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 18px;
+    padding: 18px;
+    box-shadow: 0 10px 28px rgba(28, 28, 28, 0.05);
+}
+
+.card button {
+    width: 100%;
+    margin-top: 4px;
 }
 
 label {
     display: block;
     margin-bottom: 12px;
-    font-size: 0.9rem;
+    color: #3d3a36;
+    font-size: 0.82rem;
+    font-weight: 650;
 }
 
-input {
+input, select {
     display: block;
     width: 100%;
     margin-top: 6px;
-    padding: 10px 12px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
+    padding: 11px 12px;
+    border: 1px solid #e4e0da;
+    border-radius: 10px;
+    background: #fafaf8;
+    color: #1c1c1c;
     font: inherit;
 }
 
-button {
-    background: #e67e22;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    padding: 10px 16px;
-    font: inherit;
-    cursor: pointer;
+input:focus, select:focus {
+    outline: 2px solid rgba(196, 92, 18, 0.28);
+    border-color: #c45c12;
+    background: white;
 }
-
-button:hover { background: #d35400; }
 
 .error {
     grid-column: 1 / -1;
@@ -137,21 +190,44 @@ button:hover { background: #d35400; }
 }
 
 #chat {
-    margin-top: 16px;
+    margin-top: 14px;
     display: flex;
     flex-direction: column;
     background: white;
-    border-radius: 12px;
-    padding: 12px;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 18px;
+    padding: 8px;
+    box-shadow: 0 10px 28px rgba(28, 28, 28, 0.05);
+}
+
+#chat > .hint {
+    margin: 10px 10px 4px;
+    color: #8a857c;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
 }
 
 #addForm {
     display: flex;
     gap: 8px;
-    margin-top: 12px;
+    align-items: center;
+    margin: 6px 6px 6px;
+    padding-top: 10px;
+    border-top: 1px solid #eee;
 }
 
-#addForm input { margin: 0; }
+#addForm input {
+    margin: 0;
+    background: #f6f5f2;
+}
+
+#addForm button {
+    flex: 0 0 auto;
+    padding: 11px 16px;
+    border-radius: 10px;
+}
 
 #contacts {
     list-style: none;
@@ -161,32 +237,85 @@ button:hover { background: #d35400; }
 
 #contacts button {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
     width: 100%;
-    margin-bottom: 6px;
-    background: #f4f1ec;
-    color: #2b2b2b;
+    margin: 0;
+    padding: 12px;
+    border-radius: 12px;
+    background: transparent;
+    color: #1c1c1c;
+    font-weight: 600;
+    text-align: left;
+    box-shadow: none;
 }
+
+.row-top {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    min-width: 0;
+}
+
+.row-top > strong {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.read-state {
+    flex: 0 0 auto;
+    color: #8a857c;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.read-state.unread {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #c45c12;
+    letter-spacing: 0;
+}
+
+#contacts button.has-unread strong { font-weight: 750; }
+
+#contacts button:hover { background: #f6f5f2; }
 
 #contacts button.active,
 #contacts button.active:hover {
-    background: #e67e22;
-    color: white;
+    background: #fff6ee;
+    color: #1c1c1c;
+    box-shadow: inset 3px 0 0 #c45c12;
 }
 
 #contacts .preview,
 #contacts .metrics {
     max-width: 100%;
-    color: #666;
+    color: #6b6862;
     font-size: 0.85rem;
+    font-weight: 500;
 }
 
 #contacts .metrics {
     display: flex;
-    gap: 16px;
-    margin-top: 6px;
+    align-items: baseline;
+    gap: 14px;
+    margin: 0;
+    flex: 0 1 auto;
 }
+
+#contacts .metric {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 5px;
+}
+
+#contacts .metric strong { font-size: 0.95rem; }
 
 .metric {
     display: flex;
@@ -196,18 +325,21 @@ button:hover { background: #d35400; }
 }
 
 .metric .label {
-    color: #888;
+    color: #8a857c;
     font-size: 0.68rem;
-    font-weight: bold;
-    letter-spacing: 0.06em;
+    font-weight: 700;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
 }
 
-.metric strong { font-size: 1rem; color: #2b2b2b; }
+.metric strong {
+    font-size: 0.98rem;
+    color: #1c1c1c;
+}
 
 #contacts button.active .preview,
 #contacts button.active .label,
-#contacts button.active .metric strong { color: white; }
+#contacts button.active .metric strong { color: #1c1c1c; }
 
 #chatPop {
     width: min(480px, calc(100% - 24px));
@@ -217,11 +349,11 @@ button:hover { background: #d35400; }
     overflow: hidden;
     background: white;
     border: none;
-    border-radius: 16px;
-    box-shadow: 0 16px 50px rgba(0, 0, 0, 0.28);
+    border-radius: 20px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
 }
 
-#chatPop::backdrop { background: rgba(20, 20, 20, 0.45); }
+#chatPop::backdrop { background: rgba(16, 16, 16, 0.46); }
 
 .pop {
     display: flex;
@@ -240,38 +372,38 @@ button:hover { background: #d35400; }
     background: white;
 }
 
-.pop-bar .hint { margin: 0; color: #2b2b2b; font-weight: bold; }
-
-#closePop {
-    border: 1px solid #e4e0da;
-    border-radius: 8px;
-    background: white;
-    color: #444;
-    padding: 6px 12px;
+.pop-bar .hint {
+    margin: 0;
+    color: #1c1c1c;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
 }
-
-#closePop:hover { background: #f7f5f2; }
 
 #messages {
     list-style: none;
     margin: 0;
-    padding: 16px;
-    background: #f7f5f2;
+    padding: 14px;
+    background: #f6f5f2;
     flex: 1;
     min-height: 140px;
     overflow-y: auto;
 }
 
-#messages li { margin-bottom: 12px; }
+#messages li { margin-bottom: 10px; }
 
 #messages .bubble {
     padding: 12px 14px;
-    border-radius: 12px;
+    border: 1px solid rgba(0, 0, 0, 0.04);
+    border-radius: 14px;
     background: white;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
-#messages li.mine .bubble { background: #fff8f2; }
+#messages li.mine .bubble {
+    background: white;
+    border-color: transparent;
+    box-shadow: inset 3px 0 0 #e7b089;
+}
 
 .bubble-top {
     display: flex;
@@ -282,11 +414,20 @@ button:hover { background: #d35400; }
 
 .bubble-top .name { flex: 1; min-width: 0; }
 
-.bubble-top .metric { flex: 0 1 auto; align-items: flex-end; margin-left: auto; max-width: 58%; }
+.bubble-top .metric {
+    flex: 0 1 auto;
+    align-items: flex-end;
+    margin-left: auto;
+    max-width: 58%;
+}
 
-.bubble-top .metric strong { font-size: 0.8rem; font-weight: normal; color: #666; }
+.bubble-top .metric strong {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #6b6862;
+}
 
-#messages .name { font-weight: bold; color: #e67e22; }
+#messages .name { font-weight: 700; color: #1c1c1c; }
 
 #messages .stats {
     display: grid;
@@ -294,18 +435,26 @@ button:hover { background: #d35400; }
     gap: 8px 16px;
     margin-top: 12px;
     padding-top: 10px;
-    border-top: 1px solid #eee;
+    border-top: 1px solid #f0ece6;
 }
 
 #messages time {
     margin-left: 8px;
-    color: #888;
+    color: #8a857c;
     font-size: 0.8rem;
 }
 
-#messages p { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; }
+#messages p {
+    margin: 6px 0 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.4;
+}
 
-.empty { color: #888; }
+.empty {
+    color: #8a857c;
+    padding: 18px 12px;
+}
 
 #sendForm {
     display: grid;
@@ -313,13 +462,26 @@ button:hover { background: #d35400; }
     gap: 8px;
     align-items: center;
     margin: 0;
+    border: none;
     border-radius: 0;
     border-top: 1px solid #eee;
+    box-shadow: none;
 }
 
-#sendForm input { margin: 0; }
+#sendForm input,
+#sendForm select {
+    margin: 0;
+    background: #fafaf8;
+}
 
 #messageInput { grid-column: 1 / -1; }
+
+#sendForm button {
+    background: #c45c12;
+    border-radius: 10px;
+}
+
+#sendForm button:hover { background: #a84e0f; }
 
 .time-field {
     display: flex;
@@ -334,13 +496,10 @@ button:hover { background: #d35400; }
 }
 
 #sendForm select {
-    margin: 0;
-    padding: 10px 8px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    background: white;
-    font: inherit;
+    padding: 11px 8px;
 }
+
+#chatError { padding: 0 16px 12px; }
 
 .choices {
     display: flex;
@@ -348,17 +507,22 @@ button:hover { background: #d35400; }
     margin-top: 12px;
 }
 
-.choices button { flex: 1; }
+.choices button { flex: 1; padding: 8px 12px; }
 
-.choices button { padding: 6px 12px; }
+.choices button:not(.reject) { background: #c45c12; }
 
-button.reject { background: #f4f1ec; color: #2b2b2b; }
+.choices button:not(.reject):hover { background: #a84e0f; }
+
+button.reject {
+    background: #f4f1ec;
+    color: #1c1c1c;
+}
 
 button.reject:hover { background: #e7e1d8; }
 
-.answer { margin: 6px 0 0; font-weight: bold; }
+.answer { margin: 8px 0 0; font-weight: 700; }
 
-.answer.waiting { color: #888; font-weight: normal; }
+.answer.waiting { color: #8a857c; font-weight: 500; }
 
 .answer.accepted { color: #1e7a46; }
 
@@ -367,6 +531,18 @@ button.reject:hover { background: #e7e1d8; }
 @media (max-width: 700px) {
     #auth { grid-template-columns: 1fr; }
     .who { max-width: 100%; }
-    #sendForm { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); }
+    #sendForm { grid-template-columns: 1fr; }
+    #messageInput,
+    #scoreInput,
+    .time-field,
     #sendForm button { grid-column: 1 / -1; }
+    .time-field input {
+        width: auto;
+        flex: 1 1 0;
+        min-width: 0;
+    }
+    .time-field select {
+        flex: 0 0 auto;
+        width: auto;
+    }
 }

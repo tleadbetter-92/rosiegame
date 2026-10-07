@@ -61,6 +61,10 @@ window.addEventListener("resize", () => {
 
 placeCenter();
 
+document.getElementById("stopBtn").addEventListener("click", () => {
+    fetch("/api/clear-chats", { method: "POST", credentials: "same-origin" }).catch(() => {});
+});
+
 const sequence = ["castle", "river", "bubble"];
 let step = 0;
 let sequenceTimer = null;
