@@ -50,7 +50,8 @@ const types = {
     ".webp": "image/webp",
     ".gif": "image/gif",
     ".ico": "image/x-icon",
-    ".json": "application/json; charset=utf-8"
+    ".json": "application/json; charset=utf-8",
+    ".wav": "audio/wav"
 };
 
 function send(res, status, body, type) {
