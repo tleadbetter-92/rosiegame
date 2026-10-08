@@ -116,8 +116,10 @@ function showGroup(conversation) {
     const members = document.getElementById("threadMembers");
     const tools = document.getElementById("groupTools");
     const leave = document.getElementById("leaveGroup");
+    const invite = document.getElementById("groupInvite");
     const isGroup = Boolean(conversation && conversation.group);
-    tools.hidden = !conversation;
+    invite.hidden = !conversation;
+    tools.hidden = !isGroup;
     leave.hidden = !isGroup;
     members.hidden = !isGroup;
     members.textContent = isGroup ? (conversation.members || []).join(", ") : "";

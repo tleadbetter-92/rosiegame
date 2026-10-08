@@ -69,18 +69,22 @@
                         <span class="close-word">Close</span>
                     </button>
                     <p id="threadTitle" class="hint">Chat</p>
+                    <form id="groupInvite" hidden>
+                        <input id="inviteUser" maxlength="20" placeholder="add user to chat" autocomplete="off">
+                        <button type="submit">Add</button>
+                    </form>
                 </div>
                 <p id="threadMembers" class="thread-members" hidden></p>
                 <div id="groupTools" class="group-tools" hidden>
-                    <form id="groupInvite">
-                        <input id="inviteUser" maxlength="20" placeholder="Add to chat" autocomplete="off">
-                        <button type="submit">Add</button>
-                    </form>
                     <button id="leaveGroup" class="quiet" type="button" hidden>Leave</button>
                 </div>
                 <ol id="messages"></ol>
                 <p id="typingLine" class="typing-line" hidden></p>
                 <form id="sendForm" hidden>
+                    <div class="compose-line">
+                        <textarea id="messageInput" maxlength="500" rows="3" placeholder="Message (optional)" autocomplete="off"></textarea>
+                        <button type="submit">Send</button>
+                    </div>
                     <div class="compose-extra">
                         <button id="photoBtn" class="ghost" type="button">Photo</button>
                         <img id="photoPreview" alt="" hidden>
@@ -92,10 +96,6 @@
                             <option value="mins">mins</option>
                             <option value="hours">hours</option>
                         </select>
-                    </div>
-                    <div class="compose-line">
-                        <textarea id="messageInput" maxlength="500" rows="3" placeholder="Message (optional)" autocomplete="off"></textarea>
-                        <button type="submit">Send</button>
                     </div>
                 </form>
                 <p id="chatError" class="error" role="alert"></p>
