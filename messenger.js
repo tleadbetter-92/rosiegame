@@ -99,13 +99,27 @@ function showAuth() {
     if (chatPop.open) chatPop.close();
     if (notesAsk.open) notesAsk.close();
     if (notesPop.open) notesPop.close();
+    if (document.getElementById("groupPop").open) document.getElementById("groupPop").close();
     if (timer) {
         clearInterval(timer);
         timer = null;
     }
 }
 
-function openConversation(id, username) {
+let conversationList = [];
+
+function showGroup(conversation) {
+    const members = document.getElementById("threadMembers");
+    const tools = document.getElementById("groupTools");
+    const leave = document.getElementById("leaveGroup");
+    const isGroup = Boolean(conversation && conversation.group);
+    tools.hidden = !conversation;
+    leave.hidden = !isGroup;
+    members.hidden = !isGroup;
+    members.textContent = isGroup ? (conversation.members || []).join(", ") : "";
+}
+
+function openConversation(id, username, extra) {
     if (selectedId !== id) {
         selectedId = id;
         selectedName = username;
@@ -113,6 +127,7 @@ function openConversation(id, username) {
         messagesEl.replaceChildren();
     }
     threadTitle.textContent = username;
+    showGroup(extra || conversationList.find((conversation) => conversation.id === id));
     sendForm.hidden = false;
     if (!chatPop.open) chatPop.showModal();
     for (const button of contactsEl.querySelectorAll("button")) {
@@ -125,7 +140,7 @@ function openConversation(id, username) {
 }
 
 function renderContacts(conversations) {
-    const key = conversations.map((conversation) => conversation.id + ":" + conversation.lastScore + ":" + conversation.lastTime + ":" + conversation.lastReply + ":" + conversation.lastUsername + ":" + conversation.readState).join("|");
+    const key = conversations.map((conversation) => conversation.id + ":" + conversation.lastScore + ":" + conversation.lastTime + ":" + conversation.lastReply + ":" + conversation.lastUsername + ":" + conversation.readState + ":" + (conversation.group ? "1" : "0") + ":" + (conversation.members || []).join(",")).join("|");
     if (key !== contactKey) {
         contactKey = key;
         contactsEl.replaceChildren();
@@ -166,8 +181,14 @@ function renderContacts(conversations) {
                 top.append(state);
             }
             button.append(top);
+            if (conversation.group) {
+                const sub = document.createElement("span");
+                sub.className = "sub";
+                sub.textContent = (conversation.members || []).filter((name) => name !== me).join(", ");
+                button.append(sub);
+            }
             if (conversation.readState === "unread") button.classList.add("has-unread");
-            button.addEventListener("click", () => openConversation(conversation.id, conversation.username));
+            button.addEventListener("click", () => openConversation(conversation.id, conversation.username, conversation));
             item.appendChild(button);
             contactsEl.appendChild(item);
         }
@@ -296,8 +317,10 @@ function renderMessages(messages) {
 async function loadConversations() {
     const data = await api("/api/conversations");
     const conversations = data.conversations || [];
+    conversationList = conversations;
     renderContacts(conversations);
     const selected = conversations.find((conversation) => conversation.id === selectedId);
+    if (selected) showGroup(selected);
     if (selected) selectedName = selected.username;
     return conversations;
 }
@@ -387,9 +410,124 @@ document.getElementById("addForm").addEventListener("submit", async (event) => {
         document.getElementById("contactInput").value = "";
         contactKey = "";
         await loadConversations();
-        openConversation(data.conversation.id, data.conversation.username);
+        openConversation(data.conversation.id, data.conversation.username, data.conversation);
     } catch (error) {
         contactError.textContent = error.message;
+    }
+});
+
+let groupPeople = [];
+
+function renderGroupPeople() {
+    const box = document.getElementById("groupMembers");
+    box.replaceChildren();
+    groupPeople.forEach((name, index) => {
+        const chip = document.createElement("span");
+        chip.className = "member-chip";
+        chip.append(document.createTextNode(name));
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.textContent = "×";
+        remove.setAttribute("aria-label", "Remove " + name);
+        remove.addEventListener("click", () => {
+            groupPeople.splice(index, 1);
+            renderGroupPeople();
+        });
+        chip.append(remove);
+        box.append(chip);
+    });
+}
+
+document.getElementById("newGroup").addEventListener("click", () => {
+    groupPeople = [];
+    renderGroupPeople();
+    document.getElementById("groupName").value = "";
+    document.getElementById("groupUser").value = "";
+    document.getElementById("groupError").textContent = "";
+    document.getElementById("groupPop").showModal();
+});
+
+document.getElementById("closeGroup").addEventListener("click", () => {
+    document.getElementById("groupPop").close();
+});
+
+document.getElementById("groupPop").addEventListener("click", (event) => {
+    if (event.target.id === "groupPop") document.getElementById("groupPop").close();
+});
+
+document.getElementById("groupUser").addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    document.getElementById("groupAdd").click();
+});
+
+document.getElementById("groupAdd").addEventListener("click", () => {
+    const input = document.getElementById("groupUser");
+    const name = input.value.trim();
+    document.getElementById("groupError").textContent = "";
+    if (!name) return;
+    if (groupPeople.some((item) => item.toLowerCase() === name.toLowerCase())) {
+        input.value = "";
+        return;
+    }
+    groupPeople.push(name);
+    input.value = "";
+    renderGroupPeople();
+});
+
+document.getElementById("groupForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const error = document.getElementById("groupError");
+    error.textContent = "";
+    try {
+        const data = await api("/api/conversations", {
+            method: "POST",
+            body: JSON.stringify({
+                name: document.getElementById("groupName").value,
+                members: groupPeople
+            })
+        });
+        document.getElementById("groupPop").close();
+        contactKey = "";
+        await loadConversations();
+        openConversation(data.conversation.id, data.conversation.username, data.conversation);
+    } catch (err) {
+        error.textContent = err.message;
+    }
+});
+
+document.getElementById("groupInvite").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const input = document.getElementById("inviteUser");
+    chatError.textContent = "";
+    try {
+        const data = await api("/api/conversations", {
+            method: "POST",
+            body: JSON.stringify({ conversationId: selectedId, username: input.value })
+        });
+        input.value = "";
+        contactKey = "";
+        showGroup(data.conversation);
+        threadTitle.textContent = data.conversation.username;
+        await loadConversations();
+    } catch (err) {
+        chatError.textContent = err.message;
+    }
+});
+
+document.getElementById("leaveGroup").addEventListener("click", async () => {
+    if (!selectedId) return;
+    chatError.textContent = "";
+    try {
+        await api("/api/conversations", {
+            method: "DELETE",
+            body: JSON.stringify({ conversationId: selectedId })
+        });
+        contactKey = "";
+        chatPop.close();
+        await loadConversations();
+    } catch (err) {
+        chatError.textContent = err.message;
     }
 });
 
@@ -668,7 +806,7 @@ async function openChatFromId(chatId) {
     if (!chatId) return;
     const conversations = await loadConversations();
     const found = conversations.find((conversation) => conversation.id === chatId);
-    if (found) openConversation(found.id, found.username);
+    if (found) openConversation(found.id, found.username, found);
 }
 
 document.getElementById("closePop").addEventListener("click", () => {
@@ -939,6 +1077,7 @@ chatPop.addEventListener("close", () => {
     selectedId = "";
     selectedName = "";
     lastKey = null;
+    showGroup(null);
     sendForm.hidden = true;
     messagesEl.replaceChildren();
     for (const button of contactsEl.querySelectorAll("button")) {

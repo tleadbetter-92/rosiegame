@@ -58,17 +58,29 @@
                 <input id="contactInput" maxlength="20" placeholder="Username" autocomplete="off" tabindex="-1">
                 <button type="submit">Add</button>
             </form>
+            <button id="newGroup" type="button">New group</button>
             <p id="contactError" class="error" role="alert"></p>
         </section>
         <dialog id="chatPop">
             <div class="pop">
                 <div class="pop-bar">
+                    <button id="closePop" class="quiet" type="button" aria-label="Close">
+                        <span class="back-mark" aria-hidden="true"></span>
+                        <span class="close-word">Close</span>
+                    </button>
                     <p id="threadTitle" class="hint">Chat</p>
-                    <button id="closePop" class="quiet" type="button">Close</button>
+                </div>
+                <p id="threadMembers" class="thread-members" hidden></p>
+                <div id="groupTools" class="group-tools" hidden>
+                    <form id="groupInvite">
+                        <input id="inviteUser" maxlength="20" placeholder="Add to chat" autocomplete="off">
+                        <button type="submit">Add</button>
+                    </form>
+                    <button id="leaveGroup" class="quiet" type="button" hidden>Leave</button>
                 </div>
                 <ol id="messages"></ol>
                 <form id="sendForm" hidden>
-                    <input id="messageInput" maxlength="500" placeholder="Message (optional)" autocomplete="off">
+                    <textarea id="messageInput" maxlength="500" rows="3" placeholder="Message (optional)" autocomplete="off"></textarea>
                     <div class="photo-row">
                         <button id="photoBtn" class="ghost" type="button">Photo</button>
                         <img id="photoPreview" alt="" hidden>
@@ -86,6 +98,24 @@
                     <button type="submit">Send</button>
                 </form>
                 <p id="chatError" class="error" role="alert"></p>
+            </div>
+        </dialog>
+        <dialog id="groupPop">
+            <div class="pop">
+                <div class="pop-bar">
+                    <p class="hint">New group</p>
+                    <button id="closeGroup" class="quiet" type="button">Close</button>
+                </div>
+                <form id="groupForm" class="group-body">
+                    <input id="groupName" maxlength="40" placeholder="Group name" autocomplete="off" required>
+                    <div id="groupMembers"></div>
+                    <div class="group-add">
+                        <input id="groupUser" maxlength="20" placeholder="Username" autocomplete="off">
+                        <button id="groupAdd" type="button">Add</button>
+                    </div>
+                    <p id="groupError" class="error" role="alert"></p>
+                    <button type="submit">Create group</button>
+                </form>
             </div>
         </dialog>
         <dialog id="notesAsk">

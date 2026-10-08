@@ -163,10 +163,11 @@ module.exports = async function handler(req, res) {
                 { _id: conversation._id },
                 { $set: { updatedAt: createdAt } }
             );
-            const otherId = conversation.participants.find((id) => String(id) !== String(user._id));
             const chatId = String(conversation._id);
-            const unread = await unreadChallenges(db, otherId);
-            if (otherId && unread <= 7) {
+            const others = (conversation.participants || []).filter((id) => String(id) !== String(user._id));
+            for (const otherId of others) {
+                const unread = await unreadChallenges(db, otherId);
+                if (unread > 7) continue;
                 try {
                     await notifyUser(otherId, {
                         title: "new challenge for you to beat",

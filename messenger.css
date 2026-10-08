@@ -232,6 +232,77 @@ input:focus, select:focus {
     border-radius: 10px;
 }
 
+#newGroup {
+    display: block;
+    width: calc(100% - 12px);
+    margin: 8px 6px 0;
+    background: white;
+    color: #1c1c1c;
+    border: 1px solid #e4e0da;
+}
+
+#newGroup:hover { background: #f7f5f2; }
+
+.group-body { padding: 16px; }
+
+.group-add {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.group-add input { margin: 0; }
+
+#groupMembers { margin: 12px 0; }
+
+.member-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 8px 8px 0;
+    padding: 4px 4px 4px 12px;
+    border: 1px solid #e4e0da;
+    border-radius: 999px;
+    background: white;
+}
+
+.member-chip button {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: #1c1c1c;
+}
+
+.thread-members {
+    margin: 0;
+    padding: 0 16px 8px;
+    background: white;
+    color: #6b6862;
+    font-size: 0.82rem;
+}
+
+.group-tools {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 0 12px 10px;
+    background: white;
+    border-bottom: 1px solid #eee;
+}
+
+.group-tools form {
+    display: flex;
+    flex: 1;
+    gap: 8px;
+    min-width: 0;
+}
+
+.group-tools input { margin: 0; }
+
+#leaveGroup { flex: 0 0 auto; }
+
 #contacts {
     list-style: none;
     margin: 0;
@@ -240,7 +311,8 @@ input:focus, select:focus {
 
 #contacts button {
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    align-items: stretch;
     width: 100%;
     margin: 0;
     padding: 12px;
@@ -301,6 +373,12 @@ input:focus, select:focus {
     background: #fff6ee;
     color: #1c1c1c;
     box-shadow: inset 3px 0 0 #c45c12;
+}
+
+#contacts .sub {
+    color: #8a857c;
+    font-size: 0.8rem;
+    font-weight: 500;
 }
 
 #contacts .preview,
@@ -385,7 +463,7 @@ input:focus, select:focus {
 
 #cancelNotes:hover { background: #f7f5f2; }
 
-#chatPop, #notesPop {
+#chatPop, #notesPop, #groupPop {
     width: min(480px, calc(100% - 24px));
     max-height: min(86vh, 720px);
     margin: auto;
@@ -397,7 +475,7 @@ input:focus, select:focus {
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
 }
 
-#chatPop::backdrop, #notesPop::backdrop { background: rgba(16, 16, 16, 0.46); }
+#chatPop::backdrop, #notesPop::backdrop, #groupPop::backdrop { background: rgba(16, 16, 16, 0.46); }
 
 .pop {
     display: flex;
@@ -423,6 +501,12 @@ input:focus, select:focus {
     font-weight: 700;
     letter-spacing: -0.02em;
 }
+
+#chatPop #threadTitle { order: 1; margin-right: auto; }
+
+#chatPop #closePop { order: 2; }
+
+.back-mark { display: none; }
 
 #messages {
     list-style: none;
@@ -542,12 +626,20 @@ input:focus, select:focus {
 }
 
 #sendForm input,
-#sendForm select {
+#sendForm select,
+#sendForm textarea {
     margin: 0;
     background: #fafaf8;
 }
 
-#messageInput { grid-column: 1 / -1; }
+#messageInput {
+    grid-column: 1 / -1;
+    min-height: 4.8em;
+    max-height: 7.5em;
+    resize: none;
+    line-height: 1.4;
+    overflow-y: auto;
+}
 
 #sendForm button {
     background: #c45c12;
@@ -703,6 +795,55 @@ button.reject:hover { background: #e7e1d8; }
 @media (max-width: 700px) {
     #auth { grid-template-columns: 1fr; }
     .who { max-width: 100%; }
+    #chatPop {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100dvh;
+        max-width: none;
+        max-height: none;
+        margin: 0;
+        border-radius: 0;
+        box-shadow: none;
+    }
+    #chatPop .pop {
+        height: 100%;
+        max-height: none;
+        min-height: 0;
+    }
+    #chatPop .pop-bar {
+        padding: calc(6px + env(safe-area-inset-top)) 12px 6px 4px;
+    }
+    #chatPop #closePop {
+        order: 0;
+        width: 44px;
+        height: 44px;
+        padding: 0;
+        border: none;
+        border-radius: 50%;
+        background: transparent;
+    }
+    #chatPop #closePop:hover { background: #f4f1ec; }
+    #chatPop .back-mark {
+        display: block;
+        width: 12px;
+        height: 12px;
+        margin-left: 6px;
+        border-left: 2.5px solid #1c1c1c;
+        border-bottom: 2.5px solid #1c1c1c;
+        transform: rotate(45deg);
+    }
+    #chatPop .close-word { display: none; }
+    #chatPop #threadTitle {
+        font-size: 1.05rem;
+    }
+    #chatPop #messages {
+        min-height: 0;
+    }
+    #chatPop #sendForm {
+        padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
+        border-radius: 0;
+    }
     #sendForm { grid-template-columns: 1fr; }
     #messageInput,
     #scoreInput,
