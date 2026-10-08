@@ -3,14 +3,19 @@ history.replaceState(null, "", "messenger.html");
 
 let leftPage = false;
 let stayForNotifications = false;
+let watchHome = false;
 document.addEventListener("visibilitychange", () => {
-    if (stayForNotifications) return;
+    if (stayForNotifications || !watchHome) return;
     if (document.visibilityState === "hidden") leftPage = true;
     if (document.visibilityState === "visible" && leftPage) location.replace("index.html");
 });
 window.addEventListener("pageshow", (event) => {
-    if (event.persisted) location.replace("index.html");
+    if (event.persisted && watchHome) location.replace("index.html");
 });
+setTimeout(() => {
+    watchHome = true;
+    leftPage = false;
+}, 1500);
 
 const auth = document.getElementById("auth");
 const chat = document.getElementById("chat");

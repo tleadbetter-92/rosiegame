@@ -65,12 +65,15 @@ document.getElementById("stopBtn").addEventListener("click", () => {
     fetch("/api/clear-chats", { method: "POST", credentials: "same-origin" }).catch(() => {});
 });
 
-const sequence = ["moon", "castle", "castle", "moon"];
-let step = 0;
+const sequences = [
+    ["castle", "river", "bubble"],
+    ["moon", "castle", "castle", "moon"]
+];
+let progress = sequences.map(() => 0);
 let sequenceTimer = null;
 
 function resetSequence() {
-    step = 0;
+    progress = sequences.map(() => 0);
     clearTimeout(sequenceTimer);
     sequenceTimer = null;
 }
@@ -83,20 +86,19 @@ function armSequence() {
 document.querySelectorAll(".tile").forEach((tile) => {
     tile.addEventListener("click", () => {
         const code = tile.dataset.code || "";
-        if (code !== sequence[step]) {
-            resetSequence();
-            if (code === sequence[0]) {
-                step = 1;
-                armSequence();
-            }
-            return;
-        }
-        step += 1;
-        if (step === sequence.length) {
+        let opened = false;
+        progress = progress.map((step, index) => {
+            const sequence = sequences[index];
+            const next = code === sequence[step] ? step + 1 : (code === sequence[0] ? 1 : 0);
+            if (next === sequence.length) opened = true;
+            return next === sequence.length ? 0 : next;
+        });
+        if (opened) {
             window.location.href = "messenger.html?enter=1";
             return;
         }
-        armSequence();
+        if (progress.some((step) => step > 0)) armSequence();
+        else resetSequence();
     });
 });
 
