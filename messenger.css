@@ -581,17 +581,19 @@ input:focus, select:focus {
 
 #messages p.receipt {
     width: fit-content;
-    margin: 4px 0 0 auto;
-    font-size: 0.8rem;
-    line-height: 1.2;
-    color: #6b6862;
+    margin: 6px 2px 0 auto;
+    font-size: 0.95rem;
+    font-weight: 650;
+    line-height: 1.3;
+    color: #3d3a36;
 }
 
 .typing-line {
     margin: 0;
-    padding: 6px 16px 0;
-    font-size: 0.85rem;
-    color: #6b6862;
+    padding: 8px 16px 2px;
+    font-size: 1rem;
+    font-weight: 650;
+    color: #3d3a36;
 }
 
 .chat-photo {
@@ -603,17 +605,40 @@ input:focus, select:focus {
     border-radius: 10px;
 }
 
-.photo-row {
-    grid-column: 1 / -1;
+.compose-extra,
+.compose-line {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
+    min-width: 0;
 }
 
-.photo-row .ghost {
-    background: white;
-    color: #1c1c1c;
-    border: 1px solid #e4e0da;
+.compose-line { align-items: flex-end; }
+
+.compose-extra input,
+.compose-extra select,
+.compose-line textarea {
+    width: auto;
+    min-width: 0;
+}
+
+#scoreInput { flex: 1 1 0; }
+
+#timeInput {
+    flex: 0 0 4.4rem;
+    width: 4.4rem;
+}
+
+#timeUnit {
+    flex: 0 0 auto;
+    width: auto;
+    padding: 11px 6px;
+}
+
+#photoBtn,
+#photoClear {
+    flex: 0 0 auto;
+    padding: 11px 10px;
 }
 
 #photoPreview {
@@ -629,10 +654,9 @@ input:focus, select:focus {
 }
 
 #sendForm {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    display: flex;
+    flex-direction: column;
     gap: 8px;
-    align-items: center;
     margin: 0;
     border: none;
     border-radius: 0;
@@ -648,7 +672,7 @@ input:focus, select:focus {
 }
 
 #messageInput {
-    grid-column: 1 / -1;
+    flex: 1 1 auto;
     min-height: 4.8em;
     max-height: 7.5em;
     resize: none;
@@ -656,34 +680,23 @@ input:focus, select:focus {
     overflow-y: auto;
 }
 
-#sendForm button {
+#sendForm button[type="submit"] {
+    flex: 0 0 auto;
+    align-self: flex-end;
     background: #c45c12;
-    border-radius: 10px;
+    border-radius: 12px;
+    padding: 12px 14px;
 }
 
-#sendForm button:hover { background: #a84e0f; }
+#sendForm button[type="submit"]:hover { background: #a84e0f; }
 
-#sendForm .photo-row button,
-#sendForm .photo-row button:hover {
+#photoBtn,
+#photoClear,
+#photoBtn:hover,
+#photoClear:hover {
     background: white;
     color: #1c1c1c;
     border: 1px solid #e4e0da;
-}
-
-.time-field {
-    display: flex;
-    gap: 8px;
-    min-width: 0;
-}
-
-.time-field input {
-    width: 4.5rem;
-    flex: 1 1 4.5rem;
-    min-width: 3.5rem;
-}
-
-#sendForm select {
-    padding: 11px 8px;
 }
 
 #chatError { padding: 0 16px 12px; }
@@ -858,20 +871,5 @@ button.reject:hover { background: #e7e1d8; }
     #chatPop #sendForm {
         padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
         border-radius: 0;
-    }
-    #sendForm { grid-template-columns: 1fr; }
-    #messageInput,
-    #scoreInput,
-    .time-field,
-    #sendForm button { grid-column: 1 / -1; }
-    #sendForm .photo-row button { grid-column: auto; }
-    .time-field input {
-        width: auto;
-        flex: 1 1 0;
-        min-width: 0;
-    }
-    .time-field select {
-        flex: 0 0 auto;
-        width: auto;
     }
 }
