@@ -1,19 +1,23 @@
 const cashSound = new Audio("/chink.wav");
 cashSound.preload = "auto";
+cashSound.muted = true;
 
 function playCash() {
+    cashSound.muted = false;
+    cashSound.volume = 1;
     cashSound.currentTime = 0;
     cashSound.play().catch(() => {});
 }
 
 document.addEventListener("pointerdown", () => {
-    cashSound.volume = 0;
+    const muted = cashSound.muted;
+    cashSound.muted = true;
     cashSound.play().then(() => {
         cashSound.pause();
         cashSound.currentTime = 0;
-        cashSound.volume = 1;
+        cashSound.muted = muted;
     }).catch(() => {
-        cashSound.volume = 1;
+        cashSound.muted = muted;
     });
 }, { once: true });
 

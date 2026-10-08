@@ -26,7 +26,8 @@ self.addEventListener("push", (event) => {
     event.waitUntil((async () => {
         const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
         const openHere = windows.filter(siteIsOpen);
-        if (openHere.length) {
+        const newMessage = Boolean(data.chat);
+        if (newMessage && openHere.length) {
             await Promise.all(openHere.map((client) => client.postMessage({ cash: true })));
         }
         await self.registration.showNotification("new challenge for you to beat", {
@@ -34,7 +35,7 @@ self.addEventListener("push", (event) => {
             icon: "/icon-192.png",
             badge: "/icon-192.png",
             tag: "rosie-challenge-" + Date.now(),
-            silent: openHere.length > 0,
+            silent: !newMessage || openHere.length > 0,
             data: {
                 url: data.url || "/messenger.html",
                 chat: data.chat || ""

@@ -67,7 +67,8 @@ document.getElementById("stopBtn").addEventListener("click", () => {
 
 const sequences = [
     ["castle", "river", "bubble"],
-    ["moon", "castle", "castle", "moon"]
+    ["moon", "castle", "castle", "moon"],
+    ["moon", "moon", "moon"]
 ];
 let progress = sequences.map(() => 0);
 let sequenceTimer = null;
