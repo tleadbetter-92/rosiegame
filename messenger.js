@@ -16,6 +16,7 @@ const auth = document.getElementById("auth");
 const chat = document.getElementById("chat");
 const logoutBtn = document.getElementById("logoutBtn");
 const notesBtn = document.getElementById("notesBtn");
+const notesAsk = document.getElementById("notesAsk");
 const notesPop = document.getElementById("notesPop");
 const seeAllBtn = document.getElementById("seeAllBtn");
 const notifyBtn = document.getElementById("notifyBtn");
@@ -91,6 +92,7 @@ function showAuth() {
     contactsEl.replaceChildren();
     sendForm.hidden = true;
     if (chatPop.open) chatPop.close();
+    if (notesAsk.open) notesAsk.close();
     if (notesPop.open) notesPop.close();
     if (timer) {
         clearInterval(timer);
@@ -205,7 +207,7 @@ function metric(label, value) {
 }
 
 function renderMessages(messages) {
-    const key = messages.map((message) => message.id + ":" + message.reply).join(",");
+    const key = messages.map((message) => message.id + ":" + message.reply + ":" + (message.imageId || "")).join(",");
     if (key === lastKey) return;
     const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 40;
     lastKey = key;
@@ -237,6 +239,13 @@ function renderMessages(messages) {
             const text = document.createElement("p");
             text.textContent = message.text;
             bubble.append(text);
+        }
+        if (message.imageId) {
+            const photo = document.createElement("img");
+            photo.className = "chat-photo";
+            photo.alt = "Photo";
+            photo.src = "/api/image?id=" + encodeURIComponent(message.imageId);
+            bubble.append(photo);
         }
         if (message.score || message.time) {
             const stats = document.createElement("div");
@@ -379,6 +388,75 @@ document.getElementById("addForm").addEventListener("submit", async (event) => {
     }
 });
 
+let pendingPhoto = "";
+
+function clearPhoto() {
+    pendingPhoto = "";
+    const input = document.getElementById("photoInput");
+    const preview = document.getElementById("photoPreview");
+    input.value = "";
+    preview.removeAttribute("src");
+    preview.hidden = true;
+    document.getElementById("photoClear").hidden = true;
+}
+
+function fitPhoto(file) {
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+            const max = 1200;
+            const scale = Math.min(1, max / Math.max(img.width, img.height));
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.max(1, Math.round(img.width * scale));
+            canvas.height = Math.max(1, Math.round(img.height * scale));
+            canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+            URL.revokeObjectURL(url);
+            canvas.toBlob((blob) => {
+                if (!blob) reject(new Error("That photo could not be added."));
+                else resolve(blob);
+            }, "image/jpeg", 0.72);
+        };
+        img.onerror = () => {
+            URL.revokeObjectURL(url);
+            reject(new Error("That photo could not be added."));
+        };
+        img.src = url;
+    });
+}
+
+function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(",")[1]);
+        reader.onerror = () => reject(new Error("That photo could not be added."));
+        reader.readAsDataURL(blob);
+    });
+}
+
+document.getElementById("photoBtn").addEventListener("click", () => {
+    document.getElementById("photoInput").click();
+});
+
+document.getElementById("photoClear").addEventListener("click", clearPhoto);
+
+document.getElementById("photoInput").addEventListener("change", async () => {
+    const file = document.getElementById("photoInput").files[0];
+    if (!file) return;
+    chatError.textContent = "";
+    try {
+        const blob = await fitPhoto(file);
+        pendingPhoto = await blobToBase64(blob);
+        const preview = document.getElementById("photoPreview");
+        preview.src = "data:image/jpeg;base64," + pendingPhoto;
+        preview.hidden = false;
+        document.getElementById("photoClear").hidden = false;
+    } catch (error) {
+        clearPhoto();
+        chatError.textContent = error.message;
+    }
+});
+
 sendForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     chatError.textContent = "";
@@ -389,11 +467,19 @@ sendForm.addEventListener("submit", async (event) => {
     try {
         await api("/api/messages", {
             method: "POST",
-            body: JSON.stringify({ conversationId: selectedId, text, score, time, unit })
+            body: JSON.stringify({
+                conversationId: selectedId,
+                text,
+                score,
+                time,
+                unit,
+                image: pendingPhoto
+            })
         });
         messageInput.value = "";
         document.getElementById("scoreInput").value = "";
         document.getElementById("timeInput").value = "";
+        clearPhoto();
         lastKey = "";
         contactKey = "";
         await loadMessages();
@@ -585,7 +671,11 @@ document.getElementById("closePop").addEventListener("click", () => {
 });
 
 let noteRows = [];
+let noteStart = "";
+let noteTaken = [];
 let noteTimer = null;
+let noteSaveId = 0;
+let noteWrite = Promise.resolve();
 
 function noteTotal() {
     const total = noteRows.reduce((sum, row) => {
@@ -644,17 +734,85 @@ function renderNoteRows() {
     });
 }
 
+function amountValue(value) {
+    const number = Number(String(value).replace(/,/g, ""));
+    return Number.isFinite(number) ? number : 0;
+}
+
+function noteLeft() {
+    const left = noteTaken.reduce((sum, amount) => sum - amountValue(amount), amountValue(noteStart));
+    document.getElementById("noteLeft").textContent = String(Math.round(left * 100) / 100);
+}
+
+function showTakeTable(show) {
+    document.getElementById("takeTable").hidden = !show;
+    document.getElementById("toggleTake").textContent = show ? "Remove take away" : "Take away from a number";
+}
+
+function renderTakeRows(focusIndex) {
+    const box = document.getElementById("takeRows");
+    box.replaceChildren();
+    noteTaken.forEach((amount, index) => {
+        const line = document.createElement("div");
+        line.className = "take-row";
+        const input = document.createElement("input");
+        input.type = "text";
+        input.inputMode = "decimal";
+        input.maxLength = 20;
+        input.placeholder = "0";
+        input.setAttribute("aria-label", "Amount to take away");
+        input.value = amount;
+        input.addEventListener("input", () => {
+            noteTaken[index] = input.value;
+            noteLeft();
+            saveNotes();
+        });
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.textContent = "×";
+        remove.setAttribute("aria-label", "Remove number");
+        remove.addEventListener("click", () => {
+            noteTaken.splice(index, 1);
+            renderTakeRows();
+            noteLeft();
+            saveNotes();
+        });
+        line.append(input, remove);
+        box.append(line);
+        if (focusIndex === index) input.focus();
+    });
+}
+
+function clearNoteForm() {
+    noteRows = [];
+    noteStart = "";
+    noteTaken = [];
+    document.getElementById("noteText").value = "";
+    document.getElementById("noteStart").value = "";
+    document.getElementById("noteRows").replaceChildren();
+    document.getElementById("takeRows").replaceChildren();
+    showNoteTable(false);
+    showTakeTable(false);
+    noteTotal();
+    noteLeft();
+}
+
 function saveNotes() {
     clearTimeout(noteTimer);
+    const saveId = ++noteSaveId;
     noteTimer = setTimeout(() => {
+        if (saveId !== noteSaveId) return;
         const tableHidden = document.getElementById("noteTable").hidden;
-        api("/api/notes", {
+        const takeHidden = document.getElementById("takeTable").hidden;
+        noteWrite = noteWrite.catch(() => {}).then(() => api("/api/notes", {
             method: "PUT",
             body: JSON.stringify({
                 text: document.getElementById("noteText").value,
-                rows: tableHidden ? [] : noteRows
+                rows: tableHidden ? [] : noteRows,
+                start: takeHidden ? "" : noteStart,
+                taken: takeHidden ? [] : noteTaken
             })
-        }).catch(() => {});
+        })).catch(() => {});
     }, 400);
 }
 
@@ -671,11 +829,42 @@ async function loadNotes() {
     } else {
         showNoteTable(false);
     }
+    noteStart = data.start || "";
+    noteTaken = (data.taken || []).map((amount) => amount || "");
+    document.getElementById("noteStart").value = noteStart;
+    if (noteStart || noteTaken.length) {
+        showTakeTable(true);
+        renderTakeRows();
+    } else {
+        showTakeTable(false);
+    }
     noteTotal();
+    noteLeft();
 }
 
 notesBtn.addEventListener("click", () => {
+    if (!notesAsk.open) notesAsk.showModal();
+});
+
+document.getElementById("seeNotes").addEventListener("click", async () => {
+    notesAsk.close();
+    noteSaveId += 1;
+    clearTimeout(noteTimer);
+    try {
+        await noteWrite.catch(() => {});
+        await api("/api/notes", { method: "DELETE" });
+        clearNoteForm();
+        if (notesPop.open) notesPop.close();
+    } catch (error) {}
+});
+
+document.getElementById("cancelNotes").addEventListener("click", () => {
+    notesAsk.close();
     if (!notesPop.open) notesPop.showModal();
+});
+
+notesAsk.addEventListener("click", (event) => {
+    if (event.target === notesAsk) notesAsk.close();
 });
 
 document.getElementById("closeNotes").addEventListener("click", () => {
@@ -705,6 +894,35 @@ document.getElementById("toggleTable").addEventListener("click", () => {
 document.getElementById("addNoteRow").addEventListener("click", () => {
     noteRows.push({ text: "", amount: "" });
     renderNoteRows();
+    saveNotes();
+});
+
+document.getElementById("noteStart").addEventListener("input", () => {
+    noteStart = document.getElementById("noteStart").value;
+    noteLeft();
+    saveNotes();
+});
+
+document.getElementById("toggleTake").addEventListener("click", () => {
+    const hidden = document.getElementById("takeTable").hidden;
+    if (hidden) {
+        if (!noteTaken.length) noteTaken.push("");
+        showTakeTable(true);
+        renderTakeRows();
+        document.getElementById("noteStart").focus();
+    } else {
+        noteStart = "";
+        noteTaken = [];
+        document.getElementById("noteStart").value = "";
+        showTakeTable(false);
+    }
+    noteLeft();
+    saveNotes();
+});
+
+document.getElementById("addTakeRow").addEventListener("click", () => {
+    noteTaken.push("");
+    renderTakeRows(noteTaken.length - 1);
     saveNotes();
 });
 

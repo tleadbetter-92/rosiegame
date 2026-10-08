@@ -31,7 +31,9 @@ const routes = {
     "/api/clear-chats": require("./api/clear-chats"),
     "/api/push-key": require("./api/push-key"),
     "/api/push-subscribe": require("./api/push-subscribe"),
-    "/api/notes": require("./api/notes")
+    "/api/notes": require("./api/notes"),
+    "/api/image": require("./api/image"),
+    "/api/campaign": require("./api/campaign")
 };
 
 const root = __dirname;
@@ -62,7 +64,7 @@ function readBody(req) {
         let size = 0;
         req.on("data", (chunk) => {
             size += chunk.length;
-            if (size > 1_000_000) {
+            if (size > 2_000_000) {
                 reject(new Error("Body too large"));
                 req.destroy();
                 return;
@@ -101,6 +103,11 @@ function callHandler(handler, req, res, body) {
             headers["Content-Type"] = "application/json; charset=utf-8";
             res.writeHead(statusCode, headers);
             res.end(JSON.stringify(obj));
+        },
+        send(body) {
+            if (!headers["Content-Type"]) headers["Content-Type"] = "application/octet-stream";
+            res.writeHead(statusCode, headers);
+            res.end(body);
         }
     };
     Promise.resolve(handler(req, wrapped)).catch((error) => {

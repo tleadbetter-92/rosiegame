@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campaign</title>
+    <link rel="stylesheet" href="campaign.css">
+</head>
+<body>
+    <header>
+        <a href="village.html">Village</a>
+        <div>
+            <p class="eyebrow">Strategy</p>
+            <h1>Campaign</h1>
+        </div>
+        <p id="clock">Next turn in —</p>
+    </header>
+    <p class="lead">Four houses play this war. Each turn, each house recruits one soldier. A turn takes ten minutes. The soldiers are standing in the villages.</p>
+    <div class="map" aria-label="Campaign map">
+        <article class="hold" data-i="0">
+            <h2>Northwest</h2>
+            <p class="count"><span data-count>0</span> soldiers</p>
+            <div class="men" data-men></div>
+        </article>
+        <article class="hold" data-i="1">
+            <h2>Northeast</h2>
+            <p class="count"><span data-count>0</span> soldiers</p>
+            <div class="men" data-men></div>
+        </article>
+        <article class="hold" data-i="2">
+            <h2>Southwest</h2>
+            <p class="count"><span data-count>0</span> soldiers</p>
+            <div class="men" data-men></div>
+        </article>
+        <article class="hold" data-i="3">
+            <h2>Southeast</h2>
+            <p class="count"><span data-count>0</span> soldiers</p>
+            <div class="men" data-men></div>
+        </article>
+    </div>
+    <section class="log">
+        <h2>Latest turn</h2>
+        <ul id="log"></ul>
+    </section>
+    <script src="campaign.js"></script>
+</body>
+</html>

@@ -11,6 +11,7 @@ function toMessage(doc) {
         score: doc.score || "",
         time: doc.time || "",
         reply: doc.reply || "",
+        imageId: doc.imageId ? String(doc.imageId) : "",
         createdAt: doc.createdAt
     };
 }
@@ -29,6 +30,28 @@ async function unreadChallenges(db, userId) {
         createdAt: { $gte: since },
         seenBy: { $ne: userId }
     });
+}
+
+function readPhoto(value) {
+    if (!value) return null;
+    const raw = String(value).replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, "");
+    const data = Buffer.from(raw, "base64");
+    if (!data.length || data.length > 800000) {
+        const error = new Error("That photo is too large.");
+        error.status = 400;
+        throw error;
+    }
+    let type = "";
+    if (data[0] === 0xff && data[1] === 0xd8) type = "image/jpeg";
+    else if (data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47) type = "image/png";
+    else if (data[0] === 0x47 && data[1] === 0x49 && data[2] === 0x46) type = "image/gif";
+    else if (data.slice(0, 4).toString("ascii") === "RIFF" && data.slice(8, 12).toString("ascii") === "WEBP") type = "image/webp";
+    if (!type) {
+        const error = new Error("Use a photo.");
+        error.status = 400;
+        throw error;
+    }
+    return { data, type };
 }
 
 function requestedId(req) {
@@ -106,10 +129,11 @@ module.exports = async function handler(req, res) {
                 }
                 time = amount + " " + unit;
             }
-            if (!text && !score && !time) {
-                res.status(400).json({ error: "Write a message, a score, or a time." });
+            if (!text && !score && !time && !body.image) {
+                res.status(400).json({ error: "Write a message, a score, a time, or add a photo." });
                 return;
             }
+            const photo = readPhoto(body.image);
             const createdAt = new Date();
             const created = await db.collection("messages").insertOne({
                 conversationId: conversation._id,
@@ -120,6 +144,21 @@ module.exports = async function handler(req, res) {
                 time,
                 createdAt
             });
+            let imageId = "";
+            if (photo) {
+                const saved = await db.collection("images").insertOne({
+                    conversationId: conversation._id,
+                    messageId: created.insertedId,
+                    type: photo.type,
+                    data: photo.data,
+                    createdAt
+                });
+                imageId = String(saved.insertedId);
+                await db.collection("messages").updateOne(
+                    { _id: created.insertedId },
+                    { $set: { imageId: saved.insertedId } }
+                );
+            }
             await db.collection("conversations").updateOne(
                 { _id: conversation._id },
                 { $set: { updatedAt: createdAt } }
@@ -146,6 +185,7 @@ module.exports = async function handler(req, res) {
                     text,
                     score,
                     time,
+                    imageId,
                     createdAt
                 })
             });
@@ -185,6 +225,8 @@ module.exports = async function handler(req, res) {
         res.status(405).json({ error: "Use GET, POST, or PATCH" });
     } catch (error) {
         console.error(error);
-        res.status(error.status || 500).json({ error: "Could not use messages." });
+        res.status(error.status || 500).json({
+            error: error.status === 400 ? error.message : "Could not use messages."
+        });
     }
 };

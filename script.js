@@ -65,7 +65,7 @@ document.getElementById("stopBtn").addEventListener("click", () => {
     fetch("/api/clear-chats", { method: "POST", credentials: "same-origin" }).catch(() => {});
 });
 
-const sequence = ["castle", "river", "bubble"];
+const sequence = ["moon", "castle", "castle", "moon"];
 let step = 0;
 let sequenceTimer = null;
 
@@ -75,6 +75,11 @@ function resetSequence() {
     sequenceTimer = null;
 }
 
+function armSequence() {
+    clearTimeout(sequenceTimer);
+    sequenceTimer = setTimeout(resetSequence, 4000);
+}
+
 document.querySelectorAll(".tile").forEach((tile) => {
     tile.addEventListener("click", () => {
         const code = tile.dataset.code || "";
@@ -82,13 +87,16 @@ document.querySelectorAll(".tile").forEach((tile) => {
             resetSequence();
             if (code === sequence[0]) {
                 step = 1;
-                sequenceTimer = setTimeout(resetSequence, 4000);
+                armSequence();
             }
             return;
         }
         step += 1;
-        if (step === 1) sequenceTimer = setTimeout(resetSequence, 4000);
-        if (step === sequence.length) window.location.href = "messenger.html?enter=1";
+        if (step === sequence.length) {
+            window.location.href = "messenger.html?enter=1";
+            return;
+        }
+        armSequence();
     });
 });
 

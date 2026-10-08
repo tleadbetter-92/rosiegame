@@ -351,6 +351,40 @@ input:focus, select:focus {
 #contacts button.active .label,
 #contacts button.active .metric strong { color: #1c1c1c; }
 
+#notesAsk {
+    width: min(320px, calc(100% - 24px));
+    margin: auto;
+    padding: 0;
+    overflow: hidden;
+    background: white;
+    border: none;
+    border-radius: 20px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+}
+
+#notesAsk::backdrop { background: rgba(16, 16, 16, 0.46); }
+
+.notes-ask {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 18px;
+}
+
+#notesAsk button {
+    width: 100%;
+    border-radius: 12px;
+    padding: 12px 16px;
+}
+
+#cancelNotes {
+    background: white;
+    color: #1c1c1c;
+    border: 1px solid #e4e0da;
+}
+
+#cancelNotes:hover { background: #f7f5f2; }
+
 #chatPop, #notesPop {
     width: min(480px, calc(100% - 24px));
     max-height: min(86vh, 720px);
@@ -461,6 +495,35 @@ input:focus, select:focus {
     line-height: 1.4;
 }
 
+.chat-photo {
+    display: block;
+    width: 100%;
+    max-height: 280px;
+    margin-top: 8px;
+    object-fit: cover;
+    border-radius: 10px;
+}
+
+.photo-row {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.photo-row .ghost {
+    background: white;
+    color: #1c1c1c;
+    border: 1px solid #e4e0da;
+}
+
+#photoPreview {
+    width: 42px;
+    height: 42px;
+    object-fit: cover;
+    border-radius: 8px;
+}
+
 .empty {
     color: #8a857c;
     padding: 18px 12px;
@@ -492,6 +555,13 @@ input:focus, select:focus {
 }
 
 #sendForm button:hover { background: #a84e0f; }
+
+#sendForm .photo-row button,
+#sendForm .photo-row button:hover {
+    background: white;
+    color: #1c1c1c;
+    border: 1px solid #e4e0da;
+}
 
 .time-field {
     display: flex;
@@ -583,7 +653,52 @@ button.reject:hover { background: #e7e1d8; }
 
 .note-total strong { grid-column: 2; }
 
-#toggleTable { width: 100%; }
+.note-start {
+    display: block;
+    margin-bottom: 12px;
+    font-weight: 700;
+}
+
+.note-start input {
+    display: block;
+    width: 100%;
+    margin-top: 6px;
+    font-weight: 400;
+}
+
+.take-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.take-row input { margin: 0; }
+
+.take-row button {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 10px;
+    background: white;
+    color: #1c1c1c;
+    border: 1px solid #e4e0da;
+}
+
+#takeTable { margin: 12px 0; }
+
+#takeTable .note-total {
+    display: flex;
+    justify-content: space-between;
+}
+
+#addNoteRow,
+#addTakeRow,
+#toggleTable,
+#toggleTake { width: 100%; }
+
+#toggleTake { margin-top: 8px; }
 
 @media (max-width: 700px) {
     #auth { grid-template-columns: 1fr; }
@@ -593,6 +708,7 @@ button.reject:hover { background: #e7e1d8; }
     #scoreInput,
     .time-field,
     #sendForm button { grid-column: 1 / -1; }
+    #sendForm .photo-row button { grid-column: auto; }
     .time-field input {
         width: auto;
         flex: 1 1 0;

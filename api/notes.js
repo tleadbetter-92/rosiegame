@@ -9,6 +9,15 @@ function cleanRows(rows) {
     }));
 }
 
+function cleanAmount(value) {
+    return String(value || "").trim().slice(0, 20);
+}
+
+function cleanTaken(list) {
+    if (!Array.isArray(list)) return [];
+    return list.slice(0, 100).map(cleanAmount);
+}
+
 module.exports = async function handler(req, res) {
     try {
         const user = await currentUser(req, res);
@@ -22,7 +31,9 @@ module.exports = async function handler(req, res) {
             const doc = await notes.findOne({ userId: user._id });
             res.status(200).json({
                 text: doc && doc.text ? doc.text : "",
-                rows: doc && Array.isArray(doc.rows) ? doc.rows : []
+                rows: doc && Array.isArray(doc.rows) ? doc.rows : [],
+                start: doc && doc.start ? doc.start : "",
+                taken: doc && Array.isArray(doc.taken) ? doc.taken : []
             });
             return;
         }
@@ -30,15 +41,22 @@ module.exports = async function handler(req, res) {
             const body = readJson(req);
             const text = String(body.text || "").slice(0, 5000);
             const rows = cleanRows(body.rows);
+            const start = cleanAmount(body.start);
+            const taken = cleanTaken(body.taken);
             await notes.updateOne(
                 { userId: user._id },
-                { $set: { userId: user._id, text, rows, updatedAt: new Date() } },
+                { $set: { userId: user._id, text, rows, start, taken, updatedAt: new Date() } },
                 { upsert: true }
             );
             res.status(200).json({ ok: true });
             return;
         }
-        res.status(405).json({ error: "Use GET or PUT" });
+        if (req.method === "DELETE") {
+            await notes.deleteMany({ userId: user._id });
+            res.status(200).json({ ok: true });
+            return;
+        }
+        res.status(405).json({ error: "Use GET, PUT, or DELETE" });
     } catch (error) {
         console.error(error);
         res.status(error.status || 500).json({ error: "Could not use notes." });

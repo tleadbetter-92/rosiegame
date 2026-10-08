@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Village</title>
+    <link rel="stylesheet" href="village.css">
+</head>
+<body>
+    <canvas id="view"></canvas>
+    <a class="back" href="index.html">Back</a>
+    <a class="campaign-link" href="campaign.html">Campaign</a>
+    <div class="cross"></div>
+    <div id="weapon" aria-hidden="true"></div>
+    <div id="vitals">
+        <span>Health</span>
+        <div class="bar"><div id="health-fill"></div></div>
+    </div>
+    <div id="hurt"></div>
+    <p id="death" hidden>You are slain</p>
+    <p id="strike"></p>
+    <p class="help">WASD to walk · mouse to look · hold and drag to swing</p>
+    <script src="village.js"></script>
+</body>
+</html>

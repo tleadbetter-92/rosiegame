@@ -69,6 +69,12 @@
                 <ol id="messages"></ol>
                 <form id="sendForm" hidden>
                     <input id="messageInput" maxlength="500" placeholder="Message (optional)" autocomplete="off">
+                    <div class="photo-row">
+                        <button id="photoBtn" class="ghost" type="button">Photo</button>
+                        <img id="photoPreview" alt="" hidden>
+                        <button id="photoClear" class="ghost" type="button" hidden>Remove</button>
+                        <input id="photoInput" type="file" accept="image/*" hidden>
+                    </div>
                         <input id="scoreInput" maxlength="20" placeholder="Score" autocomplete="off">
                         <div class="time-field">
                             <input id="timeInput" type="number" min="0" max="999" step="1" inputmode="numeric" placeholder="Time" aria-label="Time">
@@ -80,6 +86,12 @@
                     <button type="submit">Send</button>
                 </form>
                 <p id="chatError" class="error" role="alert"></p>
+            </div>
+        </dialog>
+        <dialog id="notesAsk">
+            <div class="notes-ask">
+                <button id="seeNotes" type="button">See notes</button>
+                <button id="cancelNotes" type="button">Cancel</button>
             </div>
         </dialog>
         <dialog id="notesPop">
@@ -99,6 +111,19 @@
                         <button id="addNoteRow" type="button">Add a row</button>
                     </div>
                     <button id="toggleTable" class="ghost" type="button">Add a table</button>
+                    <div id="takeTable" hidden>
+                        <label class="note-start">
+                            Starting number
+                            <input id="noteStart" inputmode="decimal" maxlength="20" placeholder="0" autocomplete="off">
+                        </label>
+                        <div id="takeRows"></div>
+                        <div class="note-total">
+                            <span>Remaining</span>
+                            <strong id="noteLeft">0</strong>
+                        </div>
+                        <button id="addTakeRow" type="button">Add a number</button>
+                    </div>
+                    <button id="toggleTake" class="ghost" type="button">Take away from a number</button>
                 </div>
             </div>
         </dialog>

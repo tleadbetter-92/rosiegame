@@ -19,6 +19,7 @@ module.exports = async function handler(req, res) {
         const ids = conversations.map((conversation) => conversation._id);
         if (ids.length) {
             await db.collection("messages").deleteMany({ conversationId: { $in: ids } });
+            await db.collection("images").deleteMany({ conversationId: { $in: ids } });
             await db.collection("conversations").deleteMany({ _id: { $in: ids } });
         }
         res.status(200).json({ ok: true });

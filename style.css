@@ -167,6 +167,13 @@ main {
     padding: 10px 10px 14px;
 }
 
+.tile-link {
+    display: block;
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+}
+
 .cover {
     display: block;
     height: 120px;
