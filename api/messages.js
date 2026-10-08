@@ -104,7 +104,14 @@ module.exports = async function handler(req, res) {
                 .limit(100)
                 .toArray();
             docs.reverse();
-            res.status(200).json({ messages: docs.map(toMessage) });
+            res.status(200).json({
+                messages: docs.map((doc) => {
+                    const message = toMessage(doc);
+                    const mine = String(doc.userId) === String(user._id);
+                    message.seen = mine && (doc.seenBy || []).some((id) => String(id) !== String(doc.userId));
+                    return message;
+                })
+            });
             return;
         }
         if (req.method === "POST") {

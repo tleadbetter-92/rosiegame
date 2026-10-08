@@ -44,6 +44,10 @@ let contactKey = null;
 let selectedId = "";
 let selectedName = "";
 let me = "";
+let typingPoll = null;
+let typingActive = false;
+let typingSentAt = 0;
+let typingQueue = Promise.resolve();
 
 async function api(path, options) {
     const response = await fetch(path, {
@@ -119,8 +123,80 @@ function showGroup(conversation) {
     members.textContent = isGroup ? (conversation.members || []).join(", ") : "";
 }
 
+function typingLabel(names) {
+    if (!names.length) return "";
+    if (names.length === 1) return names[0] + " is typing…";
+    if (names.length === 2) return names[0] + " and " + names[1] + " are typing…";
+    return names[0] + " and " + (names.length - 1) + " others are typing…";
+}
+
+function showTyping(names) {
+    const line = document.getElementById("typingLine");
+    const text = typingLabel(names || []);
+    line.hidden = !text;
+    line.textContent = text;
+}
+
+function postTyping(id, active) {
+    if (!id) return;
+    typingQueue = typingQueue.then(() => api("/api/typing", {
+        method: "POST",
+        body: JSON.stringify({ conversationId: id, typing: active })
+    })).catch(() => {});
+}
+
+function pulseTyping() {
+    if (!selectedId) return;
+    const active = messageInput.value.trim().length > 0;
+    if (!active) {
+        if (typingActive) {
+            typingActive = false;
+            typingSentAt = 0;
+            postTyping(selectedId, false);
+        }
+        return;
+    }
+    const now = Date.now();
+    if (typingActive && now - typingSentAt < 2000) return;
+    typingActive = true;
+    typingSentAt = now;
+    postTyping(selectedId, true);
+}
+
+async function loadTyping() {
+    const id = selectedId;
+    if (!id) return;
+    try {
+        const data = await api("/api/typing?conversationId=" + encodeURIComponent(id));
+        if (selectedId !== id) return;
+        showTyping(data.typing || []);
+    } catch {
+        // Typing is a hint. A missed check should not show an error.
+    }
+}
+
+function startTypingWatch() {
+    if (typingPoll) return;
+    typingPoll = setInterval(loadTyping, 1500);
+    loadTyping();
+}
+
+function stopTypingWatch() {
+    if (typingPoll) {
+        clearInterval(typingPoll);
+        typingPoll = null;
+    }
+    const id = selectedId;
+    const wasTyping = typingActive;
+    typingActive = false;
+    typingSentAt = 0;
+    showTyping([]);
+    if (wasTyping && id) postTyping(id, false);
+}
+
 function openConversation(id, username, extra) {
     if (selectedId !== id) {
+        stopTypingWatch();
         selectedId = id;
         selectedName = username;
         lastKey = null;
@@ -130,6 +206,7 @@ function openConversation(id, username, extra) {
     showGroup(extra || conversationList.find((conversation) => conversation.id === id));
     sendForm.hidden = false;
     if (!chatPop.open) chatPop.showModal();
+    startTypingWatch();
     for (const button of contactsEl.querySelectorAll("button")) {
         button.classList.toggle("active", button.dataset.id === selectedId);
     }
@@ -233,7 +310,7 @@ function metric(label, value) {
 }
 
 function renderMessages(messages) {
-    const key = messages.map((message) => message.id + ":" + message.reply + ":" + (message.imageId || "")).join(",");
+    const key = messages.map((message) => message.id + ":" + message.reply + ":" + (message.imageId || "") + ":" + (message.seen ? "1" : "0")).join(",");
     if (key === lastKey) return;
     const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 40;
     lastKey = key;
@@ -307,6 +384,12 @@ function renderMessages(messages) {
             bubble.append(choices);
         }
         item.append(bubble);
+        if (mine) {
+            const mark = document.createElement("p");
+            mark.className = "receipt";
+            mark.textContent = message.seen ? "Seen" : "Unread";
+            item.append(mark);
+        }
         messagesEl.appendChild(item);
     }
     if (nearBottom || messagesEl.scrollTop === 0) {
@@ -620,6 +703,7 @@ sendForm.addEventListener("submit", async (event) => {
             })
         });
         messageInput.value = "";
+        pulseTyping();
         document.getElementById("scoreInput").value = "";
         document.getElementById("timeInput").value = "";
         clearPhoto();
@@ -1073,7 +1157,10 @@ chatPop.addEventListener("click", (event) => {
     if (event.target === chatPop) chatPop.close();
 });
 
+messageInput.addEventListener("input", pulseTyping);
+
 chatPop.addEventListener("close", () => {
+    stopTypingWatch();
     selectedId = "";
     selectedName = "";
     lastKey = null;

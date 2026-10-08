@@ -27,6 +27,7 @@ const routes = {
     "/api/logout": require("./api/logout"),
     "/api/me": require("./api/me"),
     "/api/messages": require("./api/messages"),
+    "/api/typing": require("./api/typing"),
     "/api/conversations": require("./api/conversations"),
     "/api/clear-chats": require("./api/clear-chats"),
     "/api/push-key": require("./api/push-key"),
