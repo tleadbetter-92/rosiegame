@@ -332,12 +332,10 @@ function renderMessages(messages) {
         bubble.className = "bubble";
         const head = document.createElement("div");
         head.className = "bubble-top";
-        if (!mine) {
-            const name = document.createElement("span");
-            name.className = "name";
-            name.textContent = message.username;
-            head.append(name);
-        }
+        const name = document.createElement("span");
+        name.className = "name";
+        name.textContent = mine ? "me" : message.username;
+        head.append(name);
         head.append(metric("Sent", sentWhen(message.createdAt)));
         bubble.append(head);
         if (message.text) {
