@@ -33,6 +33,81 @@ const FISH_MS = 30000;
 const FISH_WALK = 2.2;
 const FISH_FOOD = 10;
 const storePlan = { x: -12, z: -16, w: 8, d: 5.5 };
+const GATE_HP = 50;
+const PLAYER_FACTION = 2;
+const WALL_HALF = 17;
+const WALL_CX = -0.5;
+const WALL_CZ = -4;
+
+function palisadeBox(village) {
+    const place = places[village];
+    const cx = place.x + WALL_CX;
+    const cz = place.z + WALL_CZ;
+    return {
+        cx,
+        cz,
+        minX: cx - WALL_HALF,
+        maxX: cx + WALL_HALF,
+        minZ: cz - WALL_HALF,
+        maxZ: cz + WALL_HALF
+    };
+}
+
+function gateSpot(village, side, out) {
+    const box = palisadeBox(village);
+    const nudge = out == null ? 1.6 : out;
+    if (side === 0) return { x: box.cx, z: box.minZ - nudge };
+    if (side === 1) return { x: box.maxX + nudge, z: box.cz };
+    if (side === 2) return { x: box.cx, z: box.maxZ + nudge };
+    return { x: box.minX - nudge, z: box.cz };
+}
+
+function sideFacing(village, point) {
+    const box = palisadeBox(village);
+    const dx = point.x - box.cx;
+    const dz = point.z - box.cz;
+    if (Math.abs(dx) > Math.abs(dz)) return dx >= 0 ? 1 : 3;
+    return dz >= 0 ? 2 : 0;
+}
+
+function exitSide(village, from, to) {
+    const box = palisadeBox(village);
+    const dx = to.x - from.x;
+    const dz = to.z - from.z;
+    let best = Infinity;
+    let side = 0;
+    const consider = (next, time) => {
+        if (time > 0.001 && time < best) {
+            best = time;
+            side = next;
+        }
+    };
+    if (dx > 0) consider(1, (box.maxX - from.x) / dx);
+    if (dx < 0) consider(3, (box.minX - from.x) / dx);
+    if (dz > 0) consider(2, (box.maxZ - from.z) / dz);
+    if (dz < 0) consider(0, (box.minZ - from.z) / dz);
+    return side;
+}
+
+function freshGates() {
+    return [0, 1, 2, 3].map(() => [GATE_HP, GATE_HP, GATE_HP, GATE_HP]);
+}
+
+function ensureGates(state) {
+    if (!Array.isArray(state.gates) || state.gates.length !== 4) {
+        state.gates = freshGates();
+        return true;
+    }
+    let dirty = false;
+    for (let village = 0; village < 4; village++) {
+        const row = state.gates[village];
+        if (!Array.isArray(row) || row.length !== 4) {
+            state.gates[village] = [GATE_HP, GATE_HP, GATE_HP, GATE_HP];
+            dirty = true;
+        }
+    }
+    return dirty;
+}
 
 function readState() {
     try {
@@ -123,6 +198,7 @@ function restartCampaign(state, now) {
         cycleStart: now,
         delivered: 0
     }));
+    state.gates = freshGates();
     state.log = ["The houses start again. Each has one fisherman and no food."];
     state.marchAfter = now + RECRUIT_MS;
 }
@@ -206,9 +282,24 @@ function recruit(state, faction) {
 function marchPath(from, to) {
     const start = places[from];
     const end = places[to];
-    if (start.x === end.x || start.z === end.z) return [start, end];
-    const roadZ = start.z < 0 ? -40 : 40;
-    return [start, { x: start.x, z: roadZ }, { x: end.x, z: roadZ }, end];
+    const mid = start.x === end.x || start.z === end.z
+        ? []
+        : [{ x: start.x, z: start.z < 0 ? -40 : 40 }, { x: end.x, z: start.z < 0 ? -40 : 40 }];
+    const next = mid[0] || end;
+    const prev = mid.length ? mid[mid.length - 1] : start;
+    const outSide = sideFacing(from, next);
+    const gateSide = sideFacing(to, prev);
+    const points = [start, gateSpot(from, outSide), ...mid, gateSpot(to, gateSide), end];
+    return { points, gateSide, gateIndex: points.length - 2 };
+}
+
+function pathDist(points, index) {
+    let length = 0;
+    const last = Math.min(index, points.length - 1);
+    for (let i = 1; i <= last; i++) {
+        length += Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z);
+    }
+    return length;
 }
 
 function pathLength(points) {
@@ -259,13 +350,17 @@ function maybeAttack(state, faction, turn, now) {
     if (to < 0 || to === from) return;
     const defender = state.owners[to];
     const defenders = fielded(state, defender, to);
-    if (!defenders.length) {
+    const route = marchPath(from, to);
+    const gateHp = (state.gates[to] && state.gates[to][route.gateSide]) || 0;
+    if (!defenders.length && gateHp <= 0) {
         state.owners[to] = faction;
         note(state, factions[faction].name + " occupies " + factions[to].name + ".");
         return true;
     }
-    const points = marchPath(from, to);
+    const points = route.points;
     const length = pathLength(points);
+    const gateDist = pathDist(points, route.gateIndex);
+    const remainMs = Math.round(((length - gateDist) / MARCH_SPEED) * 1000);
     state.attacks.push({
         id: turn + "-" + faction,
         from,
@@ -276,6 +371,10 @@ function maybeAttack(state, faction, turn, now) {
         defenders: defenders.map((unit) => unit.index),
         path: points,
         length,
+        gateSide: route.gateSide,
+        gateDist,
+        gateAt: now + Math.round((gateDist / MARCH_SPEED) * 1000),
+        remainMs,
         startedAt: now,
         arriveAt: now + Math.round((length / MARCH_SPEED) * 1000),
         ticks: 0,
@@ -307,8 +406,9 @@ function fishShore(from) {
 function fishRoute(village) {
     const from = storeDoor(village);
     const to = fishShore(from);
-    const length = Math.hypot(to.x - from.x, to.z - from.z);
-    return { from, to, length, walkMs: Math.round((length / FISH_WALK) * 1000) };
+    const via = gateSpot(village, exitSide(village, from, to), 0);
+    const length = Math.hypot(via.x - from.x, via.z - from.z) + Math.hypot(to.x - via.x, to.z - via.z);
+    return { from, via, to, length, walkMs: Math.round((length / FISH_WALK) * 1000) };
 }
 
 function fishPeriod(village) {
@@ -363,6 +463,64 @@ function ensureEconomy(state, now) {
         state.realtime = true;
         state.marchAfter = now + RECRUIT_MS;
         dirty = true;
+    }
+    if (ensureGates(state)) dirty = true;
+    return dirty;
+}
+
+function releaseGate(state, village, side, now) {
+    for (const attack of state.attacks) {
+        if (attack.resolved || attack.to !== village || attack.gateSide !== side) continue;
+        if (attack.breachedAt || !attack.heldForGate) continue;
+        attack.breachedAt = now;
+        attack.arriveAt = now + (attack.remainMs || 0);
+        attack.heldForGate = false;
+    }
+}
+
+function besiege(state, now) {
+    if (!state.gates) return false;
+    let dirty = false;
+    for (const attack of state.attacks) {
+        if (attack.resolved || !Number.isFinite(attack.gateAt)) continue;
+        const row = state.gates[attack.to];
+        const side = attack.gateSide;
+        if (!row || side < 0 || side > 3) continue;
+        if (row[side] <= 0) {
+            if (attack.heldForGate && !attack.breachedAt) {
+                releaseGate(state, attack.to, side, now);
+                dirty = true;
+            }
+            continue;
+        }
+        if (now < attack.gateAt) continue;
+        const spacing = 800 / Math.max(1, attack.indexes.length);
+        if (!attack.heldForGate) {
+            attack.heldForGate = true;
+            attack.nextGateHit = attack.gateAt;
+            dirty = true;
+        }
+        let broke = false;
+        while (attack.nextGateHit <= now && row[side] > 0) {
+            row[side] -= 1;
+            attack.nextGateHit += spacing;
+            dirty = true;
+            if (row[side] <= 0) broke = true;
+        }
+        if (broke) {
+            row[side] = 0;
+            attack.breachedAt = attack.nextGateHit;
+            attack.arriveAt = attack.breachedAt + (attack.remainMs || 0);
+            attack.heldForGate = false;
+            note(state, factions[attack.faction].name + " breaks a gate at " + factions[attack.to].name + ".");
+            dirty = true;
+        } else {
+            const want = now + row[side] * spacing + (attack.remainMs || 0);
+            if (Math.abs((attack.arriveAt || 0) - want) > 500) {
+                attack.arriveAt = want;
+                dirty = true;
+            }
+        }
     }
     return dirty;
 }
@@ -592,6 +750,7 @@ function present(state, now, turn, paused) {
                 cycleStart: man.cycleStart,
                 walkMs: route.walkMs,
                 from: route.from,
+                via: route.via,
                 to: route.to
             };
         }),
@@ -606,8 +765,15 @@ function present(state, now, turn, paused) {
             path: attack.path,
             length: attack.length,
             startedAt: attack.startedAt,
-            arriveAt: attack.arriveAt
+            arriveAt: attack.arriveAt,
+            gateSide: attack.gateSide,
+            gateDist: attack.gateDist,
+            gateAt: attack.gateAt,
+            remainMs: attack.remainMs,
+            breachedAt: attack.breachedAt || 0,
+            heldForGate: !!attack.heldForGate
         })),
+        gates: (state.gates || freshGates()).map((row) => row.slice()),
         villages: factions.map((place, index) => {
             const owner = state.owners[index];
             let alive = 0;
@@ -659,6 +825,7 @@ function syncWorld(state, now) {
     if (orderTraining(state, now)) dirty = true;
     if (considerAttacks(state, now)) dirty = true;
     if (creditFish(state, now)) dirty = true;
+    if (besiege(state, now)) dirty = true;
     if (fight(state, now)) dirty = true;
     return { dirty, turn, paused };
 }
@@ -677,6 +844,26 @@ function hitFisher(village) {
     const man = livingFisher(state, village);
     if (man) man.health -= 1;
     creditFish(state, now);
+    writeState(state);
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+}
+
+function hitGate(village, side) {
+    const state = readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    if (village >= 0 && village <= 3 && side >= 0 && side <= 3 && state.owners[village] !== PLAYER_FACTION) {
+        const row = state.gates && state.gates[village];
+        if (row && row[side] > 0) {
+            row[side] -= 1;
+            if (row[side] <= 0) {
+                row[side] = 0;
+                releaseGate(state, village, side, now);
+                note(state, "A gate at " + factions[village].name + " is broken.");
+            }
+        }
+    }
     writeState(state);
     const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
     return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
@@ -709,6 +896,10 @@ module.exports = function handler(req, res) {
         }
         if (req.body && Number.isInteger(req.body.fisherman)) {
             res.status(200).json(hitFisher(req.body.fisherman));
+            return;
+        }
+        if (req.body && Number.isInteger(req.body.gate) && Number.isInteger(req.body.side)) {
+            res.status(200).json(hitGate(req.body.gate, req.body.side));
             return;
         }
         const village = Number(req.body && req.body.village);

@@ -11,7 +11,7 @@ const places = [
     { ox: -40, oz: 64 },
     { ox: 40, oz: 64 }
 ];
-const cam = { x: places[2].ox, y: 1.62, z: places[2].oz + 14, yaw: 0, pitch: 0 };
+const cam = { x: places[2].ox, y: 1.62, z: places[2].oz + 20, yaw: 0, pitch: 0 };
 const homeVillage = 2;
 const townLeash = 30;
 const player = { hp: 40, max: 40, guard: 0, dead: 0, shake: 0 };
@@ -203,6 +203,15 @@ const textures = {
         g.fillRect(s * 0.72, 0, s * 0.28, s);
         g.fillStyle = "#b08a45";
         g.fillRect(0, s * 0.42, s, s * 0.16);
+    }),
+    wood: makeTexture((g, s) => {
+        g.fillStyle = "#6a4324";
+        g.fillRect(0, 0, s, s);
+        g.fillStyle = "#8b5a32";
+        for (let x = 2; x < s; x += 7) g.fillRect(x, 0, 3, s);
+        g.fillStyle = "#3e2614";
+        g.fillRect(0, 0, s, 4);
+        g.fillRect(0, 30, s, 2);
     }),
     cloth0: clothTexture("#c45c3a"),
     cloth1: clothTexture("#3d6b8a"),
@@ -603,15 +612,19 @@ function personMatrix(man, hand) {
     const yaw = man.yaw + Math.PI;
     const c = Math.cos(yaw);
     const s = Math.sin(yaw);
+    const slash = man.swing > 0 ? Math.sin(man.swing * Math.PI) : 0;
+    const lunge = slash * 0.22;
     const y = man.bob - Math.min(man.down, 1.05);
     const hx = hand ? hand[0] : 0;
     const hy = hand ? hand[1] : 0;
     const hz = hand ? hand[2] : 0;
+    const px = man.x + Math.sin(man.yaw) * lunge;
+    const pz = man.z - Math.cos(man.yaw) * lunge;
     return new Float32Array([
         c, 0, -s, 0,
         0, 1, 0, 0,
         s, 0, c, 0,
-        man.x + c * hx + s * hz, y + hy, man.z - s * hx + c * hz, 1
+        px + c * hx + s * hz, y + hy, pz - s * hx + c * hz, 1
     ]);
 }
 
@@ -730,7 +743,7 @@ function applyCampaign(data) {
         (faction.units || []).map((unit) => unit.index + ":" + unit.health + ":" + unit.mode + ":" + unit.post).join(".")
     )).join("|");
     const attacks = (data.attacks || []).map((attack) => attack.id).join(",");
-    const fish = (data.fishermen || []).map((man) => man.village + ":" + man.health + ":" + man.cycleStart).join(",");
+    const fish = (data.fishermen || []).map((man) => man.village + ":" + man.health + ":" + man.cycleStart + ":" + man.walkMs).join(",");
     const key = (data.owners || []).join(",") + "#" + attacks + "#" + units + "#" + fish;
     if (key === soldierKey) return;
     soldierKey = key;
@@ -754,6 +767,8 @@ function mergeFishermen(data) {
             old.walkMs = item.walkMs;
             old.fromX = item.from.x;
             old.fromZ = item.from.z;
+            old.viaX = item.via ? item.via.x : null;
+            old.viaZ = item.via ? item.via.z : null;
             old.toX = item.to.x;
             old.toZ = item.to.z;
             if (old.health <= 0) old.dying = true;
@@ -771,6 +786,8 @@ function mergeFishermen(data) {
                 z: item.from.z,
                 fromX: item.from.x,
                 fromZ: item.from.z,
+                viaX: item.via ? item.via.x : null,
+                viaZ: item.via ? item.via.z : null,
                 toX: item.to.x,
                 toZ: item.to.z,
                 cycleStart: item.cycleStart,
@@ -858,7 +875,7 @@ function respawn() {
     player.guard = 1.4;
     cam.x = places[2].ox;
     cam.y = 1.62;
-    cam.z = places[2].oz + 14;
+    cam.z = places[2].oz + 20;
     cam.yaw = 0;
     cam.pitch = 0;
     death.classList.remove("show");
@@ -907,6 +924,11 @@ function connectSwing() {
             bestT = t;
         }
     }
+    const gate = gateInReach(ox, oz, fx, fy, fz, profile.reach);
+    if (gate && gate.t < bestT) {
+        strikeGate(gate);
+        return;
+    }
     if (!best) return;
     if (best.fisher) {
         best.health -= 1;
@@ -946,8 +968,8 @@ function connectSwing() {
     const knock = 0.28;
     const nx = best.x + fx * knock;
     const nz = best.z + fz * knock;
-    if (!blocked(nx, best.z)) best.x = nx;
-    if (!blocked(best.x, nz)) best.z = nz;
+    if (!blocked(nx, best.z, best.faction)) best.x = nx;
+    if (!blocked(best.x, nz, best.faction)) best.z = nz;
     for (const other of men) {
         if (other.dying || other.faction !== best.faction || other.faction === homeVillage) continue;
         const near = Math.hypot(other.x - best.x, other.z - best.z);
@@ -1015,8 +1037,8 @@ function moveToward(man, x, z, dt, speed) {
     const step = Math.min(speed * dt, dist - 1.05);
     const nx = man.x + (dx / dist) * step;
     const nz = man.z + (dz / dist) * step;
-    if (!blocked(nx, man.z)) man.x = nx;
-    if (!blocked(man.x, nz)) man.z = nz;
+    if (!blocked(nx, man.z, man.faction)) man.x = nx;
+    if (!blocked(man.x, nz, man.faction)) man.z = nz;
     return true;
 }
 
@@ -1034,11 +1056,11 @@ function stepFisher(man) {
         outward = false;
         along = 1 - (t - walkMs - fishMs) / walkMs;
     }
-    man.x = man.fromX + (man.toX - man.fromX) * along;
-    man.z = man.fromZ + (man.toZ - man.fromZ) * along;
-    const dx = outward ? man.toX - man.fromX : man.fromX - man.toX;
-    const dz = outward ? man.toZ - man.fromZ : man.fromZ - man.toZ;
-    man.yaw = Math.atan2(-dx, -dz);
+    const spot = fisherSpot(man, along);
+    man.x = spot.x;
+    man.z = spot.z;
+    const face = outward ? 1 : -1;
+    man.yaw = Math.atan2(-spot.dx * face, -spot.dz * face);
     const walking = t < walkMs || t >= walkMs + fishMs;
     man.bob = Math.sin(performance.now() * (walking ? 0.01 : 0.004)) * (walking ? 0.04 : 0.02);
     man.swing = -1;
@@ -1057,8 +1079,10 @@ function stepMan(man, dt) {
     }
     if (man.fisher) return stepFisher(man);
     if (man.mode === "march" && man.path && man.length) {
+        const attack = marchAttack(man);
         const travel = Math.max(1, man.arriveAt - man.startedAt);
-        const covered = man.length * Math.max(0, Math.min(1, (Date.now() - man.startedAt) / travel));
+        const plain = man.length * Math.max(0, Math.min(1, (Date.now() - man.startedAt) / travel));
+        const covered = attack ? marchDistance(attack, plain) : plain;
         const back = Math.floor(man.slot / 2) * 1.15;
         const side = man.slot % 2 === 0 ? -0.7 : 0.7;
         const pose = pathPose(man.path, Math.max(0, covered - back));
@@ -1068,7 +1092,14 @@ function stepMan(man, dt) {
         man.bob = Math.sin(performance.now() * 0.012 + man.index) * 0.05;
         man.hostile = false;
         man.striking = 0;
-        man.swing = -1;
+        const gate = attack && Number.isFinite(attack.gateSide) ? gateSpot(attack.to, attack.gateSide) : null;
+        const atGate = gate && gateHealth(attack.to, attack.gateSide) > 0 && Math.hypot(man.x - gate.x, man.z - gate.z) < 3.4;
+        if (atGate) {
+            const cycle = (performance.now() / 1000 + man.index * 0.17) % 0.8;
+            man.swing = cycle < 0.38 ? cycle / 0.38 : -1;
+        } else {
+            man.swing = -1;
+        }
         actorsDirty = true;
         return false;
     }
@@ -1111,8 +1142,8 @@ function stepMan(man, dt) {
             if (outsideTown(nx, nz)) {
                 man.hostile = false;
             } else {
-                if (!blocked(nx, man.z)) man.x = nx;
-                if (!blocked(man.x, nz)) man.z = nz;
+                if (!blocked(nx, man.z, man.faction)) man.x = nx;
+                if (!blocked(man.x, nz, man.faction)) man.z = nz;
                 moving = true;
             }
         } else if (!player.dead) {
@@ -1132,8 +1163,8 @@ function stepMan(man, dt) {
             const step = Math.min(1.8 * dt, home);
             const nx = man.x + hx / home * step;
             const nz = man.z + hz / home * step;
-            if (!blocked(nx, man.z)) man.x = nx;
-            if (!blocked(man.x, nz)) man.z = nz;
+            if (!blocked(nx, man.z, man.faction)) man.x = nx;
+            if (!blocked(man.x, nz, man.faction)) man.z = nz;
             moving = true;
         } else {
             man.x = man.homeX;
@@ -1172,10 +1203,10 @@ function separateMen(dt) {
             const push = (0.72 - dist) * 0.5 * dt * 8;
             const px = ox / dist * push;
             const pz = oz / dist * push;
-            if (!blocked(man.x + px, man.z)) man.x += px;
-            if (!blocked(man.x, man.z + pz)) man.z += pz;
-            if (!blocked(other.x - px, other.z)) other.x -= px;
-            if (!blocked(other.x, other.z - pz)) other.z -= pz;
+            if (!blocked(man.x + px, man.z, man.faction)) man.x += px;
+            if (!blocked(man.x, man.z + pz, man.faction)) man.z += pz;
+            if (!blocked(other.x - px, other.z, other.faction)) other.x -= px;
+            if (!blocked(other.x, other.z - pz, other.faction)) other.z -= pz;
             actorsDirty = true;
         }
     }
@@ -1272,12 +1303,293 @@ function lookAt() {
     ]);
 }
 
-function blocked(x, z) {
+const WALL_HALF = 17;
+const WALL_CX = -0.5;
+const WALL_CZ = -4;
+const GATE_HALF = 1.8;
+const gateAnim = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]];
+let gateVisual = "";
+
+function placeOf(village) {
+    const place = places[village];
+    return { x: place.ox, z: place.oz };
+}
+
+function palisadeBox(village) {
+    const place = placeOf(village);
+    const cx = place.x + WALL_CX;
+    const cz = place.z + WALL_CZ;
+    return {
+        cx,
+        cz,
+        minX: cx - WALL_HALF,
+        maxX: cx + WALL_HALF,
+        minZ: cz - WALL_HALF,
+        maxZ: cz + WALL_HALF
+    };
+}
+
+function gateSpot(village, side) {
+    const box = palisadeBox(village);
+    const out = 1.6;
+    if (side === 0) return { x: box.cx, z: box.minZ - out };
+    if (side === 1) return { x: box.maxX + out, z: box.cz };
+    if (side === 2) return { x: box.cx, z: box.maxZ + out };
+    return { x: box.minX - out, z: box.cz };
+}
+
+function gateCenter(village, side) {
+    const box = palisadeBox(village);
+    if (side === 0) return { x: box.cx, z: box.minZ };
+    if (side === 1) return { x: box.maxX, z: box.cz };
+    if (side === 2) return { x: box.cx, z: box.maxZ };
+    return { x: box.minX, z: box.cz };
+}
+
+function ownerOf(village) {
+    if (campaign && campaign.owners) return campaign.owners[village];
+    return village;
+}
+
+function gateHealth(village, side) {
+    const row = campaign && campaign.gates && campaign.gates[village];
+    if (!row) return 50;
+    return row[side];
+}
+
+function gatePasses(village, side, faction) {
+    if (gateHealth(village, side) <= 0) return true;
+    return faction === ownerOf(village);
+}
+
+function wallBlocks(x, z, faction) {
+    const t = 0.36;
+    for (let village = 0; village < 4; village++) {
+        const box = palisadeBox(village);
+        if (z > box.minZ - t && z < box.minZ + t && x > box.minX - t && x < box.maxX + t) {
+            if (!(gatePasses(village, 0, faction) && Math.abs(x - box.cx) < GATE_HALF - 0.15)) return true;
+        }
+        if (z > box.maxZ - t && z < box.maxZ + t && x > box.minX - t && x < box.maxX + t) {
+            if (!(gatePasses(village, 2, faction) && Math.abs(x - box.cx) < GATE_HALF - 0.15)) return true;
+        }
+        if (x > box.minX - t && x < box.minX + t && z > box.minZ - t && z < box.maxZ + t) {
+            if (!(gatePasses(village, 3, faction) && Math.abs(z - box.cz) < GATE_HALF - 0.15)) return true;
+        }
+        if (x > box.maxX - t && x < box.maxX + t && z > box.minZ - t && z < box.maxZ + t) {
+            if (!(gatePasses(village, 1, faction) && Math.abs(z - box.cz) < GATE_HALF - 0.15)) return true;
+        }
+    }
+    return false;
+}
+
+function fisherSpot(man, along) {
+    const ax = man.fromX;
+    const az = man.fromZ;
+    const cx = man.toX;
+    const cz = man.toZ;
+    if (!Number.isFinite(man.viaX)) {
+        return { x: ax + (cx - ax) * along, z: az + (cz - az) * along, dx: cx - ax, dz: cz - az };
+    }
+    const bx = man.viaX;
+    const bz = man.viaZ;
+    const len1 = Math.hypot(bx - ax, bz - az) || 0.001;
+    const len2 = Math.hypot(cx - bx, cz - bz) || 0.001;
+    const dist = along * (len1 + len2);
+    if (dist <= len1) {
+        const t = dist / len1;
+        return { x: ax + (bx - ax) * t, z: az + (bz - az) * t, dx: bx - ax, dz: bz - az };
+    }
+    const t = (dist - len1) / len2;
+    return { x: bx + (cx - bx) * t, z: bz + (cz - bz) * t, dx: cx - bx, dz: cz - bz };
+}
+
+function marchAttack(man) {
+    if (!campaign) return null;
+    return (campaign.attacks || []).find((attack) => attack.faction === man.faction && (attack.indexes || []).includes(man.index)) || null;
+}
+
+function marchDistance(attack, plain) {
+    if (!Number.isFinite(attack.gateDist) || !Number.isFinite(attack.gateAt)) return plain;
+    const now = Date.now();
+    const hp = gateHealth(attack.to, attack.gateSide);
+    if (attack.breachedAt) {
+        const remain = Math.max(1, attack.remainMs || 1);
+        const t = Math.max(0, Math.min(1, (now - attack.breachedAt) / remain));
+        return attack.gateDist + t * ((attack.length || 0) - attack.gateDist);
+    }
+    if (hp > 0 || attack.heldForGate) {
+        const leg = Math.max(1, attack.gateAt - attack.startedAt);
+        const covered = attack.gateDist * Math.max(0, Math.min(1, (now - attack.startedAt) / leg));
+        return Math.min(covered, attack.gateDist);
+    }
+    return plain;
+}
+
+function gateWant(village, side) {
+    if (gateHealth(village, side) <= 0) return 0;
+    const owner = ownerOf(village);
+    const spot = gateCenter(village, side);
+    if (owner === homeVillage && Math.hypot(cam.x - spot.x, cam.z - spot.z) < 7.5) return 1;
+    for (const man of men) {
+        if (man.dying || man.health <= 0 || man.faction !== owner) continue;
+        if (Math.hypot(man.x - spot.x, man.z - spot.z) < 7.5) return 1;
+    }
+    return 0;
+}
+
+function gateInReach(ox, oz, fx, fy, fz, reach) {
+    if (!campaign || !campaign.owners) return null;
+    let best = null;
+    let bestT = reach;
+    for (let village = 0; village < 4; village++) {
+        if (campaign.owners[village] === homeVillage) continue;
+        for (let side = 0; side < 4; side++) {
+            if (gateHealth(village, side) <= 0) continue;
+            const spot = gateCenter(village, side);
+            const dx = spot.x - ox;
+            const dy = 1.15 - cam.y;
+            const dz = spot.z - oz;
+            const t = dx * fx + dy * fy + dz * fz;
+            if (t < 0.35 || t > reach) continue;
+            const wide = Math.hypot(dx - fx * t, dz - fz * t);
+            if (wide < 1.35 && t < bestT) {
+                best = { village, side, t };
+                bestT = t;
+            }
+        }
+    }
+    return best;
+}
+
+function strikeGate(gate) {
+    const row = campaign.gates && campaign.gates[gate.village];
+    if (!row || row[gate.side] <= 0) return;
+    row[gate.side] -= 1;
+    showStrike(row[gate.side] > 0 ? "Gate " + row[gate.side] : "Gate down");
+    gateVisual = "";
+    pendingHit += 1;
+    fetch("/api/campaign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gate: gate.village, side: gate.side })
+    }).then((res) => res.json()).then((data) => {
+        pendingHit -= 1;
+        if (pendingHit === 0) applyCampaign(data);
+    }).catch(() => { pendingHit -= 1; });
+}
+
+function addPlank(list, hx, hz, tx, tz, ox, oz, open) {
+    const ex = tx + (ox - tx) * open;
+    const ez = tz + (oz - tz) * open;
+    const dx = ex - hx;
+    const dz = ez - hz;
+    const len = Math.hypot(dx, dz) || 0.001;
+    const ang = Math.atan2(-dz, dx);
+    const c = Math.cos(ang);
+    const s = Math.sin(ang);
+    const xf = (x, y, z) => {
+        const lx = x - hx;
+        const lz = z - hz;
+        return [hx + c * lx + s * lz, y, hz - s * lx + c * lz];
+    };
+    addBox(list, hx, 0.1, hz - 0.08, len, 1.96, 0.16, xf);
+}
+
+function addWallRun(list, x0, z0, x1, z1, gap, axis) {
+    const len = Math.hypot(x1 - x0, z1 - z0);
+    const steps = Math.max(1, Math.round(len / 0.46));
+    for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const x = x0 + (x1 - x0) * t;
+        const z = z0 + (z1 - z0) * t;
+        const along = axis === "x" ? x : z;
+        if (Math.abs(along - gap) < 1.95) continue;
+        addBox(list, x - 0.1, 0, z - 0.1, 0.2, 2.15, 0.2);
+        addBox(list, x - 0.05, 2.15, z - 0.05, 0.1, 0.34, 0.1);
+    }
+    const rail = (y, a0, a1) => {
+        if (a1 - a0 < 0.4) return;
+        if (axis === "x") addBox(list, a0, y, z0 - 0.05, a1 - a0, 0.1, 0.1);
+        else addBox(list, x0 - 0.05, y, a0, 0.1, 0.1, a1 - a0);
+    };
+    const low = gap - GATE_HALF;
+    const high = gap + GATE_HALF;
+    if (axis === "x") {
+        rail(0.72, x0, low);
+        rail(1.4, x0, low);
+        rail(0.72, high, x1);
+        rail(1.4, high, x1);
+    } else {
+        rail(0.72, z0, low);
+        rail(1.4, z0, low);
+        rail(0.72, high, z1);
+        rail(1.4, high, z1);
+    }
+}
+
+function addGateDoors(list, village, side, open) {
+    const box = palisadeBox(village);
+    const g = GATE_HALF;
+    if (side === 0) {
+        addPlank(list, box.cx - g, box.minZ, box.cx + 0.06, box.minZ, box.cx - g, box.minZ - g, open);
+        addPlank(list, box.cx + g, box.minZ, box.cx - 0.06, box.minZ, box.cx + g, box.minZ - g, open);
+        addBox(list, box.cx - g, 2.12, box.minZ - 0.1, g * 2, 0.16, 0.2);
+    } else if (side === 2) {
+        addPlank(list, box.cx - g, box.maxZ, box.cx + 0.06, box.maxZ, box.cx - g, box.maxZ + g, open);
+        addPlank(list, box.cx + g, box.maxZ, box.cx - 0.06, box.maxZ, box.cx + g, box.maxZ + g, open);
+        addBox(list, box.cx - g, 2.12, box.maxZ - 0.1, g * 2, 0.16, 0.2);
+    } else if (side === 1) {
+        addPlank(list, box.maxX, box.cz - g, box.maxX, box.cz + 0.06, box.maxX + g, box.cz - g, open);
+        addPlank(list, box.maxX, box.cz + g, box.maxX, box.cz - 0.06, box.maxX + g, box.cz + g, open);
+        addBox(list, box.maxX - 0.1, 2.12, box.cz - g, 0.2, 0.16, g * 2);
+    } else {
+        addPlank(list, box.minX, box.cz - g, box.minX, box.cz + 0.06, box.minX - g, box.cz - g, open);
+        addPlank(list, box.minX, box.cz + g, box.minX, box.cz - 0.06, box.minX - g, box.cz + g, open);
+        addBox(list, box.minX - 0.1, 2.12, box.cz - g, 0.2, 0.16, g * 2);
+    }
+}
+
+function rebuildPalisade() {
+    const list = [];
+    for (let village = 0; village < 4; village++) {
+        const box = palisadeBox(village);
+        addWallRun(list, box.minX, box.minZ, box.maxX, box.minZ, box.cx, "x");
+        addWallRun(list, box.minX, box.maxZ, box.maxX, box.maxZ, box.cx, "x");
+        addWallRun(list, box.minX, box.minZ, box.minX, box.maxZ, box.cz, "z");
+        addWallRun(list, box.maxX, box.minZ, box.maxX, box.maxZ, box.cz, "z");
+        for (let side = 0; side < 4; side++) {
+            if (gateHealth(village, side) <= 0) continue;
+            addGateDoors(list, village, side, gateAnim[village][side]);
+        }
+    }
+    uploadMesh("wood", list);
+}
+
+function updatePalisade(dt) {
+    let key = "";
+    const step = Math.min(1, dt * 4.5);
+    for (let village = 0; village < 4; village++) {
+        for (let side = 0; side < 4; side++) {
+            const want = gateWant(village, side);
+            const current = gateAnim[village][side];
+            const next = Math.abs(want - current) < 0.02 ? want : current + (want - current) * step;
+            gateAnim[village][side] = next;
+            key += gateHealth(village, side) + ":" + next.toFixed(2) + ",";
+        }
+    }
+    if (key === gateVisual) return;
+    gateVisual = key;
+    rebuildPalisade();
+}
+
+function blocked(x, z, faction) {
     const r = 0.4;
+    const who = faction == null ? homeVillage : faction;
     for (const b of houses) {
         if (x > b.x - r && x < b.x + b.w + r && z > b.z - r && z < b.z + b.d + r) return true;
     }
-    return x < -99 || x > 99 || z < -99 || z > 99;
+    if (x < -99 || x > 99 || z < -99 || z > 99) return true;
+    return wallBlocks(x, z, who);
 }
 
 let lookId = null;
@@ -1481,6 +1793,7 @@ function frame(now) {
     last = now;
     movePlayer(dt);
     updateFight(dt);
+    updatePalisade(dt);
     draw();
     requestAnimationFrame(frame);
 }
