@@ -200,6 +200,8 @@ function openConversation(id, username, extra) {
     if (selectedId !== id) {
         stopTypingWatch();
         clearVoice();
+        clearVideo();
+        clearReply();
         selectedId = id;
         selectedName = username;
         lastKey = null;
@@ -312,8 +314,37 @@ function metric(label, value) {
     return item;
 }
 
+let latestMessages = [];
+let armedId = "";
+let replyTarget = null;
+
+function replyPreview(message) {
+    if (message.text) return message.text.slice(0, 140);
+    if (message.audioId) return "Voice note";
+    if (message.videoId) return "Video";
+    if (message.imageId) return "Photo";
+    if (message.score || message.time) return [message.score, message.time].filter(Boolean).join(" · ");
+    return "Message";
+}
+
+function clearReply() {
+    replyTarget = null;
+    armedId = "";
+    const bar = document.getElementById("replyBar");
+    if (bar) bar.hidden = true;
+}
+
+function showReplyBar() {
+    const bar = document.getElementById("replyBar");
+    bar.hidden = !replyTarget;
+    if (!replyTarget) return;
+    document.getElementById("replyName").textContent = replyTarget.username;
+    document.getElementById("replyText").textContent = replyTarget.preview;
+}
+
 function renderMessages(messages) {
-    const key = messages.map((message) => message.id + ":" + message.reply + ":" + (message.imageId || "") + ":" + (message.audioId || "") + ":" + (message.seen ? "1" : "0")).join(",");
+    latestMessages = messages;
+    const key = messages.map((message) => message.id + ":" + message.reply + ":" + (message.imageId || "") + ":" + (message.audioId || "") + ":" + (message.videoId || "") + ":" + (message.seen ? "1" : "0") + ":" + ((message.quote && message.quote.text) || "")).join(",") + "|" + armedId;
     if (key === lastKey) return;
     const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 40;
     lastKey = key;
@@ -339,6 +370,18 @@ function renderMessages(messages) {
         head.append(name);
         head.append(metric("Sent", sentWhen(message.createdAt)));
         bubble.append(head);
+        if (message.quote && message.quote.text) {
+            const quote = document.createElement("div");
+            quote.className = "quote";
+            const who = document.createElement("p");
+            who.className = "quote-name";
+            who.textContent = message.quote.username || "Chat";
+            const snippet = document.createElement("p");
+            snippet.className = "quote-text";
+            snippet.textContent = message.quote.text;
+            quote.append(who, snippet);
+            bubble.append(quote);
+        }
         if (message.text) {
             const text = document.createElement("p");
             text.textContent = message.text;
@@ -358,6 +401,15 @@ function renderMessages(messages) {
             voice.preload = "none";
             voice.src = "/api/image?id=" + encodeURIComponent(message.audioId);
             bubble.append(voice);
+        }
+        if (message.videoId) {
+            const clip = document.createElement("video");
+            clip.className = "chat-video";
+            clip.controls = true;
+            clip.playsInline = true;
+            clip.preload = "metadata";
+            clip.src = "/api/image?id=" + encodeURIComponent(message.videoId);
+            bubble.append(clip);
         }
         if (message.score || message.time) {
             const stats = document.createElement("div");
@@ -392,7 +444,32 @@ function renderMessages(messages) {
             choices.append(accept, reject);
             bubble.append(choices);
         }
+        bubble.addEventListener("click", (event) => {
+            if (event.target.closest("button, audio, video, a")) return;
+            armedId = armedId === message.id ? "" : message.id;
+            lastKey = "";
+            renderMessages(latestMessages);
+        });
         item.append(bubble);
+        if (armedId === message.id) {
+            const reply = document.createElement("button");
+            reply.type = "button";
+            reply.className = "reply-btn";
+            reply.textContent = "Reply";
+            reply.addEventListener("click", (event) => {
+                event.stopPropagation();
+                replyTarget = {
+                    id: message.id,
+                    username: mine ? "me" : message.username,
+                    preview: replyPreview(message)
+                };
+                armedId = "";
+                showReplyBar();
+                lastKey = "";
+                renderMessages(latestMessages);
+            });
+            item.append(reply);
+        }
         if (mine) {
             const mark = document.createElement("p");
             mark.className = "receipt";
@@ -688,20 +765,13 @@ function voiceClock(seconds) {
 }
 
 function showVoice(seconds) {
-    const label = document.getElementById("voiceLabel");
-    const clear = document.getElementById("voiceClear");
-    const button = document.getElementById("voiceBtn");
+    const draft = document.getElementById("voiceDraft");
+    const pop = document.getElementById("voicePop");
     const recording = voiceRecorder && voiceRecorder.state === "recording";
-    button.textContent = recording ? "Stop" : "Voice";
-    if (recording || pendingVoice) {
-        label.hidden = false;
-        label.textContent = voiceClock(seconds);
-        clear.hidden = recording || !pendingVoice;
-        return;
-    }
-    label.hidden = true;
-    label.textContent = "";
-    clear.hidden = true;
+    document.getElementById("voiceTime").textContent = voiceClock(seconds);
+    pop.hidden = !recording;
+    draft.hidden = !pendingVoice || recording;
+    document.getElementById("voiceDraftTime").textContent = pendingVoice && !recording ? voiceClock(seconds) : "";
 }
 
 function releaseMic() {
@@ -810,11 +880,21 @@ async function startVoice() {
 }
 
 document.getElementById("voiceBtn").addEventListener("click", () => {
-    if (voiceRecorder && voiceRecorder.state === "recording") stopVoice();
-    else startVoice();
+    if (voiceRecorder && voiceRecorder.state === "recording") return;
+    startVoice();
 });
 
+document.getElementById("voiceStop").addEventListener("click", stopVoice);
+
+document.getElementById("voiceCancel").addEventListener("click", clearVoice);
+
 document.getElementById("voiceClear").addEventListener("click", clearVoice);
+
+document.getElementById("replyClear").addEventListener("click", () => {
+    clearReply();
+    lastKey = "";
+    renderMessages(latestMessages);
+});
 
 document.getElementById("photoInput").addEventListener("change", async () => {
     const file = document.getElementById("photoInput").files[0];
@@ -829,6 +909,95 @@ document.getElementById("photoInput").addEventListener("change", async () => {
         document.getElementById("photoClear").hidden = false;
     } catch (error) {
         clearPhoto();
+        chatError.textContent = error.message;
+    }
+});
+
+let pendingVideo = "";
+
+function showVideoReady(labelText) {
+    const label = document.getElementById("videoLabel");
+    const clear = document.getElementById("videoClear");
+    label.hidden = !pendingVideo;
+    label.textContent = pendingVideo ? (labelText || "Ready") : "";
+    clear.hidden = !pendingVideo;
+}
+
+function clearVideo() {
+    pendingVideo = "";
+    const input = document.getElementById("videoInput");
+    if (input) input.value = "";
+    showVideoReady("");
+}
+
+function shrinkVideo(file) {
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const clip = document.createElement("video");
+        clip.muted = true;
+        clip.playsInline = true;
+        clip.preload = "auto";
+        clip.src = url;
+        const fail = (message) => {
+            URL.revokeObjectURL(url);
+            reject(new Error(message));
+        };
+        clip.onerror = () => fail("That video could not be added.");
+        clip.onloadedmetadata = () => {
+            const capture = clip.captureStream || clip.mozCaptureStream;
+            const mime = ["video/webm;codecs=vp8,opus", "video/webm", "video/mp4"].find((type) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(type));
+            if (!capture || !mime) {
+                fail("That video is too long. Use a shorter clip.");
+                return;
+            }
+            clip.play().then(() => {
+                const stream = capture.call(clip);
+                const recorder = new MediaRecorder(stream, {
+                    mimeType: mime,
+                    videoBitsPerSecond: 350000,
+                    audioBitsPerSecond: 32000
+                });
+                const chunks = [];
+                recorder.ondataavailable = (event) => {
+                    if (event.data && event.data.size) chunks.push(event.data);
+                };
+                recorder.onstop = () => {
+                    URL.revokeObjectURL(url);
+                    stream.getTracks().forEach((track) => track.stop());
+                    const blob = new Blob(chunks, { type: recorder.mimeType || "video/webm" });
+                    if (!blob.size || blob.size > 2200000) reject(new Error("That video is too long. Use a shorter clip."));
+                    else resolve(blob);
+                };
+                recorder.start();
+                const limit = Math.min(20, Number.isFinite(clip.duration) ? clip.duration : 20);
+                setTimeout(() => {
+                    clip.pause();
+                    if (recorder.state === "recording") recorder.stop();
+                }, Math.max(1, limit) * 1000);
+            }).catch(() => fail("That video could not be added."));
+        };
+    });
+}
+
+document.getElementById("videoBtn").addEventListener("click", () => {
+    document.getElementById("videoInput").click();
+});
+
+document.getElementById("videoClear").addEventListener("click", clearVideo);
+
+document.getElementById("videoInput").addEventListener("change", async () => {
+    const file = document.getElementById("videoInput").files[0];
+    if (!file) return;
+    chatError.textContent = "";
+    const label = document.getElementById("videoLabel");
+    label.hidden = false;
+    label.textContent = "Adding…";
+    try {
+        const blob = file.size <= 2200000 ? file : await shrinkVideo(file);
+        pendingVideo = await blobToBase64(blob);
+        showVideoReady("Ready");
+    } catch (error) {
+        clearVideo();
         chatError.textContent = error.message;
     }
 });
@@ -851,7 +1020,13 @@ sendForm.addEventListener("submit", async (event) => {
                 time,
                 unit,
                 image: pendingPhoto,
-                voice: pendingVoice
+                voice: pendingVoice,
+                video: pendingVideo,
+                quote: replyTarget ? {
+                    id: replyTarget.id,
+                    username: replyTarget.username,
+                    text: replyTarget.preview
+                } : null
             })
         });
         messageInput.value = "";
@@ -860,6 +1035,8 @@ sendForm.addEventListener("submit", async (event) => {
         document.getElementById("timeInput").value = "";
         clearPhoto();
         clearVoice();
+        clearVideo();
+        clearReply();
         lastKey = "";
         contactKey = "";
         await loadMessages();
@@ -1314,6 +1491,8 @@ messageInput.addEventListener("input", pulseTyping);
 
 chatPop.addEventListener("close", () => {
     clearVoice();
+    clearVideo();
+    clearReply();
     stopTypingWatch();
     selectedId = "";
     selectedName = "";

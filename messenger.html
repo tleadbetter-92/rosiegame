@@ -81,6 +81,20 @@
                 <ol id="messages"></ol>
                 <p id="typingLine" class="typing-line" hidden></p>
                 <form id="sendForm" hidden>
+                    <div id="replyBar" class="reply-bar" hidden>
+                        <div class="reply-copy">
+                            <p id="replyName"></p>
+                            <p id="replyText"></p>
+                        </div>
+                        <button id="replyClear" type="button" aria-label="Cancel reply">×</button>
+                    </div>
+                    <div id="voiceDraft" class="reply-bar" hidden>
+                        <div class="reply-copy">
+                            <p>Voice note</p>
+                            <p id="voiceDraftTime"></p>
+                        </div>
+                        <button id="voiceClear" type="button">Remove</button>
+                    </div>
                     <div class="compose-line">
                         <textarea id="messageInput" maxlength="500" rows="3" placeholder="Message (optional)" autocomplete="off"></textarea>
                         <button type="submit">Send</button>
@@ -88,19 +102,34 @@
                     <div class="compose-extra">
                         <button id="photoBtn" class="ghost" type="button">Photo</button>
                         <button id="voiceBtn" class="ghost" type="button">Voice</button>
-                        <span id="voiceLabel" class="voice-label" hidden></span>
-                        <button id="voiceClear" class="ghost" type="button" hidden>Remove</button>
+                        <button id="videoBtn" class="ghost" type="button">Video</button>
+                        <span id="videoLabel" class="voice-label" hidden></span>
+                        <button id="videoClear" class="ghost" type="button" hidden>Remove</button>
+                        <input id="videoInput" type="file" accept="video/*" hidden>
                         <img id="photoPreview" alt="" hidden>
                         <button id="photoClear" class="ghost" type="button" hidden>Remove</button>
                         <input id="photoInput" type="file" accept="image/*" hidden>
-                        <input id="scoreInput" maxlength="20" placeholder="Score" autocomplete="off">
-                        <input id="timeInput" type="number" min="0" max="999" step="1" inputmode="numeric" placeholder="Time" aria-label="Time">
-                        <select id="timeUnit" aria-label="Minutes or hours">
-                            <option value="mins">mins</option>
-                            <option value="hours">hours</option>
-                        </select>
+                        <div class="challenge-fields">
+                            <input id="scoreInput" maxlength="20" placeholder="Score" autocomplete="off">
+                            <input id="timeInput" type="number" min="0" max="999" step="1" inputmode="numeric" placeholder="Time" aria-label="Time">
+                            <select id="timeUnit" aria-label="Minutes or hours">
+                                <option value="mins">mins</option>
+                                <option value="hours">hours</option>
+                            </select>
+                        </div>
                     </div>
                 </form>
+                <div id="voicePop" class="voice-pop" hidden>
+                    <p class="voice-live">Recording</p>
+                    <p id="voiceTime" class="voice-time">0:00</p>
+                    <div class="voice-wave" aria-hidden="true">
+                        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+                    </div>
+                    <div class="voice-actions">
+                        <button id="voiceCancel" type="button">Cancel</button>
+                        <button id="voiceStop" type="button">Stop</button>
+                    </div>
+                </div>
                 <p id="chatError" class="error" role="alert"></p>
             </div>
         </dialog>

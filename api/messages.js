@@ -13,6 +13,8 @@ function toMessage(doc) {
         reply: doc.reply || "",
         imageId: doc.imageId ? String(doc.imageId) : "",
         audioId: doc.audioId ? String(doc.audioId) : "",
+        videoId: doc.videoId ? String(doc.videoId) : "",
+        quote: doc.quote && doc.quote.text ? doc.quote : null,
         createdAt: doc.createdAt
     };
 }
@@ -75,6 +77,38 @@ function readVoice(value) {
         throw error;
     }
     return { data, type };
+}
+
+function readVideo(value) {
+    if (!value) return null;
+    const raw = String(value).replace(/^data:video\/[a-zA-Z0-9.+-]+;base64,/, "");
+    const data = Buffer.from(raw, "base64");
+    if (!data.length || data.length > 2_200_000) {
+        const error = new Error("That video is too long. Use a shorter clip.");
+        error.status = 400;
+        throw error;
+    }
+    let type = "";
+    if (data[0] === 0x1a && data[1] === 0x45 && data[2] === 0xdf && data[3] === 0xa3) type = "video/webm";
+    else if (data.length > 8 && data.slice(4, 8).toString("ascii") === "ftyp") type = "video/mp4";
+    if (!type) {
+        const error = new Error("Use a video.");
+        error.status = 400;
+        throw error;
+    }
+    return { data, type };
+}
+
+function cleanQuote(value) {
+    if (!value || typeof value !== "object") return null;
+    const id = String(value.id || "");
+    const text = String(value.text || "").trim().slice(0, 140);
+    if (!text) return null;
+    return {
+        id: id.slice(0, 40),
+        username: String(value.username || "Chat").trim().slice(0, 20) || "Chat",
+        text
+    };
 }
 
 function requestedId(req) {
@@ -159,12 +193,13 @@ module.exports = async function handler(req, res) {
                 }
                 time = amount + " " + unit;
             }
-            if (!text && !score && !time && !body.image && !body.voice) {
-                res.status(400).json({ error: "Write a message, a score, a time, add a photo, or a voice note." });
+            if (!text && !score && !time && !body.image && !body.voice && !body.video) {
+                res.status(400).json({ error: "Write a message, a score, a time, add a photo, a voice note, or a video." });
                 return;
             }
             const photo = readPhoto(body.image);
             const voice = readVoice(body.voice);
+            const video = readVideo(body.video);
             const createdAt = new Date();
             const created = await db.collection("messages").insertOne({
                 conversationId: conversation._id,
@@ -173,10 +208,12 @@ module.exports = async function handler(req, res) {
                 text,
                 score,
                 time,
+                quote: cleanQuote(body.quote),
                 createdAt
             });
             let imageId = "";
             let audioId = "";
+            let videoId = "";
             const extras = {};
             if (photo) {
                 const saved = await db.collection("images").insertOne({
@@ -200,7 +237,18 @@ module.exports = async function handler(req, res) {
                 audioId = String(saved.insertedId);
                 extras.audioId = saved.insertedId;
             }
-            if (imageId || audioId) {
+            if (video) {
+                const saved = await db.collection("images").insertOne({
+                    conversationId: conversation._id,
+                    messageId: created.insertedId,
+                    type: video.type,
+                    data: video.data,
+                    createdAt
+                });
+                videoId = String(saved.insertedId);
+                extras.videoId = saved.insertedId;
+            }
+            if (imageId || audioId || videoId) {
                 await db.collection("messages").updateOne(
                     { _id: created.insertedId },
                     { $set: extras }
@@ -235,6 +283,7 @@ module.exports = async function handler(req, res) {
                     time,
                     imageId,
                     audioId,
+                    videoId,
                     createdAt
                 })
             });
