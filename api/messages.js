@@ -289,6 +289,32 @@ module.exports = async function handler(req, res) {
             });
             return;
         }
+        if (req.method === "DELETE") {
+            const body = readJson(req);
+            const messageId = String(body.messageId || "");
+            if (!ObjectId.isValid(messageId)) {
+                res.status(400).json({ error: "Choose one of your messages." });
+                return;
+            }
+            const message = await db.collection("messages").findOne({
+                _id: new ObjectId(messageId),
+                conversationId: conversation._id
+            });
+            if (!message || String(message.userId) !== String(user._id)) {
+                res.status(404).json({ error: "That message is not yours." });
+                return;
+            }
+            const imageIds = [message.imageId, message.audioId, message.videoId].filter((id) => id);
+            await db.collection("images").deleteMany({
+                $or: [
+                    { messageId: message._id },
+                    ...(imageIds.length ? [{ _id: { $in: imageIds } }] : [])
+                ]
+            });
+            await db.collection("messages").deleteOne({ _id: message._id });
+            res.status(200).json({ ok: true });
+            return;
+        }
         if (req.method === "PATCH") {
             const body = readJson(req);
             const reply = body.reply === "accepted" || body.reply === "rejected" ? body.reply : "";
@@ -320,7 +346,7 @@ module.exports = async function handler(req, res) {
             res.status(200).json({ ok: true, reply });
             return;
         }
-        res.status(405).json({ error: "Use GET, POST, or PATCH" });
+        res.status(405).json({ error: "Use GET, POST, PATCH, or DELETE" });
     } catch (error) {
         console.error(error);
         res.status(error.status || 500).json({

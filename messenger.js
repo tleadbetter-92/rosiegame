@@ -47,6 +47,8 @@ let me = "";
 let typingPoll = null;
 let typingActive = false;
 let typingSentAt = 0;
+let recordingActive = false;
+let recordingSentAt = 0;
 let typingQueue = Promise.resolve();
 
 async function api(path, options) {
@@ -103,6 +105,7 @@ function showAuth() {
     if (chatPop.open) chatPop.close();
     if (notesAsk.open) notesAsk.close();
     if (notesPop.open) notesPop.close();
+    if (document.getElementById("clearAsk").open) document.getElementById("clearAsk").close();
     if (document.getElementById("groupPop").open) document.getElementById("groupPop").close();
     if (timer) {
         clearInterval(timer);
@@ -132,19 +135,47 @@ function typingLabel(names) {
     return names[0] + " and " + (names.length - 1) + " others are typing…";
 }
 
-function showTyping(names) {
+function recordingLabel(names) {
+    if (!names.length) return "";
+    if (names.length === 1) return names[0] + " is recording a voice note";
+    if (names.length === 2) return names[0] + " and " + names[1] + " are recording a voice note";
+    return names[0] + " and " + (names.length - 1) + " others are recording a voice note";
+}
+
+function showActivity(typingNames, recordingNames) {
     const line = document.getElementById("typingLine");
-    const text = typingLabel(names || []);
+    const recording = recordingLabel(recordingNames || []);
+    const stillTyping = (typingNames || []).filter((name) => !(recordingNames || []).includes(name));
+    const text = [recording, typingLabel(stillTyping)].filter(Boolean).join(". ");
     line.hidden = !text;
     line.textContent = text;
 }
 
-function postTyping(id, active) {
+function postStatus(id, body) {
     if (!id) return;
     typingQueue = typingQueue.then(() => api("/api/typing", {
         method: "POST",
-        body: JSON.stringify({ conversationId: id, typing: active })
+        body: JSON.stringify(Object.assign({ conversationId: id }, body))
     })).catch(() => {});
+}
+
+function postTyping(id, active) {
+    postStatus(id, { typing: active });
+}
+
+function stopRecordingSignal(id) {
+    if (!recordingActive) return;
+    recordingActive = false;
+    recordingSentAt = 0;
+    postStatus(id, { recording: false });
+}
+
+function pulseRecording() {
+    if (!selectedId || !recordingActive) return;
+    const now = Date.now();
+    if (now - recordingSentAt < 2000) return;
+    recordingSentAt = now;
+    postStatus(selectedId, { recording: true });
 }
 
 function pulseTyping() {
@@ -171,7 +202,7 @@ async function loadTyping() {
     try {
         const data = await api("/api/typing?conversationId=" + encodeURIComponent(id));
         if (selectedId !== id) return;
-        showTyping(data.typing || []);
+        showActivity(data.typing || [], data.recording || []);
     } catch {
         // Typing is a hint. A missed check should not show an error.
     }
@@ -190,10 +221,14 @@ function stopTypingWatch() {
     }
     const id = selectedId;
     const wasTyping = typingActive;
+    const wasRecording = recordingActive;
     typingActive = false;
     typingSentAt = 0;
-    showTyping([]);
+    recordingActive = false;
+    recordingSentAt = 0;
+    showActivity([], []);
     if (wasTyping && id) postTyping(id, false);
+    if (wasRecording && id) postStatus(id, { recording: false });
 }
 
 function openConversation(id, username, extra) {
@@ -452,6 +487,8 @@ function renderMessages(messages) {
         });
         item.append(bubble);
         if (armedId === message.id) {
+            const actions = document.createElement("div");
+            actions.className = "bubble-actions";
             const reply = document.createElement("button");
             reply.type = "button";
             reply.className = "reply-btn";
@@ -468,7 +505,19 @@ function renderMessages(messages) {
                 lastKey = "";
                 renderMessages(latestMessages);
             });
-            item.append(reply);
+            actions.append(reply);
+            if (mine) {
+                const remove = document.createElement("button");
+                remove.type = "button";
+                remove.className = "delete-btn";
+                remove.textContent = "Delete";
+                remove.addEventListener("click", (event) => {
+                    event.stopPropagation();
+                    deleteMessage(message.id);
+                });
+                actions.append(remove);
+            }
+            item.append(actions);
         }
         if (mine) {
             const mark = document.createElement("p");
@@ -480,6 +529,23 @@ function renderMessages(messages) {
     }
     if (nearBottom || messagesEl.scrollTop === 0) {
         messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+}
+
+async function deleteMessage(id) {
+    if (!selectedId) return;
+    try {
+        await api("/api/messages", {
+            method: "DELETE",
+            body: JSON.stringify({ conversationId: selectedId, messageId: id })
+        });
+        if (replyTarget && replyTarget.id === id) clearReply();
+        armedId = "";
+        lastKey = "";
+        await loadMessages();
+        await loadConversations();
+    } catch (error) {
+        chatError.textContent = error.message;
     }
 }
 
@@ -781,6 +847,7 @@ function releaseMic() {
 }
 
 function clearVoice() {
+    stopRecordingSignal(selectedId);
     if (voiceTimer) {
         clearInterval(voiceTimer);
         voiceTimer = null;
@@ -848,6 +915,7 @@ async function startVoice() {
         if (event.data && event.data.size) voiceChunks.push(event.data);
     };
     recorder.onstop = async () => {
+        stopRecordingSignal(selectedId);
         releaseMic();
         if (voiceTimer) {
             clearInterval(voiceTimer);
@@ -871,10 +939,14 @@ async function startVoice() {
         }
     };
     recorder.start();
+    recordingActive = true;
+    recordingSentAt = Date.now();
+    postStatus(selectedId, { recording: true });
     showVoice(0);
     voiceTimer = setInterval(() => {
         voiceSeconds = (Date.now() - started) / 1000;
         showVoice(voiceSeconds);
+        pulseRecording();
         if (voiceSeconds >= 60) stopVoice();
     }, 250);
 }
@@ -1060,6 +1132,64 @@ function clearVisibleChats() {
     empty.textContent = "No challenges yet.";
     contactsEl.appendChild(empty);
 }
+
+function stopNoteSave() {
+    clearTimeout(noteTimer);
+    noteSaveId += 1;
+}
+
+let clearAccountToo = false;
+
+function showClearChoice() {
+    clearAccountToo = false;
+    document.getElementById("clearChoice").hidden = false;
+    document.getElementById("clearSure").hidden = true;
+}
+
+document.getElementById("clearData").addEventListener("click", () => {
+    contactError.textContent = "";
+    showClearChoice();
+    document.getElementById("clearAsk").showModal();
+});
+
+document.getElementById("clearAccount").addEventListener("click", () => {
+    clearAccountToo = true;
+    document.getElementById("clearChoice").hidden = true;
+    document.getElementById("clearSure").hidden = false;
+});
+
+document.getElementById("clearKeep").addEventListener("click", () => {
+    clearAccountToo = false;
+    document.getElementById("clearChoice").hidden = true;
+    document.getElementById("clearSure").hidden = false;
+});
+
+document.getElementById("clearAsk").addEventListener("click", (event) => {
+    if (event.target === document.getElementById("clearAsk")) document.getElementById("clearAsk").close();
+});
+
+document.getElementById("clearAsk").addEventListener("close", showClearChoice);
+
+document.getElementById("clearSureBtn").addEventListener("click", async () => {
+    const account = clearAccountToo;
+    try {
+        stopNoteSave();
+        await noteWrite.catch(() => {});
+        await api("/api/clear-data", { method: "POST", body: JSON.stringify({ account }) });
+        document.getElementById("clearAsk").close();
+        if (account) {
+            showAuth();
+            return;
+        }
+        clearNoteForm();
+        clearVisibleChats();
+        if (notesAsk.open) notesAsk.close();
+        if (notesPop.open) notesPop.close();
+    } catch (error) {
+        contactError.textContent = error.message;
+        document.getElementById("clearAsk").close();
+    }
+});
 
 seeAllBtn.addEventListener("click", async () => {
     try {

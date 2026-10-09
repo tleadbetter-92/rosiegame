@@ -30,6 +30,7 @@ const routes = {
     "/api/typing": require("./api/typing"),
     "/api/conversations": require("./api/conversations"),
     "/api/clear-chats": require("./api/clear-chats"),
+    "/api/clear-data": require("./api/clear-data"),
     "/api/push-key": require("./api/push-key"),
     "/api/push-subscribe": require("./api/push-subscribe"),
     "/api/notes": require("./api/notes"),

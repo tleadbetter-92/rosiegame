@@ -15,14 +15,24 @@ function requestedId(req) {
     }
 }
 
-function freshTypers(conversation, userId) {
-    const typing = conversation.typing || {};
+function freshPeople(conversation, field, userId) {
+    const marks = conversation[field] || {};
     const now = Date.now();
-    return Object.keys(typing)
+    return Object.keys(marks)
         .filter((id) => id !== String(userId))
-        .map((id) => ({ id, at: new Date(typing[id]).getTime() }))
+        .map((id) => ({ id, at: new Date(marks[id]).getTime() }))
         .filter((item) => item.at && now - item.at < FRESH_MS)
         .sort((a, b) => b.at - a.at);
+}
+
+async function namesFor(db, people) {
+    const ids = people.map((item) => item.id).filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
+    if (!ids.length) return [];
+    const found = await db.collection("users")
+        .find({ _id: { $in: ids } }, { projection: { username: 1 } })
+        .toArray();
+    const byId = new Map(found.map((person) => [String(person._id), person.username]));
+    return people.map((item) => byId.get(item.id)).filter(Boolean);
 }
 
 module.exports = async function handler(req, res) {
@@ -47,31 +57,26 @@ module.exports = async function handler(req, res) {
             return;
         }
         if (req.method === "GET") {
-            const typers = freshTypers(conversation, user._id);
-            const ids = typers.map((item) => item.id).filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
-            let names = [];
-            if (ids.length) {
-                const people = await db.collection("users")
-                    .find({ _id: { $in: ids } }, { projection: { username: 1 } })
-                    .toArray();
-                const byId = new Map(people.map((person) => [String(person._id), person.username]));
-                names = typers.map((item) => byId.get(item.id)).filter(Boolean);
-            }
-            res.status(200).json({ typing: names });
+            res.status(200).json({
+                typing: await namesFor(db, freshPeople(conversation, "typing", user._id)),
+                recording: await namesFor(db, freshPeople(conversation, "recording", user._id))
+            });
             return;
         }
         if (req.method === "POST") {
-            const key = "typing." + String(user._id);
-            if (readJson(req).typing === true) {
-                await db.collection("conversations").updateOne(
-                    { _id: conversation._id },
-                    { $set: { [key]: new Date() } }
-                );
-            } else {
-                await db.collection("conversations").updateOne(
-                    { _id: conversation._id },
-                    { $unset: { [key]: "" } }
-                );
+            const body = readJson(req);
+            const set = {};
+            const unset = {};
+            const userKey = String(user._id);
+            if (body.typing === true) set["typing." + userKey] = new Date();
+            else if (body.typing === false) unset["typing." + userKey] = "";
+            if (body.recording === true) set["recording." + userKey] = new Date();
+            else if (body.recording === false) unset["recording." + userKey] = "";
+            const update = {};
+            if (Object.keys(set).length) update.$set = set;
+            if (Object.keys(unset).length) update.$unset = unset;
+            if (Object.keys(update).length) {
+                await db.collection("conversations").updateOne({ _id: conversation._id }, update);
             }
             res.status(200).json({ ok: true });
             return;

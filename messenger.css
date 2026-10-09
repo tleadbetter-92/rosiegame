@@ -243,6 +243,47 @@ input:focus, select:focus {
 
 #newGroup:hover { background: #f7f5f2; }
 
+#clearData {
+    display: block;
+    width: calc(100% - 12px);
+    margin: 28px 6px 8px;
+    padding: 16px 18px;
+    border-radius: 14px;
+    background: #1c1c1c;
+    color: white;
+    font-size: 1.05rem;
+    font-weight: 650;
+}
+
+#clearData:hover { background: #2a2a2a; }
+
+#clearAsk {
+    width: min(320px, calc(100% - 24px));
+    margin: auto;
+    padding: 0;
+    overflow: hidden;
+    background: white;
+    border: none;
+    border-radius: 20px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+}
+
+#clearAsk::backdrop { background: rgba(16, 16, 16, 0.46); }
+
+#clearAsk p {
+    margin: 0;
+    text-align: center;
+    line-height: 1.4;
+}
+
+#clearAsk button { width: 100%; border-radius: 12px; }
+
+#clearKeep {
+    background: white;
+    color: #1c1c1c;
+    border: 1px solid #e4e0da;
+}
+
 .group-body { padding: 16px; }
 
 .group-add {
@@ -963,8 +1004,18 @@ input:focus, select:focus {
     color: #1c1c1c;
 }
 
-.reply-btn {
+.bubble-actions {
+    display: flex;
+    gap: 6px;
+    width: fit-content;
     margin-top: 6px;
+}
+
+#messages li.mine .bubble-actions { margin-left: auto; }
+
+.reply-btn,
+.delete-btn {
+    margin-top: 0;
     padding: 6px 12px;
     background: white;
     color: #1c1c1c;

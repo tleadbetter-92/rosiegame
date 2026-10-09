@@ -60,7 +60,18 @@
             </form>
             <button id="newGroup" type="button">New group</button>
             <p id="contactError" class="error" role="alert"></p>
+            <button id="clearData" type="button">Clear all data</button>
         </section>
+        <dialog id="clearAsk">
+            <div id="clearChoice" class="notes-ask">
+                <p>Clear notes, messages, and contacts?</p>
+                <button id="clearAccount" type="button">Including account?</button>
+                <button id="clearKeep" type="button">No</button>
+            </div>
+            <div id="clearSure" class="notes-ask" hidden>
+                <button id="clearSureBtn" type="button">Sure?</button>
+            </div>
+        </dialog>
         <dialog id="chatPop">
             <div class="pop">
                 <div class="pop-bar">
