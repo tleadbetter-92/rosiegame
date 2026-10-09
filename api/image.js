@@ -10,6 +10,7 @@ function photoBytes(value) {
 }
 
 module.exports = async function handler(req, res) {
+    res.setHeader("Cache-Control", "private, no-store");
     if (req.method !== "GET") {
         res.status(405).json({ error: "Use GET" });
         return;
@@ -41,7 +42,7 @@ module.exports = async function handler(req, res) {
         }
         res.status(200);
         res.setHeader("Content-Type", image.type || "image/jpeg");
-        res.setHeader("Cache-Control", "private, max-age=86400");
+        res.setHeader("Cache-Control", "private, no-store");
         res.send(photoBytes(image.data));
     } catch (error) {
         console.error(error);

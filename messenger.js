@@ -55,7 +55,8 @@ async function api(path, options) {
     const response = await fetch(path, {
         credentials: "same-origin",
         headers: options && options.body ? { "Content-Type": "application/json" } : undefined,
-        ...options
+        ...options,
+        cache: "no-store"
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -83,7 +84,6 @@ function showChat(username) {
     setTimeout(leaveContactBox, 0);
     setTimeout(leaveContactBox, 250);
     prepareNotifications();
-    loadNotes().catch(() => {});
     loadConversations().then(() => openChatFromId(openedChat)).catch(() => {});
     if (!timer) timer = setInterval(refresh, 3000);
 }
@@ -561,7 +561,7 @@ async function loadConversations() {
 }
 
 async function loadMessages() {
-    if (!selectedId) return;
+    if (!selectedId || !chatPop.open) return;
     try {
         const data = await api("/api/messages?conversationId=" + encodeURIComponent(selectedId));
         chatError.textContent = "";
@@ -1180,6 +1180,7 @@ document.getElementById("clearSureBtn").addEventListener("click", async () => {
         stopNoteSave();
         await noteWrite.catch(() => {});
         await api("/api/clear-data", { method: "POST", body: JSON.stringify({ account }) });
+        notesOnScreen = false;
         document.getElementById("clearAsk").close();
         if (account) {
             showAuth();
@@ -1367,6 +1368,7 @@ let noteTaken = [];
 let noteTimer = null;
 let noteSaveId = 0;
 let noteWrite = Promise.resolve();
+let notesOnScreen = false;
 
 function noteTotal() {
     const total = noteRows.reduce((sum, row) => {
@@ -1391,6 +1393,7 @@ function renderNoteRows() {
         const text = document.createElement("input");
         text.type = "text";
         text.maxLength = 200;
+        text.autocomplete = "off";
         text.placeholder = "Text";
         text.value = row.text;
         text.addEventListener("input", () => {
@@ -1399,6 +1402,7 @@ function renderNoteRows() {
         });
         const amount = document.createElement("input");
         amount.type = "text";
+        amount.autocomplete = "off";
         amount.inputMode = "decimal";
         amount.maxLength = 20;
         amount.placeholder = "0";
@@ -1448,6 +1452,7 @@ function renderTakeRows(focusIndex) {
         line.className = "take-row";
         const input = document.createElement("input");
         input.type = "text";
+        input.autocomplete = "off";
         input.inputMode = "decimal";
         input.maxLength = 20;
         input.placeholder = "0";
@@ -1507,6 +1512,33 @@ function saveNotes() {
     }, 400);
 }
 
+function snapshotNotes() {
+    const tableHidden = document.getElementById("noteTable").hidden;
+    const takeHidden = document.getElementById("takeTable").hidden;
+    return {
+        text: document.getElementById("noteText").value,
+        rows: tableHidden ? [] : noteRows.map((row) => ({ text: row.text, amount: row.amount })),
+        start: takeHidden ? "" : noteStart,
+        taken: takeHidden ? [] : noteTaken.slice()
+    };
+}
+
+function forgetNotes() {
+    clearTimeout(noteTimer);
+    noteSaveId += 1;
+    if (!notesOnScreen) {
+        clearNoteForm();
+        return;
+    }
+    const saved = snapshotNotes();
+    notesOnScreen = false;
+    clearNoteForm();
+    noteWrite = noteWrite.catch(() => {}).then(() => api("/api/notes", {
+        method: "PUT",
+        body: JSON.stringify(saved)
+    })).catch(() => {});
+}
+
 async function loadNotes() {
     const data = await api("/api/notes");
     document.getElementById("noteText").value = data.text || "";
@@ -1531,6 +1563,7 @@ async function loadNotes() {
     }
     noteTotal();
     noteLeft();
+    notesOnScreen = true;
 }
 
 notesBtn.addEventListener("click", () => {
@@ -1539,6 +1572,7 @@ notesBtn.addEventListener("click", () => {
 
 document.getElementById("seeNotes").addEventListener("click", async () => {
     notesAsk.close();
+    notesOnScreen = false;
     noteSaveId += 1;
     clearTimeout(noteTimer);
     try {
@@ -1549,9 +1583,14 @@ document.getElementById("seeNotes").addEventListener("click", async () => {
     } catch (error) {}
 });
 
-document.getElementById("cancelNotes").addEventListener("click", () => {
-    notesAsk.close();
-    if (!notesPop.open) notesPop.showModal();
+document.getElementById("cancelNotes").addEventListener("click", async () => {
+    try {
+        await loadNotes();
+        notesAsk.close();
+        if (!notesPop.open) notesPop.showModal();
+    } catch (error) {
+        contactError.textContent = error.message;
+    }
 });
 
 notesAsk.addEventListener("click", (event) => {
@@ -1565,6 +1604,8 @@ document.getElementById("closeNotes").addEventListener("click", () => {
 notesPop.addEventListener("click", (event) => {
     if (event.target === notesPop) notesPop.close();
 });
+
+notesPop.addEventListener("close", forgetNotes);
 
 document.getElementById("noteText").addEventListener("input", saveNotes);
 
@@ -1631,6 +1672,7 @@ chatPop.addEventListener("close", () => {
     selectedId = "";
     selectedName = "";
     lastKey = null;
+    latestMessages = [];
     showGroup(null);
     sendForm.hidden = true;
     messagesEl.replaceChildren();

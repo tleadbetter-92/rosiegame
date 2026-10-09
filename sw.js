@@ -6,6 +6,12 @@ self.addEventListener("activate", (event) => {
     event.waitUntil(self.clients.claim());
 });
 
+self.addEventListener("fetch", (event) => {
+    const path = new URL(event.request.url).pathname;
+    if (path !== "/api/messages" && path !== "/api/notes" && path !== "/api/image" && path !== "/api/conversations") return;
+    event.respondWith(fetch(event.request, { cache: "no-store" }));
+});
+
 function siteIsOpen(client) {
     if (client.visibilityState !== "visible") return false;
     try {

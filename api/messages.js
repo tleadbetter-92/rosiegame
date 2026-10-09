@@ -131,6 +131,7 @@ async function ownedConversation(db, user, conversationId) {
 }
 
 module.exports = async function handler(req, res) {
+    res.setHeader("Cache-Control", "private, no-store");
     try {
         const user = await currentUser(req, res);
         if (!user) {
