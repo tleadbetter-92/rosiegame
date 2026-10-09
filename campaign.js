@@ -57,8 +57,9 @@ function take(data) {
 }
 
 async function refresh() {
-    const data = await (await fetch("/api/campaign", { cache: "no-store" })).json();
-    take(data);
+    const res = await fetch("/api/campaign", { cache: "no-store" });
+    if (!res.ok) throw new Error("unreachable");
+    take(await res.json());
 }
 
 document.getElementById("restart").addEventListener("click", async () => {
@@ -76,6 +77,7 @@ refresh().catch(() => {
     clock.textContent = "The campaign is not reachable.";
 });
 setInterval(() => {
-    paintClock();
-    refresh().catch(() => {});
+    refresh().then(() => paintClock()).catch(() => {
+        clock.textContent = "The campaign is not reachable.";
+    });
 }, 1000);

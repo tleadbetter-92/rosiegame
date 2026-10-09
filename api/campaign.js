@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { getDb } = require("../lib/db");
 
 const TURN_MS = 10 * 60 * 1000;
 const BATTLE_MS = 2000;
@@ -129,22 +130,60 @@ function ensureGates(state) {
     return dirty;
 }
 
-function readState() {
+function readFileState() {
     try {
         const saved = JSON.parse(fs.readFileSync(file, "utf8"));
         if (saved && Number.isFinite(saved.startedAt)) return saved;
     } catch {
-        /* first run */
+        /* first run, or the host has no saved file */
     }
     const state = { startedAt: Date.now(), pausedAt: null, health: {} };
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(state));
+    writeFileState(state);
     return state;
 }
 
-function writeState(state) {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(state));
+function writeFileState(state) {
+    try {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, JSON.stringify(state));
+    } catch (error) {
+        console.error(error);
+    }
+}
+
+function hosted() {
+    return Boolean(process.env.VERCEL && process.env.MONGODB_URI);
+}
+
+function blankState() {
+    const now = Date.now();
+    const state = { startedAt: now, pausedAt: null, health: {} };
+    restartCampaign(state, now);
+    return state;
+}
+
+async function readState() {
+    if (!hosted()) return readFileState();
+    const db = await getDb();
+    const doc = await db.collection("campaign").findOne({ _id: "world" });
+    if (doc && doc.state && Number.isFinite(doc.state.startedAt)) return doc.state;
+    const state = blankState();
+    await writeState(state);
+    return state;
+}
+
+async function writeState(state) {
+    if (!hosted()) {
+        writeFileState(state);
+        return;
+    }
+    const db = await getDb();
+    const clean = JSON.parse(JSON.stringify(state));
+    await db.collection("campaign").updateOne(
+        { _id: "world" },
+        { $set: { state: clean } },
+        { upsert: true }
+    );
 }
 
 function turnOf(state, clock) {
@@ -855,27 +894,27 @@ function syncWorld(state, now) {
     return { dirty, turn, paused };
 }
 
-function campaignState(now, saved) {
-    const state = saved || readState();
+async function campaignState(now, saved) {
+    const state = saved || await readState();
     const { dirty, turn, paused } = syncWorld(state, now);
-    if (dirty && !saved) writeState(state);
+    if (dirty && !saved) await writeState(state);
     return present(state, now, turn, paused);
 }
 
-function hitFisher(village) {
-    const state = readState();
+async function hitFisher(village) {
+    const state = await readState();
     const now = Date.now();
     syncWorld(state, now);
     const man = livingFisher(state, village);
     if (man) man.health -= 1;
     creditFish(state, now);
-    writeState(state);
+    await writeState(state);
     const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
     return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
 }
 
-function hitGate(village, side) {
-    const state = readState();
+async function hitGate(village, side) {
+    const state = await readState();
     const now = Date.now();
     syncWorld(state, now);
     if (village >= 0 && village <= 3 && side >= 0 && side <= 3 && state.owners[village] !== PLAYER_FACTION) {
@@ -889,13 +928,13 @@ function hitGate(village, side) {
             }
         }
     }
-    writeState(state);
+    await writeState(state);
     const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
     return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
 }
 
-function hitArcher(village, side) {
-    const state = readState();
+async function hitArcher(village, side) {
+    const state = await readState();
     const now = Date.now();
     syncWorld(state, now);
     if (village >= 0 && village <= 3 && side >= 0 && side <= 3 && state.owners[village] !== PLAYER_FACTION) {
@@ -908,13 +947,13 @@ function hitArcher(village, side) {
             }
         }
     }
-    writeState(state);
+    await writeState(state);
     const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
     return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
 }
 
-function hit(village, index) {
-    const state = readState();
+async function hit(village, index) {
+    const state = await readState();
     const now = Date.now();
     syncWorld(state, now);
     const faction = village;
@@ -924,43 +963,48 @@ function hit(village, index) {
         if (current > 0) state.health[key] = current - 1;
     }
     fight(state, now);
-    writeState(state);
+    await writeState(state);
     const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
     return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
 }
 
-module.exports = function handler(req, res) {
+module.exports = async function handler(req, res) {
     res.setHeader("Cache-Control", "no-store");
-    if (req.method === "POST") {
-        if (req.body && req.body.restart) {
-            const state = readState();
-            restartCampaign(state, Date.now());
-            writeState(state);
-            res.status(200).json(campaignState(Date.now()));
+    try {
+        if (req.method === "POST") {
+            if (req.body && req.body.restart) {
+                const state = await readState();
+                restartCampaign(state, Date.now());
+                await writeState(state);
+                res.status(200).json(await campaignState(Date.now()));
+                return;
+            }
+            if (req.body && Number.isInteger(req.body.fisherman)) {
+                res.status(200).json(await hitFisher(req.body.fisherman));
+                return;
+            }
+            if (req.body && Number.isInteger(req.body.gate) && Number.isInteger(req.body.side)) {
+                res.status(200).json(await hitGate(req.body.gate, req.body.side));
+                return;
+            }
+            if (req.body && Number.isInteger(req.body.archer) && Number.isInteger(req.body.tower)) {
+                res.status(200).json(await hitArcher(req.body.archer, req.body.tower));
+                return;
+            }
+            const village = Number(req.body && req.body.village);
+            const index = Number(req.body && req.body.index);
+            res.status(200).json(await hit(village, index));
             return;
         }
-        if (req.body && Number.isInteger(req.body.fisherman)) {
-            res.status(200).json(hitFisher(req.body.fisherman));
+        if (req.method !== "GET") {
+            res.status(405).json({ error: "Method not allowed" });
             return;
         }
-        if (req.body && Number.isInteger(req.body.gate) && Number.isInteger(req.body.side)) {
-            res.status(200).json(hitGate(req.body.gate, req.body.side));
-            return;
-        }
-        if (req.body && Number.isInteger(req.body.archer) && Number.isInteger(req.body.tower)) {
-            res.status(200).json(hitArcher(req.body.archer, req.body.tower));
-            return;
-        }
-        const village = Number(req.body && req.body.village);
-        const index = Number(req.body && req.body.index);
-        res.status(200).json(hit(village, index));
-        return;
+        res.status(200).json(await campaignState(Date.now()));
+    } catch (error) {
+        console.error(error);
+        if (!res.headersSent) res.status(500).json({ error: "Something went wrong." });
     }
-    if (req.method !== "GET") {
-        res.status(405).json({ error: "Method not allowed" });
-        return;
-    }
-    res.status(200).json(campaignState(Date.now()));
 };
 
 module.exports.campaignState = campaignState;
