@@ -20,12 +20,14 @@
     <p id="death" hidden>You are slain</p>
     <p id="strike"></p>
     <p class="help">WASD to walk · mouse to look · hold and drag to swing</p>
-    <div id="pad" hidden>
+    <div id="pad" role="slider" aria-label="Move" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0" hidden>
         <div class="knob"></div>
     </div>
     <button id="attack" type="button" aria-label="Attack" hidden>
         <svg viewBox="0 0 64 64" aria-hidden="true">
-            <path d="M30 4h4l3 34h10v6H37l-3 16h-4l-3-16H14v-6h13L30 4z"/>
+            <path fill="#f4f7f8" d="M30 2h4l2 28h8v5h-8l-1 9h5v4h-5l-1 12h-4l-1-12h-5v-4h5l-1-9h-8v-5h8z"/>
+            <path fill="#c6a15a" d="M22 30h20v5H22z"/>
+            <path fill="#6a3d22" d="M29 35h6v20h-6z"/>
         </svg>
     </button>
     <script src="village.js"></script>

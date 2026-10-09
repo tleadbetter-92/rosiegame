@@ -232,7 +232,11 @@ html, body {
         width: 150px;
     }
 
-    #weapon { right: 28%; }
+    #weapon {
+        right: 36%;
+        width: 96px;
+        height: 30vh;
+    }
 
     #pad,
     #attack { display: block; }
@@ -284,10 +288,9 @@ html, body {
 
     #attack svg {
         display: block;
-        width: 42px;
-        height: 42px;
+        width: 46px;
+        height: 46px;
         margin: 0 auto;
-        fill: currentColor;
         filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.45));
     }
 

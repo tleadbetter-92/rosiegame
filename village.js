@@ -1566,8 +1566,8 @@ pad.addEventListener("pointerdown", (e) => {
     if (!phone.matches || player.dead || moveId !== null) return;
     moveId = e.pointerId;
     pad.classList.add("held");
-    pad.setPointerCapture(e.pointerId);
     placeKnob(e.clientX, e.clientY);
+    try { pad.setPointerCapture(e.pointerId); } catch (err) { /* the pointer is already held */ }
     e.preventDefault();
 });
 pad.addEventListener("pointermove", (e) => {
