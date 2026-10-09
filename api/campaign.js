@@ -25,7 +25,7 @@ const places = [
 
 const MAX_HP = 3;
 const FISHER_HP = 1;
-const POP = 20;
+const POP = 30;
 const RECRUIT_MS = 2 * 60 * 1000;
 const FISHER_COST = 50;
 const SOLDIER_COST = 70;
@@ -33,6 +33,8 @@ const fisherAim = [2, 4, 3, 3];
 const FISH_MS = 30000;
 const FISH_WALK = 2.2;
 const FISH_FOOD = 10;
+const WOOD_MS = 30000;
+const WOOD_YIELD = 10;
 const storePlan = { x: -12, z: -16, w: 8, d: 5.5 };
 const GATE_HP = 50;
 const PLAYER_FACTION = 2;
@@ -246,6 +248,7 @@ function fielded(state, faction, village) {
 function restartCampaign(state, now) {
     state.owners = [0, 1, 2, 3];
     state.food = [100, 100, 100, 100];
+    state.wood = [0, 0, 0, 0];
     state.health = {};
     state.post = {};
     state.nextIndex = [0, 0, 0, 0];
@@ -257,6 +260,7 @@ function restartCampaign(state, now) {
         cycleStart: now,
         delivered: 0
     }));
+    state.woodcutters = [];
     state.gates = freshGates();
     state.archers = freshArchers();
     state.restartedAt = now;
@@ -445,12 +449,102 @@ function maybeAttack(state, faction, turn, now) {
     return true;
 }
 
-function storeDoor(village) {
+function storeExit(village) {
     const place = places[village];
-    return {
-        x: place.x + storePlan.x + storePlan.w / 2,
-        z: place.z + storePlan.z - 1.1
-    };
+    const x = place.x + storePlan.x;
+    const z = place.z + storePlan.z;
+    const midX = x + storePlan.w / 2;
+    if (village === 2) return { x: midX, z: z + storePlan.d + 1.05 };
+    return { x: midX, z: z - 1.05 };
+}
+
+function houseRects(village) {
+    const place = places[village];
+    const plan = [
+        [-10, 3, 6, 5],
+        [4, 3, 6, 5],
+        [-11, -5.2, 6, 5],
+        [5, -5.2, 5.5, 5],
+        [-12, -16, 8, 5.5],
+        [4, -16, 7, 5.5]
+    ];
+    return plan.map((house) => ({
+        x: place.x + house[0],
+        z: place.z + house[1],
+        w: house[2],
+        d: house[3]
+    }));
+}
+
+function segmentHitsRect(ax, az, bx, bz, rect) {
+    const pad = 0.35;
+    const x0 = rect.x - pad;
+    const z0 = rect.z - pad;
+    const x1 = rect.x + rect.w + pad;
+    const z1 = rect.z + rect.d + pad;
+    const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.35));
+    for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const x = ax + (bx - ax) * t;
+        const z = az + (bz - az) * t;
+        if (x > x0 && x < x1 && z > z0 && z < z1) return true;
+    }
+    return false;
+}
+
+function hitsHouse(a, b, rects) {
+    return rects.some((rect) => segmentHitsRect(a.x, a.z, b.x, b.z, rect));
+}
+
+function gateMouth(village, side) {
+    const box = palisadeBox(village);
+    const inset = 2.4;
+    if (side === 0) return { x: box.cx, z: box.minZ + inset };
+    if (side === 1) return { x: box.maxX - inset, z: box.cz };
+    if (side === 2) return { x: box.cx, z: box.maxZ - inset };
+    return { x: box.minX + inset, z: box.cz };
+}
+
+function pushClear(points, next, rects, village) {
+    const prev = points[points.length - 1];
+    if (Math.hypot(next.x - prev.x, next.z - prev.z) < 0.4) return;
+    if (!hitsHouse(prev, next, rects)) {
+        points.push(next);
+        return;
+    }
+    const place = places[village];
+    const sides = [
+        { x: place.x - 2.1, z: prev.z },
+        { x: place.x - 15.2, z: prev.z }
+    ];
+    const side = sides.find((spot) => !hitsHouse(prev, spot, rects)) || sides[0];
+    if (Math.hypot(side.x - prev.x, side.z - prev.z) > 0.4) points.push(side);
+    const drop = { x: side.x, z: next.z };
+    if (Math.hypot(drop.x - points[points.length - 1].x, drop.z - points[points.length - 1].z) > 0.4 && !hitsHouse(points[points.length - 1], drop, rects)) {
+        points.push(drop);
+    }
+    points.push(next);
+}
+
+function villagerPath(village, dest) {
+    const place = places[village];
+    const rects = houseRects(village);
+    const door = storeExit(village);
+    const lane = { x: door.x, z: place.z - 7.85 };
+    const side = exitSide(village, lane, dest);
+    const mouth = gateMouth(village, side);
+    const gate = gateSpot(village, side, 0);
+    const points = [door];
+    pushClear(points, lane, rects, village);
+    pushClear(points, { x: mouth.x, z: lane.z }, rects, village);
+    pushClear(points, mouth, rects, village);
+    points.push(gate);
+    points.push(dest);
+    return points;
+}
+
+function storeDoor(village) {
+    return storeExit(village);
 }
 
 function fishShore(from) {
@@ -465,15 +559,143 @@ function fishShore(from) {
 }
 
 function fishRoute(village) {
-    const from = storeDoor(village);
-    const to = fishShore(from);
-    const via = gateSpot(village, exitSide(village, from, to), 0);
-    const length = Math.hypot(via.x - from.x, via.z - from.z) + Math.hypot(to.x - via.x, to.z - via.z);
-    return { from, via, to, length, walkMs: Math.round((length / FISH_WALK) * 1000) };
+    const to = fishShore(storeExit(village));
+    const path = villagerPath(village, to);
+    const length = pathLength(path);
+    return { from: path[0], via: path[Math.min(1, path.length - 1)], to, path, length, walkMs: Math.round((length / FISH_WALK) * 1000) };
 }
 
 function fishPeriod(village) {
     return fishRoute(village).walkMs * 2 + FISH_MS;
+}
+
+function treeCenters() {
+    const spots = [];
+    const boxes = [];
+    const plan = [
+        [-10, 3, 6, 5],
+        [4, 3, 6, 5],
+        [-11, -5.2, 6, 5],
+        [5, -5.2, 5.5, 5],
+        [-12, -16, 8, 5.5],
+        [4, -16, 7, 5.5]
+    ];
+    for (const place of places) {
+        for (const house of plan) {
+            boxes.push({ x: place.x + house[0], z: place.z + house[1], w: house[2], d: house[3] });
+        }
+    }
+    let n = 0;
+    const next = () => {
+        n += 1;
+        let a = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b);
+        a = Math.imul(a ^ (a >>> 13), 0xc2b2ae35);
+        return ((a ^ (a >>> 16)) >>> 0) / 4294967296;
+    };
+    const groves = [
+        [-72, -8, 16, 15],
+        [70, 6, 14, 13],
+        [-6, -76, 11, 12],
+        [14, 76, 10, 11],
+        [2, 6, 9, 9],
+        [-78, 48, 8, 10],
+        [76, -58, 8, 10],
+        [-55, -55, 7, 8],
+        [55, 48, 7, 8]
+    ];
+    const scenery = [];
+    const open = (x, z) => {
+        if (Math.max(Math.abs(x), Math.abs(z)) > 86) return false;
+        if (Math.abs(x + 40) < 3.4 && z > -86 && z < 86) return false;
+        if (Math.abs(x - 40) < 3.4 && z > -86 && z < 86) return false;
+        if (Math.abs(z + 40) < 3.4 && x > -86 && x < 86) return false;
+        if (Math.abs(z - 40) < 3.4 && x > -86 && x < 86) return false;
+        for (const place of places) {
+            const lx = x - place.x;
+            const lz = z - place.z;
+            if (Math.abs(lz + 7.85) < 2.6 && Math.abs(lx) < 16) return false;
+            if (Math.abs(x - (place.x - 0.5)) < 22 && Math.abs(z - (place.z - 4)) < 22) return false;
+        }
+        for (const b of boxes) {
+            if (x > b.x - 1.4 && x < b.x + b.w + 1.4 && z > b.z - 1.4 && z < b.z + b.d + 1.4) return false;
+        }
+        for (const item of scenery) {
+            const dx = x - (item.x + item.w / 2);
+            const dz = z - (item.z + item.d / 2);
+            if (dx * dx + dz * dz < 6.2) return false;
+        }
+        return true;
+    };
+    for (const grove of groves) {
+        const gx = grove[0];
+        const gz = grove[1];
+        const count = grove[2];
+        const radius = grove[3];
+        let placed = 0;
+        let tries = 0;
+        while (placed < count && tries < count * 14) {
+            tries += 1;
+            const x = gx + (next() - 0.5) * radius * 2;
+            const z = gz + (next() - 0.5) * radius * 2;
+            if (!open(x, z)) continue;
+            const roll = next();
+            if (roll < 0.72) {
+                next();
+                const s = next();
+                const tw = 0.24 + s * 0.14;
+                scenery.push({ x: x - tw / 2, z: z - tw / 2, w: tw, d: tw });
+                spots.push({ x, z });
+            } else if (roll < 0.88) {
+                const w = 0.55 + next() * 0.45;
+                const d = 0.5 + next() * 0.4;
+                next();
+                scenery.push({ x: x - w / 2, z: z - d / 2, w, d });
+            } else {
+                const w = 0.45 + next() * 0.75;
+                const d = 0.4 + next() * 0.55;
+                next();
+                if (next() > 0.45) { /* second stone */ }
+                scenery.push({ x: x - w / 2, z: z - d / 2, w, d });
+            }
+            placed += 1;
+        }
+    }
+    return spots;
+}
+
+const trees = treeCenters();
+
+function nearestTree(from, slot) {
+    if (!trees.length) return { x: from.x, z: from.z };
+    let best = trees[0];
+    let bestDist = Infinity;
+    for (const tree of trees) {
+        const dist = Math.hypot(tree.x - from.x, tree.z - from.z);
+        if (dist < bestDist) {
+            best = tree;
+            bestDist = dist;
+        }
+    }
+    const dx = from.x - best.x;
+    const dz = from.z - best.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const side = (slot || 0) * 0.75;
+    return {
+        x: best.x + (dx / len) * 1.15 + (-dz / len) * side,
+        z: best.z + (dz / len) * 1.15 + (dx / len) * side
+    };
+}
+
+function woodRoute(village, slot) {
+    const from = storeExit(village);
+    const to = nearestTree(from, slot);
+    const path = villagerPath(village, to);
+    const length = pathLength(path);
+    return { from: path[0], via: path[Math.min(1, path.length - 1)], to, path, length, walkMs: Math.round((length / FISH_WALK) * 1000) };
+}
+
+function woodPeriod(village, slot) {
+    return woodRoute(village, slot).walkMs * 2 + WOOD_MS;
 }
 
 function livingFisher(state, village) {
@@ -488,6 +710,19 @@ function addFisher(state, village, now) {
     note(state, owner === village ? who + " recruits a fisherman." : who + " recruits a fisherman in " + place + ".");
 }
 
+function addWoodcutter(state, village, now) {
+    const slot = state.woodcutters.filter((man) => man.village === village).length;
+    state.woodcutters.push({ village, slot, health: FISHER_HP, cycleStart: now, delivered: 0 });
+    const owner = state.owners[village];
+    const who = factions[owner].name;
+    const place = factions[village].name;
+    note(state, owner === village ? who + " recruits a woodcutter." : who + " recruits a woodcutter in " + place + ".");
+}
+
+function jobWeight(kind) {
+    return kind === "soldier" ? 2 : 1;
+}
+
 function villageCounts(state, village) {
     const owner = state.owners[village];
     let soldiers = 0;
@@ -495,8 +730,11 @@ function villageCounts(state, village) {
         if (state.post[keyOf(owner, index)] === village) soldiers += 1;
     });
     const fishers = state.fishermen.filter((man) => man.village === village && man.health > 0).length;
+    const wood = (state.woodcutters || []).filter((man) => man.village === village && man.health > 0).length;
     const training = state.training.filter((job) => job.village === village);
-    return { soldiers, fishers, training, pop: soldiers + fishers + training.length };
+    const trainingPop = training.reduce((sum, job) => sum + jobWeight(job.kind), 0);
+    const living = soldiers * 2 + fishers + wood;
+    return { soldiers, fishers, wood, training, living, pop: living + trainingPop };
 }
 
 function ensureEconomy(state, now) {
@@ -505,8 +743,16 @@ function ensureEconomy(state, now) {
         state.food = [100, 100, 100, 100];
         dirty = true;
     }
+    if (!Array.isArray(state.wood) || state.wood.length !== 4) {
+        state.wood = [0, 0, 0, 0];
+        dirty = true;
+    }
     if (!Array.isArray(state.fishermen)) {
         state.fishermen = [];
+        dirty = true;
+    }
+    if (!Array.isArray(state.woodcutters)) {
+        state.woodcutters = [];
         dirty = true;
     }
     if (!Array.isArray(state.training)) {
@@ -597,12 +843,14 @@ function finishTraining(state, now) {
         }
         dirty = true;
         const counts = villageCounts(state, job.village);
-        const future = state.training.filter((item) => item.village === job.village && item !== job && now < item.readyAt).length;
-        if (counts.soldiers + counts.fishers + future >= POP) {
-            state.food[state.owners[job.village]] += job.kind === "fisher" ? FISHER_COST : SOLDIER_COST;
+        const others = state.training.filter((item) => item.village === job.village && item !== job && now < item.readyAt);
+        const otherPop = others.reduce((sum, item) => sum + jobWeight(item.kind), 0);
+        if (counts.living + otherPop + jobWeight(job.kind) > POP) {
+            state.food[state.owners[job.village]] += job.kind === "soldier" ? SOLDIER_COST : FISHER_COST;
             continue;
         }
         if (job.kind === "fisher") addFisher(state, job.village, now);
+        else if (job.kind === "wood") addWoodcutter(state, job.village, now);
         else {
             const owner = state.owners[job.village];
             const index = state.nextIndex[owner]++;
@@ -628,15 +876,23 @@ function orderTraining(state, now) {
         };
         if (!has("fisher")) {
             const counts = villageCounts(state, village);
-            if (counts.fishers < aim && counts.pop < POP && pay(FISHER_COST)) {
+            if (counts.fishers < aim && counts.pop + 1 <= POP && pay(FISHER_COST)) {
                 state.training.push({ village, kind: "fisher", readyAt: now + RECRUIT_MS });
+                dirty = true;
+            }
+        }
+        if (!has("wood")) {
+            const counts = villageCounts(state, village);
+            if (counts.wood < aim && counts.pop + 1 <= POP && pay(FISHER_COST)) {
+                state.training.push({ village, kind: "wood", readyAt: now + RECRUIT_MS });
                 dirty = true;
             }
         }
         if (!has("soldier")) {
             const counts = villageCounts(state, village);
-            const fishRoom = Math.max(0, aim - counts.fishers);
-            if (counts.pop < POP && counts.soldiers < POP - fishRoom && pay(SOLDIER_COST)) {
+            const fisherRoom = Math.max(0, aim - counts.fishers - (has("fisher") ? 1 : 0));
+            const woodRoom = Math.max(0, aim - counts.wood - (has("wood") ? 1 : 0));
+            if (counts.pop + 2 + fisherRoom + woodRoom <= POP && pay(SOLDIER_COST)) {
                 state.training.push({ village, kind: "soldier", readyAt: now + RECRUIT_MS });
                 dirty = true;
             }
@@ -667,6 +923,23 @@ function creditFish(state, now) {
         state.food[owner] += trips * FISH_FOOD;
         man.delivered = done;
         note(state, factions[owner].name + " stores " + (trips * FISH_FOOD) + " food.");
+        dirty = true;
+    }
+    return dirty;
+}
+
+function creditWood(state, now) {
+    let dirty = false;
+    for (const man of state.woodcutters) {
+        if (man.health <= 0) continue;
+        const done = Math.floor(Math.max(0, now - man.cycleStart) / woodPeriod(man.village, man.slot || 0));
+        const paid = man.delivered || 0;
+        if (done <= paid) continue;
+        const trips = done - paid;
+        const owner = state.owners[man.village];
+        state.wood[owner] += trips * WOOD_YIELD;
+        man.delivered = done;
+        note(state, factions[owner].name + " stores " + (trips * WOOD_YIELD) + " wood.");
         dirty = true;
     }
     return dirty;
@@ -804,17 +1077,36 @@ function present(state, now, turn, paused) {
         owners: state.owners.slice(),
         log: state.log.slice(),
         food: state.food.slice(),
-        fishermen: state.fishermen.filter((man) => man.health > 0).map((man) => {
+        wood: state.wood.slice(),
+        fishermen: state.fishermen.filter((man) => man.health > 0).map((man, index) => {
             const route = fishRoute(man.village);
             return {
                 village: man.village,
+                slot: index,
                 owner: state.owners[man.village],
                 health: man.health,
                 cycleStart: man.cycleStart,
                 walkMs: route.walkMs,
                 from: route.from,
                 via: route.via,
-                to: route.to
+                to: route.to,
+                path: route.path
+            };
+        }),
+        woodcutters: state.woodcutters.filter((man) => man.health > 0).map((man) => {
+            const route = woodRoute(man.village, man.slot || 0);
+            return {
+                id: state.woodcutters.indexOf(man),
+                village: man.village,
+                slot: man.slot || 0,
+                owner: state.owners[man.village],
+                health: man.health,
+                cycleStart: man.cycleStart,
+                walkMs: route.walkMs,
+                from: route.from,
+                via: route.via,
+                to: route.to,
+                path: route.path
             };
         }),
         attacks: state.attacks.map((attack) => ({
@@ -854,8 +1146,11 @@ function present(state, now, turn, paused) {
                 attacked: state.attacks.some((attack) => attack.to === index),
                 marching: state.attacks.some((attack) => attack.from === index),
                 food: state.food[owner] || 0,
+                wood: state.wood[owner] || 0,
                 fishing: state.fishermen.some((man) => man.village === index && man.health > 0),
                 fishers: state.fishermen.filter((man) => man.village === index && man.health > 0).length,
+                chopping: state.woodcutters.some((man) => man.village === index && man.health > 0),
+                woodcutters: state.woodcutters.filter((man) => man.village === index && man.health > 0).length,
                 training: state.training.filter((job) => job.village === index).map((job) => job.kind),
                 pop: villageCounts(state, index).pop
             };
@@ -889,6 +1184,7 @@ function syncWorld(state, now) {
     if (orderTraining(state, now)) dirty = true;
     if (considerAttacks(state, now)) dirty = true;
     if (creditFish(state, now)) dirty = true;
+    if (creditWood(state, now)) dirty = true;
     if (besiege(state, now)) dirty = true;
     if (fight(state, now)) dirty = true;
     return { dirty, turn, paused };
@@ -899,6 +1195,18 @@ async function campaignState(now, saved) {
     const { dirty, turn, paused } = syncWorld(state, now);
     if (dirty && !saved) await writeState(state);
     return present(state, now, turn, paused);
+}
+
+async function hitWood(id) {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    const man = state.woodcutters[id];
+    if (man && man.health > 0 && state.owners[man.village] !== PLAYER_FACTION) man.health -= 1;
+    creditWood(state, now);
+    await writeState(state);
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
 }
 
 async function hitFisher(village) {
@@ -996,6 +1304,10 @@ module.exports = async function handler(req, res) {
                 restartCampaign(state, Date.now());
                 await writeState(state);
                 res.status(200).json(await campaignState(Date.now()));
+                return;
+            }
+            if (req.body && Number.isInteger(req.body.woodcutter)) {
+                res.status(200).json(await hitWood(req.body.woodcutter));
                 return;
             }
             if (req.body && Number.isInteger(req.body.fisherman)) {

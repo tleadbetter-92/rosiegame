@@ -21,14 +21,23 @@ function paint(data) {
         hold.querySelector("[data-count]").textContent = String(village.alive);
         const fishers = village.fishers || 0;
         hold.querySelector("[data-fish]").textContent = fishers + (fishers === 1 ? " fisherman" : " fishermen");
+        const cutters = village.woodcutters || 0;
+        hold.querySelector("[data-woodcut]").textContent = cutters + (cutters === 1 ? " woodcutter" : " woodcutters");
         const food = hold.querySelector("[data-food]");
         if (document.activeElement !== food) food.value = String(village.food || 0);
+        hold.querySelector("[data-wood]").textContent = String(village.wood || 0);
         const status = hold.querySelector("[data-status]");
         const jobs = village.training || [];
-        const training = jobs.map((kind) => kind === "fisher" ? "Training a fisherman" : "Training a soldier").join(" · ");
+        const training = jobs.map((kind) => {
+            if (kind === "fisher") return "Training a fisherman";
+            if (kind === "wood") return "Training a woodcutter";
+            return "Training a soldier";
+        }).join(" · ");
         if (village.attacked) status.textContent = "Under attack";
         else if (village.marching) status.textContent = "Men marching out";
         else if (training) status.textContent = training;
+        else if (village.fishing && village.chopping) status.textContent = "Fishing and cutting wood";
+        else if (village.chopping) status.textContent = "Cutting wood";
         else if (village.fishing) status.textContent = "Fisherman working";
         else status.textContent = "";
         hold.querySelector("[data-men]").innerHTML = men(village.alive, village.color);

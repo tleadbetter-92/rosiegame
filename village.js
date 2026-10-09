@@ -26,16 +26,11 @@ const housePlan = [
 ];
 const houses = [];
 let cottage = null;
+const homeKinds = ["hearth", "bed", "board", "stores", "shop", "cot"];
+const homeDoors = ["south", "south", "east", "west", "south", "south"];
 for (const place of places) {
-    for (const house of housePlan) {
-        if (place === places[2] && house === housePlan[1]) {
-            const cx = house.x + place.ox + house.w / 2;
-            const cz = house.z + place.oz + house.d / 2;
-            cottage = { x: cx, z: cz, yaw: Math.PI };
-            houses.push({ x: cx - 2.35, z: cz - 2.35, w: 4.7, d: 4.7, h: 3, rise: 0, door: "s", test: true });
-            continue;
-        }
-        houses.push({
+    housePlan.forEach((house, index) => {
+        const built = {
             x: house.x + place.ox,
             z: house.z + place.oz,
             w: house.w,
@@ -44,8 +39,15 @@ for (const place of places) {
             rise: house.rise,
             door: house.door,
             store: house === housePlan[4]
-        });
-    }
+        };
+        if (place === places[2]) {
+            built.open = true;
+            built.entrance = homeDoors[index];
+            built.kind = homeKinds[index];
+            built.parts = [];
+        }
+        houses.push(built);
+    });
 }
 
 function makeTexture(draw) {
@@ -213,6 +215,46 @@ const textures = {
         g.fillRect(0, 0, s, 4);
         g.fillRect(0, 30, s, 2);
     }),
+    trunk: makeTexture((g, s) => {
+        g.fillStyle = "#5a3a22";
+        g.fillRect(0, 0, s, s);
+        g.fillStyle = "#3a2414";
+        for (let x = 4; x < s; x += 9) g.fillRect(x, 0, 2, s);
+        g.fillStyle = "#7a5430";
+        g.fillRect(0, 18, s, 3);
+        g.fillRect(0, 44, s, 2);
+    }),
+    leaf: makeTexture((g, s) => {
+        g.fillStyle = "#2f6a32";
+        g.fillRect(0, 0, s, s);
+        speck(g, s, 220, "#1d4a22", "#6a9a3e");
+        g.fillStyle = "#245628";
+        g.fillRect(0, 0, s, 6);
+    }),
+    linen: makeTexture((g, s) => {
+        g.fillStyle = "#8d3d3a";
+        g.fillRect(0, 0, s, s);
+        g.fillStyle = "#c4b49a";
+        g.fillRect(0, 0, s, 14);
+        g.fillStyle = "#6e2e2c";
+        for (let y = 18; y < s; y += 10) g.fillRect(0, y, s, 3);
+    }),
+    plaster: makeTexture((g, s) => {
+        g.fillStyle = "#d8c4a4";
+        g.fillRect(0, 0, s, s);
+        speck(g, s, 160, "rgba(90,70,40,0.16)", "rgba(255,248,230,0.2)");
+        g.fillStyle = "#5c3b24";
+        g.fillRect(0, 0, s, 6);
+        g.fillRect(0, s - 7, s, 7);
+    }),
+    rock: makeTexture((g, s) => {
+        g.fillStyle = "#7d7a74";
+        g.fillRect(0, 0, s, s);
+        speck(g, s, 180, "#5c5954", "#a8a49c");
+        g.fillStyle = "#4e4b46";
+        g.fillRect(8, 12, 22, 16);
+        g.fillRect(36, 34, 18, 14);
+    }),
     cloth0: clothTexture("#c45c3a"),
     cloth1: clothTexture("#3d6b8a"),
     cloth2: clothTexture("#6a7a3a"),
@@ -241,7 +283,7 @@ function pushTri(list, a, b, c) {
     list.push(...a, ...b, ...c);
 }
 
-const batches = { grass: [], dirt: [], sand: [], water: [], wall: [], door: [], roof: [], store: [] };
+const batches = { grass: [], dirt: [], sand: [], water: [], wall: [], door: [], roof: [], store: [], plaster: [], trunk: [], leaf: [], rock: [], linen: [] };
 
 function isPath(x, z) {
     if (Math.abs(x + 40) < 2.3 && z >= -82 && z <= 82) return true;
@@ -289,7 +331,281 @@ addWater(-sea, 100, sea * 2, sea - 100);
 addWater(-sea, -100, sea - 100, 200);
 addWater(100, -100, sea - 100, 200);
 
+function addOpenRoom(b) {
+    const { x, z, w, d, h, rise } = b;
+    const t = 0.28;
+    const doorW = 1.7;
+    const doorH = 2.2;
+    const winW = 1.15;
+    const winH = 0.85;
+    const winY = 1.12;
+    const entrance = b.entrance || "south";
+    const windowSide = entrance === "east" || entrance === "west" ? "south" : "east";
+    const holeOn = (side, along) => {
+        if (side === entrance) return { at: (along - doorW) / 2, size: doorW, y0: 0, y1: doorH };
+        if (side === windowSide) return { at: (along - winW) / 2, size: winW, y0: winY, y1: winY + winH };
+        return null;
+    };
+    const span = (ox, oz, len, depth, axis, hole) => {
+        const out = [];
+        const push = (px, pz, ww, dd, y0, y1) => {
+            if (ww > 0.04 && dd > 0.04 && y1 - y0 > 0.04) out.push({ x: px, z: pz, w: ww, d: dd, y0, y1 });
+        };
+        if (!hole) {
+            push(ox, oz, axis === "x" ? len : depth, axis === "x" ? depth : len, 0, h);
+            return out;
+        }
+        const after = len - (hole.at + hole.size);
+        if (axis === "x") {
+            push(ox, oz, hole.at, depth, 0, h);
+            push(ox + hole.at + hole.size, oz, after, depth, 0, h);
+            push(ox + hole.at, oz, hole.size, depth, 0, hole.y0);
+            push(ox + hole.at, oz, hole.size, depth, hole.y1, h);
+        } else {
+            push(ox, oz, depth, hole.at, 0, h);
+            push(ox, oz + hole.at + hole.size, depth, after, 0, h);
+            push(ox, oz + hole.at, depth, hole.size, 0, hole.y0);
+            push(ox, oz + hole.at, depth, hole.size, hole.y1, h);
+        }
+        return out;
+    };
+    const parts = [
+        ...span(x, z, w, t, "x", holeOn("north", w)),
+        ...span(x, z + d - t, w, t, "x", holeOn("south", w)),
+        ...span(x, z, d, t, "z", holeOn("west", d)),
+        ...span(x + w - t, z, d, t, "z", holeOn("east", d))
+    ];
+    for (const part of parts) {
+        addBox(batches.plaster, part.x, part.y0, part.z, part.w, part.y1 - part.y0, part.d);
+    }
+    const trim = (side, along, hole, jamb) => {
+        const at = hole.at;
+        const postY = hole.y0 > 0 ? hole.y0 : 0;
+        const postH = hole.y1 - postY;
+        if (side === "south" || side === "north") {
+            const oz = side === "south" ? z + d - t - 0.06 : z - 0.06;
+            const ox = x + at;
+            addBox(batches.trunk, ox - 0.08, postY, oz, 0.14, postH, t + 0.12);
+            addBox(batches.trunk, ox + hole.size - 0.06, postY, oz, 0.14, postH, t + 0.12);
+            addBox(batches.trunk, ox - 0.08, hole.y1 - jamb, oz, hole.size + 0.16, jamb, t + 0.12);
+            if (hole.y0 > 0) addBox(batches.trunk, ox - 0.04, hole.y0, oz, hole.size + 0.08, jamb, t + 0.1);
+        } else {
+            const ox = side === "east" ? x + w - t - 0.06 : x - 0.06;
+            const oz = z + at;
+            addBox(batches.trunk, ox, postY, oz - 0.08, t + 0.12, postH, 0.14);
+            addBox(batches.trunk, ox, postY, oz + hole.size - 0.06, t + 0.12, postH, 0.14);
+            addBox(batches.trunk, ox, hole.y1 - jamb, oz - 0.08, t + 0.12, jamb, hole.size + 0.16);
+            if (hole.y0 > 0) addBox(batches.trunk, ox, hole.y0, oz - 0.04, t + 0.1, jamb, hole.size + 0.08);
+        }
+    };
+    trim(entrance, entrance === "east" || entrance === "west" ? d : w, holeOn(entrance, entrance === "east" || entrance === "west" ? d : w), 0.16);
+    trim(windowSide, windowSide === "east" || windowSide === "west" ? d : w, holeOn(windowSide, windowSide === "east" || windowSide === "west" ? d : w), 0.08);
+    pushQuad(
+        batches.trunk,
+        [x + t, 0.04, z + t, 0, 0, 0.62],
+        [x + t, 0.04, z + d - t, 0, 2, 0.62],
+        [x + w - t, 0.04, z + d - t, 2, 2, 0.62],
+        [x + w - t, 0.04, z + t, 2, 0, 0.62]
+    );
+    addBox(batches.trunk, x + t + 0.08, h - 0.14, z + t + 0.08, w - t * 2 - 0.16, 0.08, d - t * 2 - 0.16);
+    const ix = x + t;
+    const iz = z + t;
+    const iw = w - t * 2;
+    const id = d - t * 2;
+    const furn = [];
+    const use = (px, pz, ww, dd, top) => {
+        furn.push({ x: px, z: pz, w: ww, d: dd, y0: 0, y1: top });
+    };
+    const tableAt = (px, pz, ww, dd) => {
+        addBox(batches.trunk, px, 0.66, pz, ww, 0.08, dd);
+        addBox(batches.trunk, px + 0.06, 0, pz + 0.06, 0.08, 0.66, 0.08);
+        addBox(batches.trunk, px + ww - 0.14, 0, pz + 0.06, 0.08, 0.66, 0.08);
+        addBox(batches.trunk, px + 0.06, 0, pz + dd - 0.14, 0.08, 0.66, 0.08);
+        addBox(batches.trunk, px + ww - 0.14, 0, pz + dd - 0.14, 0.08, 0.66, 0.08);
+        use(px, pz, ww, dd, 0.74);
+    };
+    const stoolAt = (px, pz) => {
+        addBox(batches.trunk, px, 0.32, pz, 0.38, 0.08, 0.38);
+        addBox(batches.trunk, px + 0.06, 0, pz + 0.06, 0.08, 0.32, 0.08);
+        addBox(batches.trunk, px + 0.24, 0, pz + 0.24, 0.08, 0.32, 0.08);
+        use(px, pz, 0.38, 0.38, 0.46);
+    };
+    const chestAt = (px, pz, ww, dd) => {
+        addBox(batches.trunk, px, 0, pz, ww, 0.36, dd);
+        addBox(batches.trunk, px + 0.04, 0.36, pz + 0.02, ww - 0.08, 0.06, dd - 0.04);
+        use(px, pz, ww, dd, 0.42);
+    };
+    const bedAt = (px, pz, ww, dd) => {
+        addBox(batches.trunk, px, 0.2, pz, ww, 0.1, dd);
+        addBox(batches.trunk, px, 0, pz, 0.08, 0.2, 0.08);
+        addBox(batches.trunk, px + ww - 0.08, 0, pz + dd - 0.08, 0.08, 0.2, 0.08);
+        addBox(batches.linen, px + 0.08, 0.3, pz + 0.08, ww - 0.16, 0.1, dd - 0.16);
+        addBox(batches.linen, px + 0.1, 0.4, pz + 0.1, ww - 0.2, 0.14, 0.32);
+        use(px, pz, ww, dd, 0.5);
+    };
+    const hearthAt = (px, pz, ww, dd) => {
+        addBox(batches.rock, px, 0, pz, ww, 0.48, dd);
+        addBox(batches.rock, px + ww * 0.22, 0.48, pz + 0.12, ww * 0.32, 0.16, dd * 0.45);
+        use(px, pz, ww, dd, 0.64);
+    };
+    const crateAt = (px, pz, s) => {
+        addBox(batches.trunk, px, 0, pz, s, s * 0.82, s);
+        use(px, pz, s, s, s * 0.82);
+    };
+    const barrelAt = (px, pz) => {
+        addBox(batches.trunk, px, 0, pz, 0.48, 0.64, 0.48);
+        addBox(batches.trunk, px - 0.03, 0.2, pz - 0.03, 0.54, 0.08, 0.54);
+        addBox(batches.trunk, px - 0.03, 0.42, pz - 0.03, 0.54, 0.08, 0.54);
+        use(px, pz, 0.48, 0.48, 0.64);
+    };
+    const rugAt = (px, pz, ww, dd) => {
+        pushQuad(
+            batches.linen,
+            [px, 0.055, pz, 0, 0, 0.92],
+            [px, 0.055, pz + dd, 0, 1, 0.92],
+            [px + ww, 0.055, pz + dd, 1, 1, 0.92],
+            [px + ww, 0.055, pz, 1, 0, 0.92]
+        );
+    };
+    const shelfAt = (px, pz, len, axis) => {
+        if (axis === "x") {
+            addBox(batches.trunk, px, 1.18, pz, len, 0.08, 0.26);
+            addBox(batches.rock, px + 0.1, 1.26, pz + 0.05, 0.16, 0.18, 0.16);
+            addBox(batches.linen, px + len * 0.45, 1.26, pz + 0.04, 0.28, 0.12, 0.16);
+            addBox(batches.trunk, px + len - 0.32, 1.26, pz + 0.04, 0.18, 0.22, 0.16);
+            use(px, pz, len, 0.26, 1.48);
+        } else {
+            addBox(batches.trunk, px, 1.18, pz, 0.26, 0.08, len);
+            addBox(batches.rock, px + 0.05, 1.26, pz + 0.1, 0.16, 0.18, 0.16);
+            addBox(batches.linen, px + 0.04, 1.26, pz + len * 0.45, 0.16, 0.12, 0.28);
+            use(px, pz, 0.26, len, 1.48);
+        }
+    };
+    const benchAt = (px, pz, len, axis) => {
+        if (axis === "x") {
+            addBox(batches.trunk, px, 0.38, pz, len, 0.08, 0.36);
+            addBox(batches.trunk, px + 0.06, 0, pz + 0.06, 0.08, 0.38, 0.1);
+            addBox(batches.trunk, px + len - 0.14, 0, pz + 0.2, 0.08, 0.38, 0.1);
+            use(px, pz, len, 0.36, 0.46);
+        } else {
+            addBox(batches.trunk, px, 0.38, pz, 0.36, 0.08, len);
+            addBox(batches.trunk, px + 0.06, 0, pz + 0.06, 0.1, 0.38, 0.08);
+            addBox(batches.trunk, px + 0.2, 0, pz + len - 0.14, 0.1, 0.38, 0.08);
+            use(px, pz, 0.36, len, 0.46);
+        }
+    };
+    const sackAt = (px, pz) => {
+        addBox(batches.linen, px, 0, pz, 0.42, 0.28, 0.34);
+        use(px, pz, 0.42, 0.34, 0.28);
+    };
+    const dishes = (px, pz) => {
+        addBox(batches.rock, px, 0.74, pz, 0.16, 0.06, 0.16);
+        addBox(batches.linen, px + 0.22, 0.74, pz + 0.04, 0.12, 0.1, 0.12);
+    };
+    if (b.kind === "bed") {
+        rugAt(ix + 0.15, iz + 0.18, 2.15, 2.35);
+        bedAt(ix + 0.18, iz + 0.22, 1.2, 2.05);
+        chestAt(ix + 1.55, iz + 0.22, 0.55, 0.4);
+        tableAt(ix + iw - 0.95, iz + 0.22, 0.7, 0.62);
+        dishes(ix + iw - 0.82, iz + 0.38);
+        stoolAt(ix + iw - 1.05, iz + 1.05);
+        shelfAt(ix + 0.2, iz + 0.02, 1.15, "x");
+        barrelAt(ix + iw - 0.7, iz + 2.05);
+    } else if (b.kind === "board") {
+        rugAt(ix + 0.2, iz + 0.7, 2.15, 2.15);
+        tableAt(ix + 0.28, iz + 0.85, 1.2, 1.85);
+        dishes(ix + 0.48, iz + 1.35);
+        dishes(ix + 0.7, iz + 1.9);
+        benchAt(ix + 0.35, iz + 2.8, 1.05, "x");
+        stoolAt(ix + 1.6, iz + 1.15);
+        stoolAt(ix + 1.6, iz + 1.85);
+        chestAt(ix + 0.2, iz + 0.18, 0.62, 0.4);
+        shelfAt(ix + 0.15, iz + 0.02, 1.4, "x");
+        barrelAt(ix + 1.85, iz + 0.18);
+    } else if (b.kind === "stores") {
+        shelfAt(ix + 1.55, iz + 0.02, 1.5, "x");
+        addBox(batches.trunk, ix + iw - 0.48, 0.42, iz + 0.35, 0.12, 1.15, 2.3);
+        addBox(batches.trunk, ix + iw - 0.48, 0.78, iz + 0.35, 0.36, 0.08, 2.3);
+        addBox(batches.trunk, ix + iw - 0.48, 1.25, iz + 0.35, 0.36, 0.08, 2.3);
+        use(ix + iw - 0.48, iz + 0.35, 0.36, 2.3, 1.33);
+        crateAt(ix + iw - 1.2, iz + 0.22, 0.58);
+        crateAt(ix + iw - 1.15, iz + 0.8, 0.42);
+        crateAt(ix + iw - 1.15, iz + id - 1.15, 0.5);
+        sackAt(ix + 1.55, iz + 0.22);
+        sackAt(ix + 2.05, iz + 0.28);
+        barrelAt(ix + 1.5, iz + 0.7);
+        chestAt(ix + 1.45, iz + 1.35, 0.62, 0.42);
+    } else if (b.kind === "shop") {
+        rugAt(ix + 0.85, iz + 1.15, iw - 1.7, 1.7);
+        addBox(batches.trunk, ix + 0.7, 0.86, iz + 0.22, iw - 2.1, 0.1, 0.62);
+        addBox(batches.plaster, ix + 0.78, 0, iz + 0.28, iw - 2.26, 0.86, 0.42);
+        use(ix + 0.7, iz + 0.22, iw - 2.1, 0.62, 0.96);
+        dishes(ix + 1.1, iz + 0.32);
+        addBox(batches.linen, ix + 1.7, 0.96, iz + 0.32, 0.34, 0.16, 0.28);
+        addBox(batches.rock, ix + 2.2, 0.96, iz + 0.34, 0.18, 0.14, 0.18);
+        crateAt(ix + 0.18, iz + 0.18, 0.62);
+        crateAt(ix + 0.28, iz + 0.9, 0.48);
+        sackAt(ix + 0.22, iz + 1.55);
+        barrelAt(ix + iw - 0.72, iz + 0.22);
+        stoolAt(ix + iw - 0.7, iz + 1.15);
+        shelfAt(ix + iw - 0.4, iz + 1.7, 1.35, "z");
+    } else if (b.kind === "cot") {
+        rugAt(ix + 0.12, iz + 0.15, 1.7, 2.3);
+        bedAt(ix + 0.18, iz + 0.22, 1.2, 2.05);
+        hearthAt(ix + iw * 0.42, iz + 0.15, 1.2, 0.52);
+        stoolAt(ix + 1.6, iz + 0.55);
+        chestAt(ix + iw - 0.85, iz + 0.2, 0.58, 0.4);
+        tableAt(ix + iw - 0.85, iz + 0.85, 0.58, 0.55);
+        dishes(ix + iw - 0.72, iz + 1.0);
+        shelfAt(ix + 0.2, iz + 0.02, 1.05, "x");
+        sackAt(ix + iw - 0.62, iz + 1.6);
+    } else {
+        rugAt(ix + 0.35, iz + 0.9, 1.8, 1.7);
+        hearthAt(ix + 0.35, iz + 0.12, 1.25, 0.55);
+        tableAt(ix + iw - 0.95, iz + 0.85, 0.7, 1.05);
+        dishes(ix + iw - 0.78, iz + 1.15);
+        stoolAt(ix + iw - 1.55, iz + 1.05);
+        benchAt(ix + 0.3, iz + id - 1.55, 1.15, "x");
+        chestAt(ix + 0.18, iz + 0.85, 0.62, 0.4);
+        shelfAt(ix + iw - 1.35, iz + 0.02, 1.15, "x");
+        barrelAt(ix + iw - 0.65, iz + 2.15);
+    }
+    b.parts = parts.concat(furn);
+    const ridge = h + rise;
+    const midZ = z + d / 2;
+    pushQuad(
+        batches.roof,
+        [x, h, z, 0, 0, 0.95],
+        [x, ridge, midZ, 0, 1, 0.95],
+        [x + w, ridge, midZ, w / 2, 1, 0.95],
+        [x + w, h, z, w / 2, 0, 0.95]
+    );
+    pushQuad(
+        batches.roof,
+        [x + w, h, z + d, 0, 0, 0.78],
+        [x + w, ridge, midZ, 0, 1, 0.78],
+        [x, ridge, midZ, w / 2, 1, 0.78],
+        [x, h, z + d, w / 2, 0, 0.78]
+    );
+    pushTri(
+        batches.plaster,
+        [x, h, z, 0, 0.15, 0.8],
+        [x, h, z + d, 1, 0.15, 0.8],
+        [x, ridge, midZ, 0.5, 0.45, 0.8]
+    );
+    pushTri(
+        batches.plaster,
+        [x + w, h, z + d, 0, 0.15, 0.86],
+        [x + w, h, z, 1, 0.15, 0.86],
+        [x + w, ridge, midZ, 0.5, 0.45, 0.86]
+    );
+}
+
 function addHouse(b) {
+    if (b.open) {
+        addOpenRoom(b);
+        return;
+    }
     const { x, z, w, d, h, rise, door } = b;
     const ridge = h + rise;
     const midZ = z + d / 2;
@@ -428,6 +744,102 @@ const skyLoc = {
     res: gl.getUniformLocation(skyProgram, "uRes"),
     pitch: gl.getUniformLocation(skyProgram, "uPitch")
 };
+
+const scenery = [];
+
+function growScenery() {
+    let n = 0;
+    const next = () => {
+        n += 1;
+        let a = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b);
+        a = Math.imul(a ^ (a >>> 13), 0xc2b2ae35);
+        return ((a ^ (a >>> 16)) >>> 0) / 4294967296;
+    };
+    const groves = [
+        [-72, -8, 16, 15],
+        [70, 6, 14, 13],
+        [-6, -76, 11, 12],
+        [14, 76, 10, 11],
+        [2, 6, 9, 9],
+        [-78, 48, 8, 10],
+        [76, -58, 8, 10],
+        [-55, -55, 7, 8],
+        [55, 48, 7, 8]
+    ];
+    const open = (x, z) => {
+        if (Math.max(Math.abs(x), Math.abs(z)) > 86) return false;
+        if (Math.abs(x + 40) < 3.4 && z > -86 && z < 86) return false;
+        if (Math.abs(x - 40) < 3.4 && z > -86 && z < 86) return false;
+        if (Math.abs(z + 40) < 3.4 && x > -86 && x < 86) return false;
+        if (Math.abs(z - 40) < 3.4 && x > -86 && x < 86) return false;
+        for (const place of places) {
+            const lx = x - place.ox;
+            const lz = z - place.oz;
+            if (Math.abs(lz + 7.85) < 2.6 && Math.abs(lx) < 16) return false;
+            if (Math.abs(x - (place.ox - 0.5)) < 22 && Math.abs(z - (place.oz - 4)) < 22) return false;
+        }
+        for (const b of houses) {
+            if (x > b.x - 1.4 && x < b.x + b.w + 1.4 && z > b.z - 1.4 && z < b.z + b.d + 1.4) return false;
+        }
+        for (const item of scenery) {
+            const dx = x - (item.x + item.w / 2);
+            const dz = z - (item.z + item.d / 2);
+            if (dx * dx + dz * dz < 6.2) return false;
+        }
+        return true;
+    };
+    const tree = (x, z) => {
+        const pine = next() > 0.55;
+        const s = next();
+        const tw = 0.24 + s * 0.14;
+        const th = pine ? 2.8 + s * 1.1 : 2.35 + s * 0.7;
+        addBox(batches.trunk, x - tw / 2, 0, z - tw / 2, tw, Math.max(2.05, th * 0.62), tw);
+        scenery.push({ x: x - tw / 2, z: z - tw / 2, w: tw, d: tw });
+        if (pine) {
+            for (let i = 0; i < 3; i++) {
+                const g = 1.05 - i * 0.26;
+                addBox(batches.leaf, x - g, 1.85 + i * 0.58, z - g, g * 2, 0.7, g * 2);
+            }
+        } else {
+            const g = 0.72 + s * 0.28;
+            addBox(batches.leaf, x - g * 1.15, 1.9, z - g * 0.7, g * 1.45, g * 0.85, g * 1.2);
+            addBox(batches.leaf, x - g * 0.15, 2.05, z - g * 1.05, g * 1.35, g * 0.8, g * 1.15);
+            addBox(batches.leaf, x - g * 0.55, 2.45, z - g * 0.4, g * 1.1, g * 0.65, g);
+        }
+    };
+    const bush = (x, z) => {
+        const w = 0.55 + next() * 0.45;
+        const d = 0.5 + next() * 0.4;
+        const h = 0.36 + next() * 0.24;
+        addBox(batches.leaf, x - w / 2, 0, z - d / 2, w, h, d);
+        scenery.push({ x: x - w / 2, z: z - d / 2, w, d });
+    };
+    const stone = (x, z) => {
+        const w = 0.45 + next() * 0.75;
+        const d = 0.4 + next() * 0.55;
+        const h = 0.22 + next() * 0.4;
+        addBox(batches.rock, x - w / 2, 0, z - d / 2, w, h, d);
+        if (next() > 0.45) addBox(batches.rock, x - w * 0.2, h * 0.55, z - d * 0.15, w * 0.55, h * 0.75, d * 0.5);
+        scenery.push({ x: x - w / 2, z: z - d / 2, w, d });
+    };
+    for (const [gx, gz, count, radius] of groves) {
+        let placed = 0;
+        let tries = 0;
+        while (placed < count && tries < count * 14) {
+            tries += 1;
+            const x = gx + (next() - 0.5) * radius * 2;
+            const z = gz + (next() - 0.5) * radius * 2;
+            if (!open(x, z)) continue;
+            const roll = next();
+            if (roll < 0.72) tree(x, z);
+            else if (roll < 0.88) bush(x, z);
+            else stone(x, z);
+            placed += 1;
+        }
+    }
+}
+
+growScenery();
 
 const mesh = {};
 for (const name of Object.keys(batches)) {
@@ -784,11 +1196,12 @@ function applyCampaign(data) {
         (faction.units || []).map((unit) => unit.index + ":" + unit.health + ":" + unit.mode + ":" + unit.post).join(".")
     )).join("|");
     const attacks = (data.attacks || []).map((attack) => attack.id).join(",");
-    const fish = (data.fishermen || []).map((man) => man.village + ":" + man.health + ":" + man.cycleStart + ":" + man.walkMs).join(",");
+    const fish = (data.fishermen || []).map((man) => man.village + ":" + man.slot + ":" + man.health + ":" + man.cycleStart + ":" + man.walkMs).join(",");
+    const wood = (data.woodcutters || []).map((man) => man.id + ":" + man.village + ":" + man.health + ":" + man.cycleStart + ":" + man.to.x.toFixed(1)).join(",");
     const arch = (data.archers || []).map((row, village) => (
         ((data.owners || [])[village] || 0) + ":" + (row || []).join(".")
     )).join(",");
-    const key = (data.owners || []).join(",") + "#" + attacks + "#" + units + "#" + fish + "#" + arch;
+    const key = (data.owners || []).join(",") + "#" + attacks + "#" + units + "#" + fish + "#" + wood + "#" + arch;
     if (key === soldierKey) return;
     soldierKey = key;
     mergeMen(data);
@@ -796,37 +1209,51 @@ function applyCampaign(data) {
     mergeArchers(data);
 }
 
+function villagerKey(man) {
+    return man.village + ":" + (man.wood ? "w" : "f") + ":" + (man.slot || 0);
+}
+
 function mergeFishermen(data) {
-    const wanted = data.fishermen || [];
-    const prev = new Map(men.filter((man) => man.fisher).map((man) => [man.village, man]));
+    const wanted = (data.fishermen || []).map((item) => Object.assign({ wood: false }, item)).concat(
+        (data.woodcutters || []).map((item) => Object.assign({ wood: true }, item))
+    );
+    const prev = new Map(men.filter((man) => man.fisher).map((man) => [villagerKey(man), man]));
     const keep = new Set();
     const nextFish = [];
     for (const item of wanted) {
         if (item.health <= 0) continue;
-        keep.add(item.village);
-        const old = prev.get(item.village);
+        const key = villagerKey(item);
+        keep.add(key);
+        const old = prev.get(key);
         if (old) {
             old.health = pendingHit ? Math.min(old.health, item.health) : item.health;
             old.faction = item.owner;
             old.cycleStart = item.cycleStart;
             old.walkMs = item.walkMs;
+            old.wood = item.wood;
+            old.slot = item.slot || 0;
+            old.woodId = item.id;
             old.fromX = item.from.x;
             old.fromZ = item.from.z;
             old.viaX = item.via ? item.via.x : null;
             old.viaZ = item.via ? item.via.z : null;
             old.toX = item.to.x;
             old.toZ = item.to.z;
+            old.path = item.path || null;
             if (old.health <= 0) old.dying = true;
             nextFish.push(old);
         } else {
             nextFish.push({
                 fisher: true,
+                wood: item.wood,
+                woodId: item.id,
                 village: item.village,
+                slot: item.slot || 0,
                 faction: item.owner,
-                index: -1 - item.village,
+                index: -1 - item.village - (item.wood ? 10 : 0) - (item.slot || 0),
                 health: item.health,
                 post: item.village,
-                mode: "fish",
+                mode: item.wood ? "wood" : "fish",
                 x: item.from.x,
                 z: item.from.z,
                 fromX: item.from.x,
@@ -835,6 +1262,7 @@ function mergeFishermen(data) {
                 viaZ: item.via ? item.via.z : null,
                 toX: item.to.x,
                 toZ: item.to.z,
+                path: item.path || null,
                 cycleStart: item.cycleStart,
                 walkMs: item.walkMs,
                 yaw: 0,
@@ -850,7 +1278,7 @@ function mergeFishermen(data) {
         }
     }
     for (const man of men) {
-        if (!man.fisher || keep.has(man.village)) continue;
+        if (!man.fisher || keep.has(villagerKey(man))) continue;
         man.dying = true;
         man.health = 0;
         nextFish.push(man);
@@ -1061,7 +1489,7 @@ function wound(man, label, quiet, knockX, knockZ) {
             showStrike(word);
         }
         actorsDirty = true;
-        postHit({ fisherman: man.village });
+        postHit(man.wood ? { woodcutter: man.woodId } : { fisherman: man.village });
         return true;
     }
     const faction = campaign && campaign.factions[man.faction];
@@ -1211,9 +1639,11 @@ function stepFisher(man) {
     return false;
 }
 
+const BOW_RANGE = 22;
+
 function archerTarget(man) {
     let best = null;
-    let bestDist = 22;
+    let bestDist = BOW_RANGE;
     if (man.faction !== homeVillage && !player.dead) {
         const dist = Math.hypot(cam.x - man.x, cam.z - man.z);
         if (dist < bestDist && dist > 1.2) {
@@ -1276,7 +1706,10 @@ function shootArrow() {
         faction: homeVillage,
         fromPlayer: true,
         age: 0,
-        gravity: 0
+        gravity: 0,
+        range: BOW_RANGE,
+        ox: cam.x,
+        oz: cam.z
     });
 }
 
@@ -1343,6 +1776,17 @@ function stepArrows(dt) {
         arrow.y += arrow.vy * dt;
         arrow.z += arrow.vz * dt;
         arrow.age += dt;
+        if (arrow.range) {
+            const traveled = Math.hypot(arrow.x - arrow.ox, arrow.z - arrow.oz);
+            if (traveled >= arrow.range) {
+                const before = Math.hypot(x0 - arrow.ox, z0 - arrow.oz);
+                const span = traveled - before || 1;
+                const clamp = Math.max(0, Math.min(1, (arrow.range - before) / span));
+                arrow.x = x0 + (arrow.x - x0) * clamp;
+                arrow.y = y0 + (arrow.y - y0) * clamp;
+                arrow.z = z0 + (arrow.z - z0) * clamp;
+            }
+        }
         let hit = false;
         if (campaign) {
             for (const man of men) {
@@ -1369,6 +1813,7 @@ function stepArrows(dt) {
             }
         }
         if (!hit && wallStops(x0, y0, z0, arrow.x, arrow.y, arrow.z)) hit = true;
+        if (!hit && arrow.range && Math.hypot(arrow.x - arrow.ox, arrow.z - arrow.oz) >= arrow.range - 0.05) hit = true;
         if (hit || arrow.age > 1.5 || arrow.y < -1 || Math.abs(arrow.x) > 140 || Math.abs(arrow.z) > 140) {
             arrows.splice(i, 1);
         }
@@ -1709,6 +2154,26 @@ function wallBlocks(x, z, faction) {
 }
 
 function fisherSpot(man, along) {
+    const pts = man.path;
+    if (pts && pts.length > 1) {
+        const lens = [];
+        let total = 0;
+        for (let i = 1; i < pts.length; i++) {
+            const len = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z) || 0.001;
+            lens.push(len);
+            total += len;
+        }
+        let dist = Math.max(0, Math.min(1, along)) * total;
+        for (let i = 0; i < lens.length; i++) {
+            if (dist <= lens[i] || i === lens.length - 1) {
+                const t = Math.min(1, dist / lens[i]);
+                const a = pts[i];
+                const b = pts[i + 1];
+                return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t, dx: b.x - a.x, dz: b.z - a.z };
+            }
+            dist -= lens[i];
+        }
+    }
     const ax = man.fromX;
     const az = man.fromZ;
     const cx = man.toX;
@@ -2115,7 +2580,18 @@ function blocked(x, z, faction, feet) {
     const stand = feet == null ? 0 : feet;
     const who = faction == null ? homeVillage : faction;
     for (const b of houses) {
+        if (b.open) {
+            const body = stand + 1.6;
+            for (const part of b.parts) {
+                if (body <= part.y0 + 0.02 || stand >= part.y1 - 0.02) continue;
+                if (x > part.x - r && x < part.x + part.w + r && z > part.z - r && z < part.z + part.d + r) return true;
+            }
+            continue;
+        }
         if (stand < b.h && x > b.x - r && x < b.x + b.w + r && z > b.z - r && z < b.z + b.d + r) return true;
+    }
+    for (const item of scenery) {
+        if (x > item.x - r && x < item.x + item.w + r && z > item.z - r && z < item.z + item.d + r) return true;
     }
     if (x < -99 || x > 99 || z < -99 || z > 99) return true;
     if (hitsSolid(x, z, stand)) return true;
