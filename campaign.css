@@ -103,6 +103,22 @@ h1 {
     margin: 6px 0 12px;
 }
 
+.food {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.food input {
+    width: 5.2em;
+    padding: 4px 6px;
+    border: 1px solid #c8c2b6;
+    border-radius: 6px;
+    background: white;
+    color: #1c1c1c;
+    font: 650 1rem "Segoe UI", system-ui, sans-serif;
+}
+
 .hold.defending { outline: 3px solid #f0d2b4; outline-offset: -6px; }
 .hold.marching { box-shadow: inset 0 0 0 3px rgba(255, 244, 210, 0.45); }
 

@@ -952,6 +952,21 @@ async function hitArcher(village, side) {
     return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
 }
 
+async function setFood(village, amount) {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    const next = Math.floor(Number(amount));
+    if (village >= 0 && village <= 3 && Number.isFinite(next) && next >= 0 && next <= 99999) {
+        const owner = state.owners[village];
+        if (!Array.isArray(state.food) || state.food.length !== 4) state.food = [0, 0, 0, 0];
+        state.food[owner] = next;
+    }
+    await writeState(state);
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+}
+
 async function hit(village, index) {
     const state = await readState();
     const now = Date.now();
@@ -972,6 +987,10 @@ module.exports = async function handler(req, res) {
     res.setHeader("Cache-Control", "no-store");
     try {
         if (req.method === "POST") {
+            if (req.body && Number.isInteger(req.body.setFood) && Number.isFinite(Number(req.body.amount))) {
+                res.status(200).json(await setFood(req.body.setFood, req.body.amount));
+                return;
+            }
             if (req.body && req.body.restart) {
                 const state = await readState();
                 restartCampaign(state, Date.now());

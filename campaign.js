@@ -21,7 +21,8 @@ function paint(data) {
         hold.querySelector("[data-count]").textContent = String(village.alive);
         const fishers = village.fishers || 0;
         hold.querySelector("[data-fish]").textContent = fishers + (fishers === 1 ? " fisherman" : " fishermen");
-        hold.querySelector("[data-food]").textContent = String(village.food || 0);
+        const food = hold.querySelector("[data-food]");
+        if (document.activeElement !== food) food.value = String(village.food || 0);
         const status = hold.querySelector("[data-status]");
         const jobs = village.training || [];
         const training = jobs.map((kind) => kind === "fisher" ? "Training a fisherman" : "Training a soldier").join(" · ");
@@ -61,6 +62,22 @@ async function refresh() {
     if (!res.ok) throw new Error("unreachable");
     take(await res.json());
 }
+
+holds.forEach((hold) => {
+    const input = hold.querySelector("[data-food]");
+    input.addEventListener("change", async () => {
+        const amount = Math.max(0, Math.min(99999, Math.floor(Number(input.value) || 0)));
+        input.value = String(amount);
+        const res = await fetch("/api/campaign", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            cache: "no-store",
+            body: JSON.stringify({ setFood: Number(hold.dataset.i), amount })
+        });
+        if (!res.ok) return;
+        take(await res.json());
+    });
+});
 
 document.getElementById("restart").addEventListener("click", async () => {
     if (!window.confirm("Start again? Every house goes back to one fisherman and 100 food.")) return;
