@@ -11,10 +11,22 @@
     <a class="back" href="index.html">Back</a>
     <a class="campaign-link" href="campaign.html">Campaign</a>
     <div id="clock">12:00</div>
+    <p id="compass">North</p>
     <div class="cross"></div>
     <div id="weapon" aria-hidden="true"></div>
     <div id="viewbow" aria-hidden="true" hidden></div>
     <button id="pack" type="button">Pack</button>
+    <button id="self" type="button">Self</button>
+    <a id="land" href="village.html" hidden>Land</a>
+    <p id="where" hidden></p>
+    <div id="self-panel" hidden>
+        <button id="self-close" type="button">Close</button>
+        <p id="self-level">Level 1</p>
+        <h2>Attributes</h2>
+        <ul id="self-attributes"></ul>
+        <h2>Skills</h2>
+        <ul id="self-skills"></ul>
+    </div>
     <div id="pack-panel" hidden>
         <button type="button" data-arm="sword" aria-pressed="true">Sword</button>
         <button type="button" data-arm="bow" aria-pressed="false">Bow</button>
@@ -22,11 +34,21 @@
     <div id="vitals">
         <span>Health</span>
         <div class="bar"><div id="health-fill"></div></div>
+        <span>Stamina</span>
+        <div class="bar"><div id="stamina-fill"></div></div>
+        <span>Magicka</span>
+        <div class="bar"><div id="magicka-fill"></div></div>
     </div>
     <div id="hurt"></div>
     <p id="death" hidden>You are slain</p>
     <p id="strike"></p>
-    <p class="help">WASD to walk · mouse to look · drag to swing · Pack to switch</p>
+    <p class="help">WASD to walk · Space to jump · mouse to look · drag to swing · Pack to switch</p>
+    <button id="enter" type="button" hidden>Enter</button>
+    <div id="fly-pad" hidden>
+        <button id="fly-up" type="button">Up</button>
+        <button id="fly-fast" type="button" aria-pressed="false">Fast</button>
+        <button id="fly-down" type="button">Down</button>
+    </div>
     <div id="pad" role="slider" aria-label="Move" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0" hidden>
         <div class="knob"></div>
     </div>
@@ -37,6 +59,7 @@
             <path fill="none" stroke="#6a3d22" stroke-width="3" stroke-linecap="round" d="M20 32h30"/>
         </svg>
     </button>
+    <button id="jump" type="button" aria-label="Jump" hidden>Jump</button>
     <button id="attack" type="button" aria-label="Attack" hidden>
         <svg class="sword-icon" viewBox="0 0 64 64" aria-hidden="true">
             <path fill="#f4f7f8" d="M30 2h4l2 28h8v5h-8l-1 9h5v4h-5l-1 12h-4l-1-12h-5v-4h5l-1-9h-8v-5h8z"/>
@@ -51,6 +74,9 @@
     </button>
     <script src="clock.js"></script>
     <script src="world.js"></script>
+    <script src="town.js"></script>
+    <script src="interior.js"></script>
+    <script src="hero.js"></script>
     <script src="village.js"></script>
 </body>
 </html>

@@ -18,6 +18,11 @@ header {
     padding: 28px 24px 0;
 }
 
+header nav {
+    display: flex;
+    gap: 16px;
+}
+
 header a {
     color: #3d3a36;
     font-weight: 650;

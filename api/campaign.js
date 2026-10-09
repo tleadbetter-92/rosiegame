@@ -2,7 +2,9 @@ const fs = require("fs");
 const path = require("path");
 const { getDb } = require("../lib/db");
 const World = require("../world");
+const Town = require("../town");
 const Clock = require("../clock");
+const Hero = require("../hero");
 
 const TURN_MS = 10 * 60 * 1000;
 const BATTLE_MS = 2000;
@@ -40,6 +42,13 @@ const WOOD_MS = 30000;
 const WOOD_YIELD = 10;
 const REPAIR_MS = 30000;
 const REPAIR_CHUNK = 10;
+const FARM_PER_DAY = 18;
+const FARM_RETRY_MS = Math.round(Clock.DAY_MS / 144);
+const FARM_WOOD = 40;
+const FARM_BUILD_MS = 3 * 60 * 1000;
+const HEALTHY_FOOD = 160;
+const FARM_CAP = 3;
+const FARM_EXTRA = 2;
 const storePlan = { x: -12, z: -16, w: 8, d: 5.5 };
 const GATE_HP = 50;
 const PLAYER_FACTION = 2;
@@ -271,6 +280,11 @@ function restartCampaign(state, now) {
     state.restartedAt = now;
     state.log = ["The houses start again. Each has one fisherman and 100 food."];
     state.marchAfter = now + RECRUIT_MS;
+    state.farms = [];
+    state.farmPlay = null;
+    state.farmJobs = [];
+    state.builtFarms = [];
+    state.farmSerial = 0;
 }
 
 function ensure(state, turn) {
@@ -1535,6 +1549,23 @@ function present(state, now, turn, paused) {
                 bed: beds.get(man) || "manor"
             };
         }),
+        farms: presentFarms(state),
+        plots: (state.builtFarms || []).map((site) => ({
+            id: site.id,
+            village: site.village,
+            yaw: site.yaw,
+            house: site.house,
+            field: site.fields[0],
+            hay: site.hay,
+            door: site.door
+        })),
+        raising: (state.farmJobs || []).map((job) => ({
+            id: job.id,
+            village: job.village,
+            x: job.site.bed.x,
+            z: job.site.bed.z,
+            y: job.site.y
+        })),
         lodges: (state.lodges || []).map((lodge) => ({
             id: lodge.id,
             village: lodge.village,
@@ -1598,6 +1629,7 @@ function present(state, now, turn, paused) {
                 pop: villageCounts(state, index).pop
             };
         }),
+        hero: Hero.normalize(state.hero),
         factions: factions.map((faction, index) => {
             let alive = 0;
             eachLiving(state, index, () => { alive += 1; });
@@ -1615,6 +1647,608 @@ function present(state, now, turn, paused) {
     };
 }
 
+const farmSiteList = Town.farmSites();
+
+function farmSite(state, id) {
+    const fixed = farmSiteList.find((site) => site.id === id);
+    if (fixed) return fixed;
+    return (state.builtFarms || []).find((site) => site.id === id) || null;
+}
+
+function rectOf(box) {
+    return {
+        minX: box.minX != null ? box.minX : box.x,
+        minZ: box.minZ != null ? box.minZ : box.z,
+        w: box.w,
+        d: box.d
+    };
+}
+
+function rectsHit(a, b, pad) {
+    const p = pad || 0;
+    return a.minX - p < b.minX + b.w && a.minX + a.w + p > b.minX && a.minZ - p < b.minZ + b.d && a.minZ + a.d + p > b.minZ;
+}
+
+function outsideWalls(village, rect) {
+    const wall = palisadeBox(village);
+    const pad = 8;
+    if (rect.minX + rect.w < wall.minX - pad) return true;
+    if (rect.minX > wall.maxX + pad) return true;
+    if (rect.minZ + rect.d < wall.minZ - pad) return true;
+    if (rect.minZ > wall.maxZ + pad) return true;
+    return false;
+}
+
+function pathWet(path) {
+    for (let i = 1; i < path.length; i++) {
+        const a = path[i - 1];
+        const b = path[i];
+        const len = Math.hypot(b.x - a.x, b.z - a.z);
+        const steps = Math.max(1, Math.ceil(len / 8));
+        for (let s = 0; s <= steps; s++) {
+            const t = s / steps;
+            if (World.wet(a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t)) return true;
+        }
+    }
+    return false;
+}
+
+function standingFarms(state, village) {
+    let n = farmSiteList.filter((site) => site.village === village).length;
+    n += (state.builtFarms || []).filter((site) => site.village === village).length;
+    n += (state.farmJobs || []).filter((job) => job.village === village).length;
+    return n;
+}
+
+function extraFarms(state, faction) {
+    let n = 0;
+    for (const site of state.builtFarms || []) {
+        if (state.owners[site.village] === faction) n += 1;
+    }
+    for (const job of state.farmJobs || []) {
+        if (job.payer === faction) n += 1;
+    }
+    return n;
+}
+
+function producingFarms(state, faction) {
+    let n = 0;
+    for (let village = 0; village < 4; village++) {
+        if (state.owners[village] !== faction) continue;
+        for (const farm of state.farms || []) {
+            if (farm.village === village && farm.health > 0) n += 1;
+        }
+        for (const site of state.builtFarms || []) {
+            if (site.village !== village) continue;
+            if ((state.farms || []).some((farm) => farm.id === site.id)) continue;
+            n += 1;
+        }
+        n += (state.farmJobs || []).filter((job) => job.village === village).length;
+    }
+    return n;
+}
+
+function wantsFarm(state, faction) {
+    const food = state.food[faction] || 0;
+    if (food >= HEALTHY_FOOD) return false;
+    let fishers = 0;
+    for (let village = 0; village < 4; village++) {
+        if (state.owners[village] !== faction) continue;
+        fishers += state.fishermen.filter((man) => man.village === village && man.health > 0).length;
+    }
+    const perDay = producingFarms(state, faction) * FARM_PER_DAY + fishers * FISH_FOOD;
+    if (food >= URGENT_FOOD && perDay >= SOLDIER_COST) return false;
+    return true;
+}
+
+function farmVillage(state, faction) {
+    let best = -1;
+    let bestN = Infinity;
+    for (let village = 0; village < 4; village++) {
+        if (state.owners[village] !== faction) continue;
+        const n = standingFarms(state, village);
+        if (n >= FARM_CAP) continue;
+        if (n < bestN) {
+            bestN = n;
+            best = village;
+        }
+    }
+    return best;
+}
+
+function landScore(x, z, wood) {
+    if (World.wet(x, z) || World.inField(x, z) || Town.street(x, z)) return -1;
+    const h = World.heightAt(x, z);
+    if (h < 0.45 || h > 7 || World.tooSteep(x, z)) return -1;
+    if (World.roadDist(x, z) < 18 || World.forestAt(x, z) > 0.4) return -1;
+    const box = World.peakBox;
+    if (x >= box.minX && x <= box.maxX && z >= box.minZ && z <= box.maxZ) return -1;
+    const reach = 6;
+    const reach2 = reach * reach;
+    for (let i = 0; i < wood.length; i++) {
+        const tree = wood[i];
+        const dx = tree.x - x;
+        if (dx > reach || dx < -reach) continue;
+        const dz = tree.z - z;
+        if (dx * dx + dz * dz < reach2) return -1;
+    }
+    const s = 4;
+    const dh = Math.max(
+        Math.abs(World.heightAt(x + s, z) - h),
+        Math.abs(World.heightAt(x - s, z) - h),
+        Math.abs(World.heightAt(x, z + s) - h),
+        Math.abs(World.heightAt(x, z - s) - h)
+    );
+    if (dh > 1.25) return -1;
+    return dh;
+}
+
+function nearbyWood(village) {
+    const place = places[village];
+    const reach = 240;
+    const wood = [];
+    const lists = [World.trees, World.groves];
+    for (let list = 0; list < lists.length; list++) {
+        const trees = lists[list];
+        for (let i = 0; i < trees.length; i++) {
+            const tree = trees[i];
+            if (tree.kind === "bush") continue;
+            if (Math.abs(tree.x - place.x) > reach || Math.abs(tree.z - place.z) > reach) continue;
+            wood.push(tree);
+        }
+    }
+    return wood;
+}
+
+function takenRects(state) {
+    const rects = [];
+    for (const building of Town.buildings) rects.push(rectOf(building));
+    for (const field of World.fields) rects.push({ minX: field.x, minZ: field.z, w: field.w, d: field.d });
+    for (let village = 0; village < 4; village++) {
+        const cot = World.cottageLayout(village);
+        rects.push({ minX: cot.x, minZ: cot.z, w: cot.w, d: cot.d });
+    }
+    const sites = (state.builtFarms || []).concat((state.farmJobs || []).map((job) => job.site));
+    for (const site of sites) {
+        rects.push(rectOf(site.house));
+        const field = site.fields[0];
+        if (field) rects.push({ minX: field.x, minZ: field.z, w: field.w, d: field.d });
+    }
+    return rects;
+}
+
+function snapYaw(dx, dz) {
+    if (Math.abs(dx) > Math.abs(dz)) return dx > 0 ? -Math.PI / 2 : Math.PI / 2;
+    return dz > 0 ? Math.PI : 0;
+}
+
+function doorOf(house) {
+    const s = Math.sin(house.yaw);
+    const c = Math.cos(house.yaw);
+    const fx = -s;
+    const fz = -c;
+    const half = (Math.abs(fx) > Math.abs(fz) ? house.w : house.d) * 0.5;
+    const side = house.doorSide == null ? 1 : house.doorSide;
+    const x = house.x + fx * (half - 0.06) - c * side;
+    const z = house.z + fz * (half - 0.06) + s * side;
+    return {
+        door: { x: x, z: z },
+        out: { x: x + fx * 1.2, z: z + fz * 1.2 },
+        inn: { x: x - fx * 0.9, z: z - fz * 0.9 },
+        fx: fx,
+        fz: fz
+    };
+}
+
+function layoutFarm(state, village, cx, cz, wood, blocked) {
+    const place = places[village];
+    const dx = place.x - cx;
+    const dz = place.z - cz;
+    const len = Math.hypot(dx, dz) || 1;
+    const hx = cx + (dx / len) * 15;
+    const hz = cz + (dz / len) * 15;
+    const yaw = snapYaw(dx, dz);
+    const size = 4.7;
+    const house = {
+        x: hx,
+        z: hz,
+        y: Math.max(0, World.heightAt(hx, hz)),
+        yaw: yaw,
+        w: size,
+        d: size,
+        minX: hx - size / 2,
+        minZ: hz - size / 2,
+        mesh: "house",
+        role: "farmhouse",
+        doorSide: 1,
+        village: village
+    };
+    const field = { x: cx - 8, z: cz - 6, w: 16, d: 12 };
+    const houseRect = rectOf(house);
+    const fieldRect = { minX: field.x, minZ: field.z, w: field.w, d: field.d };
+    if (Math.hypot(hx - place.x, hz - place.z) < 78) return null;
+    if (Math.hypot(cx - place.x, cz - place.z) < 90) return null;
+    if (!outsideWalls(village, houseRect) || !outsideWalls(village, fieldRect)) return null;
+    if (rectsHit(houseRect, fieldRect, 0.4)) return null;
+    const spots = [
+        [hx, hz],
+        [cx, cz],
+        [field.x + 1, field.z + 1],
+        [field.x + field.w - 1, field.z + 1],
+        [field.x + 1, field.z + field.d - 1],
+        [field.x + field.w - 1, field.z + field.d - 1]
+    ];
+    let slope = 0;
+    for (const spot of spots) {
+        const score = landScore(spot[0], spot[1], wood);
+        if (score < 0) return null;
+        slope = Math.max(slope, score);
+    }
+    for (const rect of [houseRect, fieldRect]) {
+        for (const other of blocked) {
+            if (rectsHit(rect, other, 3)) return null;
+        }
+    }
+    const door = doorOf(house);
+    const sideX = -door.fz;
+    const sideZ = door.fx;
+    const site = {
+        id: "raised-" + village + "-" + ((state.farmSerial || 0) + 1),
+        village: village,
+        yaw: yaw,
+        y: house.y,
+        house: house,
+        hay: [hx - sideX * 2.4, hz - sideZ * 2.4],
+        out: door.out,
+        inn: door.inn,
+        door: door.door,
+        bed: { x: hx, z: hz, y: house.y },
+        exits: [
+            { x: door.out.x, z: door.out.z },
+            { x: hx + sideX * 5.2, z: hz + sideZ * 5.2 },
+            { x: cx, z: cz }
+        ],
+        fields: [field],
+        slope: slope
+    };
+    const path = pathToStore(site);
+    if (!path || path.length < 2 || pathWet(path) || pathLength(path) > 320) return null;
+    return site;
+}
+
+function pickFarmSite(state, village) {
+    const wood = nearbyWood(village);
+    const blocked = takenRects(state);
+    const place = places[village];
+    for (const dist of [108, 132, 156, 180, 204]) {
+        let pick = null;
+        for (let i = 0; i < 12; i++) {
+            const ang = (i / 12) * Math.PI * 2 + dist * 0.002;
+            const site = layoutFarm(
+                state,
+                village,
+                place.x + Math.cos(ang) * dist,
+                place.z + Math.sin(ang) * dist,
+                wood,
+                blocked
+            );
+            if (!site) continue;
+            if (!pick || site.slope < pick.slope) pick = site;
+        }
+        if (pick) return pick;
+    }
+    return null;
+}
+
+const farmThink = [0, 0, 0, 0];
+
+function considerFarms(state, now) {
+    let dirty = false;
+    if (!Array.isArray(state.farmJobs)) {
+        state.farmJobs = [];
+        dirty = true;
+    }
+    if (!Array.isArray(state.builtFarms)) {
+        state.builtFarms = [];
+        dirty = true;
+    }
+    const keep = [];
+    for (const job of state.farmJobs) {
+        if (state.owners[job.village] !== job.payer) {
+            state.wood[job.payer] = (state.wood[job.payer] || 0) + FARM_WOOD;
+            note(state, factions[job.payer].name + " stops the farm.");
+            dirty = true;
+            continue;
+        }
+        if (now < job.readyAt) {
+            keep.push(job);
+            continue;
+        }
+        state.builtFarms.push(job.site);
+        note(state, factions[job.payer].name + " finishes a farm.");
+        dirty = true;
+    }
+    state.farmJobs = keep;
+    for (let faction = 0; faction < 4; faction++) {
+        if (state.farmJobs.some((job) => job.payer === faction)) continue;
+        if (now < farmThink[faction]) continue;
+        if (!wantsFarm(state, faction) || extraFarms(state, faction) >= FARM_EXTRA || (state.wood[faction] || 0) < FARM_WOOD) {
+            farmThink[faction] = now + 20000;
+            continue;
+        }
+        const village = farmVillage(state, faction);
+        const site = village < 0 ? null : pickFarmSite(state, village);
+        if (!site) {
+            farmThink[faction] = now + 60000;
+            continue;
+        }
+        state.farmSerial = (state.farmSerial || 0) + 1;
+        site.id = "raised-" + village + "-" + state.farmSerial;
+        state.wood[faction] -= FARM_WOOD;
+        state.farmJobs.push({
+            id: site.id,
+            village: village,
+            payer: faction,
+            readyAt: now + FARM_BUILD_MS,
+            site: site
+        });
+        note(state, factions[faction].name + " starts a farm.");
+        farmThink[faction] = now + 20000;
+        dirty = true;
+    }
+    return dirty;
+}
+
+function farmAsleep(play) {
+    const hour = Clock.hours(play);
+    return hour >= 1 && hour < 5;
+}
+
+function farmSlot(play) {
+    const hour = Clock.hours(play);
+    if (hour < 5) return -1;
+    if (hour >= 19) return 2;
+    if (hour >= 14) return 1;
+    if (hour >= 9) return 0;
+    return -1;
+}
+
+function deliveryDue(farm, play) {
+    const slot = farmSlot(play);
+    if (slot < 0) return false;
+    const day = Clock.day(play);
+    if (farm.sentDay !== day) return true;
+    return slot > (farm.sentSlot == null ? -1 : farm.sentSlot);
+}
+
+function markDelivery(farm, play) {
+    farm.sentDay = Clock.day(play);
+    farm.sentSlot = farmSlot(play);
+}
+
+function workSpots(site) {
+    const spots = (site.exits || []).map((point) => ({ x: point.x, z: point.z }));
+    for (const field of site.fields) {
+        const gate = Town.fieldGate(field, site.bed);
+        spots.push(gate.out, gate.inn);
+        const cols = field.w > 40 ? 3 : 2;
+        const rows = field.d > 30 ? 3 : 2;
+        for (let c = 0; c < cols; c++) {
+            for (let r = 0; r < rows; r++) {
+                spots.push({
+                    x: field.x + field.w * (c + 1) / (cols + 1),
+                    z: field.z + field.d * (r + 1) / (rows + 1)
+                });
+            }
+        }
+        spots.push(gate.inn, gate.out);
+    }
+    if (!spots.length) spots.push({ x: site.out.x, z: site.out.z });
+    return spots;
+}
+
+function pathToStore(site) {
+    return villagerPath(site.village, { x: site.out.x, z: site.out.z }).slice().reverse();
+}
+
+function routeBlocked(state, village, path, now) {
+    if (!path || path.length < 2) return true;
+    const owner = state.owners[village];
+    for (const attack of state.attacks || []) {
+        if (attack.resolved || attack.to !== village || attack.faction === owner) continue;
+        if (attack.heldForGate && !attack.breachedAt) return true;
+        if (!attack.path || attack.path.length < 2) continue;
+        const travel = Math.max(1, attack.arriveAt - attack.startedAt);
+        const along = Math.max(0, Math.min(1, (now - attack.startedAt) / travel));
+        const army = poseAt(attack.path, along * (attack.length || 0));
+        for (const point of path) {
+            if (Math.hypot(army.x - point.x, army.z - point.z) < 16) return true;
+        }
+    }
+    for (let i = 1; i < path.length; i++) {
+        const a = path[i - 1];
+        const b = path[i];
+        const len = Math.hypot(b.x - a.x, b.z - a.z);
+        const steps = Math.max(1, Math.ceil(len / 8));
+        for (let s = 0; s <= steps; s++) {
+            const t = s / steps;
+            if (World.wet(a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t)) return true;
+        }
+    }
+    return false;
+}
+
+function holdFood(farm) {
+    if (farm.carry > 0) {
+        farm.stock += farm.carry;
+        farm.carry = 0;
+    }
+}
+
+function walkHome(farm, site) {
+    const pose = farm.path && farm.path.length > 1 ? poseAt(farm.path, farm.along || 0) : site.out;
+    farm.phase = "back";
+    farm.path = [{ x: pose.x, z: pose.z }, { x: site.out.x, z: site.out.z }];
+    farm.along = 0;
+    farm.length = pathLength(farm.path);
+}
+
+function ensureFarms(state) {
+    if (!Array.isArray(state.farms)) state.farms = [];
+    let dirty = false;
+    const sites = farmSiteList.concat(state.builtFarms || []);
+    for (const site of sites) {
+        if (state.farms.some((farm) => farm.id === site.id)) continue;
+        state.farms.push({
+            id: site.id,
+            village: site.village,
+            stock: 0,
+            grown: 0,
+            health: 1,
+            phase: "work",
+            carry: 0,
+            along: 0,
+            length: 0,
+            path: null,
+            sentDay: -1,
+            sentSlot: -1,
+            retryAt: 0
+        });
+        dirty = true;
+    }
+    return dirty;
+}
+
+function stepFarms(state, now) {
+    const play = playClock(state);
+    if (play == null || !Array.isArray(state.farms)) return false;
+    if (!Number.isFinite(state.farmPlay)) {
+        state.farmPlay = play;
+        return true;
+    }
+    const dt = play - state.farmPlay;
+    if (dt <= 0) return false;
+    const step = Math.min(5000, dt);
+    state.farmPlay = play;
+    const asleep = farmAsleep(play);
+    const rate = FARM_PER_DAY / ((20 / 24) * Clock.DAY_MS);
+    let dirty = false;
+    for (const farm of state.farms) {
+        const site = farmSite(state, farm.id);
+        if (!site) continue;
+        if (farm.health <= 0) {
+            if (farm.carry > 0) {
+                holdFood(farm);
+                farm.phase = "dead";
+                dirty = true;
+            }
+            continue;
+        }
+        if (asleep && farm.phase === "haul") {
+            walkHome(farm, site);
+            dirty = true;
+        } else if (asleep && farm.phase === "work") {
+            farm.phase = "sleep";
+            dirty = true;
+        } else if (!asleep && farm.phase === "sleep") {
+            farm.phase = "work";
+            dirty = true;
+        }
+        if (farm.phase === "haul" || farm.phase === "back") {
+            if (farm.phase === "haul" && routeBlocked(state, farm.village, farm.path, now)) {
+                walkHome(farm, site);
+                farm.retryAt = play + FARM_RETRY_MS;
+                dirty = true;
+            }
+            farm.along += FISH_WALK * step / 1000;
+            dirty = true;
+            if (farm.along >= farm.length) {
+                if (farm.phase === "haul") {
+                    const owner = state.owners[farm.village];
+                    const load = farm.carry || 0;
+                    farm.carry = 0;
+                    if (load > 0) {
+                        state.food[owner] = (state.food[owner] || 0) + load;
+                        note(state, factions[owner].name + " brings " + load + " food to the store.");
+                    }
+                    markDelivery(farm, play);
+                    walkHome(farm, site);
+                } else {
+                    holdFood(farm);
+                    farm.phase = farmAsleep(play) ? "sleep" : "work";
+                    farm.path = null;
+                    farm.along = 0;
+                    farm.length = 0;
+                }
+            }
+            continue;
+        }
+        if (farm.phase !== "work") continue;
+        farm.grown = (farm.grown || 0) + rate * step;
+        const whole = Math.floor(farm.grown);
+        if (whole > 0) {
+            farm.stock += whole;
+            farm.grown -= whole;
+            dirty = true;
+        }
+        if (!deliveryDue(farm, play) || play < (farm.retryAt || 0)) continue;
+        if ((farm.stock || 0) < 1) {
+            markDelivery(farm, play);
+            dirty = true;
+            continue;
+        }
+        const path = pathToStore(site);
+        if (routeBlocked(state, farm.village, path, now)) {
+            farm.retryAt = play + FARM_RETRY_MS;
+            dirty = true;
+            continue;
+        }
+        farm.carry = farm.stock;
+        farm.stock = 0;
+        farm.phase = "haul";
+        farm.path = path;
+        farm.along = 0;
+        farm.length = pathLength(path);
+        dirty = true;
+    }
+    return dirty;
+}
+
+function presentFarms(state, now) {
+    const play = Number.isFinite(state.farmPlay) ? state.farmPlay : 0;
+    return (state.farms || []).filter((farm) => farm.health > 0).map((farm) => {
+        const site = farmSite(state, farm.id);
+        const home = site ? site.out : { x: 0, z: 0 };
+        const pose = (farm.phase === "haul" || farm.phase === "back") && farm.path && farm.path.length > 1
+            ? poseAt(farm.path, farm.along || 0)
+            : { x: home.x, z: home.z, yaw: 0 };
+        const y = site ? site.y : 0;
+        return {
+            id: farm.id,
+            village: farm.village,
+            owner: state.owners[farm.village],
+            health: farm.health,
+            phase: farm.phase,
+            stock: farm.stock || 0,
+            carry: farm.carry || 0,
+            x: pose.x,
+            z: pose.z,
+            yaw: pose.yaw || 0,
+            path: farm.path || null,
+            along: farm.along || 0,
+            length: farm.length || 0,
+            playAt: play,
+            spots: site ? workSpots(site) : [],
+            nap: site ? [
+                { x: site.out.x, z: site.out.z, y: y },
+                { x: site.door.x, z: site.door.z, y: y },
+                { x: site.inn.x, z: site.inn.z, y: y },
+                { x: site.bed.x, z: site.bed.z, y: y }
+            ] : []
+        };
+    });
+}
+
 function syncWorld(state, now) {
     const paused = Number.isFinite(state.pausedAt);
     const clock = paused ? state.pausedAt : now;
@@ -1625,6 +2259,7 @@ function syncWorld(state, now) {
     if (capArmies(state)) dirty = true;
     if (ensureEconomy(state, now)) dirty = true;
     if (ensureLodges(state)) dirty = true;
+    if (ensureFarms(state)) dirty = true;
     if (finishTraining(state, now)) dirty = true;
     if (orderTraining(state, now)) dirty = true;
     if (considerAttacks(state, now)) dirty = true;
@@ -1633,9 +2268,29 @@ function syncWorld(state, now) {
     if (creditWood(state, now)) dirty = true;
     if (creditRepair(state, now)) dirty = true;
     if (considerRepairs(state, now)) dirty = true;
+    if (considerFarms(state, now)) dirty = true;
+    if (ensureFarms(state)) dirty = true;
+    if (stepFarms(state, now)) dirty = true;
     if (besiege(state, now)) dirty = true;
     if (fight(state, now)) dirty = true;
+    if (ensureHero(state)) dirty = true;
     return { dirty, turn, paused };
+}
+
+function ensureHero(state) {
+    const before = state.hero ? Hero.signature(state.hero) : "";
+    state.hero = Hero.normalize(state.hero);
+    return Hero.signature(state.hero) !== before;
+}
+
+async function saveHero(raw) {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    state.hero = Hero.prefer(state.hero, raw);
+    await writeState(state);
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
 }
 
 async function campaignState(now, saved, playAdd) {
@@ -1684,6 +2339,27 @@ async function hitWood(id) {
         if (man.health <= 0) dropRepair(state, man);
     }
     creditWood(state, now);
+    await writeState(state);
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+}
+
+async function hitFarmer(id) {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    const farm = (state.farms || []).find((item) => item.id === id);
+    if (farm && farm.health > 0 && state.owners[farm.village] !== PLAYER_FACTION) {
+        farm.health -= 1;
+        if (farm.health <= 0) {
+            if (farm.carry > 0) {
+                farm.stock = (farm.stock || 0) + farm.carry;
+                farm.carry = 0;
+            }
+            farm.phase = "dead";
+            farm.path = null;
+        }
+    }
     await writeState(state);
     const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
     return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
@@ -1789,6 +2465,10 @@ module.exports = async function handler(req, res) {
                 res.status(200).json(await campaignState(Date.now()));
                 return;
             }
+            if (req.body && req.body.hero && typeof req.body.hero === "object") {
+                res.status(200).json(await saveHero(req.body.hero));
+                return;
+            }
             if (req.body && typeof req.body.driver === "string") {
                 res.status(200).json(await hitDriver(req.body.driver));
                 return;
@@ -1799,6 +2479,10 @@ module.exports = async function handler(req, res) {
             }
             if (req.body && Number.isInteger(req.body.woodcutter)) {
                 res.status(200).json(await hitWood(req.body.woodcutter));
+                return;
+            }
+            if (req.body && typeof req.body.farmer === "string") {
+                res.status(200).json(await hitFarmer(req.body.farmer));
                 return;
             }
             if (req.body && Number.isInteger(req.body.fisherman)) {

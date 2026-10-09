@@ -123,6 +123,37 @@ function showVillages(villages) {
         ctx.strokeText(placeNames[index], p.x, ly);
         ctx.fillText(placeNames[index], p.x, ly);
     });
+    let spot = null;
+    try { spot = JSON.parse(localStorage.getItem("village-spot") || "null"); } catch (err) { spot = null; }
+    if (!spot || !Number.isFinite(spot.x) || !Number.isFinite(spot.z)) {
+        const home = World.places[2];
+        spot = { x: home.x, z: home.z + 20 };
+    }
+    const you = mapPoint(spot.x, spot.z);
+    ctx.beginPath();
+    ctx.fillStyle = "#f2d15a";
+    ctx.strokeStyle = "#1c1408";
+    ctx.lineWidth = 2;
+    ctx.arc(you.x, you.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    let labelX = you.x;
+    let labelY = you.y - 12;
+    ctx.textAlign = "center";
+    for (const place of World.places) {
+        const town = mapPoint(place.x, place.z);
+        if (Math.hypot(town.x - you.x, town.y - you.y) < 40) {
+            labelX = you.x + 12;
+            labelY = you.y + 4;
+            ctx.textAlign = "left";
+        }
+    }
+    ctx.font = "700 13px Segoe UI, system-ui, sans-serif";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(20, 24, 18, 0.8)";
+    ctx.fillStyle = "#f2d15a";
+    ctx.strokeText("You", labelX, labelY);
+    ctx.fillText("You", labelX, labelY);
 }
 
 bakeIsland();

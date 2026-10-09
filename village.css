@@ -59,6 +59,23 @@ html, body {
     pointer-events: none;
 }
 
+#compass {
+    position: fixed;
+    top: 36px;
+    left: 0;
+    right: 0;
+    z-index: 4;
+    margin: 0;
+    color: #f4ecdc;
+    font: 650 0.92rem "Palatino Linotype", Palatino, serif;
+    letter-spacing: 0.08em;
+    text-align: center;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+    pointer-events: none;
+}
+
+#compass.fast { color: #f2d15a; }
+
 #pack {
     position: fixed;
     top: 52px;
@@ -103,11 +120,160 @@ html, body {
     border-color: #f0d2b4;
 }
 
+#land {
+    position: fixed;
+    top: 52px;
+    left: 186px;
+    z-index: 4;
+    padding: 6px 14px;
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    border-radius: 8px;
+    background: rgba(20, 16, 14, 0.55);
+    color: white;
+    font: 650 0.95rem "Segoe UI", system-ui, sans-serif;
+    text-decoration: none;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+#where {
+    position: fixed;
+    top: 58px;
+    left: 0;
+    right: 0;
+    z-index: 4;
+    margin: 0;
+    color: white;
+    font: 650 0.85rem "Segoe UI", system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+    pointer-events: none;
+}
+
+#fly-pad {
+    position: fixed;
+    right: 18px;
+    bottom: calc(150px + env(safe-area-inset-bottom));
+    z-index: 4;
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+}
+
+#fly-pad[hidden] { display: none; }
+
+#fly-pad button {
+    width: 64px;
+    height: 64px;
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    border-radius: 50%;
+    background: rgba(20, 16, 14, 0.55);
+    color: white;
+    font: 650 0.9rem "Segoe UI", system-ui, sans-serif;
+}
+
+#fly-fast[aria-pressed="true"] {
+    background: #c6a15a;
+    color: #1c1408;
+}
+
+#self {
+    position: fixed;
+    top: 52px;
+    left: 108px;
+    z-index: 4;
+    padding: 6px 14px;
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    border-radius: 8px;
+    background: rgba(20, 16, 14, 0.55);
+    color: white;
+    font: 650 0.95rem "Segoe UI", system-ui, sans-serif;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+#self-panel {
+    position: fixed;
+    top: 98px;
+    left: 18px;
+    z-index: 6;
+    width: min(420px, calc(100vw - 36px));
+    max-height: min(68vh, 560px);
+    overflow: auto;
+    padding: 12px 14px 16px;
+    border: 2px solid rgba(255, 255, 255, 0.75);
+    border-radius: 10px;
+    background: rgba(12, 14, 16, 0.9);
+    color: #f4efe6;
+    font: 600 0.95rem "Segoe UI", system-ui, sans-serif;
+}
+
+#self-panel[hidden] { display: none; }
+
+#self-panel h2 {
+    margin: 14px 0 6px;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #e7d7b2;
+}
+
+#self-level {
+    margin: 8px 0 0;
+    font-size: 1.25rem;
+}
+
+#self-close {
+    float: right;
+    padding: 6px 12px;
+    border: 2px solid rgba(255, 255, 255, 0.75);
+    border-radius: 8px;
+    background: rgba(20, 16, 14, 0.4);
+    color: white;
+    font: 650 0.9rem "Segoe UI", system-ui, sans-serif;
+}
+
+#self-attributes,
+#self-skills {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+#self-attributes li,
+#self-skills li {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 0 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+#self-skills li i {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 2px;
+    background: #c6a15a;
+}
+
+#stamina-fill {
+    width: 100%;
+    height: 100%;
+    background: #b8862f;
+}
+
+#magicka-fill {
+    width: 100%;
+    height: 100%;
+    background: #3d6b8a;
+}
+
 .help {
     position: fixed;
     left: 0;
     right: 0;
-    bottom: 46px;
+    bottom: 118px;
     margin: 0;
     color: rgba(255, 255, 255, 0.9);
     font-size: 0.9rem;
@@ -149,27 +315,36 @@ html, body {
 
 #weapon {
     position: fixed;
-    right: 11%;
-    bottom: 0;
+    right: 14%;
+    bottom: 18px;
     z-index: 2;
-    width: 150px;
-    height: 42vh;
+    width: 132px;
+    height: 48vh;
     pointer-events: none;
     transform-origin: 50% 100%;
-    transform: rotate(16deg);
-    background: linear-gradient(90deg, #4a545c 0%, #c5ced4 30%, #f4f6f7 48%, #7e888f 70%, #2f363c 100%);
+    transform: rotate(18deg);
+    background: linear-gradient(90deg,
+        #2a3136 0%,
+        #8e99a2 16%,
+        #f4f7f8 34%,
+        #c5ced4 42%,
+        #4e585f 49%,
+        #e7eef2 57%,
+        #9aa3ab 74%,
+        #2c3338 100%);
     clip-path: polygon(
-        46% 0, 54% 0,
-        62% 68%,
-        90% 68%, 90% 76%,
-        64% 76%,
-        58% 100%,
-        42% 100%,
-        36% 76%,
-        10% 76%, 10% 68%,
-        38% 68%
+        47.5% 0, 52.5% 0,
+        58% 68%,
+        84% 69%, 88% 72.5%, 84% 76%,
+        57% 75%,
+        55% 90%,
+        60% 93%, 50% 100%, 40% 93%,
+        45% 90%,
+        43% 75%,
+        16% 76%, 12% 72.5%, 16% 69%,
+        42% 68%
     );
-    filter: drop-shadow(0 10px 8px rgba(0, 0, 0, 0.45));
+    filter: drop-shadow(3px 10px 5px rgba(0, 0, 0, 0.5));
 }
 
 #weapon::before,
@@ -181,15 +356,17 @@ html, body {
 }
 
 #weapon::before {
-    top: 68%;
-    height: 8%;
-    background: #b08a45;
+    top: 67.5%;
+    height: 9%;
+    background: linear-gradient(#f3d48a, #a56b2e 58%, #e4be74);
 }
 
 #weapon::after {
-    top: 78%;
+    top: 77%;
     bottom: 0;
-    background: linear-gradient(#5a3a22, #2c180e);
+    background:
+        radial-gradient(circle at 50% 88%, #efe2cc 0 5px, transparent 6px),
+        repeating-linear-gradient(#6b4324 0 3px, #3c2414 3px 6px);
 }
 
 #weapon.swing-thrust { animation: thrust 0.32s ease-out; }
@@ -321,7 +498,26 @@ html, body {
 
 #pad,
 #attack,
+#jump,
 #bow {
+    display: none;
+}
+
+#enter {
+    position: fixed;
+    left: 50%;
+    bottom: 22%;
+    transform: translateX(-50%);
+    z-index: 6;
+    padding: 10px 22px;
+    font: 16px sans-serif;
+    color: #f3ead7;
+    background: #2c241c;
+    border: 1px solid #c6a15a;
+    border-radius: 8px;
+}
+
+#enter[hidden] {
     display: none;
 }
 
@@ -333,19 +529,28 @@ html, body {
         width: 150px;
     }
 
+    #self-panel {
+        top: 96px;
+        max-height: calc(100dvh - 250px - env(safe-area-inset-bottom));
+    }
+
+    #fly-pad:not([hidden]) { display: flex; }
+
     #weapon {
-        right: 36%;
-        width: 96px;
-        height: 30vh;
+        right: 34%;
+        width: 92px;
+        height: 32vh;
     }
 
     #viewbow { display: none; }
 
     #pad,
     #attack,
+    #jump,
     #bow { display: block; }
 
     #attack[hidden],
+    #jump[hidden],
     #bow[hidden] { display: none; }
 
     #pad {
@@ -408,6 +613,27 @@ html, body {
 
     #attack.down {
         background: rgba(168, 52, 36, 0.78);
+        transform: scale(0.94);
+    }
+
+    #jump {
+        position: fixed;
+        right: calc(36px + env(safe-area-inset-right));
+        bottom: calc(132px + env(safe-area-inset-bottom));
+        z-index: 4;
+        width: 64px;
+        height: 64px;
+        padding: 0;
+        border: 3px solid rgba(255, 255, 255, 0.85);
+        border-radius: 50%;
+        background: rgba(20, 16, 14, 0.48);
+        color: #f3ead7;
+        font: 13px sans-serif;
+        touch-action: none;
+    }
+
+    #jump.down {
+        background: rgba(198, 161, 90, 0.72);
         transform: scale(0.94);
     }
 
