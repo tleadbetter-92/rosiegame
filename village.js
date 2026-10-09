@@ -452,7 +452,8 @@ function addBox(list, x, y, z, w, h, d, xf, uv) {
     pushQuad(list, p(x + w, y, z + d, u0, v0, 0.72), p(x + w, y1, z + d, u0, v1, 0.72), p(x, y1, z + d, u1, v1, 0.72), p(x, y, z + d, u1, v0, 0.72));
     pushQuad(list, p(x + w, y, z, u0, v0, 0.86), p(x + w, y1, z, u0, v1, 0.86), p(x + w, y1, z + d, u1, v1, 0.86), p(x + w, y, z + d, u1, v0, 0.86));
     pushQuad(list, p(x, y, z + d, u0, v0, 0.8), p(x, y1, z + d, u0, v1, 0.8), p(x, y1, z, u1, v1, 0.8), p(x, y, z, u1, v0, 0.8));
-    pushQuad(list, p(x, y1, z, u0, v0, 0.95), p(x + w, y1, z, u1, v0, 0.95), p(x + w, y1, z + d, u1, v1, 0.95), p(x, y1, z + d, u0, v1, 0.95));
+    pushQuad(list, p(x, y1, z, u0, v0, 0.95), p(x, y1, z + d, u0, v1, 0.95), p(x + w, y1, z + d, u1, v1, 0.95), p(x + w, y1, z, u1, v0, 0.95));
+    pushQuad(list, p(x, y, z + d, u0, v0, 0.55), p(x, y, z, u0, v1, 0.55), p(x + w, y, z, u1, v1, 0.55), p(x + w, y, z + d, u1, v0, 0.55));
 }
 
 function addHead(list, x, y, z, w, h, d, xf) {
@@ -614,7 +615,7 @@ function personMatrix(man) {
     const s = Math.sin(yaw);
     const slash = man.swing > 0 ? Math.sin(man.swing * Math.PI) : 0;
     const lunge = slash * 0.22;
-    const y = man.bob - Math.min(man.down, 1.05);
+    const y = (man.stand || 0) + man.bob - Math.min(man.down, 1.05);
     const px = man.x + Math.sin(man.yaw) * lunge;
     const pz = man.z - Math.cos(man.yaw) * lunge;
     return new Float32Array([
@@ -634,7 +635,7 @@ function swordMatrix(man, hand) {
     const st = Math.sin(tilt);
     const slash = man.swing > 0 ? Math.sin(man.swing * Math.PI) : 0;
     const lunge = slash * 0.22;
-    const y = man.bob - Math.min(man.down, 1.05);
+    const y = (man.stand || 0) + man.bob - Math.min(man.down, 1.05);
     const hx = Math.min(hand[0] - 0.16, -0.36);
     const hy = hand[1] - 0.04;
     const hz = hand[2] + 0.04;
@@ -645,6 +646,22 @@ function swordMatrix(man, hand) {
         -c * st, ct, -s * st, 0,
         -s, 0, c, 0,
         px + c * hx + s * hz, y + hy, pz - s * hx + c * hz, 1
+    ]);
+}
+
+function bowMatrix(man) {
+    const yaw = man.yaw + Math.PI;
+    const c = Math.cos(yaw);
+    const s = Math.sin(yaw);
+    const y = (man.stand || 0) + man.bob - Math.min(man.down, 1.05);
+    const hx = 0.3;
+    const hy = 0.92;
+    const hz = 0.22;
+    return new Float32Array([
+        c, 0, -s, 0,
+        0, 1, 0, 0,
+        s, 0, c, 0,
+        man.x + c * hx - s * hz, y + hy, man.z + s * hx + c * hz, 1
     ]);
 }
 
@@ -692,7 +709,7 @@ function mergeMen(data) {
             });
         });
     });
-    const prev = new Map(men.filter((man) => !man.fisher).map((man) => [man.faction + ":" + man.index, man]));
+    const prev = new Map(men.filter((man) => !man.fisher && !man.archer).map((man) => [man.faction + ":" + man.index, man]));
     const next = [];
     const keep = new Set();
     for (const item of wanted) {
@@ -739,9 +756,9 @@ function mergeMen(data) {
             });
         }
     }
-    const keptFish = men.filter((man) => man.fisher);
+    const keptFish = men.filter((man) => man.fisher || man.archer);
     for (const man of men) {
-        if (man.fisher) continue;
+        if (man.fisher || man.archer) continue;
         const key = man.faction + ":" + man.index;
         if (keep.has(key)) continue;
         man.dying = true;
@@ -755,20 +772,28 @@ function mergeMen(data) {
 
 let soldierKey = "";
 let pendingHit = 0;
+let seenRestart = 0;
 let campaign = null;
 
 function applyCampaign(data) {
+    const stamp = Number(data && data.restartedAt) || 0;
+    if (stamp < seenRestart) return;
+    seenRestart = Math.max(seenRestart, stamp);
     campaign = data;
     const units = data.factions.map((faction) => (
         (faction.units || []).map((unit) => unit.index + ":" + unit.health + ":" + unit.mode + ":" + unit.post).join(".")
     )).join("|");
     const attacks = (data.attacks || []).map((attack) => attack.id).join(",");
     const fish = (data.fishermen || []).map((man) => man.village + ":" + man.health + ":" + man.cycleStart + ":" + man.walkMs).join(",");
-    const key = (data.owners || []).join(",") + "#" + attacks + "#" + units + "#" + fish;
+    const arch = (data.archers || []).map((row, village) => (
+        ((data.owners || [])[village] || 0) + ":" + (row || []).join(".")
+    )).join(",");
+    const key = (data.owners || []).join(",") + "#" + attacks + "#" + units + "#" + fish + "#" + arch;
     if (key === soldierKey) return;
     soldierKey = key;
     mergeMen(data);
     mergeFishermen(data);
+    mergeArchers(data);
 }
 
 function mergeFishermen(data) {
@@ -835,12 +860,88 @@ function mergeFishermen(data) {
     men.push(...soldiers, ...nextFish);
 }
 
+function archerSpot(village, side) {
+    const layout = towerLayout(village, side);
+    return {
+        x: layout.x + layout.w * 0.5,
+        z: layout.z + layout.d * 0.5,
+        stand: layout.floor,
+        yaw: [0, Math.PI / 2, Math.PI, -Math.PI / 2][side]
+    };
+}
+
+function mergeArchers(data) {
+    const rows = data.archers || [];
+    const owners = data.owners || [0, 1, 2, 3];
+    const prev = new Map(men.filter((man) => man.archer).map((man) => [man.village + ":" + man.side, man]));
+    const next = [];
+    const keep = new Set();
+    for (let village = 0; village < 4; village++) {
+        const row = rows[village] || [];
+        for (let side = 0; side < 4; side++) {
+            const health = row[side] || 0;
+            if (health <= 0) continue;
+            const key = village + ":" + side;
+            keep.add(key);
+            const spot = archerSpot(village, side);
+            const old = prev.get(key);
+            if (old) {
+                old.health = pendingHit ? Math.min(old.health, health) : health;
+                old.faction = owners[village];
+                if (old.health <= 0) old.dying = true;
+                next.push(old);
+            } else {
+                next.push({
+                    archer: true,
+                    village,
+                    side,
+                    faction: owners[village],
+                    index: side,
+                    health,
+                    x: spot.x,
+                    z: spot.z,
+                    stand: spot.stand,
+                    homeYaw: spot.yaw,
+                    yaw: spot.yaw,
+                    bob: 0,
+                    down: 0,
+                    attackIn: 0.45 + side * 0.18,
+                    dying: false,
+                    hostile: false,
+                    striking: 0,
+                    struck: false,
+                    swing: -1,
+                    mode: "guard"
+                });
+            }
+        }
+    }
+    for (const man of men) {
+        if (!man.archer) continue;
+        if (keep.has(man.village + ":" + man.side)) continue;
+        man.dying = true;
+        man.health = 0;
+        next.push(man);
+    }
+    const rest = men.filter((man) => !man.archer);
+    men.length = 0;
+    men.push(...rest, ...next);
+    actorsDirty = true;
+}
+
 function syncCampaign() {
     if (pendingHit) return;
-    fetch("/api/campaign").then((res) => res.json()).then(applyCampaign).catch(() => {});
+    fetch("/api/campaign", { cache: "no-store" }).then((res) => res.json()).then(applyCampaign).catch(() => {});
 }
 
 let nextSwing = 0;
+let nextShot = 0;
+let arm = "sword";
+try {
+    const savedArm = localStorage.getItem("village-arm");
+    if (savedArm === "bow" || savedArm === "sword") arm = savedArm;
+} catch (err) { /* keep the sword if storage is blocked */ }
+const arrows = [];
 let strikeTimer = 0;
 let swing = null;
 let gesture = null;
@@ -922,6 +1023,82 @@ function aim() {
     };
 }
 
+function postHit(body) {
+    pendingHit += 1;
+    soldierKey = "";
+    fetch("/api/campaign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify(body)
+    }).then((res) => res.json()).then((data) => {
+        pendingHit -= 1;
+        if (pendingHit === 0) applyCampaign(data);
+    }).catch(() => { pendingHit -= 1; });
+}
+
+function wound(man, label, quiet, knockX, knockZ) {
+    if (!man || man.dying || man.health <= 0 || man.faction === homeVillage) return false;
+    const word = label || "Hit";
+    if (man.archer) {
+        man.health -= 1;
+        if (man.health <= 0) {
+            man.dying = true;
+            if (!quiet) showStrike("Slain");
+        } else if (!quiet) {
+            showStrike(word);
+        }
+        actorsDirty = true;
+        postHit({ archer: man.village, tower: man.side });
+        return true;
+    }
+    if (man.fisher) {
+        man.health -= 1;
+        if (man.health <= 0) {
+            man.dying = true;
+            if (!quiet) showStrike("Slain");
+        } else if (!quiet) {
+            showStrike(word);
+        }
+        actorsDirty = true;
+        postHit({ fisherman: man.village });
+        return true;
+    }
+    const faction = campaign && campaign.factions[man.faction];
+    const unit = faction && (faction.units || []).find((item) => item.index === man.index);
+    if (!unit || unit.health <= 0) return false;
+    unit.health -= 1;
+    man.health = unit.health;
+    man.hostile = true;
+    man.attackIn = Math.max(man.attackIn, 0.35);
+    if (unit.health <= 0) {
+        faction.alive = Math.max(0, (faction.alive || 0) - 1);
+        man.dying = true;
+        if (!quiet) showStrike("Slain");
+    } else if (!quiet) {
+        showStrike(word);
+    }
+    if (knockX || knockZ) {
+        const nx = man.x + (knockX || 0);
+        const nz = man.z + (knockZ || 0);
+        if (!blocked(nx, man.z, man.faction)) man.x = nx;
+        if (!blocked(man.x, nz, man.faction)) man.z = nz;
+    }
+    if (!quiet) {
+        for (const other of men) {
+            if (other.dying || other.archer || other.faction !== man.faction || other.faction === homeVillage) continue;
+            const near = Math.hypot(other.x - man.x, other.z - man.z);
+            if (near < 12) {
+                other.hostile = true;
+                if (other.attackIn <= 0) other.attackIn = 0.3 + Math.random() * 0.6;
+            }
+        }
+    }
+    actorsDirty = true;
+    postHit({ village: man.faction, index: man.index });
+    return true;
+}
+
 function connectSwing() {
     if (!campaign || !swing) return;
     const profile = swings[swing.kind];
@@ -932,8 +1109,9 @@ function connectSwing() {
     let bestT = profile.reach;
     for (const man of men) {
         if (man.dying || man.health <= 0 || man.faction === homeVillage) continue;
+        const chest = (man.stand || 0) + 0.95;
         const dx = man.x - ox;
-        const dy = 0.95 - cam.y;
+        const dy = chest - cam.y;
         const dz = man.z - oz;
         const t = dx * fx + dy * fy + dz * fz;
         if (t < 0.4 || t > profile.reach) continue;
@@ -950,69 +1128,12 @@ function connectSwing() {
         return;
     }
     if (!best) return;
-    if (best.fisher) {
-        best.health -= 1;
-        if (best.health <= 0) {
-            best.dying = true;
-            showStrike("Slain");
-        } else {
-            showStrike(swing.kind === "chop" ? "Chop" : swing.kind === "thrust" ? "Thrust" : "Slash");
-        }
-        actorsDirty = true;
-        soldierKey = "";
-        pendingHit += 1;
-        fetch("/api/campaign", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ fisherman: best.village })
-        }).then((res) => res.json()).then((data) => {
-            pendingHit -= 1;
-            if (pendingHit === 0) applyCampaign(data);
-        }).catch(() => { pendingHit -= 1; });
-        return;
-    }
-    const faction = campaign.factions[best.faction];
-    const unit = faction && (faction.units || []).find((item) => item.index === best.index);
-    if (!unit || unit.health <= 0) return;
-    unit.health -= 1;
-    best.health = unit.health;
-    best.hostile = true;
-    best.attackIn = Math.max(best.attackIn, 0.35);
-    if (unit.health <= 0) {
-        faction.alive = Math.max(0, (faction.alive || 0) - 1);
-        best.dying = true;
-        showStrike("Slain");
-    } else {
-        showStrike(swing.kind === "chop" ? "Chop" : swing.kind === "thrust" ? "Thrust" : "Slash");
-    }
-    const knock = 0.28;
-    const nx = best.x + fx * knock;
-    const nz = best.z + fz * knock;
-    if (!blocked(nx, best.z, best.faction)) best.x = nx;
-    if (!blocked(best.x, nz, best.faction)) best.z = nz;
-    for (const other of men) {
-        if (other.dying || other.faction !== best.faction || other.faction === homeVillage) continue;
-        const near = Math.hypot(other.x - best.x, other.z - best.z);
-        if (near < 12) {
-            other.hostile = true;
-            if (other.attackIn <= 0) other.attackIn = 0.3 + Math.random() * 0.6;
-        }
-    }
-    actorsDirty = true;
-    soldierKey = "";
-    pendingHit += 1;
-    fetch("/api/campaign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ village: best.faction, index: best.index })
-    }).then((res) => res.json()).then((data) => {
-        pendingHit -= 1;
-        if (pendingHit === 0) applyCampaign(data);
-    }).catch(() => { pendingHit -= 1; });
+    const label = swing.kind === "chop" ? "Chop" : swing.kind === "thrust" ? "Thrust" : "Slash";
+    wound(best, label, false, fx * 0.28, fz * 0.28);
 }
 
 function startSwing(kind) {
-    if (player.dead || swing || !swings[kind]) return;
+    if (arm !== "sword" || player.dead || swing || !swings[kind]) return;
     const now = performance.now();
     if (now < nextSwing) return;
     nextSwing = now + 480;
@@ -1090,6 +1211,189 @@ function stepFisher(man) {
     return false;
 }
 
+function archerTarget(man) {
+    let best = null;
+    let bestDist = 22;
+    if (man.faction !== homeVillage && !player.dead) {
+        const dist = Math.hypot(cam.x - man.x, cam.z - man.z);
+        if (dist < bestDist && dist > 1.2) {
+            best = { x: cam.x, y: cam.y - 0.35, z: cam.z };
+            bestDist = dist;
+        }
+    }
+    for (const other of men) {
+        if (other === man || other.dying || other.health <= 0 || other.faction === man.faction) continue;
+        const dist = Math.hypot(other.x - man.x, other.z - man.z);
+        if (dist < bestDist && dist > 1.2) {
+            best = { x: other.x, y: (other.stand || 0) + 1, z: other.z };
+            bestDist = dist;
+        }
+    }
+    return best;
+}
+
+function launchArrow(from, x, y, z, tx, ty, tz, gravity) {
+    const dx = tx - x;
+    const dy = ty - y;
+    const dz = tz - z;
+    const dist = Math.hypot(dx, dy, dz) || 0.001;
+    const speed = 30;
+    const time = dist / speed;
+    arrows.push({
+        x,
+        y,
+        z,
+        vx: dx / dist * speed,
+        vy: gravity ? dy / time + 0.5 * gravity * time : dy / dist * speed,
+        vz: dz / dist * speed,
+        faction: from,
+        fromPlayer: from === homeVillage && !gravity,
+        age: 0,
+        gravity: gravity || 0
+    });
+}
+
+function shootArrow() {
+    if (arm !== "bow" || player.dead) return;
+    const now = performance.now();
+    if (now < nextShot) return;
+    nextShot = now + 680;
+    const view = document.getElementById("viewbow");
+    if (view) {
+        view.classList.remove("loose");
+        void view.offsetWidth;
+        view.classList.add("loose");
+    }
+    const a = aim();
+    const speed = 36;
+    arrows.push({
+        x: cam.x + a.fx * 0.55,
+        y: cam.y - 0.06 + a.fy * 0.55,
+        z: cam.z + a.fz * 0.55,
+        vx: a.fx * speed,
+        vy: a.fy * speed,
+        vz: a.fz * speed,
+        faction: homeVillage,
+        fromPlayer: true,
+        age: 0,
+        gravity: 0
+    });
+}
+
+function sweptNear(x0, y0, z0, x1, y1, z1, cx, cy, cz, radius, yTol) {
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const dz = z1 - z0;
+    const len2 = dx * dx + dy * dy + dz * dz || 1;
+    let t = ((cx - x0) * dx + (cy - y0) * dy + (cz - z0) * dz) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const px = x0 + dx * t;
+    const py = y0 + dy * t;
+    const pz = z0 + dz * t;
+    return Math.hypot(px - cx, pz - cz) < radius && Math.abs(py - cy) < yTol;
+}
+
+function arrowGate(arrow, x0, y0, z0) {
+    if (!arrow.fromPlayer || !campaign || !campaign.owners) return null;
+    for (let village = 0; village < 4; village++) {
+        if (campaign.owners[village] === homeVillage) continue;
+        for (let side = 0; side < 4; side++) {
+            if (gateHealth(village, side) <= 0) continue;
+            const spot = gateCenter(village, side);
+            if (sweptNear(x0, y0, z0, arrow.x, arrow.y, arrow.z, spot.x, 1.15, spot.z, 1.05, 1.05)) {
+                return { village, side };
+            }
+        }
+    }
+    return null;
+}
+
+function wallStops(x0, y0, z0, x1, y1, z1) {
+    const cross = (axis, at, span0, span1, gap) => {
+        const d0 = axis === "z" ? z0 : x0;
+        const d1 = axis === "z" ? z1 : x1;
+        const delta = d1 - d0;
+        if (Math.abs(delta) < 0.0001) return false;
+        const t = (at - d0) / delta;
+        if (t < 0 || t > 1) return false;
+        const along0 = axis === "z" ? x0 : z0;
+        const along = along0 + ((axis === "z" ? x1 - x0 : z1 - z0) * t);
+        if (along < Math.min(span0, span1) || along > Math.max(span0, span1)) return false;
+        if (Math.abs(along - gap) < GATE_HALF + 0.2) return false;
+        return y0 + (y1 - y0) * t < 2.25;
+    };
+    for (let village = 0; village < 4; village++) {
+        const box = palisadeBox(village);
+        if (cross("z", box.minZ, box.minX, box.maxX, box.cx)) return true;
+        if (cross("z", box.maxZ, box.minX, box.maxX, box.cx)) return true;
+        if (cross("x", box.minX, box.minZ, box.maxZ, box.cz)) return true;
+        if (cross("x", box.maxX, box.minZ, box.maxZ, box.cz)) return true;
+    }
+    return false;
+}
+
+function stepArrows(dt) {
+    for (let i = arrows.length - 1; i >= 0; i--) {
+        const arrow = arrows[i];
+        const x0 = arrow.x;
+        const y0 = arrow.y;
+        const z0 = arrow.z;
+        arrow.vy -= arrow.gravity * dt;
+        arrow.x += arrow.vx * dt;
+        arrow.y += arrow.vy * dt;
+        arrow.z += arrow.vz * dt;
+        arrow.age += dt;
+        let hit = false;
+        if (campaign) {
+            for (const man of men) {
+                if (man.dying || man.health <= 0 || man.faction === arrow.faction) continue;
+                const chest = (man.stand || 0) + 0.95;
+                if (!sweptNear(x0, y0, z0, arrow.x, arrow.y, arrow.z, man.x, chest, man.z, 0.48, 1.05)) continue;
+                const speed = Math.hypot(arrow.vx, arrow.vz) || 1;
+                wound(man, "Shot", !arrow.fromPlayer, arrow.vx / speed * 0.2, arrow.vz / speed * 0.2);
+                hit = true;
+                break;
+            }
+        }
+        if (!hit && arrow.faction !== homeVillage && !player.dead) {
+            if (sweptNear(x0, y0, z0, arrow.x, arrow.y, arrow.z, cam.x, cam.y - 0.55, cam.z, 0.46, 1.05)) {
+                hurtPlayer(8);
+                hit = true;
+            }
+        }
+        if (!hit) {
+            const gate = arrowGate(arrow, x0, y0, z0);
+            if (gate) {
+                strikeGate(gate);
+                hit = true;
+            }
+        }
+        if (!hit && wallStops(x0, y0, z0, arrow.x, arrow.y, arrow.z)) hit = true;
+        if (hit || arrow.age > 1.5 || arrow.y < -1 || Math.abs(arrow.x) > 140 || Math.abs(arrow.z) > 140) {
+            arrows.splice(i, 1);
+        }
+    }
+}
+
+function stepArcher(man, dt) {
+    const target = archerTarget(man);
+    man.swing = -1;
+    man.hostile = false;
+    if (target) {
+        man.yaw = Math.atan2(-(target.x - man.x), -(target.z - man.z));
+        man.attackIn -= dt;
+        if (man.attackIn <= 0) {
+            man.attackIn = 1.55;
+            launchArrow(man.faction, man.x, (man.stand || 0) + 1.28, man.z, target.x, target.y, target.z, 9);
+        }
+    } else {
+        man.yaw = man.homeYaw;
+        man.attackIn = Math.min(man.attackIn, 0.4);
+    }
+    man.bob = Math.sin(performance.now() * 0.004 + man.side) * 0.015;
+    return false;
+}
+
 function stepMan(man, dt) {
     if (man.dying) {
         man.down += dt * 1.5;
@@ -1097,6 +1401,7 @@ function stepMan(man, dt) {
         actorsDirty = true;
         return man.down > 1.2;
     }
+    if (man.archer) return stepArcher(man, dt);
     if (man.fisher) return stepFisher(man);
     if (man.mode === "march" && man.path && man.length) {
         const attack = marchAttack(man);
@@ -1212,10 +1517,10 @@ function stepMan(man, dt) {
 function separateMen(dt) {
     for (let i = 0; i < men.length; i++) {
         const man = men[i];
-        if (man.dying || man.mode === "march") continue;
+        if (man.dying || man.archer || man.mode === "march") continue;
         for (let j = i + 1; j < men.length; j++) {
             const other = men[j];
-            if (other.dying || other.mode === "march") continue;
+            if (other.dying || other.archer || other.mode === "march") continue;
             const ox = man.x - other.x;
             const oz = man.z - other.z;
             const dist = Math.hypot(ox, oz);
@@ -1253,6 +1558,7 @@ function updateFight(dt) {
             actorsDirty = true;
         }
     }
+    stepArrows(dt);
     separateMen(dt);
     if (actorsDirty) rebuildMesh();
 }
@@ -1445,13 +1751,18 @@ function marchDistance(attack, plain) {
     return plain;
 }
 
+function onTower(x, z) {
+    return floorAt(x, z) > 0.2;
+}
+
 function gateWant(village, side) {
     if (gateHealth(village, side) <= 0) return 0;
     const owner = ownerOf(village);
     const spot = gateCenter(village, side);
-    if (owner === homeVillage && Math.hypot(cam.x - spot.x, cam.z - spot.z) < 7.5) return 1;
+    if (owner === homeVillage && !onTower(cam.x, cam.z) && Math.hypot(cam.x - spot.x, cam.z - spot.z) < 7.5) return 1;
     for (const man of men) {
-        if (man.dying || man.health <= 0 || man.faction !== owner) continue;
+        if (man.dying || man.health <= 0 || man.archer || man.faction !== owner) continue;
+        if (onTower(man.x, man.z)) continue;
         if (Math.hypot(man.x - spot.x, man.z - spot.z) < 7.5) return 1;
     }
     return 0;
@@ -1651,7 +1962,7 @@ function addTower(list, layout) {
     addBox(list, x, layout.floor - 0.22, z + 0.2, w, 0.1, 0.12);
     addBox(list, x, layout.floor - 0.22, z + d - 0.32, w, 0.1, 0.12);
     for (const step of towerSteps(layout)) {
-        addBox(list, step.x, step.y - TOWER_RISE, step.z, step.w, TOWER_RISE, step.d);
+        addBox(list, step.x, 0, step.z, step.w, step.y, step.d);
     }
     for (let edge = 0; edge < 4; edge++) {
         if (edge === layout.stair) continue;
@@ -1666,6 +1977,56 @@ function curbOf(layout, edge) {
     if (edge === 2) return { x, z: z + d - lip, w, d: lip };
     if (edge === 3) return { x, z, w: lip, d };
     return { x: x + w - lip, z, w: lip, d };
+}
+
+let bowModel = null;
+let arrowMesh = null;
+
+function addShaft(list, x, y, z, dx, dy, dz) {
+    const len = Math.hypot(dx, dy, dz) || 1;
+    const fx = dx / len;
+    const fy = dy / len;
+    const fz = dz / len;
+    let sx = -fz;
+    let sz = fx;
+    const sl = Math.hypot(sx, sz) || 1;
+    sx /= sl;
+    sz /= sl;
+    const ux = fy * sz;
+    const uy = fz * sx - fx * sz;
+    const uz = -fy * sx;
+    const w = 0.028;
+    const tip = 0.56;
+    const xf = (px, py, pz) => [
+        x + sx * px + ux * py + fx * (pz - tip),
+        y + ux * 0 + uy * py + fy * (pz - tip),
+        z + sz * px + uz * py + fz * (pz - tip)
+    ];
+    addBox(list, -w, -w, 0, w * 2, w * 2, tip, xf);
+}
+
+function prepareBow() {
+    const list = [];
+    addBox(list, -0.045, -0.78, 0.05, 0.09, 0.62, 0.07);
+    addBox(list, -0.04, -0.2, 0, 0.08, 0.4, 0.08);
+    addBox(list, -0.045, 0.16, 0.08, 0.09, 0.62, 0.07);
+    addBox(list, -0.012, -0.7, 0.28, 0.024, 1.4, 0.02);
+    addBox(list, -0.018, -0.02, 0.22, 0.036, 0.036, 0.72);
+    const data = new Float32Array(list);
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    bowModel = { buffer, count: list.length / 6 };
+    arrowMesh = { buffer: gl.createBuffer(), count: 0 };
+}
+
+function syncArrowMesh() {
+    if (!arrowMesh) return;
+    const list = [];
+    for (const arrow of arrows) addShaft(list, arrow.x, arrow.y, arrow.z, arrow.vx, arrow.vy, arrow.vz);
+    gl.bindBuffer(gl.ARRAY_BUFFER, arrowMesh.buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(list), gl.DYNAMIC_DRAW);
+    arrowMesh.count = list.length / 6;
 }
 
 function prepareTowers() {
@@ -1849,7 +2210,16 @@ function draw() {
             gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
             gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
             gl.drawArrays(gl.TRIANGLES, 0, model.count);
-            if (!man.fisher && hand && swordModel && textures.sword) {
+            if (man.archer && bowModel && textures.wood) {
+                gl.bindTexture(gl.TEXTURE_2D, textures.wood);
+                gl.uniformMatrix4fv(loc.model, false, bowMatrix(man));
+                gl.bindBuffer(gl.ARRAY_BUFFER, bowModel.buffer);
+                gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
+                gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
+                gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
+                gl.drawArrays(gl.TRIANGLES, 0, bowModel.count);
+                gl.bindTexture(gl.TEXTURE_2D, textures.people);
+            } else if (!man.fisher && hand && swordModel && textures.sword) {
                 gl.bindTexture(gl.TEXTURE_2D, textures.sword);
                 gl.uniformMatrix4fv(loc.model, false, swordMatrix(man, hand));
                 gl.bindBuffer(gl.ARRAY_BUFFER, swordModel.buffer);
@@ -1860,6 +2230,15 @@ function draw() {
                 gl.bindTexture(gl.TEXTURE_2D, textures.people);
             }
         }
+    }
+    if (arrowMesh && textures.wood && arrowMesh.count) {
+        gl.bindTexture(gl.TEXTURE_2D, textures.wood);
+        gl.uniformMatrix4fv(loc.model, false, identity);
+        gl.bindBuffer(gl.ARRAY_BUFFER, arrowMesh.buffer);
+        gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
+        gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
+        gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
+        gl.drawArrays(gl.TRIANGLES, 0, arrowMesh.count);
     }
 }
 
@@ -1966,6 +2345,7 @@ function frame(now) {
     movePlayer(dt);
     updateFight(dt);
     updatePalisade(dt);
+    syncArrowMesh();
     draw();
     requestAnimationFrame(frame);
 }
@@ -1973,6 +2353,11 @@ function frame(now) {
 window.addEventListener("resize", resize);
 window.addEventListener("keydown", (e) => {
     keys[e.code] = true;
+    if (e.code === "KeyF" && !e.repeat) shootArrow();
+    if (e.code === "KeyP" && !e.repeat) {
+        packPanel.hidden = !packPanel.hidden;
+        e.preventDefault();
+    }
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) e.preventDefault();
 });
 window.addEventListener("keyup", (e) => { keys[e.code] = false; });
@@ -1994,7 +2379,12 @@ document.addEventListener("mousemove", (e) => {
 });
 
 let dragging = false;
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 canvas.addEventListener("mousedown", (e) => {
+    if (e.button === 2) {
+        shootArrow();
+        return;
+    }
     if (e.button !== 0) return;
     dragging = true;
     if (document.pointerLockElement === canvas && !player.dead) gesture = { x: 0, y: 0 };
@@ -2012,11 +2402,40 @@ const phone = window.matchMedia("(hover: none) and (pointer: coarse)");
 const pad = document.getElementById("pad");
 const knob = pad.querySelector(".knob");
 const attack = document.getElementById("attack");
+const bowButton = document.getElementById("bow");
+
+const packButton = document.getElementById("pack");
+const packPanel = document.getElementById("pack-panel");
+const helpLine = document.querySelector(".help");
+const viewbow = document.getElementById("viewbow");
+
+function paintArm() {
+    const on = phone.matches;
+    weapon.hidden = arm !== "sword";
+    viewbow.hidden = arm !== "bow";
+    pad.hidden = !on;
+    attack.hidden = !(on && arm === "sword");
+    bowButton.hidden = !(on && arm === "bow");
+    if (helpLine) {
+        helpLine.textContent = arm === "bow"
+            ? "WASD to walk · mouse to look · right click or F to shoot · Pack to switch"
+            : "WASD to walk · mouse to look · drag to swing · Pack to switch";
+    }
+    packPanel.querySelectorAll("button").forEach((button) => {
+        button.setAttribute("aria-pressed", button.dataset.arm === arm ? "true" : "false");
+    });
+}
+
+function chooseArm(next) {
+    if (next !== "sword" && next !== "bow") return;
+    arm = next;
+    try { localStorage.setItem("village-arm", arm); } catch (err) { /* the choice still lasts this visit */ }
+    packPanel.hidden = true;
+    paintArm();
+}
 
 function showPhoneControls() {
-    const on = phone.matches;
-    pad.hidden = !on;
-    attack.hidden = !on;
+    paintArm();
 }
 
 function placeKnob(x, y) {
@@ -2074,6 +2493,24 @@ attack.addEventListener("pointerup", () => attack.classList.remove("down"));
 attack.addEventListener("pointercancel", () => attack.classList.remove("down"));
 attack.addEventListener("contextmenu", (e) => e.preventDefault());
 
+bowButton.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    bowButton.classList.add("down");
+    shootArrow();
+});
+bowButton.addEventListener("pointerup", () => bowButton.classList.remove("down"));
+bowButton.addEventListener("pointercancel", () => bowButton.classList.remove("down"));
+bowButton.addEventListener("contextmenu", (e) => e.preventDefault());
+
+packButton.addEventListener("click", () => {
+    packPanel.hidden = !packPanel.hidden;
+});
+packPanel.addEventListener("click", (e) => {
+    const button = e.target.closest("button");
+    if (!button) return;
+    chooseArm(button.dataset.arm);
+});
+
 canvas.addEventListener("touchstart", (e) => {
     for (const t of e.changedTouches) {
         if (lookId !== null) continue;
@@ -2111,6 +2548,7 @@ if (gl) {
     syncCampaign();
     setInterval(syncCampaign, 1500);
     prepareTowers();
+    prepareBow();
     loadCottage();
     loadPeople();
     requestAnimationFrame(frame);

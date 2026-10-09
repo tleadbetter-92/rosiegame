@@ -93,6 +93,26 @@ function freshGates() {
     return [0, 1, 2, 3].map(() => [GATE_HP, GATE_HP, GATE_HP, GATE_HP]);
 }
 
+function freshArchers() {
+    return [0, 1, 2, 3].map(() => [MAX_HP, MAX_HP, MAX_HP, MAX_HP]);
+}
+
+function ensureArchers(state) {
+    if (!Array.isArray(state.archers) || state.archers.length !== 4) {
+        state.archers = freshArchers();
+        return true;
+    }
+    let dirty = false;
+    for (let village = 0; village < 4; village++) {
+        const row = state.archers[village];
+        if (!Array.isArray(row) || row.length !== 4) {
+            state.archers[village] = [MAX_HP, MAX_HP, MAX_HP, MAX_HP];
+            dirty = true;
+        }
+    }
+    return dirty;
+}
+
 function ensureGates(state) {
     if (!Array.isArray(state.gates) || state.gates.length !== 4) {
         state.gates = freshGates();
@@ -186,7 +206,7 @@ function fielded(state, faction, village) {
 
 function restartCampaign(state, now) {
     state.owners = [0, 1, 2, 3];
-    state.food = [0, 0, 0, 0];
+    state.food = [100, 100, 100, 100];
     state.health = {};
     state.post = {};
     state.nextIndex = [0, 0, 0, 0];
@@ -199,7 +219,9 @@ function restartCampaign(state, now) {
         delivered: 0
     }));
     state.gates = freshGates();
-    state.log = ["The houses start again. Each has one fisherman and no food."];
+    state.archers = freshArchers();
+    state.restartedAt = now;
+    state.log = ["The houses start again. Each has one fisherman and 100 food."];
     state.marchAfter = now + RECRUIT_MS;
 }
 
@@ -441,7 +463,7 @@ function villageCounts(state, village) {
 function ensureEconomy(state, now) {
     let dirty = false;
     if (!Array.isArray(state.food) || state.food.length !== 4) {
-        state.food = [0, 0, 0, 0];
+        state.food = [100, 100, 100, 100];
         dirty = true;
     }
     if (!Array.isArray(state.fishermen)) {
@@ -465,6 +487,7 @@ function ensureEconomy(state, now) {
         dirty = true;
     }
     if (ensureGates(state)) dirty = true;
+    if (ensureArchers(state)) dirty = true;
     return dirty;
 }
 
@@ -738,6 +761,7 @@ function present(state, now, turn, paused) {
         turnMs: TURN_MS,
         nextTurnAt: paused ? null : now + nextIn,
         maxHealth: MAX_HP,
+        restartedAt: state.restartedAt || 0,
         owners: state.owners.slice(),
         log: state.log.slice(),
         food: state.food.slice(),
@@ -774,6 +798,7 @@ function present(state, now, turn, paused) {
             heldForGate: !!attack.heldForGate
         })),
         gates: (state.gates || freshGates()).map((row) => row.slice()),
+        archers: (state.archers || freshArchers()).map((row) => row.slice()),
         villages: factions.map((place, index) => {
             const owner = state.owners[index];
             let alive = 0;
@@ -869,6 +894,25 @@ function hitGate(village, side) {
     return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
 }
 
+function hitArcher(village, side) {
+    const state = readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    if (village >= 0 && village <= 3 && side >= 0 && side <= 3 && state.owners[village] !== PLAYER_FACTION) {
+        const row = state.archers && state.archers[village];
+        if (row && row[side] > 0) {
+            row[side] -= 1;
+            if (row[side] <= 0) {
+                row[side] = 0;
+                note(state, "An archer falls at " + factions[village].name + ".");
+            }
+        }
+    }
+    writeState(state);
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+}
+
 function hit(village, index) {
     const state = readState();
     const now = Date.now();
@@ -886,6 +930,7 @@ function hit(village, index) {
 }
 
 module.exports = function handler(req, res) {
+    res.setHeader("Cache-Control", "no-store");
     if (req.method === "POST") {
         if (req.body && req.body.restart) {
             const state = readState();
@@ -900,6 +945,10 @@ module.exports = function handler(req, res) {
         }
         if (req.body && Number.isInteger(req.body.gate) && Number.isInteger(req.body.side)) {
             res.status(200).json(hitGate(req.body.gate, req.body.side));
+            return;
+        }
+        if (req.body && Number.isInteger(req.body.archer) && Number.isInteger(req.body.tower)) {
+            res.status(200).json(hitArcher(req.body.archer, req.body.tower));
             return;
         }
         const village = Number(req.body && req.body.village);

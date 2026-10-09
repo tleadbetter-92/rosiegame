@@ -12,6 +12,12 @@
     <a class="campaign-link" href="campaign.html">Campaign</a>
     <div class="cross"></div>
     <div id="weapon" aria-hidden="true"></div>
+    <div id="viewbow" aria-hidden="true" hidden></div>
+    <button id="pack" type="button">Pack</button>
+    <div id="pack-panel" hidden>
+        <button type="button" data-arm="sword" aria-pressed="true">Sword</button>
+        <button type="button" data-arm="bow" aria-pressed="false">Bow</button>
+    </div>
     <div id="vitals">
         <span>Health</span>
         <div class="bar"><div id="health-fill"></div></div>
@@ -19,10 +25,17 @@
     <div id="hurt"></div>
     <p id="death" hidden>You are slain</p>
     <p id="strike"></p>
-    <p class="help">WASD to walk · mouse to look · hold and drag to swing</p>
+    <p class="help">WASD to walk · mouse to look · drag to swing · Pack to switch</p>
     <div id="pad" role="slider" aria-label="Move" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0" hidden>
         <div class="knob"></div>
     </div>
+    <button id="bow" type="button" aria-label="Shoot" hidden>
+        <svg viewBox="0 0 64 64" aria-hidden="true">
+            <path fill="none" stroke="#e7d7b2" stroke-width="3" d="M20 10v44"/>
+            <path fill="none" stroke="#c6a15a" stroke-width="5" stroke-linecap="round" d="M20 8c18 12 18 36 0 48"/>
+            <path fill="none" stroke="#6a3d22" stroke-width="3" stroke-linecap="round" d="M20 32h30"/>
+        </svg>
+    </button>
     <button id="attack" type="button" aria-label="Attack" hidden>
         <svg viewBox="0 0 64 64" aria-hidden="true">
             <path fill="#f4f7f8" d="M30 2h4l2 28h8v5h-8l-1 9h5v4h-5l-1 12h-4l-1-12h-5v-4h5l-1-9h-8v-5h8z"/>

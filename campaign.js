@@ -44,24 +44,32 @@ function paintClock() {
     clock.textContent = paused ? "Paused" : "Recruiting takes two minutes";
 }
 
-async function refresh() {
-    const data = await (await fetch("/api/campaign")).json();
+let seenRestart = 0;
+
+function take(data) {
+    const stamp = Number(data && data.restartedAt) || 0;
+    if (stamp < seenRestart) return;
+    seenRestart = Math.max(seenRestart, stamp);
     paused = Boolean(data.paused);
     nextTurnAt = data.nextTurnAt || 0;
     paintClock();
     paint(data);
 }
 
+async function refresh() {
+    const data = await (await fetch("/api/campaign", { cache: "no-store" })).json();
+    take(data);
+}
+
 document.getElementById("restart").addEventListener("click", async () => {
-    if (!window.confirm("Start again? Every house goes back to no food and one fisherman.")) return;
+    if (!window.confirm("Start again? Every house goes back to one fisherman and 100 food.")) return;
     const data = await (await fetch("/api/campaign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        cache: "no-store",
         body: JSON.stringify({ restart: true })
     })).json();
-    paused = Boolean(data.paused);
-    paintClock();
-    paint(data);
+    take(data);
 });
 
 refresh().catch(() => {
