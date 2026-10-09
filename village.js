@@ -608,22 +608,42 @@ function personXf(man) {
     };
 }
 
-function personMatrix(man, hand) {
+function personMatrix(man) {
     const yaw = man.yaw + Math.PI;
     const c = Math.cos(yaw);
     const s = Math.sin(yaw);
     const slash = man.swing > 0 ? Math.sin(man.swing * Math.PI) : 0;
     const lunge = slash * 0.22;
     const y = man.bob - Math.min(man.down, 1.05);
-    const hx = hand ? hand[0] : 0;
-    const hy = hand ? hand[1] : 0;
-    const hz = hand ? hand[2] : 0;
     const px = man.x + Math.sin(man.yaw) * lunge;
     const pz = man.z - Math.cos(man.yaw) * lunge;
     return new Float32Array([
         c, 0, -s, 0,
         0, 1, 0, 0,
         s, 0, c, 0,
+        px, y, pz, 1
+    ]);
+}
+
+function swordMatrix(man, hand) {
+    const yaw = man.yaw + Math.PI;
+    const c = Math.cos(yaw);
+    const s = Math.sin(yaw);
+    const tilt = -0.38;
+    const ct = Math.cos(tilt);
+    const st = Math.sin(tilt);
+    const slash = man.swing > 0 ? Math.sin(man.swing * Math.PI) : 0;
+    const lunge = slash * 0.22;
+    const y = man.bob - Math.min(man.down, 1.05);
+    const hx = Math.min(hand[0] - 0.16, -0.36);
+    const hy = hand[1] - 0.04;
+    const hz = hand[2] + 0.04;
+    const px = man.x + Math.sin(man.yaw) * lunge;
+    const pz = man.z - Math.cos(man.yaw) * lunge;
+    return new Float32Array([
+        c * ct, st, s * ct, 0,
+        -c * st, ct, -s * st, 0,
+        -s, 0, c, 0,
         px + c * hx + s * hz, y + hy, pz - s * hx + c * hz, 1
     ]);
 }
@@ -1549,6 +1569,152 @@ function addGateDoors(list, village, side, open) {
     }
 }
 
+const floors = [];
+const solids = [];
+const TOWER_RISE = 0.46;
+const TOWER_RUN = 0.34;
+const TOWER_STEPS = 6;
+
+function towerLayout(village, side) {
+    const box = palisadeBox(village);
+    const beside = GATE_HALF + 0.62;
+    const inset = 0.42;
+    const size = 2.05;
+    const floor = TOWER_RISE * TOWER_STEPS;
+    if (side === 0) {
+        return { x: box.cx + beside, z: box.minZ + inset, w: size, d: size, floor, stair: 2, outward: 0, gateEdge: 3 };
+    }
+    if (side === 2) {
+        return { x: box.cx + beside, z: box.maxZ - inset - size, w: size, d: size, floor, stair: 0, outward: 2, gateEdge: 3 };
+    }
+    if (side === 1) {
+        return { x: box.maxX - inset - size, z: box.cz + beside, w: size, d: size, floor, stair: 3, outward: 1, gateEdge: 0 };
+    }
+    return { x: box.minX + inset, z: box.cz + beside, w: size, d: size, floor, stair: 1, outward: 3, gateEdge: 0 };
+}
+
+function towerSteps(layout) {
+    const steps = [];
+    const span = 1.15;
+    for (let i = 0; i < TOWER_STEPS; i++) {
+        const y = layout.floor - i * TOWER_RISE;
+        let x = layout.x;
+        let z = layout.z;
+        let w = layout.w;
+        let d = layout.d;
+        if (layout.stair === 2) {
+            x += (layout.w - span) / 2;
+            z += layout.d + i * TOWER_RUN;
+            w = span;
+            d = TOWER_RUN;
+        } else if (layout.stair === 0) {
+            x += (layout.w - span) / 2;
+            z -= (i + 1) * TOWER_RUN;
+            w = span;
+            d = TOWER_RUN;
+        } else if (layout.stair === 1) {
+            x += layout.w + i * TOWER_RUN;
+            z += (layout.d - span) / 2;
+            w = TOWER_RUN;
+            d = span;
+        } else {
+            x -= (i + 1) * TOWER_RUN;
+            z += (layout.d - span) / 2;
+            w = TOWER_RUN;
+            d = span;
+        }
+        steps.push({ x, z, w, d, y });
+    }
+    return steps;
+}
+
+function addRail(list, layout, edge, tall) {
+    const lip = 0.14;
+    const y = tall ? layout.floor + 0.95 : layout.floor + 0.42;
+    const h = 0.1;
+    const { x, z, w, d } = layout;
+    if (edge === 0) addBox(list, x, y, z, w, h, lip);
+    else if (edge === 2) addBox(list, x, y, z + d - lip, w, h, lip);
+    else if (edge === 3) addBox(list, x, y, z, lip, h, d);
+    else addBox(list, x + w - lip, y, z, lip, h, d);
+}
+
+function addTower(list, layout) {
+    const post = 0.16;
+    const top = layout.floor + 1.25;
+    const { x, z, w, d } = layout;
+    addBox(list, x, 0, z, post, top, post);
+    addBox(list, x + w - post, 0, z, post, top, post);
+    addBox(list, x, 0, z + d - post, post, top, post);
+    addBox(list, x + w - post, 0, z + d - post, post, top, post);
+    addBox(list, x, layout.floor - 0.1, z, w, 0.1, d);
+    addBox(list, x, layout.floor - 0.22, z + 0.2, w, 0.1, 0.12);
+    addBox(list, x, layout.floor - 0.22, z + d - 0.32, w, 0.1, 0.12);
+    for (const step of towerSteps(layout)) {
+        addBox(list, step.x, step.y - TOWER_RISE, step.z, step.w, TOWER_RISE, step.d);
+    }
+    for (let edge = 0; edge < 4; edge++) {
+        if (edge === layout.stair) continue;
+        addRail(list, layout, edge, edge !== layout.outward && edge !== layout.gateEdge);
+    }
+}
+
+function curbOf(layout, edge) {
+    const lip = 0.16;
+    const { x, z, w, d } = layout;
+    if (edge === 0) return { x, z, w, d: lip };
+    if (edge === 2) return { x, z: z + d - lip, w, d: lip };
+    if (edge === 3) return { x, z, w: lip, d };
+    return { x: x + w - lip, z, w: lip, d };
+}
+
+function prepareTowers() {
+    floors.length = 0;
+    solids.length = 0;
+    const post = 0.16;
+    for (let village = 0; village < 4; village++) {
+        for (let side = 0; side < 4; side++) {
+            const layout = towerLayout(village, side);
+            floors.push({ x: layout.x, z: layout.z, w: layout.w, d: layout.d, y: layout.floor });
+            const corners = [
+                [layout.x, layout.z],
+                [layout.x + layout.w - post, layout.z],
+                [layout.x, layout.z + layout.d - post],
+                [layout.x + layout.w - post, layout.z + layout.d - post]
+            ];
+            for (const corner of corners) {
+                solids.push({ x: corner[0], z: corner[1], w: post, d: post, y0: 0, y1: layout.floor + 1.25 });
+            }
+            for (const step of towerSteps(layout)) floors.push(step);
+            for (let edge = 0; edge < 4; edge++) {
+                if (edge === layout.stair) continue;
+                const curb = curbOf(layout, edge);
+                const low = edge === layout.outward || edge === layout.gateEdge;
+                solids.push({ x: curb.x, z: curb.z, w: curb.w, d: curb.d, y0: layout.floor, y1: layout.floor + (low ? 0.55 : 1.05) });
+            }
+        }
+    }
+}
+
+function floorAt(x, z) {
+    let height = 0;
+    for (const floor of floors) {
+        if (x > floor.x && x < floor.x + floor.w && z > floor.z && z < floor.z + floor.d) {
+            height = Math.max(height, floor.y);
+        }
+    }
+    return height;
+}
+
+function hitsSolid(x, z, feet) {
+    const body = feet + 1.6;
+    for (const solid of solids) {
+        if (x <= solid.x || x >= solid.x + solid.w || z <= solid.z || z >= solid.z + solid.d) continue;
+        if (body > solid.y0 + 0.02 && feet < solid.y1 - 0.02) return true;
+    }
+    return false;
+}
+
 function rebuildPalisade() {
     const list = [];
     for (let village = 0; village < 4; village++) {
@@ -1558,6 +1724,7 @@ function rebuildPalisade() {
         addWallRun(list, box.minX, box.minZ, box.minX, box.maxZ, box.cz, "z");
         addWallRun(list, box.maxX, box.minZ, box.maxX, box.maxZ, box.cz, "z");
         for (let side = 0; side < 4; side++) {
+            addTower(list, towerLayout(village, side));
             if (gateHealth(village, side) <= 0) continue;
             addGateDoors(list, village, side, gateAnim[village][side]);
         }
@@ -1582,13 +1749,15 @@ function updatePalisade(dt) {
     rebuildPalisade();
 }
 
-function blocked(x, z, faction) {
+function blocked(x, z, faction, feet) {
     const r = 0.4;
+    const stand = feet == null ? 0 : feet;
     const who = faction == null ? homeVillage : faction;
     for (const b of houses) {
-        if (x > b.x - r && x < b.x + b.w + r && z > b.z - r && z < b.z + b.d + r) return true;
+        if (stand < b.h && x > b.x - r && x < b.x + b.w + r && z > b.z - r && z < b.z + b.d + r) return true;
     }
     if (x < -99 || x > 99 || z < -99 || z > 99) return true;
+    if (hitsSolid(x, z, stand)) return true;
     return wallBlocks(x, z, who);
 }
 
@@ -1625,8 +1794,11 @@ function movePlayer(dt) {
     const dist = 4.6 * dt * power;
     mx = mx / len * dist;
     mz = mz / len * dist;
-    if (!blocked(cam.x + mx, cam.z)) cam.x += mx;
-    if (!blocked(cam.x, cam.z + mz)) cam.z += mz;
+    const feet = cam.y - 1.62;
+    const stepUp = (nx, nz) => floorAt(nx, nz) <= feet + 0.52;
+    if (!blocked(cam.x + mx, cam.z, null, feet) && stepUp(cam.x + mx, cam.z)) cam.x += mx;
+    if (!blocked(cam.x, cam.z + mz, null, feet) && stepUp(cam.x, cam.z + mz)) cam.z += mz;
+    cam.y = 1.62 + floorAt(cam.x, cam.z);
 }
 
 function draw() {
@@ -1679,7 +1851,7 @@ function draw() {
             gl.drawArrays(gl.TRIANGLES, 0, model.count);
             if (!man.fisher && hand && swordModel && textures.sword) {
                 gl.bindTexture(gl.TEXTURE_2D, textures.sword);
-                gl.uniformMatrix4fv(loc.model, false, personMatrix(man, hand));
+                gl.uniformMatrix4fv(loc.model, false, swordMatrix(man, hand));
                 gl.bindBuffer(gl.ARRAY_BUFFER, swordModel.buffer);
                 gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
                 gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
@@ -1938,6 +2110,7 @@ if (gl) {
     resize();
     syncCampaign();
     setInterval(syncCampaign, 1500);
+    prepareTowers();
     loadCottage();
     loadPeople();
     requestAnimationFrame(frame);
