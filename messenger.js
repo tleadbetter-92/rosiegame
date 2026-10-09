@@ -1170,6 +1170,10 @@ document.getElementById("clearAsk").addEventListener("click", (event) => {
 
 document.getElementById("clearAsk").addEventListener("close", showClearChoice);
 
+document.getElementById("clearSureNo").addEventListener("click", () => {
+    document.getElementById("clearAsk").close();
+});
+
 document.getElementById("clearSureBtn").addEventListener("click", async () => {
     const account = clearAccountToo;
     try {

@@ -278,7 +278,8 @@ input:focus, select:focus {
 
 #clearAsk button { width: 100%; border-radius: 12px; }
 
-#clearKeep {
+#clearKeep,
+#clearSureNo {
     background: white;
     color: #1c1c1c;
     border: 1px solid #e4e0da;

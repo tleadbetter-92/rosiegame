@@ -138,7 +138,7 @@ const server = http.createServer((req, res) => {
     }
 
     if (pathname.endsWith("/")) pathname += "index.html";
-    if (pathname.startsWith("/.env") || pathname.startsWith("/.git") || pathname.startsWith("/node_modules")) {
+    if (pathname.startsWith("/.env") || pathname.startsWith("/.git") || pathname.startsWith("/node_modules") || pathname.startsWith("/art")) {
         send(res, 404, "Not found");
         return;
     }

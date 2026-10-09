@@ -14,7 +14,7 @@ const places = [
 const cam = { x: places[2].ox, y: 1.62, z: places[2].oz + 14, yaw: 0, pitch: 0 };
 const homeVillage = 2;
 const townLeash = 30;
-const player = { hp: 40, max: 40, guard: 0, dead: 0 };
+const player = { hp: 40, max: 40, guard: 0, dead: 0, shake: 0 };
 const keys = {};
 const housePlan = [
     { x: -10, z: 3, w: 6, d: 5, h: 3.1, rise: 1.5, door: "e" },
@@ -25,8 +25,16 @@ const housePlan = [
     { x: 4, z: -16, w: 7, d: 5.5, h: 3.2, rise: 1.5, door: "s" }
 ];
 const houses = [];
+let cottage = null;
 for (const place of places) {
     for (const house of housePlan) {
+        if (place === places[2] && house === housePlan[1]) {
+            const cx = house.x + place.ox + house.w / 2;
+            const cz = house.z + place.oz + house.d / 2;
+            cottage = { x: cx, z: cz, yaw: Math.PI };
+            houses.push({ x: cx - 2.35, z: cz - 2.35, w: 4.7, d: 4.7, h: 3, rise: 0, door: "s", test: true });
+            continue;
+        }
         houses.push({
             x: house.x + place.ox,
             z: house.z + place.oz,
@@ -34,7 +42,8 @@ for (const place of places) {
             d: house.d,
             h: house.h,
             rise: house.rise,
-            door: house.door
+            door: house.door,
+            store: house === housePlan[4]
         });
     }
 }
@@ -73,6 +82,20 @@ const textures = {
         g.fillRect(0, 0, s, s);
         speck(g, s, 280, "rgba(70,48,24,0.4)", "rgba(196,164,110,0.35)");
     }),
+    sand: makeTexture((g, s) => {
+        g.fillStyle = "#c6a56a";
+        g.fillRect(0, 0, s, s);
+        speck(g, s, 240, "rgba(150,110,60,0.35)", "rgba(230,210,160,0.4)");
+    }),
+    water: makeTexture((g, s) => {
+        g.fillStyle = "#2d6d86";
+        g.fillRect(0, 0, s, s);
+        g.fillStyle = "#3e86a0";
+        g.fillRect(0, 10, s, 4);
+        g.fillRect(0, 34, s, 3);
+        g.fillRect(0, 52, s, 5);
+        speck(g, s, 80, "rgba(180,220,230,0.35)", "rgba(16,60,80,0.28)");
+    }),
     wall: makeTexture((g, s) => {
         g.fillStyle = "#d2c09a";
         g.fillRect(0, 0, s, s);
@@ -106,6 +129,31 @@ const textures = {
         g.fillRect(8, 8, 12, 14);
         g.fillRect(44, 8, 12, 14);
     }),
+    store: makeTexture((g, s) => {
+        g.fillStyle = "#d2c09a";
+        g.fillRect(0, 0, s, s);
+        speck(g, s, 80, "rgba(90,70,40,0.18)", "rgba(255,248,230,0.18)");
+        g.fillStyle = "#5c3b24";
+        g.fillRect(0, 0, s, 5);
+        g.fillRect(0, s - 6, s, 6);
+        g.fillRect(0, 0, 5, s);
+        g.fillRect(s - 5, 0, 5, s);
+        g.fillRect(0, 30, s, 4);
+        g.fillStyle = "#3e2918";
+        g.fillRect(22, 32, 20, 32);
+        g.fillStyle = "#e2c27a";
+        g.fillRect(36, 46, 3, 3);
+        g.fillStyle = "#2d6d86";
+        g.beginPath();
+        g.ellipse(32, 14, 14, 7, 0, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = "#e8f4f8";
+        g.beginPath();
+        g.arc(40, 13, 2, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = "#1e4e62";
+        g.fillRect(18, 13, 6, 2);
+    }),
     roof: makeTexture((g, s) => {
         g.fillStyle = "#7a3a2c";
         g.fillRect(0, 0, s, s);
@@ -116,19 +164,45 @@ const textures = {
     skin: makeTexture((g, s) => {
         g.fillStyle = "#e0b896";
         g.fillRect(0, 0, s, s);
+        g.fillStyle = "#d2a888";
+        g.fillRect(36, 0, 12, s);
         g.fillStyle = "#3a2a22";
-        g.fillRect(0, 0, s, 14);
+        g.fillRect(48, 0, 16, s);
+        g.fillStyle = "#2a1c16";
+        g.fillRect(48, 0, 3, s);
+        g.fillStyle = "#3a2a22";
+        g.fillRect(0, 0, 32, 11);
+        g.fillStyle = "#2a1c16";
+        g.fillRect(3, 14, 10, 3);
+        g.fillRect(19, 14, 10, 3);
+        g.fillStyle = "#f3eee6";
+        g.fillRect(4, 19, 9, 7);
+        g.fillRect(19, 19, 9, 7);
         g.fillStyle = "#1c2430";
-        g.fillRect(16, 24, 10, 8);
-        g.fillRect(38, 24, 10, 8);
+        g.fillRect(8, 21, 4, 4);
+        g.fillRect(23, 21, 4, 4);
+        g.fillStyle = "#c48b72";
+        g.fillRect(14, 28, 4, 7);
         g.fillStyle = "#a86858";
-        g.fillRect(26, 40, 12, 4);
+        g.fillRect(9, 38, 14, 3);
+        g.fillStyle = "rgba(90, 50, 40, 0.28)";
+        g.fillRect(10, 50, 12, 5);
     }),
     pants: makeTexture((g, s) => {
         g.fillStyle = "#4a3428";
         g.fillRect(0, 0, s, s);
         g.fillStyle = "rgba(0,0,0,0.22)";
         g.fillRect(30, 0, 4, s);
+    }),
+    steel: makeTexture((g, s) => {
+        g.fillStyle = "#8b949c";
+        g.fillRect(0, 0, s, s);
+        g.fillStyle = "#f4f7f8";
+        g.fillRect(0, 0, s * 0.42, s);
+        g.fillStyle = "#3e474e";
+        g.fillRect(s * 0.72, 0, s * 0.28, s);
+        g.fillStyle = "#b08a45";
+        g.fillRect(0, s * 0.42, s, s * 0.16);
     }),
     cloth0: clothTexture("#c45c3a"),
     cloth1: clothTexture("#3d6b8a"),
@@ -158,7 +232,7 @@ function pushTri(list, a, b, c) {
     list.push(...a, ...b, ...c);
 }
 
-const batches = { grass: [], dirt: [], wall: [], door: [], roof: [] };
+const batches = { grass: [], dirt: [], sand: [], water: [], wall: [], door: [], roof: [], store: [] };
 
 function isPath(x, z) {
     if (Math.abs(x + 40) < 2.3 && z >= -82 && z <= 82) return true;
@@ -175,7 +249,8 @@ function isPath(x, z) {
 
 for (let x = -100; x < 100; x += 2) {
     for (let z = -100; z < 100; z += 2) {
-        const list = isPath(x + 1, z + 1) ? batches.dirt : batches.grass;
+        const edge = Math.max(Math.abs(x + 1), Math.abs(z + 1));
+        const list = edge > 90 ? batches.sand : isPath(x + 1, z + 1) ? batches.dirt : batches.grass;
         const u = x / 2;
         const v = z / 2;
         pushQuad(
@@ -187,6 +262,23 @@ for (let x = -100; x < 100; x += 2) {
         );
     }
 }
+
+function addWater(x, z, w, d) {
+    const u = x / 4;
+    const v = z / 4;
+    pushQuad(
+        batches.water,
+        [x, -0.04, z, u, v, 0.95],
+        [x, -0.04, z + d, u, v + d / 4, 0.95],
+        [x + w, -0.04, z + d, u + w / 4, v + d / 4, 0.95],
+        [x + w, -0.04, z, u + w / 4, v, 0.95]
+    );
+}
+const sea = 480;
+addWater(-sea, -sea, sea * 2, sea - 100);
+addWater(-sea, 100, sea * 2, sea - 100);
+addWater(-sea, -100, sea - 100, 200);
+addWater(100, -100, sea - 100, 200);
 
 function addHouse(b) {
     const { x, z, w, d, h, rise, door } = b;
@@ -208,7 +300,7 @@ function addHouse(b) {
         ]]
     ];
     for (const [side, shade, across, corners] of faces) {
-        const list = side === door ? batches.door : batches.wall;
+        const list = side === door ? (b.store ? batches.store : batches.door) : batches.wall;
         const u1 = side === door ? 1 : across;
         const v1 = side === door ? 1 : vu;
         const quad = corners.map((p, i) => {
@@ -246,7 +338,9 @@ function addHouse(b) {
     );
 }
 
-houses.forEach(addHouse);
+houses.forEach((house) => {
+    if (!house.test) addHouse(house);
+});
 
 function compile(type, source) {
     const shader = gl.createShader(type);
@@ -262,11 +356,12 @@ attribute vec2 aUv;
 attribute float aShade;
 uniform mat4 uProj;
 uniform mat4 uView;
+uniform mat4 uModel;
 varying vec2 vUv;
 varying float vShade;
 varying float vDepth;
 void main() {
-    vec4 view = uView * vec4(aPos, 1.0);
+    vec4 view = uView * uModel * vec4(aPos, 1.0);
     vDepth = -view.z;
     vUv = aUv;
     vShade = aShade;
@@ -309,10 +404,16 @@ gl.linkProgram(skyProgram);
 const loc = {
     proj: gl.getUniformLocation(program, "uProj"),
     view: gl.getUniformLocation(program, "uView"),
+    model: gl.getUniformLocation(program, "uModel"),
     pos: gl.getAttribLocation(program, "aPos"),
     uv: gl.getAttribLocation(program, "aUv"),
     shade: gl.getAttribLocation(program, "aShade")
 };
+const identity = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+const peopleModels = {};
+const peopleHands = {};
+let peopleReady = false;
+let swordModel = null;
 const skyLoc = {
     pos: gl.getAttribLocation(skyProgram, "aPos"),
     res: gl.getUniformLocation(skyProgram, "uRes"),
@@ -328,17 +429,36 @@ for (const name of Object.keys(batches)) {
     mesh[name] = { buffer, count: data.length / 6 };
 }
 
-function addBox(list, x, y, z, w, h, d, xf) {
+function addBox(list, x, y, z, w, h, d, xf, uv) {
     const y1 = y + h;
+    const u0 = uv ? uv[0] : 0;
+    const v0 = uv ? uv[1] : 0;
+    const u1 = uv ? uv[2] : 1;
+    const v1 = uv ? uv[3] : 1;
     const p = (px, py, pz, u, v, s) => {
         const t = xf ? xf(px, py, pz) : [px, py, pz];
         return [t[0], t[1], t[2], u, v, s];
     };
-    pushQuad(list, p(x, y, z, 0, 0, 1), p(x, y1, z, 0, 1, 1), p(x + w, y1, z, 1, 1, 1), p(x + w, y, z, 1, 0, 1));
-    pushQuad(list, p(x + w, y, z + d, 0, 0, 0.72), p(x + w, y1, z + d, 0, 1, 0.72), p(x, y1, z + d, 1, 1, 0.72), p(x, y, z + d, 1, 0, 0.72));
-    pushQuad(list, p(x + w, y, z, 0, 0, 0.86), p(x + w, y1, z, 0, 1, 0.86), p(x + w, y1, z + d, 1, 1, 0.86), p(x + w, y, z + d, 1, 0, 0.86));
-    pushQuad(list, p(x, y, z + d, 0, 0, 0.8), p(x, y1, z + d, 0, 1, 0.8), p(x, y1, z, 1, 1, 0.8), p(x, y, z, 1, 0, 0.8));
-    pushQuad(list, p(x, y1, z, 0, 0, 0.95), p(x + w, y1, z, 1, 0, 0.95), p(x + w, y1, z + d, 1, 1, 0.95), p(x, y1, z + d, 0, 1, 0.95));
+    pushQuad(list, p(x, y, z, u0, v0, 1), p(x, y1, z, u0, v1, 1), p(x + w, y1, z, u1, v1, 1), p(x + w, y, z, u1, v0, 1));
+    pushQuad(list, p(x + w, y, z + d, u0, v0, 0.72), p(x + w, y1, z + d, u0, v1, 0.72), p(x, y1, z + d, u1, v1, 0.72), p(x, y, z + d, u1, v0, 0.72));
+    pushQuad(list, p(x + w, y, z, u0, v0, 0.86), p(x + w, y1, z, u0, v1, 0.86), p(x + w, y1, z + d, u1, v1, 0.86), p(x + w, y, z + d, u1, v0, 0.86));
+    pushQuad(list, p(x, y, z + d, u0, v0, 0.8), p(x, y1, z + d, u0, v1, 0.8), p(x, y1, z, u1, v1, 0.8), p(x, y, z, u1, v0, 0.8));
+    pushQuad(list, p(x, y1, z, u0, v0, 0.95), p(x + w, y1, z, u1, v0, 0.95), p(x + w, y1, z + d, u1, v1, 0.95), p(x, y1, z + d, u0, v1, 0.95));
+}
+
+function addHead(list, x, y, z, w, h, d, xf) {
+    const y1 = y + h;
+    const x1 = x + w;
+    const z1 = z + d;
+    const p = (px, py, pz, u, v, s) => {
+        const t = xf ? xf(px, py, pz) : [px, py, pz];
+        return [t[0], t[1], t[2], u, v, s];
+    };
+    pushQuad(list, p(x, y, z, 0.5, 0, 1), p(x, y1, z, 0.5, 1, 1), p(x1, y1, z, 0, 1, 1), p(x1, y, z, 0, 0, 1));
+    pushQuad(list, p(x1, y, z1, 0.78, 0.12, 0.72), p(x1, y1, z1, 0.78, 0.88, 0.72), p(x, y1, z1, 0.98, 0.88, 0.72), p(x, y, z1, 0.98, 0.12, 0.72));
+    pushQuad(list, p(x1, y, z, 0.58, 0.2, 0.9), p(x1, y1, z, 0.58, 0.8, 0.9), p(x1, y1, z1, 0.72, 0.8, 0.9), p(x1, y, z1, 0.72, 0.2, 0.9));
+    pushQuad(list, p(x, y, z1, 0.58, 0.2, 0.82), p(x, y1, z1, 0.58, 0.8, 0.82), p(x, y1, z, 0.72, 0.8, 0.82), p(x, y, z, 0.72, 0.2, 0.82));
+    pushQuad(list, p(x, y1, z, 0.8, 0.2, 0.95), p(x1, y1, z, 0.98, 0.2, 0.95), p(x1, y1, z1, 0.98, 0.8, 0.95), p(x, y1, z1, 0.8, 0.8, 0.95));
 }
 
 function uploadMesh(name, floats) {
@@ -352,24 +472,106 @@ function uploadMesh(name, floats) {
     mesh[name].count = data.length / 6;
 }
 
-function addPerson(cloth, skin, pants, x, z, xf) {
+function addLocalBox(list, map, xf, x, y, z, w, h, d, shade) {
+    const y1 = y + h;
+    const z1 = z + d;
+    const x1 = x + w;
+    const p = (px, py, pz, u, v, s) => {
+        const b = map(px, py, pz);
+        const t = xf ? xf(b[0], b[1], b[2]) : b;
+        return [t[0], t[1], t[2], u, v, s];
+    };
+    pushQuad(list, p(x, y, z, 0, 0, shade), p(x, y1, z, 0, 1, shade), p(x1, y1, z, 1, 1, shade), p(x1, y, z, 1, 0, shade));
+    pushQuad(list, p(x1, y, z1, 0, 0, shade * 0.72), p(x1, y1, z1, 0, 1, shade * 0.72), p(x, y1, z1, 1, 1, shade * 0.72), p(x, y, z1, 1, 0, shade * 0.72));
+    pushQuad(list, p(x1, y, z, 0, 0, shade * 0.86), p(x1, y1, z, 0, 1, shade * 0.86), p(x1, y1, z1, 1, 1, shade * 0.86), p(x1, y, z1, 1, 0, shade * 0.86));
+    pushQuad(list, p(x, y, z1, 0, 0, shade * 0.8), p(x, y1, z1, 0, 1, shade * 0.8), p(x, y1, z, 1, 1, shade * 0.8), p(x, y, z, 1, 0, shade * 0.8));
+    pushQuad(list, p(x, y1, z, 0, 0, shade * 0.95), p(x1, y1, z, 1, 0, shade * 0.95), p(x1, y1, z1, 1, 1, shade * 0.95), p(x, y1, z1, 0, 1, shade * 0.95));
+}
+
+function swordAim(swing) {
+    if (swing < 0) return [0.36, 0.18, -0.55];
+    const t = Math.max(0, Math.min(1, swing));
+    const arc = Math.sin(t * Math.PI);
+    return [0.7 * Math.cos(t * Math.PI), 0.05 + 0.62 * arc, -0.18 - 0.75 * arc];
+}
+
+function addSword(steel, grip, x, z, swing, xf) {
+    const hx = x + 0.52;
+    const hy = 0.66;
+    const hz = z + 0.1;
+    const aim = swordAim(swing);
+    const len = Math.hypot(aim[0], aim[1], aim[2]) || 1;
+    const fx = aim[0] / len;
+    const fy = aim[1] / len;
+    const fz = aim[2] / len;
+    let rx = -fz;
+    let ry = 0;
+    let rz = fx;
+    let rlen = Math.hypot(rx, rz);
+    if (rlen < 0.25) {
+        rx = 1;
+        rz = 0;
+        rlen = 1;
+    }
+    rx /= rlen;
+    rz /= rlen;
+    const ux = ry * fz - rz * fy;
+    const uy = rz * fx - rx * fz;
+    const uz = rx * fy - ry * fx;
+    const map = (px, py, pz) => [
+        hx + rx * px + ux * py + fx * pz,
+        hy + uy * py + fy * pz,
+        hz + rz * px + uz * py + fz * pz
+    ];
+    addLocalBox(grip, map, xf, -0.04, -0.04, -0.22, 0.08, 0.08, 0.28, 0.75);
+    addLocalBox(steel, map, xf, -0.2, -0.03, 0.05, 0.4, 0.06, 0.07, 0.9);
+    addLocalBox(steel, map, xf, -0.055, -0.02, 0.12, 0.11, 0.05, Math.max(0.35, len - 0.1), 1);
+}
+
+function addPerson(cloth, skin, pants, steel, x, z, xf, swing, fisher) {
+    const skinUv = [0.58, 0.22, 0.72, 0.78];
+    const hairUv = [0.8, 0.15, 0.97, 0.85];
     addBox(pants, x + 0.05, 0, z + 0.07, 0.15, 0.5, 0.16, xf);
     addBox(pants, x + 0.28, 0, z + 0.07, 0.15, 0.5, 0.16, xf);
     addBox(cloth, x + 0.02, 0.48, z + 0.03, 0.44, 0.46, 0.24, xf);
-    addBox(cloth, x - 0.1, 0.52, z + 0.07, 0.12, 0.38, 0.14, xf);
-    addBox(cloth, x + 0.46, 0.52, z + 0.07, 0.12, 0.38, 0.14, xf);
-    addBox(skin, x + 0.1, 0.92, z + 0.05, 0.28, 0.28, 0.2, xf);
-    addBox(pants, x + 0.08, 1.16, z + 0.03, 0.32, 0.08, 0.24, xf);
+    addBox(cloth, x - 0.1, 0.52, z + 0.07, 0.12, 0.34, 0.14, xf);
+    addBox(cloth, x + 0.46, 0.52, z + 0.07, 0.12, 0.34, 0.14, xf);
+    addBox(skin, x - 0.1, 0.46, z + 0.08, 0.12, 0.08, 0.12, xf, skinUv);
+    addBox(skin, x + 0.46, 0.46, z + 0.08, 0.12, 0.08, 0.12, xf, skinUv);
+    addHead(skin, x + 0.1, 0.9, z + 0.05, 0.28, 0.28, 0.2, xf);
+    addBox(skin, x + 0.04, 1.0, z + 0.1, 0.06, 0.09, 0.07, xf, skinUv);
+    addBox(skin, x + 0.38, 1.0, z + 0.1, 0.06, 0.09, 0.07, xf, skinUv);
+    addBox(skin, x + 0.08, 1.14, z + 0.03, 0.32, 0.08, 0.24, xf, hairUv);
+    addBox(skin, x + 0.12, 0.96, z + 0.25, 0.24, 0.18, 0.05, xf, hairUv);
+    if (fisher) addBox(pants, x + 0.48, 0.72, z - 0.45, 0.04, 0.04, 0.72, xf);
+    else addSword(steel, pants, x, z, swing == null ? -1 : swing, xf);
 }
 
 const men = [];
 let actorsDirty = true;
 
-function livingUnits(faction) {
-    if (faction.units) return faction.units.filter((unit) => unit.health > 0).slice(0, 24);
-    const list = [];
-    for (let i = 0; i < Math.min(faction.soldiers || 0, 24); i++) list.push({ index: i, health: 3 });
-    return list;
+function pathPose(points, dist) {
+    let left = dist;
+    for (let i = 0; i < points.length - 1; i++) {
+        const start = points[i];
+        const end = points[i + 1];
+        const dx = end.x - start.x;
+        const dz = end.z - start.z;
+        const len = Math.hypot(dx, dz) || 0.0001;
+        if (left <= len || i === points.length - 2) {
+            const t = Math.min(1, left / len);
+            return {
+                x: start.x + dx * t,
+                z: start.z + dz * t,
+                yaw: Math.atan2(-dx, -dz),
+                rx: dz / len,
+                rz: -dx / len
+            };
+        }
+        left -= len;
+    }
+    const last = points[points.length - 1];
+    return { x: last.x, z: last.z, yaw: 0, rx: 1, rz: 0 };
 }
 
 function homeOf(place, slot) {
@@ -384,67 +586,115 @@ function homeOf(place, slot) {
 function personXf(man) {
     const c = Math.cos(man.yaw);
     const s = Math.sin(man.yaw);
+    const slash = man.swing > 0 ? Math.sin(man.swing * Math.PI) : 0;
+    const lunge = slash * 0.26;
     return (px, py, pz) => {
         const lx = px - man.x;
         const lz = pz - man.z;
         return [
-            man.x + lx * c + lz * s,
+            man.x + lx * c + lz * s - s * lunge,
             py + man.bob - man.down,
-            man.z - lx * s + lz * c
+            man.z - lx * s + lz * c - c * lunge
         ];
     };
 }
 
+function personMatrix(man, hand) {
+    const yaw = man.yaw + Math.PI;
+    const c = Math.cos(yaw);
+    const s = Math.sin(yaw);
+    const y = man.bob - Math.min(man.down, 1.05);
+    const hx = hand ? hand[0] : 0;
+    const hy = hand ? hand[1] : 0;
+    const hz = hand ? hand[2] : 0;
+    return new Float32Array([
+        c, 0, -s, 0,
+        0, 1, 0, 0,
+        s, 0, c, 0,
+        man.x + c * hx + s * hz, y + hy, man.z - s * hx + c * hz, 1
+    ]);
+}
+
 function rebuildMesh() {
+    if (peopleReady) {
+        actorsDirty = false;
+        return;
+    }
     const skin = [];
     const pants = [];
+    const steel = [];
     const cloth = [[], [], [], []];
     for (const man of men) {
-        addPerson(cloth[man.village], skin, pants, man.x - 0.24, man.z - 0.14, personXf(man));
+        addPerson(cloth[man.faction], skin, pants, steel, man.x - 0.24, man.z - 0.14, personXf(man), man.swing, man.fisher);
     }
     for (let i = 0; i < 4; i++) uploadMesh("cloth" + i, cloth[i]);
     uploadMesh("skin", skin);
     uploadMesh("pants", pants);
+    uploadMesh("steel", steel);
     actorsDirty = false;
 }
 
-function mergeMen(factionList) {
+function mergeMen(data) {
+    const attacks = new Map((data.attacks || []).map((attack) => [attack.id, attack]));
     const wanted = [];
-    factionList.forEach((faction) => {
-        const place = places[faction.village];
-        livingUnits(faction).forEach((unit, slot) => {
-            const home = homeOf(place, slot);
+    data.factions.forEach((faction, factionIndex) => {
+        (faction.units || []).forEach((unit) => {
+            if (unit.health <= 0) return;
+            const place = places[unit.post];
+            const home = homeOf(place, unit.slot || 0);
+            const attack = unit.attack ? attacks.get(unit.attack) : null;
             wanted.push({
-                village: faction.village,
+                faction: factionIndex,
                 index: unit.index,
                 health: unit.health,
+                post: unit.post,
+                mode: unit.mode || "guard",
+                slot: unit.slot || 0,
                 homeX: home.x,
-                homeZ: home.z
+                homeZ: home.z,
+                path: attack ? attack.path : null,
+                startedAt: attack ? attack.startedAt : 0,
+                arriveAt: attack ? attack.arriveAt : 0,
+                length: attack ? attack.length : 0
             });
         });
     });
-    const prev = new Map(men.map((man) => [man.village + ":" + man.index, man]));
+    const prev = new Map(men.filter((man) => !man.fisher).map((man) => [man.faction + ":" + man.index, man]));
     const next = [];
     const keep = new Set();
     for (const item of wanted) {
-        const key = item.village + ":" + item.index;
+        const key = item.faction + ":" + item.index;
         const old = prev.get(key);
         keep.add(key);
         if (old) {
             old.health = pendingHit ? Math.min(old.health, item.health) : item.health;
+            old.post = item.post;
+            old.mode = item.mode;
+            old.slot = item.slot;
             old.homeX = item.homeX;
             old.homeZ = item.homeZ;
-            if (old.health > 0) next.push(old);
-            else if (old.dying) next.push(old);
+            old.path = item.path;
+            old.startedAt = item.startedAt;
+            old.arriveAt = item.arriveAt;
+            old.length = item.length;
+            if (old.health <= 0) old.dying = true;
+            next.push(old);
         } else {
             next.push({
-                village: item.village,
+                faction: item.faction,
                 index: item.index,
                 health: item.health,
+                post: item.post,
+                mode: item.mode,
+                slot: item.slot,
                 x: item.homeX,
                 z: item.homeZ,
                 homeX: item.homeX,
                 homeZ: item.homeZ,
+                path: item.path,
+                startedAt: item.startedAt,
+                arriveAt: item.arriveAt,
+                length: item.length,
                 yaw: 0,
                 bob: 0,
                 down: 0,
@@ -456,12 +706,17 @@ function mergeMen(factionList) {
             });
         }
     }
+    const keptFish = men.filter((man) => man.fisher);
     for (const man of men) {
-        const key = man.village + ":" + man.index;
-        if (!keep.has(key) && man.dying) next.push(man);
+        if (man.fisher) continue;
+        const key = man.faction + ":" + man.index;
+        if (keep.has(key)) continue;
+        man.dying = true;
+        man.health = 0;
+        next.push(man);
     }
     men.length = 0;
-    men.push(...next);
+    men.push(...next, ...keptFish);
     actorsDirty = true;
 }
 
@@ -471,12 +726,76 @@ let campaign = null;
 
 function applyCampaign(data) {
     campaign = data;
-    const key = data.factions.map((faction) => (
-        (faction.units || []).map((unit) => unit.index + ":" + unit.health).join(".")
+    const units = data.factions.map((faction) => (
+        (faction.units || []).map((unit) => unit.index + ":" + unit.health + ":" + unit.mode + ":" + unit.post).join(".")
     )).join("|");
+    const attacks = (data.attacks || []).map((attack) => attack.id).join(",");
+    const fish = (data.fishermen || []).map((man) => man.village + ":" + man.health + ":" + man.cycleStart).join(",");
+    const key = (data.owners || []).join(",") + "#" + attacks + "#" + units + "#" + fish;
     if (key === soldierKey) return;
     soldierKey = key;
-    mergeMen(data.factions);
+    mergeMen(data);
+    mergeFishermen(data);
+}
+
+function mergeFishermen(data) {
+    const wanted = data.fishermen || [];
+    const prev = new Map(men.filter((man) => man.fisher).map((man) => [man.village, man]));
+    const keep = new Set();
+    const nextFish = [];
+    for (const item of wanted) {
+        if (item.health <= 0) continue;
+        keep.add(item.village);
+        const old = prev.get(item.village);
+        if (old) {
+            old.health = pendingHit ? Math.min(old.health, item.health) : item.health;
+            old.faction = item.owner;
+            old.cycleStart = item.cycleStart;
+            old.walkMs = item.walkMs;
+            old.fromX = item.from.x;
+            old.fromZ = item.from.z;
+            old.toX = item.to.x;
+            old.toZ = item.to.z;
+            if (old.health <= 0) old.dying = true;
+            nextFish.push(old);
+        } else {
+            nextFish.push({
+                fisher: true,
+                village: item.village,
+                faction: item.owner,
+                index: -1 - item.village,
+                health: item.health,
+                post: item.village,
+                mode: "fish",
+                x: item.from.x,
+                z: item.from.z,
+                fromX: item.from.x,
+                fromZ: item.from.z,
+                toX: item.to.x,
+                toZ: item.to.z,
+                cycleStart: item.cycleStart,
+                walkMs: item.walkMs,
+                yaw: 0,
+                bob: 0,
+                down: 0,
+                hostile: false,
+                attackIn: 0,
+                striking: 0,
+                struck: false,
+                dying: false,
+                swing: -1
+            });
+        }
+    }
+    for (const man of men) {
+        if (!man.fisher || keep.has(man.village)) continue;
+        man.dying = true;
+        man.health = 0;
+        nextFish.push(man);
+    }
+    const soldiers = men.filter((man) => !man.fisher);
+    men.length = 0;
+    men.push(...soldiers, ...nextFish);
 }
 
 function syncCampaign() {
@@ -523,6 +842,7 @@ function hurtPlayer(amount) {
     player.guard = 0.45;
     paintHealth();
     flashHurt();
+    player.shake = 0.32;
     if (player.hp <= 0) {
         player.dead = 1.8;
         death.hidden = false;
@@ -574,7 +894,7 @@ function connectSwing() {
     let best = null;
     let bestT = profile.reach;
     for (const man of men) {
-        if (man.dying || man.health <= 0 || man.village === homeVillage) continue;
+        if (man.dying || man.health <= 0 || man.faction === homeVillage) continue;
         const dx = man.x - ox;
         const dy = 0.95 - cam.y;
         const dz = man.z - oz;
@@ -588,7 +908,28 @@ function connectSwing() {
         }
     }
     if (!best) return;
-    const faction = campaign.factions[best.village];
+    if (best.fisher) {
+        best.health -= 1;
+        if (best.health <= 0) {
+            best.dying = true;
+            showStrike("Slain");
+        } else {
+            showStrike(swing.kind === "chop" ? "Chop" : swing.kind === "thrust" ? "Thrust" : "Slash");
+        }
+        actorsDirty = true;
+        soldierKey = "";
+        pendingHit += 1;
+        fetch("/api/campaign", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ fisherman: best.village })
+        }).then((res) => res.json()).then((data) => {
+            pendingHit -= 1;
+            if (pendingHit === 0) applyCampaign(data);
+        }).catch(() => { pendingHit -= 1; });
+        return;
+    }
+    const faction = campaign.factions[best.faction];
     const unit = faction && (faction.units || []).find((item) => item.index === best.index);
     if (!unit || unit.health <= 0) return;
     unit.health -= 1;
@@ -608,7 +949,7 @@ function connectSwing() {
     if (!blocked(nx, best.z)) best.x = nx;
     if (!blocked(best.x, nz)) best.z = nz;
     for (const other of men) {
-        if (other.dying || other.village !== best.village) continue;
+        if (other.dying || other.faction !== best.faction || other.faction === homeVillage) continue;
         const near = Math.hypot(other.x - best.x, other.z - best.z);
         if (near < 12) {
             other.hostile = true;
@@ -621,7 +962,7 @@ function connectSwing() {
     fetch("/api/campaign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ village: best.village, index: best.index })
+        body: JSON.stringify({ village: best.faction, index: best.index })
     }).then((res) => res.json()).then((data) => {
         pendingHit -= 1;
         if (pendingHit === 0) applyCampaign(data);
@@ -650,6 +991,63 @@ function resolveSwing(g) {
     startSwing(kind);
 }
 
+function nearestFoe(man) {
+    let best = null;
+    let bestDist = 38;
+    for (const other of men) {
+        if (other === man || other.dying || other.health <= 0 || other.fisher) continue;
+        if (other.faction === man.faction || other.mode === "guard") continue;
+        const dist = Math.hypot(other.x - man.x, other.z - man.z);
+        if (dist < bestDist) {
+            best = other;
+            bestDist = dist;
+        }
+    }
+    return best;
+}
+
+function moveToward(man, x, z, dt, speed) {
+    const dx = x - man.x;
+    const dz = z - man.z;
+    const dist = Math.hypot(dx, dz) || 0.0001;
+    man.yaw = Math.atan2(-dx, -dz);
+    if (dist < 1.2) return false;
+    const step = Math.min(speed * dt, dist - 1.05);
+    const nx = man.x + (dx / dist) * step;
+    const nz = man.z + (dz / dist) * step;
+    if (!blocked(nx, man.z)) man.x = nx;
+    if (!blocked(man.x, nz)) man.z = nz;
+    return true;
+}
+
+function stepFisher(man) {
+    const fishMs = 30000;
+    const walkMs = Math.max(1, man.walkMs || 1);
+    const period = walkMs * 2 + fishMs;
+    let t = (Date.now() - man.cycleStart) % period;
+    if (t < 0) t = 0;
+    let along = 0;
+    let outward = true;
+    if (t < walkMs) along = t / walkMs;
+    else if (t < walkMs + fishMs) along = 1;
+    else {
+        outward = false;
+        along = 1 - (t - walkMs - fishMs) / walkMs;
+    }
+    man.x = man.fromX + (man.toX - man.fromX) * along;
+    man.z = man.fromZ + (man.toZ - man.fromZ) * along;
+    const dx = outward ? man.toX - man.fromX : man.fromX - man.toX;
+    const dz = outward ? man.toZ - man.fromZ : man.fromZ - man.toZ;
+    man.yaw = Math.atan2(-dx, -dz);
+    const walking = t < walkMs || t >= walkMs + fishMs;
+    man.bob = Math.sin(performance.now() * (walking ? 0.01 : 0.004)) * (walking ? 0.04 : 0.02);
+    man.swing = -1;
+    man.hostile = false;
+    man.mode = "fish";
+    actorsDirty = true;
+    return false;
+}
+
 function stepMan(man, dt) {
     if (man.dying) {
         man.down += dt * 1.5;
@@ -657,12 +1055,45 @@ function stepMan(man, dt) {
         actorsDirty = true;
         return man.down > 1.2;
     }
+    if (man.fisher) return stepFisher(man);
+    if (man.mode === "march" && man.path && man.length) {
+        const travel = Math.max(1, man.arriveAt - man.startedAt);
+        const covered = man.length * Math.max(0, Math.min(1, (Date.now() - man.startedAt) / travel));
+        const back = Math.floor(man.slot / 2) * 1.15;
+        const side = man.slot % 2 === 0 ? -0.7 : 0.7;
+        const pose = pathPose(man.path, Math.max(0, covered - back));
+        man.x = pose.x + pose.rx * side;
+        man.z = pose.z + pose.rz * side;
+        man.yaw = pose.yaw;
+        man.bob = Math.sin(performance.now() * 0.012 + man.index) * 0.05;
+        man.hostile = false;
+        man.striking = 0;
+        man.swing = -1;
+        actorsDirty = true;
+        return false;
+    }
+    if (man.mode === "battle") {
+        const foe = nearestFoe(man);
+        const moving = foe ? moveToward(man, foe.x, foe.z, dt, 2.4) : moveToward(man, man.homeX, man.homeZ, dt, 2.2);
+        const reach = foe ? Math.hypot(foe.x - man.x, foe.z - man.z) : 99;
+        man.hostile = false;
+        man.striking = 0;
+        if (foe && reach < 1.8) {
+            const cycle = (performance.now() / 1000 + man.index * 0.37) % 0.8;
+            man.swing = cycle < 0.38 ? cycle / 0.38 : -1;
+        } else {
+            man.swing = -1;
+        }
+        man.bob = moving ? Math.sin(performance.now() * 0.012 + man.index) * 0.05 : 0;
+        if (moving || foe) actorsDirty = true;
+        return false;
+    }
     const dx = cam.x - man.x;
     const dz = cam.z - man.z;
     const dist = Math.hypot(dx, dz) || 0.0001;
-    const place = places[man.village];
+    const place = places[man.post];
     const outsideTown = (x, z) => Math.hypot(x - place.ox, z - place.oz) > townLeash;
-    if (man.village === homeVillage) {
+    if (man.faction === homeVillage) {
         man.hostile = false;
         man.striking = 0;
     } else if (!man.hostile && dist < 5.6) {
@@ -712,12 +1143,15 @@ function stepMan(man, dt) {
     }
     if (man.striking > 0) {
         man.striking -= dt;
+        man.swing = 1 - Math.max(0, man.striking) / 0.32;
         const reach = Math.hypot(cam.x - man.x, cam.z - man.z);
         if (!man.struck && man.striking < 0.16 && reach < 1.75) {
             man.struck = true;
             hurtPlayer(8);
         }
         moving = true;
+    } else {
+        man.swing = -1;
     }
     man.bob = moving ? Math.sin(performance.now() * 0.012 + man.index) * 0.05 : 0;
     if (moving) actorsDirty = true;
@@ -727,10 +1161,10 @@ function stepMan(man, dt) {
 function separateMen(dt) {
     for (let i = 0; i < men.length; i++) {
         const man = men[i];
-        if (man.dying) continue;
+        if (man.dying || man.mode === "march") continue;
         for (let j = i + 1; j < men.length; j++) {
             const other = men[j];
-            if (other.dying) continue;
+            if (other.dying || other.mode === "march") continue;
             const ox = man.x - other.x;
             const oz = man.z - other.z;
             const dist = Math.hypot(ox, oz);
@@ -749,6 +1183,7 @@ function separateMen(dt) {
 
 function updateFight(dt) {
     if (player.guard > 0) player.guard -= dt;
+    if (player.shake > 0) player.shake = Math.max(0, player.shake - dt);
     if (player.dead > 0) {
         player.dead -= dt;
         if (player.dead <= 0) respawn();
@@ -810,7 +1245,8 @@ function lookAt() {
     const fx = sy * cp;
     const fy = sp;
     const fz = -cy * cp;
-    const eye = [cam.x, cam.y, cam.z];
+    const shake = player.shake > 0 ? Math.sin(player.shake * 70) * 0.07 : 0;
+    const eye = [cam.x + shake, cam.y + shake * 0.4, cam.z];
     const target = [eye[0] + fx, eye[1] + fy, eye[2] + fz];
     let zx = eye[0] - target[0];
     let zy = eye[1] - target[1];
@@ -841,7 +1277,7 @@ function blocked(x, z) {
     for (const b of houses) {
         if (x > b.x - r && x < b.x + b.w + r && z > b.z - r && z < b.z + b.d + r) return true;
     }
-    return x < -96 || x > 96 || z < -96 || z > 96;
+    return x < -99 || x > 99 || z < -99 || z > 99;
 }
 
 let lookId = null;
@@ -856,17 +1292,25 @@ function movePlayer(dt) {
     const cy = Math.cos(cam.yaw);
     let mx = 0;
     let mz = 0;
-    const forward = keys.KeyW || keys.ArrowUp || stick.y < -0.25;
-    const back = keys.KeyS || keys.ArrowDown || stick.y > 0.25;
-    const left = keys.KeyA || stick.x < -0.25;
-    const right = keys.KeyD || stick.x > 0.25;
+    const forward = keys.KeyW || keys.ArrowUp;
+    const back = keys.KeyS || keys.ArrowDown;
+    const left = keys.KeyA;
+    const right = keys.KeyD;
+    const stickMag = Math.hypot(stick.x, stick.y);
     if (forward) { mx += sy; mz -= cy; }
     if (back) { mx -= sy; mz += cy; }
     if (right) { mx += cy; mz += sy; }
     if (left) { mx -= cy; mz -= sy; }
+    if (stickMag > 0.18) {
+        mx += -stick.y * sy + stick.x * cy;
+        mz += stick.y * cy + stick.x * sy;
+    }
     const len = Math.hypot(mx, mz);
     if (!len) return;
-    const dist = 4.6 * dt;
+    const power = stickMag > 0.18 && !forward && !back && !left && !right
+        ? Math.min(1, (stickMag - 0.18) / 0.82)
+        : 1;
+    const dist = 4.6 * dt * power;
     mx = mx / len * dist;
     mz = mz / len * dist;
     if (!blocked(cam.x + mx, cam.z)) cam.x += mx;
@@ -892,8 +1336,12 @@ function draw() {
     gl.useProgram(program);
     gl.uniformMatrix4fv(loc.proj, false, proj);
     gl.uniformMatrix4fv(loc.view, false, lookAt());
+    gl.uniformMatrix4fv(loc.model, false, identity);
     const stride = 24;
     for (const name of Object.keys(mesh)) {
+        if (!textures[name]) continue;
+        if (mesh[name].cull === false) gl.disable(gl.CULL_FACE);
+        else gl.enable(gl.CULL_FACE);
         gl.bindBuffer(gl.ARRAY_BUFFER, mesh[name].buffer);
         gl.enableVertexAttribArray(loc.pos);
         gl.enableVertexAttribArray(loc.uv);
@@ -904,6 +1352,127 @@ function draw() {
         gl.bindTexture(gl.TEXTURE_2D, textures[name]);
         gl.drawArrays(gl.TRIANGLES, 0, mesh[name].count);
     }
+    if (peopleReady && textures.people) {
+        gl.enable(gl.CULL_FACE);
+        gl.bindTexture(gl.TEXTURE_2D, textures.people);
+        for (const man of men) {
+            const model = peopleModels[(man.fisher ? "fisher" : "soldier") + man.faction];
+            if (!model) continue;
+            const hand = peopleHands[(man.fisher ? "fisher" : "soldier") + man.faction];
+            gl.uniformMatrix4fv(loc.model, false, personMatrix(man));
+            gl.bindBuffer(gl.ARRAY_BUFFER, model.buffer);
+            gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
+            gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
+            gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
+            gl.drawArrays(gl.TRIANGLES, 0, model.count);
+            if (!man.fisher && hand && swordModel && textures.sword) {
+                gl.bindTexture(gl.TEXTURE_2D, textures.sword);
+                gl.uniformMatrix4fv(loc.model, false, personMatrix(man, hand));
+                gl.bindBuffer(gl.ARRAY_BUFFER, swordModel.buffer);
+                gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
+                gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
+                gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
+                gl.drawArrays(gl.TRIANGLES, 0, swordModel.count);
+                gl.bindTexture(gl.TEXTURE_2D, textures.people);
+            }
+        }
+    }
+}
+
+function loadCottage() {
+    if (!cottage) return;
+    fetch("models/cottage.json", { cache: "no-store" }).then((res) => res.json()).then((data) => {
+        const c = Math.cos(cottage.yaw);
+        const s = Math.sin(cottage.yaw);
+        const light = [0.25, 0.86, 0.28];
+        const lightLen = Math.hypot(light[0], light[1], light[2]);
+        for (const [name, src] of Object.entries(data.groups)) {
+            const floats = new Float32Array(src.length / 8 * 6);
+            for (let i = 0, o = 0; i < src.length; i += 8, o += 6) {
+                const x = src[i];
+                const y = src[i + 1];
+                const z = src[i + 2];
+                const nx = src[i + 5] * c + src[i + 7] * s;
+                const ny = src[i + 6];
+                const nz = -src[i + 5] * s + src[i + 7] * c;
+                const lit = Math.max(0, (nx * light[0] + ny * light[1] + nz * light[2]) / lightLen);
+                floats[o] = x * c + z * s + cottage.x;
+                floats[o + 1] = y;
+                floats[o + 2] = -x * s + z * c + cottage.z;
+                floats[o + 3] = src[i + 3];
+                floats[o + 4] = src[i + 4];
+                floats[o + 5] = Math.min(1, 0.42 + 0.58 * lit);
+            }
+            const img = new Image();
+            img.onload = () => {
+                const tex = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, tex);
+                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                textures["cottage" + name] = tex;
+                const buffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+                gl.bufferData(gl.ARRAY_BUFFER, floats, gl.STATIC_DRAW);
+                mesh["cottage" + name] = { buffer, count: floats.length / 6, cull: false };
+            };
+            img.src = "models/" + name + ".png";
+        }
+    }).catch(() => {});
+}
+
+function loadPeople() {
+    fetch("models/people.json", { cache: "no-store" }).then((res) => res.json()).then((data) => {
+        for (const [name, src] of Object.entries(data.models)) {
+            const floats = new Float32Array(src);
+            const buffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            gl.bufferData(gl.ARRAY_BUFFER, floats, gl.STATIC_DRAW);
+            peopleModels[name] = { buffer, count: floats.length / 6 };
+        }
+        Object.assign(peopleHands, data.hands || {});
+        const img = new Image();
+        img.onload = () => {
+            const tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            textures.people = tex;
+            for (let i = 0; i < 4; i++) uploadMesh("cloth" + i, []);
+            uploadMesh("skin", []);
+            uploadMesh("pants", []);
+            uploadMesh("steel", []);
+            peopleReady = true;
+        };
+        img.src = "models/people.png";
+    }).catch(() => {});
+    fetch("models/sword.json", { cache: "no-store" }).then((res) => res.json()).then((src) => {
+        const floats = new Float32Array(src);
+        const buffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, floats, gl.STATIC_DRAW);
+        swordModel = { buffer, count: floats.length / 6 };
+        const img = new Image();
+        img.onload = () => {
+            const tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            textures.sword = tex;
+        };
+        img.src = "models/sword.png";
+    }).catch(() => {});
 }
 
 let last = performance.now();
@@ -954,55 +1523,98 @@ window.addEventListener("mouseup", (e) => {
     resolveSwing(g);
 });
 
+const phone = window.matchMedia("(hover: none) and (pointer: coarse)");
+const pad = document.getElementById("pad");
+const knob = pad.querySelector(".knob");
+const attack = document.getElementById("attack");
+
+function showPhoneControls() {
+    const on = phone.matches;
+    pad.hidden = !on;
+    attack.hidden = !on;
+}
+
+function placeKnob(x, y) {
+    const rect = pad.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    let dx = x - cx;
+    let dy = y - cy;
+    const max = rect.width * 0.34;
+    const mag = Math.hypot(dx, dy) || 1;
+    if (mag > max) {
+        dx = dx / mag * max;
+        dy = dy / mag * max;
+    }
+    stick.x = dx / max;
+    stick.y = dy / max;
+    knob.style.transform = "translate(" + dx + "px, " + dy + "px)";
+}
+
+function releaseKnob() {
+    stick.x = 0;
+    stick.y = 0;
+    moveId = null;
+    pad.classList.remove("held");
+    knob.style.transform = "translate(0px, 0px)";
+}
+
+phone.addEventListener("change", showPhoneControls);
+showPhoneControls();
+
+pad.addEventListener("pointerdown", (e) => {
+    if (!phone.matches || player.dead || moveId !== null) return;
+    moveId = e.pointerId;
+    pad.classList.add("held");
+    pad.setPointerCapture(e.pointerId);
+    placeKnob(e.clientX, e.clientY);
+    e.preventDefault();
+});
+pad.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== moveId) return;
+    placeKnob(e.clientX, e.clientY);
+});
+pad.addEventListener("pointerup", (e) => {
+    if (e.pointerId !== moveId) return;
+    releaseKnob();
+});
+pad.addEventListener("pointercancel", releaseKnob);
+
+attack.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    attack.classList.add("down");
+    startSwing("thrust");
+});
+attack.addEventListener("pointerup", () => attack.classList.remove("down"));
+attack.addEventListener("pointercancel", () => attack.classList.remove("down"));
+attack.addEventListener("contextmenu", (e) => e.preventDefault());
+
 canvas.addEventListener("touchstart", (e) => {
     for (const t of e.changedTouches) {
-        if (t.clientX < window.innerWidth * 0.45 && moveId === null) {
-            moveId = t.identifier;
-            stick.ox = t.clientX;
-            stick.oy = t.clientY;
-        } else if (lookId === null) {
-            lookId = t.identifier;
-            stick.lx = t.clientX;
-            stick.ly = t.clientY;
-            stick.gx = 0;
-            stick.gy = 0;
-            stick.lookAt = performance.now();
-        }
+        if (lookId !== null) continue;
+        lookId = t.identifier;
+        stick.lx = t.clientX;
+        stick.ly = t.clientY;
     }
     e.preventDefault();
 }, { passive: false });
 
 canvas.addEventListener("touchmove", (e) => {
     for (const t of e.changedTouches) {
-        if (t.identifier === lookId) {
-            const mx = t.clientX - stick.lx;
-            const my = t.clientY - stick.ly;
-            stick.gx += mx;
-            stick.gy += my;
-            cam.yaw += mx * 0.006;
-            cam.pitch = Math.max(-1.05, Math.min(1.05, cam.pitch - my * 0.006));
-            stick.lx = t.clientX;
-            stick.ly = t.clientY;
-        }
-        if (t.identifier === moveId) {
-            stick.x = Math.max(-1, Math.min(1, (t.clientX - stick.ox) / 48));
-            stick.y = Math.max(-1, Math.min(1, (t.clientY - stick.oy) / 48));
-        }
+        if (t.identifier !== lookId) continue;
+        const mx = t.clientX - stick.lx;
+        const my = t.clientY - stick.ly;
+        cam.yaw += mx * 0.006;
+        cam.pitch = Math.max(-1.05, Math.min(1.05, cam.pitch - my * 0.006));
+        stick.lx = t.clientX;
+        stick.ly = t.clientY;
     }
     e.preventDefault();
 }, { passive: false });
 
 function endTouch(e) {
     for (const t of e.changedTouches) {
-        if (t.identifier === lookId) {
-            if (!player.dead && performance.now() - stick.lookAt < 340) resolveSwing({ x: stick.gx || 0, y: stick.gy || 0 });
-            lookId = null;
-        }
-        if (t.identifier === moveId) {
-            moveId = null;
-            stick.x = 0;
-            stick.y = 0;
-        }
+        if (t.identifier === lookId) lookId = null;
     }
 }
 canvas.addEventListener("touchend", endTouch);
@@ -1012,6 +1624,8 @@ if (gl) {
     gl.clearColor(0.55, 0.66, 0.74, 1);
     resize();
     syncCampaign();
-    setInterval(syncCampaign, 4000);
+    setInterval(syncCampaign, 1500);
+    loadCottage();
+    loadPeople();
     requestAnimationFrame(frame);
 }

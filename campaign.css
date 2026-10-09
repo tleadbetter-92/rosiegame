@@ -47,6 +47,20 @@ h1 {
     font-weight: 650;
 }
 
+#restart {
+    border: 0;
+    border-radius: 999px;
+    padding: 8px 14px;
+    background: #1c1c1c;
+    color: white;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+#restart:hover { background: #c45c12; }
+
 .lead {
     max-width: 880px;
     margin: 14px auto 0;
@@ -77,9 +91,20 @@ h1 {
     font-size: 1.15rem;
 }
 
+.owner,
+.status {
+    margin: 4px 0 0;
+    font-size: 0.9rem;
+}
+
+.status { min-height: 1.2em; font-weight: 650; }
+
 .count {
     margin: 6px 0 12px;
 }
+
+.hold.defending { outline: 3px solid #f0d2b4; outline-offset: -6px; }
+.hold.marching { box-shadow: inset 0 0 0 3px rgba(255, 244, 210, 0.45); }
 
 .men {
     display: flex;

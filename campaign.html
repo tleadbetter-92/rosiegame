@@ -13,28 +13,37 @@
             <p class="eyebrow">Strategy</p>
             <h1>Campaign</h1>
         </div>
-        <p id="clock">Next turn in —</p>
+        <p id="clock">Recruiting takes two minutes</p>
+        <button id="restart" type="button">Restart</button>
     </header>
-    <p class="lead">Four houses play this war. Each turn, each house recruits one soldier. A turn takes ten minutes. The soldiers are standing in the villages.</p>
+    <p class="lead">A village can hold twenty people. The house decides how many are soldiers and how many are fishermen. A fisherman costs 50 food and a soldier costs 70. Training either one takes two minutes, and both can be trained at once. Fishermen are weaker, stay home, and bring 10 food back from the sea. Sometimes a house marches on another village, and it leaves a tenth of its soldiers behind. The last house standing takes the town.</p>
     <div class="map" aria-label="Campaign map">
         <article class="hold" data-i="0">
             <h2>Northwest</h2>
-            <p class="count"><span data-count>0</span> soldiers</p>
+            <p class="owner" data-owner>Held by Northwest</p>
+            <p class="count"><span data-count>0</span> soldiers · <span data-fish>0 fishermen</span> · <span data-food>0</span> food</p>
+            <p class="status" data-status></p>
             <div class="men" data-men></div>
         </article>
         <article class="hold" data-i="1">
             <h2>Northeast</h2>
-            <p class="count"><span data-count>0</span> soldiers</p>
+            <p class="owner" data-owner>Held by Northeast</p>
+            <p class="count"><span data-count>0</span> soldiers · <span data-fish>0 fishermen</span> · <span data-food>0</span> food</p>
+            <p class="status" data-status></p>
             <div class="men" data-men></div>
         </article>
         <article class="hold" data-i="2">
             <h2>Southwest</h2>
-            <p class="count"><span data-count>0</span> soldiers</p>
+            <p class="owner" data-owner>Held by Southwest</p>
+            <p class="count"><span data-count>0</span> soldiers · <span data-fish>0 fishermen</span> · <span data-food>0</span> food</p>
+            <p class="status" data-status></p>
             <div class="men" data-men></div>
         </article>
         <article class="hold" data-i="3">
             <h2>Southeast</h2>
-            <p class="count"><span data-count>0</span> soldiers</p>
+            <p class="owner" data-owner>Held by Southeast</p>
+            <p class="count"><span data-count>0</span> soldiers · <span data-fish>0 fishermen</span> · <span data-food>0</span> food</p>
+            <p class="status" data-status></p>
             <div class="men" data-men></div>
         </article>
     </div>
