@@ -17,7 +17,7 @@ function siteIsOpen(client) {
 }
 
 self.addEventListener("push", (event) => {
-    let data = { title: "Roulette", body: "You have a new message", url: "/messenger.html" };
+    let data = { title: "Roulette", body: "You have a new message", url: "/" };
     try {
         if (event.data) data = { ...data, ...event.data.json() };
     } catch {
@@ -37,26 +37,40 @@ self.addEventListener("push", (event) => {
             tag: "rosie-challenge-" + Date.now(),
             silent: !newMessage || openHere.length > 0,
             data: {
-                url: data.url || "/messenger.html",
+                url: "/",
                 chat: data.chat || ""
             }
         });
     })());
 });
 
+function isGame(url) {
+    try {
+        const path = new URL(url).pathname;
+        return path === "/" || path === "/index.html";
+    } catch {
+        return false;
+    }
+}
+
 self.addEventListener("notificationclick", (event) => {
     event.notification.close();
-    const data = event.notification.data || {};
-    const url = data.url || "/messenger.html";
+    const home = new URL("/", self.location.origin).href;
     event.waitUntil((async () => {
         const openClients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-        for (const client of openClients) {
-            if (client.url.includes("messenger.html")) {
-                client.postMessage({ chat: data.chat || "" });
-                await client.focus();
-                return;
+        const ours = openClients.find((client) => {
+            try {
+                const path = new URL(client.url).pathname;
+                return path === "/" || path === "/index.html" || path === "/messenger.html";
+            } catch {
+                return false;
             }
+        });
+        if (ours) {
+            if (!isGame(ours.url) && "navigate" in ours) await ours.navigate(home);
+            await ours.focus();
+            return;
         }
-        await self.clients.openWindow(url);
+        await self.clients.openWindow(home);
     })());
 });

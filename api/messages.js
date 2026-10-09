@@ -267,7 +267,7 @@ module.exports = async function handler(req, res) {
                     await notifyUser(otherId, {
                         title: "new challenge for you to beat",
                         body: "new challenge for you to beat",
-                        url: "/messenger.html?chat=" + encodeURIComponent(chatId),
+                        url: "/",
                         chat: chatId
                     });
                 } catch (error) {
