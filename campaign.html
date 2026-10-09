@@ -16,7 +16,10 @@
         <p id="clock">Recruiting takes two minutes</p>
         <button id="restart" type="button">Restart</button>
     </header>
-    <p class="lead">A village holds 30. A villager takes 1 and a soldier takes 2. A fisherman or a woodcutter costs 50 food and a soldier costs 70. Training takes two minutes, and they can be trained at the same time. Fishermen stay home and bring 10 food back from the sea. Woodcutters leave the store, chop the nearest tree for thirty seconds, and bring back 10 wood. Sometimes a house marches on another village, and it leaves a tenth of its soldiers behind. The last house standing takes the town.</p>
+    <p class="lead">A village holds 30. A villager takes 1 and a soldier takes 2. A fisherman or a woodcutter costs 50 food and a soldier costs 70. Training takes two minutes, and they can be trained at the same time. Fishermen stay home and bring 10 food back from the sea. Woodcutters leave the store, chop the nearest tree for thirty seconds, and bring back 10 wood. A villager spends that wood to repair a damaged or broken gate. The houses choose when. Sometimes a house marches on another village, and it leaves a tenth of its soldiers behind. The last house standing takes the town.</p>
+    <figure class="island">
+        <canvas id="land" width="680" height="640" aria-label="The whole island from above"></canvas>
+    </figure>
     <div class="map" aria-label="Campaign map">
         <article class="hold" data-i="0">
             <h2>Northwest</h2>
@@ -51,6 +54,7 @@
         <h2>Latest turn</h2>
         <ul id="log"></ul>
     </section>
+    <script src="world.js"></script>
     <script src="campaign.js"></script>
 </body>
 </html>

@@ -5,12 +5,7 @@ if (!gl) {
     document.querySelector(".help").textContent = "This browser cannot show the village.";
 }
 
-const places = [
-    { ox: -40, oz: -64 },
-    { ox: 40, oz: -64 },
-    { ox: -40, oz: 64 },
-    { ox: 40, oz: 64 }
-];
+const places = World.places;
 const cam = { x: places[2].ox, y: 1.62, z: places[2].oz + 20, yaw: 0, pitch: 0 };
 const homeVillage = 2;
 const townLeash = 30;
@@ -26,27 +21,29 @@ const housePlan = [
 ];
 const houses = [];
 let cottage = null;
-const homeKinds = ["hearth", "bed", "board", "stores", "shop", "cot"];
-const homeDoors = ["south", "south", "east", "west", "south", "south"];
+const homeKinds = ["manor", "barracks", "smith", "shop", "stores", "tavern"];
+const homeDoors = ["east", "west", "east", "west", "south", "south"];
+const homeRise = [1.9, 1.5, 1.35, 1.45, 1.6, 1.7];
 for (const place of places) {
     housePlan.forEach((house, index) => {
-        const built = {
+        const village = places.indexOf(place);
+        houses.push({
             x: house.x + place.ox,
             z: house.z + place.oz,
             w: house.w,
             d: house.d,
-            h: house.h,
-            rise: house.rise,
+            h: 5.2,
+            rise: homeRise[index],
             door: house.door,
-            store: house === housePlan[4]
-        };
-        if (place === places[2]) {
-            built.open = true;
-            built.entrance = homeDoors[index];
-            built.kind = homeKinds[index];
-            built.parts = [];
-        }
-        houses.push(built);
+            store: house === housePlan[4],
+            open: true,
+            entrance: index === 4 && village !== 2 ? "north" : homeDoors[index],
+            kind: homeKinds[index],
+            parts: [],
+            village,
+            decks: [],
+            nap: []
+        });
     });
 }
 
@@ -231,6 +228,12 @@ const textures = {
         g.fillStyle = "#245628";
         g.fillRect(0, 0, s, 6);
     }),
+    glow: makeTexture((g, s) => {
+        g.fillStyle = "#ff9a32";
+        g.fillRect(0, 0, s, s);
+        g.fillStyle = "#ffe08a";
+        g.fillRect(16, 16, 32, 32);
+    }),
     linen: makeTexture((g, s) => {
         g.fillStyle = "#8d3d3a";
         g.fillRect(0, 0, s, s);
@@ -283,53 +286,114 @@ function pushTri(list, a, b, c) {
     list.push(...a, ...b, ...c);
 }
 
-const batches = { grass: [], dirt: [], sand: [], water: [], wall: [], door: [], roof: [], store: [], plaster: [], trunk: [], leaf: [], rock: [], linen: [] };
+const batches = {
+    grass: [], dirt: [], sand: [], water: [], wall: [], door: [], roof: [], store: [], plaster: [], trunk: [], leaf: [], rock: [], linen: [], glow: [],
+    farTrunk: [], farLeaf: [], horizon: [], horizonRock: [], horizonLeaf: [], horizonWall: [], horizonRoof: []
+};
 
-function isPath(x, z) {
-    if (Math.abs(x + 40) < 2.3 && z >= -82 && z <= 82) return true;
-    if (Math.abs(x - 40) < 2.3 && z >= -82 && z <= 82) return true;
-    if (Math.abs(z + 40) < 2.3 && x >= -82 && x <= 82) return true;
-    if (Math.abs(z - 40) < 2.3 && x >= -82 && x <= 82) return true;
-    for (const place of places) {
-        const lx = x - place.ox;
-        const lz = z - place.oz;
-        if (Math.abs(lz + 7.85) < 1.9 && Math.abs(lx) < 14) return true;
+function buildLand() {
+    const cell = 32;
+    const min = -3616;
+    const span = 7232;
+    const n = span / cell;
+    const heights = new Float32Array((n + 1) * (n + 1));
+    const sample = (ix, iz) => heights[iz * (n + 1) + ix];
+    for (let iz = 0; iz <= n; iz++) {
+        for (let ix = 0; ix <= n; ix++) {
+            heights[iz * (n + 1) + ix] = World.heightAt(min + ix * cell, min + iz * cell);
+        }
     }
-    return false;
-}
-
-for (let x = -100; x < 100; x += 2) {
-    for (let z = -100; z < 100; z += 2) {
-        const edge = Math.max(Math.abs(x + 1), Math.abs(z + 1));
-        const list = edge > 90 ? batches.sand : isPath(x + 1, z + 1) ? batches.dirt : batches.grass;
-        const u = x / 2;
-        const v = z / 2;
-        pushQuad(
-            list,
-            [x, 0, z, u, v, 1],
-            [x, 0, z + 2, u, v + 1, 1],
-            [x + 2, 0, z + 2, u + 1, v + 1, 1],
-            [x + 2, 0, z, u + 1, v, 1]
-        );
+    for (let iz = 0; iz < n; iz++) {
+        for (let ix = 0; ix < n; ix++) {
+            const x = min + ix * cell;
+            const z = min + iz * cell;
+            const h00 = sample(ix, iz);
+            const h10 = sample(ix + 1, iz);
+            const h11 = sample(ix + 1, iz + 1);
+            const h01 = sample(ix, iz + 1);
+            const rise = Math.max(h00, h10, h11, h01) - Math.min(h00, h10, h11, h01);
+            const mid = (h00 + h10 + h11 + h01) * 0.25;
+            const cx = x + cell * 0.5;
+            const cz = z + cell * 0.5;
+            let town = false;
+            for (const place of World.places) {
+                if (x + cell > place.x - 104 && x < place.x + 104 && z + cell > place.z - 104 && z < place.z + 104) town = true;
+            }
+            if (town) continue;
+            if (mid > -0.35) {
+                const kind = World.groundKind(cx, cz, rise);
+                const list = batches[kind] || batches.grass;
+                const shade = kind === "rock" ? 0.76 : 1;
+                const u = x / 8;
+                const v = z / 8;
+                pushQuad(
+                    list,
+                    [x, h00, z, u, v, shade],
+                    [x, h01, z + cell, u, v + cell / 8, shade],
+                    [x + cell, h11, z + cell, u + cell / 8, v + cell / 8, shade],
+                    [x + cell, h10, z, u + cell / 8, v, shade]
+                );
+            }
+            const level = World.waterLevel(cx, cz);
+            if (level == null || mid > level + 0.45) continue;
+            const wy = (hh) => (hh < 0.3 ? 0.03 : hh + 0.16);
+            const u = x / 8;
+            const v = z / 8;
+            pushQuad(
+                batches.water,
+                [x, wy(h00), z, u, v, 0.95],
+                [x, wy(h01), z + cell, u, v + cell / 8, 0.95],
+                [x + cell, wy(h11), z + cell, u + cell / 8, v + cell / 8, 0.95],
+                [x + cell, wy(h10), z, u + cell / 8, v, 0.95]
+            );
+        }
     }
+    const fine = 4;
+    for (const place of World.places) {
+        for (let x = place.x - 104; x < place.x + 104; x += fine) {
+            for (let z = place.z - 104; z < place.z + 104; z += fine) {
+                const h00 = World.heightAt(x, z);
+                const h10 = World.heightAt(x + fine, z);
+                const h11 = World.heightAt(x + fine, z + fine);
+                const h01 = World.heightAt(x, z + fine);
+                const rise = Math.max(h00, h10, h11, h01) - Math.min(h00, h10, h11, h01);
+                const cx = x + fine * 0.5;
+                const cz = z + fine * 0.5;
+                const kind = World.groundKind(cx, cz, rise);
+                const list = batches[kind] || batches.grass;
+                const u = x / 4;
+                const v = z / 4;
+                pushQuad(
+                    list,
+                    [x, h00, z, u, v, 1],
+                    [x, h01, z + fine, u, v + 1, 1],
+                    [x + fine, h11, z + fine, u + 1, v + 1, 1],
+                    [x + fine, h10, z, u + 1, v, 1]
+                );
+            }
+        }
+    }
+    const sea = 7200;
+    const lip = sea - 3616;
+    addWater(-sea, -sea, sea * 2, lip);
+    addWater(-sea, 3616, sea * 2, lip);
+    addWater(-sea, -3616, lip, 7232);
+    addWater(3616, -3616, lip, 7232);
 }
 
 function addWater(x, z, w, d) {
-    const u = x / 4;
-    const v = z / 4;
+    const u = x / 8;
+    const v = z / 8;
     pushQuad(
         batches.water,
-        [x, -0.04, z, u, v, 0.95],
-        [x, -0.04, z + d, u, v + d / 4, 0.95],
-        [x + w, -0.04, z + d, u + w / 4, v + d / 4, 0.95],
-        [x + w, -0.04, z, u + w / 4, v, 0.95]
+        [x, 0.02, z, u, v, 0.95],
+        [x, 0.02, z + d, u, v + d / 8, 0.95],
+        [x + w, 0.02, z + d, u + w / 8, v + d / 8, 0.95],
+        [x + w, 0.02, z, u + w / 8, v, 0.95]
     );
 }
-const sea = 480;
-addWater(-sea, -sea, sea * 2, sea - 100);
-addWater(-sea, 100, sea * 2, sea - 100);
-addWater(-sea, -100, sea - 100, 200);
-addWater(100, -100, sea - 100, 200);
+
+buildLand();
 
 function addOpenRoom(b) {
     const { x, z, w, d, h, rise } = b;
@@ -400,6 +464,25 @@ function addOpenRoom(b) {
     };
     trim(entrance, entrance === "east" || entrance === "west" ? d : w, holeOn(entrance, entrance === "east" || entrance === "west" ? d : w), 0.16);
     trim(windowSide, windowSide === "east" || windowSide === "west" ? d : w, holeOn(windowSide, windowSide === "east" || windowSide === "west" ? d : w), 0.08);
+    const glowPane = (side, y0) => {
+        const paneW = 0.7;
+        const paneH = 0.55;
+        if (side === "south") addBox(batches.glow, x + w / 2 - paneW / 2, y0, z + d - 0.04, paneW, paneH, 0.08);
+        else if (side === "north") addBox(batches.glow, x + w / 2 - paneW / 2, y0, z - 0.04, paneW, paneH, 0.08);
+        else if (side === "east") addBox(batches.glow, x + w - 0.04, y0, z + d / 2 - paneW / 2, 0.08, paneH, paneW);
+        else addBox(batches.glow, x - 0.04, y0, z + d / 2 - paneW / 2, 0.08, paneH, paneW);
+    };
+    glowPane(windowSide, 1.2);
+    glowPane(windowSide, 3.45);
+    const torchAt = (px, pz) => {
+        addBox(batches.trunk, px, 0, pz, 0.08, 1.35, 0.08);
+        addBox(batches.glow, px - 0.06, 1.28, pz - 0.06, 0.2, 0.22, 0.2);
+    };
+    const outside = entrance === "south" ? [x + w * 0.72, z + d + 0.35]
+        : entrance === "north" ? [x + w * 0.28, z - 0.45]
+        : entrance === "east" ? [x + w + 0.35, z + d * 0.72]
+        : [x - 0.45, z + d * 0.28];
+    torchAt(outside[0], outside[1]);
     pushQuad(
         batches.trunk,
         [x + t, 0.04, z + t, 0, 0, 0.62],
@@ -502,73 +585,122 @@ function addOpenRoom(b) {
         addBox(batches.rock, px, 0.74, pz, 0.16, 0.06, 0.16);
         addBox(batches.linen, px + 0.22, 0.74, pz + 0.04, 0.12, 0.1, 0.12);
     };
-    if (b.kind === "bed") {
-        rugAt(ix + 0.15, iz + 0.18, 2.15, 2.35);
-        bedAt(ix + 0.18, iz + 0.22, 1.2, 2.05);
-        chestAt(ix + 1.55, iz + 0.22, 0.55, 0.4);
-        tableAt(ix + iw - 0.95, iz + 0.22, 0.7, 0.62);
-        dishes(ix + iw - 0.82, iz + 0.38);
-        stoolAt(ix + iw - 1.05, iz + 1.05);
-        shelfAt(ix + 0.2, iz + 0.02, 1.15, "x");
-        barrelAt(ix + iw - 0.7, iz + 2.05);
-    } else if (b.kind === "board") {
-        rugAt(ix + 0.2, iz + 0.7, 2.15, 2.15);
-        tableAt(ix + 0.28, iz + 0.85, 1.2, 1.85);
-        dishes(ix + 0.48, iz + 1.35);
-        dishes(ix + 0.7, iz + 1.9);
-        benchAt(ix + 0.35, iz + 2.8, 1.05, "x");
-        stoolAt(ix + 1.6, iz + 1.15);
-        stoolAt(ix + 1.6, iz + 1.85);
-        chestAt(ix + 0.2, iz + 0.18, 0.62, 0.4);
-        shelfAt(ix + 0.15, iz + 0.02, 1.4, "x");
-        barrelAt(ix + 1.85, iz + 0.18);
-    } else if (b.kind === "stores") {
-        shelfAt(ix + 1.55, iz + 0.02, 1.5, "x");
-        addBox(batches.trunk, ix + iw - 0.48, 0.42, iz + 0.35, 0.12, 1.15, 2.3);
-        addBox(batches.trunk, ix + iw - 0.48, 0.78, iz + 0.35, 0.36, 0.08, 2.3);
-        addBox(batches.trunk, ix + iw - 0.48, 1.25, iz + 0.35, 0.36, 0.08, 2.3);
-        use(ix + iw - 0.48, iz + 0.35, 0.36, 2.3, 1.33);
-        crateAt(ix + iw - 1.2, iz + 0.22, 0.58);
-        crateAt(ix + iw - 1.15, iz + 0.8, 0.42);
-        crateAt(ix + iw - 1.15, iz + id - 1.15, 0.5);
-        sackAt(ix + 1.55, iz + 0.22);
-        sackAt(ix + 2.05, iz + 0.28);
-        barrelAt(ix + 1.5, iz + 0.7);
-        chestAt(ix + 1.45, iz + 1.35, 0.62, 0.42);
+    const stairLow = entrance === "north" || entrance === "west";
+    const stairEast = entrance === "west";
+    const stairW = 0.92;
+    const stairL = Math.min(2.2, id - 1.35);
+    const stairX = stairEast ? ix + iw - stairW - 0.08 : ix + 0.08;
+    const stairZ = stairLow ? iz + id - stairL - 0.08 : iz + 0.08;
+    const topY = 2.72;
+    const stepN = 9;
+    const nap = [];
+    const pushNap = (px, pz, py) => nap.push({ x: px, z: pz, y: py });
+    const doorOut = entrance === "south" ? { x: x + w / 2, z: z + d + 1.05, yaw: Math.PI }
+        : entrance === "north" ? { x: x + w / 2, z: z - 1.05, yaw: 0 }
+        : entrance === "east" ? { x: x + w + 1.05, z: z + d / 2, yaw: -Math.PI / 2 }
+        : { x: x - 1.05, z: z + d / 2, yaw: Math.PI / 2 };
+    const doorIn = entrance === "south" ? { x: x + w / 2, z: z + d - t - 0.75 }
+        : entrance === "north" ? { x: x + w / 2, z: z + t + 0.75 }
+        : entrance === "east" ? { x: x + w - t - 0.75, z: z + d / 2 }
+        : { x: x + t + 0.75, z: z + d / 2 };
+    pushNap(doorOut.x, doorOut.z, 0);
+    pushNap(doorIn.x, doorIn.z, 0);
+    const stairCx = stairX + stairW / 2;
+    const stairCz = stairZ + stairL / 2;
+    pushNap(stairCx, stairLow ? stairZ + stairL - 0.2 : stairZ + 0.2, 0);
+    for (let i = 0; i < stepN; i++) {
+        const py = (i + 1) / stepN * topY;
+        const along = (i + 0.5) / stepN;
+        const pz = stairLow ? stairZ + stairL - along * stairL : stairZ + along * stairL;
+        const run = stairL / stepN;
+        const sz = stairLow ? stairZ + stairL - (i + 1) * run : stairZ + i * run;
+        addBox(batches.trunk, stairX, 0, sz, stairW, py, run + 0.02);
+        pushNap(stairCx, pz, py);
+        b.decks.push({ x: stairX, z: sz, w: stairW, d: run + 0.02, y: py });
+    }
+    const landX = stairEast ? ix + 0.08 : stairX + stairW + 0.08;
+    const landW = iw - stairW - 0.24;
+    b.decks.push({ x: landX, z: iz + 0.06, w: landW, d: id - 0.12, y: topY });
+    if (!stairLow) b.decks.push({ x: stairX, z: stairZ + stairL, w: stairW, d: id - stairL - 0.14, y: topY });
+    else b.decks.push({ x: stairX, z: iz + 0.06, w: stairW, d: stairZ - iz - 0.08, y: topY });
+    for (const deck of b.decks.slice(-2)) {
+        if (deck.d < 0.2 || deck.w < 0.2) continue;
+        pushQuad(batches.trunk, [deck.x, deck.y, deck.z, 0, 0, 0.62], [deck.x, deck.y, deck.z + deck.d, 0, 1, 0.62], [deck.x + deck.w, deck.y, deck.z + deck.d, 1, 1, 0.62], [deck.x + deck.w, deck.y, deck.z, 1, 0, 0.62]);
+        pushQuad(batches.trunk, [deck.x, deck.y - 0.08, deck.z + deck.d, 0, 0, 0.45], [deck.x, deck.y - 0.08, deck.z, 0, 1, 0.45], [deck.x + deck.w, deck.y - 0.08, deck.z, 1, 1, 0.45], [deck.x + deck.w, deck.y - 0.08, deck.z + deck.d, 1, 0, 0.45]);
+    }
+    const sleepZ = stairLow ? iz + 0.55 : iz + id - 0.85;
+    const gap = 0.86;
+    const gapX = ix + iw / 2 - gap / 2;
+    const wallH = 2.05;
+    addBox(batches.plaster, ix + 0.05, topY, sleepZ, gapX - ix - 0.05, wallH, 0.12);
+    addBox(batches.plaster, gapX + gap, topY, sleepZ, ix + iw - (gapX + gap) - 0.05, wallH, 0.12);
+    furn.push({ x: ix + 0.05, z: sleepZ, w: gapX - ix - 0.05, d: 0.12, y0: topY, y1: topY + wallH });
+    furn.push({ x: gapX + gap, z: sleepZ, w: ix + iw - (gapX + gap) - 0.05, d: 0.12, y0: topY, y1: topY + wallH });
+    addBox(batches.trunk, gapX - 0.06, topY, sleepZ - 0.04, 0.08, wallH, 0.2);
+    addBox(batches.trunk, gapX + gap - 0.02, topY, sleepZ - 0.04, 0.08, wallH, 0.2);
+    addBox(batches.door, gapX + 0.08, topY, sleepZ - 0.02, gap - 0.16, wallH * 0.92, 0.06);
+    pushNap(gapX + gap / 2, sleepZ + (stairLow ? 0.35 : -0.15), topY);
+    b.nap = nap;
+    b.keeper = { x: doorIn.x, z: doorIn.z + (entrance === "north" ? 1.15 : entrance === "south" ? -1.15 : 0), yaw: doorOut.yaw };
+    if (entrance === "east") b.keeper = { x: doorIn.x - 1.15, z: doorIn.z, yaw: doorOut.yaw };
+    if (entrance === "west") b.keeper = { x: doorIn.x + 1.15, z: doorIn.z, yaw: doorOut.yaw };
+    const backZ = stairLow ? iz + 0.15 : iz + Math.max(0.4, id - 1.7);
+    if (b.kind === "stores") {
+        shelfAt(ix + stairW + 0.25, iz + 0.08, Math.max(1.1, iw - stairW - 0.5), "x");
+        crateAt(ix + stairW + 0.3, iz + 1.15, 0.55);
+        crateAt(ix + stairW + 0.95, iz + 1.2, 0.42);
+        barrelAt(ix + iw - 0.7, iz + 0.2);
+        barrelAt(ix + iw - 0.68, iz + 0.85);
+        sackAt(ix + iw - 1.25, iz + 0.25);
+        sackAt(ix + iw - 1.2, iz + 0.7);
+        addBox(batches.trunk, ix + 1.3, 0, backZ, 1.4, 0.28, 0.34);
+        use(ix + 1.3, backZ, 1.4, 0.34, 0.28);
+    } else if (b.kind === "barracks") {
+        tableAt(ix + stairW + 0.35, iz + 1.15, 1.35, 0.7);
+        benchAt(ix + stairW + 0.4, iz + 1.95, 1.2, "x");
+        addBox(batches.trunk, ix + iw - 0.42, 0, iz + 0.2, 0.16, 1.5, 1.3);
+        addBox(batches.rock, ix + iw - 0.5, 0.45, iz + 0.35, 0.08, 0.7, 0.08);
+        addBox(batches.rock, ix + iw - 0.5, 0.85, iz + 0.7, 0.08, 0.55, 0.08);
+        addBox(batches.door, ix + iw - 0.28, 0.7, iz + 1.15, 0.08, 0.55, 0.4);
+        use(ix + iw - 0.5, iz + 0.2, 0.28, 1.3, 1.5);
+        chestAt(ix + stairW + 0.3, iz + 0.2, 0.55, 0.4);
+    } else if (b.kind === "smith") {
+        hearthAt(ix + stairW + 0.2, iz + 0.12, 1.15, 0.7);
+        addBox(batches.glow, ix + stairW + 0.45, 0.5, iz + 0.28, 0.42, 0.18, 0.32);
+        addBox(batches.rock, ix + iw - 1.15, 0.55, iz + 1.15, 0.42, 0.28, 0.55);
+        addBox(batches.trunk, ix + iw - 1.22, 0, iz + 1.22, 0.1, 0.55, 0.1);
+        addBox(batches.trunk, ix + iw - 0.8, 0, iz + 1.55, 0.1, 0.55, 0.1);
+        use(ix + iw - 1.22, iz + 1.15, 0.55, 0.6, 0.85);
+        addBox(batches.trunk, ix + 0.2, 0.7, iz + id - 0.55, 1.3, 0.1, 0.38);
+        use(ix + 0.2, iz + id - 0.55, 1.3, 0.38, 0.85);
+        addBox(batches.rock, x + w * 0.35, h, z + d * 0.25, 0.55, 1.15, 0.55);
     } else if (b.kind === "shop") {
-        rugAt(ix + 0.85, iz + 1.15, iw - 1.7, 1.7);
-        addBox(batches.trunk, ix + 0.7, 0.86, iz + 0.22, iw - 2.1, 0.1, 0.62);
-        addBox(batches.plaster, ix + 0.78, 0, iz + 0.28, iw - 2.26, 0.86, 0.42);
-        use(ix + 0.7, iz + 0.22, iw - 2.1, 0.62, 0.96);
-        dishes(ix + 1.1, iz + 0.32);
-        addBox(batches.linen, ix + 1.7, 0.96, iz + 0.32, 0.34, 0.16, 0.28);
-        addBox(batches.rock, ix + 2.2, 0.96, iz + 0.34, 0.18, 0.14, 0.18);
-        crateAt(ix + 0.18, iz + 0.18, 0.62);
-        crateAt(ix + 0.28, iz + 0.9, 0.48);
-        sackAt(ix + 0.22, iz + 1.55);
-        barrelAt(ix + iw - 0.72, iz + 0.22);
-        stoolAt(ix + iw - 0.7, iz + 1.15);
-        shelfAt(ix + iw - 0.4, iz + 1.7, 1.35, "z");
-    } else if (b.kind === "cot") {
-        rugAt(ix + 0.12, iz + 0.15, 1.7, 2.3);
-        bedAt(ix + 0.18, iz + 0.22, 1.2, 2.05);
-        hearthAt(ix + iw * 0.42, iz + 0.15, 1.2, 0.52);
-        stoolAt(ix + 1.6, iz + 0.55);
-        chestAt(ix + iw - 0.85, iz + 0.2, 0.58, 0.4);
-        tableAt(ix + iw - 0.85, iz + 0.85, 0.58, 0.55);
-        dishes(ix + iw - 0.72, iz + 1.0);
-        shelfAt(ix + 0.2, iz + 0.02, 1.05, "x");
-        sackAt(ix + iw - 0.62, iz + 1.6);
+        const fx = stairEast ? ix + 0.25 : stairX + stairW + 0.2;
+        addBox(batches.trunk, fx, 0.9, iz + 1.35, Math.max(1.1, iw - stairW - 0.55), 0.1, 0.5);
+        addBox(batches.plaster, fx + 0.08, 0, iz + 1.42, Math.max(0.9, iw - stairW - 0.7), 0.9, 0.34);
+        use(fx, iz + 1.35, Math.max(1.1, iw - stairW - 0.55), 0.5, 1);
+        shelfAt(fx, iz + 0.06, Math.max(1, iw - stairW - 0.45), "x");
+        barrelAt(ix + iw - 0.62, iz + id - 0.7);
+        sackAt(fx, iz + id - 0.55);
+        b.keeper = { x: fx + 0.4, z: iz + 0.85, yaw: doorOut.yaw };
+    } else if (b.kind === "tavern") {
+        const fx = stairEast ? ix + 0.2 : stairX + stairW + 0.18;
+        hearthAt(ix + iw - 1.35, iz + 0.12, 1.05, 0.55);
+        addBox(batches.glow, ix + iw - 1.05, 0.48, iz + 0.26, 0.36, 0.16, 0.28);
+        addBox(batches.trunk, fx, 0.92, iz + 0.85, 0.5, 0.1, 1.4);
+        addBox(batches.plaster, fx + 0.06, 0, iz + 0.92, 0.36, 0.92, 1.25);
+        use(fx, iz + 0.85, 0.5, 1.4, 1.05);
+        tableAt(fx + 0.7, iz + 1.15, 0.8, 0.65);
+        stoolAt(fx + 0.85, iz + 1.95);
+        barrelAt(fx, iz + id - 0.65);
     } else {
-        rugAt(ix + 0.35, iz + 0.9, 1.8, 1.7);
-        hearthAt(ix + 0.35, iz + 0.12, 1.25, 0.55);
-        tableAt(ix + iw - 0.95, iz + 0.85, 0.7, 1.05);
-        dishes(ix + iw - 0.78, iz + 1.15);
-        stoolAt(ix + iw - 1.55, iz + 1.05);
-        benchAt(ix + 0.3, iz + id - 1.55, 1.15, "x");
-        chestAt(ix + 0.18, iz + 0.85, 0.62, 0.4);
-        shelfAt(ix + iw - 1.35, iz + 0.02, 1.15, "x");
-        barrelAt(ix + iw - 0.65, iz + 2.15);
+        rugAt(ix + stairW + 0.15, iz + 0.85, Math.max(1.2, iw - stairW - 0.4), Math.max(1.2, id - 1.6));
+        hearthAt(ix + iw - 1.4, iz + 0.12, 1.15, 0.58);
+        addBox(batches.glow, ix + iw - 1.1, 0.5, iz + 0.26, 0.38, 0.16, 0.28);
+        tableAt(ix + stairW + 0.25, iz + 1.05, Math.min(1.6, iw - stairW - 0.45), 0.75);
+        benchAt(ix + stairW + 0.3, iz + 1.9, Math.min(1.4, iw - stairW - 0.6), "x");
+        shelfAt(ix + stairW + 0.2, iz + 0.05, Math.max(0.9, iw - stairW - 1.6), "x");
+        chestAt(ix + iw - 0.75, iz + id - 0.7, 0.5, 0.38);
     }
     b.parts = parts.concat(furn);
     const ridge = h + rise;
@@ -667,6 +799,54 @@ houses.forEach((house) => {
     if (!house.test) addHouse(house);
 });
 
+function addYard(place) {
+    const ox = place.ox;
+    const oz = place.oz;
+    const pile = (x, z) => {
+        addBox(batches.trunk, ox + x, 0, oz + z, 0.9, 0.32, 0.45);
+        addBox(batches.trunk, ox + x + 0.1, 0.32, oz + z + 0.05, 0.7, 0.22, 0.34);
+        scenery.push({ x: ox + x, z: oz + z, w: 0.9, d: 0.45 });
+    };
+    const barrel = (x, z) => {
+        addBox(batches.trunk, ox + x, 0, oz + z, 0.48, 0.62, 0.48);
+        scenery.push({ x: ox + x, z: oz + z, w: 0.48, d: 0.48 });
+    };
+    const cart = (x, z) => {
+        addBox(batches.trunk, ox + x, 0.28, oz + z, 1.3, 0.12, 0.7);
+        addBox(batches.trunk, ox + x + 0.08, 0, oz + z + 0.08, 0.16, 0.28, 0.16);
+        addBox(batches.trunk, ox + x + 1.05, 0, oz + z + 0.42, 0.16, 0.28, 0.16);
+        scenery.push({ x: ox + x, z: oz + z, w: 1.3, d: 0.7 });
+    };
+    pile(-4.6, -3.1);
+    barrel(-3.4, -9.4);
+    barrel(-2.7, -9.5);
+    cart(0.6, -8.2);
+}
+function spawnKeepers() {
+    for (const house of houses) {
+        if (house.kind !== "shop" || !house.keeper) continue;
+        const owner = 2;
+        men.push({
+            decor: true,
+            fisher: false,
+            faction: owner,
+            post: house.village,
+            index: -50 - house.village,
+            health: 1,
+            x: house.keeper.x,
+            z: house.keeper.z,
+            yaw: house.keeper.yaw,
+            bob: 0,
+            down: 0,
+            swing: -1,
+            walking: false,
+            hostile: false,
+            dying: false,
+            mode: "guard"
+        });
+    }
+}
+
 function compile(type, source) {
     const shader = gl.createShader(type);
     gl.shaderSource(shader, source);
@@ -685,8 +865,11 @@ uniform mat4 uModel;
 varying vec2 vUv;
 varying float vShade;
 varying float vDepth;
+varying vec2 vWorld;
 void main() {
-    vec4 view = uView * uModel * vec4(aPos, 1.0);
+    vec4 world = uModel * vec4(aPos, 1.0);
+    vWorld = world.xz;
+    vec4 view = uView * world;
     vDepth = -view.z;
     vUv = aUv;
     vShade = aShade;
@@ -698,11 +881,34 @@ precision mediump float;
 varying vec2 vUv;
 varying float vShade;
 varying float vDepth;
+varying vec2 vWorld;
 uniform sampler2D uTex;
+uniform float uDark;
+uniform float uGlow;
+uniform vec2 uEye;
+uniform float uBand;
 void main() {
     vec3 color = texture2D(uTex, vUv).rgb * vShade;
-    float fog = clamp((vDepth - 28.0) / 90.0, 0.0, 0.58);
-    gl_FragColor = vec4(mix(color, vec3(0.73, 0.75, 0.68), fog), 1.0);
+    float dist = distance(vWorld, uEye);
+    float fog = clamp((dist - 60.0) / 1800.0, 0.0, 0.78);
+    if (uBand > 2.5) {
+        fog = clamp((dist - 60.0) / 1800.0, 0.0, 0.66);
+        if (dist < 1220.0) discard;
+    } else if (uBand > 1.5) {
+        fog = clamp((dist - 60.0) / 1800.0, 0.0, 0.66);
+        if (dist < 1080.0) discard;
+    } else if (uBand > 0.5) {
+        if (dist > 1280.0) discard;
+        if (uBand < 0.8 && dist < 80.0) discard;
+    }
+    vec3 fogCol = mix(vec3(0.73, 0.75, 0.68), vec3(0.05, 0.06, 0.1), uDark);
+    if (uGlow > 0.5) {
+        color = mix(color, color * vec3(1.2, 0.7, 0.28), uDark);
+        color += vec3(0.28, 0.12, 0.02) * uDark;
+    } else {
+        color *= mix(1.0, 0.2, uDark);
+    }
+    gl_FragColor = vec4(mix(color, fogCol, fog), 1.0);
 }
 `));
 gl.linkProgram(program);
@@ -716,12 +922,19 @@ gl.attachShader(skyProgram, compile(gl.FRAGMENT_SHADER, `
 precision mediump float;
 uniform vec2 uRes;
 uniform float uPitch;
+uniform float uDark;
+uniform vec2 uSun;
+uniform float uSunUp;
 void main() {
     float horizon = 0.46 - uPitch * 0.42;
     float t = clamp((gl_FragCoord.y / uRes.y - horizon) / 0.62, 0.0, 1.0);
-    vec3 haze = vec3(0.80, 0.75, 0.64);
-    vec3 zenith = vec3(0.42, 0.58, 0.74);
-    gl_FragColor = vec4(mix(haze, zenith, t), 1.0);
+    vec3 haze = mix(vec3(0.80, 0.75, 0.64), vec3(0.07, 0.08, 0.13), uDark);
+    vec3 zenith = mix(vec3(0.42, 0.58, 0.74), vec3(0.02, 0.025, 0.07), uDark);
+    vec3 col = mix(haze, zenith, t);
+    float sun = smoothstep(0.11, 0.0, distance(gl_FragCoord.xy / uRes, uSun));
+    col += vec3(1.0, 0.78, 0.38) * sun * uSunUp * (1.0 - uDark * 0.75);
+    col += vec3(0.45, 0.18, 0.04) * (1.0 - t) * smoothstep(0.2, 0.7, uDark) * (1.0 - uDark);
+    gl_FragColor = vec4(col, 1.0);
 }
 `));
 gl.linkProgram(skyProgram);
@@ -732,7 +945,11 @@ const loc = {
     model: gl.getUniformLocation(program, "uModel"),
     pos: gl.getAttribLocation(program, "aPos"),
     uv: gl.getAttribLocation(program, "aUv"),
-    shade: gl.getAttribLocation(program, "aShade")
+    shade: gl.getAttribLocation(program, "aShade"),
+    dark: gl.getUniformLocation(program, "uDark"),
+    glow: gl.getUniformLocation(program, "uGlow"),
+    eye: gl.getUniformLocation(program, "uEye"),
+    band: gl.getUniformLocation(program, "uBand")
 };
 const identity = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 const peopleModels = {};
@@ -742,104 +959,126 @@ let swordModel = null;
 const skyLoc = {
     pos: gl.getAttribLocation(skyProgram, "aPos"),
     res: gl.getUniformLocation(skyProgram, "uRes"),
-    pitch: gl.getUniformLocation(skyProgram, "uPitch")
+    pitch: gl.getUniformLocation(skyProgram, "uPitch"),
+    dark: gl.getUniformLocation(skyProgram, "uDark"),
+    sun: gl.getUniformLocation(skyProgram, "uSun"),
+    sunUp: gl.getUniformLocation(skyProgram, "uSunUp")
 };
 
 const scenery = [];
 
 function growScenery() {
-    let n = 0;
-    const next = () => {
-        n += 1;
-        let a = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b);
-        a = Math.imul(a ^ (a >>> 13), 0xc2b2ae35);
-        return ((a ^ (a >>> 16)) >>> 0) / 4294967296;
+    const roll = (x, z, salt) => {
+        const n = Math.sin(x * 12.9898 + z * 78.233 + salt * 45.164) * 43758.5453;
+        return n - Math.floor(n);
     };
-    const groves = [
-        [-72, -8, 16, 15],
-        [70, 6, 14, 13],
-        [-6, -76, 11, 12],
-        [14, 76, 10, 11],
-        [2, 6, 9, 9],
-        [-78, 48, 8, 10],
-        [76, -58, 8, 10],
-        [-55, -55, 7, 8],
-        [55, 48, 7, 8]
-    ];
-    const open = (x, z) => {
-        if (Math.max(Math.abs(x), Math.abs(z)) > 86) return false;
-        if (Math.abs(x + 40) < 3.4 && z > -86 && z < 86) return false;
-        if (Math.abs(x - 40) < 3.4 && z > -86 && z < 86) return false;
-        if (Math.abs(z + 40) < 3.4 && x > -86 && x < 86) return false;
-        if (Math.abs(z - 40) < 3.4 && x > -86 && x < 86) return false;
-        for (const place of places) {
-            const lx = x - place.ox;
-            const lz = z - place.oz;
-            if (Math.abs(lz + 7.85) < 2.6 && Math.abs(lx) < 16) return false;
-            if (Math.abs(x - (place.ox - 0.5)) < 22 && Math.abs(z - (place.oz - 4)) < 22) return false;
-        }
-        for (const b of houses) {
-            if (x > b.x - 1.4 && x < b.x + b.w + 1.4 && z > b.z - 1.4 && z < b.z + b.d + 1.4) return false;
-        }
-        for (const item of scenery) {
-            const dx = x - (item.x + item.w / 2);
-            const dz = z - (item.z + item.d / 2);
-            if (dx * dx + dz * dz < 6.2) return false;
-        }
-        return true;
-    };
-    const tree = (x, z) => {
-        const pine = next() > 0.55;
-        const s = next();
-        const tw = 0.24 + s * 0.14;
-        const th = pine ? 2.8 + s * 1.1 : 2.35 + s * 0.7;
-        addBox(batches.trunk, x - tw / 2, 0, z - tw / 2, tw, Math.max(2.05, th * 0.62), tw);
-        scenery.push({ x: x - tw / 2, z: z - tw / 2, w: tw, d: tw });
-        if (pine) {
-            for (let i = 0; i < 3; i++) {
-                const g = 1.05 - i * 0.26;
-                addBox(batches.leaf, x - g, 1.85 + i * 0.58, z - g, g * 2, 0.7, g * 2);
-            }
-        } else {
-            const g = 0.72 + s * 0.28;
-            addBox(batches.leaf, x - g * 1.15, 1.9, z - g * 0.7, g * 1.45, g * 0.85, g * 1.2);
-            addBox(batches.leaf, x - g * 0.15, 2.05, z - g * 1.05, g * 1.35, g * 0.8, g * 1.15);
-            addBox(batches.leaf, x - g * 0.55, 2.45, z - g * 0.4, g * 1.1, g * 0.65, g);
-        }
-    };
-    const bush = (x, z) => {
-        const w = 0.55 + next() * 0.45;
-        const d = 0.5 + next() * 0.4;
-        const h = 0.36 + next() * 0.24;
-        addBox(batches.leaf, x - w / 2, 0, z - d / 2, w, h, d);
+    const bush = (x, z, y) => {
+        const w = 0.55 + roll(x, z, 2) * 0.45;
+        const d = 0.5 + roll(x, z, 3) * 0.4;
+        const h = 0.36 + roll(x, z, 4) * 0.24;
+        addBox(batches.leaf, x - w / 2, y, z - d / 2, w, h, d);
         scenery.push({ x: x - w / 2, z: z - d / 2, w, d });
     };
-    const stone = (x, z) => {
-        const w = 0.45 + next() * 0.75;
-        const d = 0.4 + next() * 0.55;
-        const h = 0.22 + next() * 0.4;
-        addBox(batches.rock, x - w / 2, 0, z - d / 2, w, h, d);
-        if (next() > 0.45) addBox(batches.rock, x - w * 0.2, h * 0.55, z - d * 0.15, w * 0.55, h * 0.75, d * 0.5);
+    const stone = (x, z, y) => {
+        const w = 0.45 + roll(x, z, 5) * 0.75;
+        const d = 0.4 + roll(x, z, 6) * 0.55;
+        const h = 0.22 + roll(x, z, 7) * 0.4;
+        addBox(batches.rock, x - w / 2, y, z - d / 2, w, h, d);
+        if (roll(x, z, 8) > 0.45) addBox(batches.rock, x - w * 0.2, y + h * 0.55, z - d * 0.15, w * 0.55, h * 0.75, d * 0.5);
         scenery.push({ x: x - w / 2, z: z - d / 2, w, d });
     };
-    for (const [gx, gz, count, radius] of groves) {
-        let placed = 0;
-        let tries = 0;
-        while (placed < count && tries < count * 14) {
-            tries += 1;
-            const x = gx + (next() - 0.5) * radius * 2;
-            const z = gz + (next() - 0.5) * radius * 2;
-            if (!open(x, z)) continue;
-            const roll = next();
-            if (roll < 0.72) tree(x, z);
-            else if (roll < 0.88) bush(x, z);
-            else stone(x, z);
-            placed += 1;
+    for (const spot of World.trees) {
+        const y = Math.max(0, World.heightAt(spot.x, spot.z));
+        if (spot.kind === "bush") bush(spot.x, spot.z, y);
+        else if (spot.kind === "rock") stone(spot.x, spot.z, y);
+        else {
+            treeSpots.push({ x: spot.x, z: spot.z, y: y, pine: spot.kind === "pine" });
+            impostor(spot.x, spot.z, y, spot.kind === "pine");
         }
     }
 }
 
+const treeSpots = [];
+
+function fullTree(trunk, leaf, x, z, y, pine) {
+    const n = Math.sin(x * 12.9898 + z * 78.233 + 45.164) * 43758.5453;
+    const s = n - Math.floor(n);
+    const tw = 0.24 + s * 0.14;
+    const th = pine ? 2.8 + s * 1.1 : 2.35 + s * 0.7;
+    addBox(trunk, x - tw / 2, y, z - tw / 2, tw, Math.max(2.05, th * 0.62), tw);
+    if (pine) {
+        for (let i = 0; i < 3; i++) {
+            const g = 1.05 - i * 0.26;
+            addBox(leaf, x - g, y + 1.85 + i * 0.58, z - g, g * 2, 0.7, g * 2);
+        }
+    } else {
+        const g = 0.72 + s * 0.28;
+        addBox(leaf, x - g * 1.15, y + 1.9, z - g * 0.7, g * 1.45, g * 0.85, g * 1.2);
+        addBox(leaf, x - g * 0.15, y + 2.05, z - g * 1.05, g * 1.35, g * 0.8, g * 1.15);
+        addBox(leaf, x - g * 0.55, y + 2.45, z - g * 0.4, g * 1.1, g * 0.65, g);
+    }
+}
+
+function impostor(x, z, y, pine) {
+    addBox(batches.farTrunk, x - 0.18, y, z - 0.18, 0.36, pine ? 3.4 : 2.5, 0.36);
+    const g = pine ? 1.35 : 1.55;
+    addBox(batches.farLeaf, x - g, y + 1.45, z - g, g * 2, pine ? 2.3 : 1.7, g * 2);
+    scenery.push({ x: x - 0.18, z: z - 0.18, w: 0.36, d: 0.36 });
+}
+
+function buildHorizon() {
+    const cell = 128;
+    const min = -3584;
+    const n = 56;
+    for (let iz = 0; iz < n; iz++) {
+        for (let ix = 0; ix < n; ix++) {
+            const x = min + ix * cell;
+            const z = min + iz * cell;
+            const h00 = World.heightAt(x, z);
+            const h10 = World.heightAt(x + cell, z);
+            const h11 = World.heightAt(x + cell, z + cell);
+            const h01 = World.heightAt(x, z + cell);
+            const top = Math.max(h00, h10, h11, h01);
+            if (top < -0.25) continue;
+            const cx = x + cell * 0.5;
+            const cz = z + cell * 0.5;
+            const rocky = top > 8 || World.groundKind(cx, cz, top) === "rock";
+            const list = rocky ? batches.horizonRock : batches.horizon;
+            const shade = rocky ? 0.72 : 0.92;
+            pushQuad(
+                list,
+                [x, h00, z, x / 16, z / 16, shade],
+                [x, h01, z + cell, x / 16, (z + cell) / 16, shade],
+                [x + cell, h11, z + cell, (x + cell) / 16, (z + cell) / 16, shade],
+                [x + cell, h10, z, (x + cell) / 16, z / 16, shade]
+            );
+        }
+    }
+    for (let x = -3400; x <= 3400; x += 200) {
+        for (let z = -3400; z <= 3400; z += 200) {
+            if (World.forestAt(x, z) < 0.42) continue;
+            let close = false;
+            for (const place of World.places) {
+                if (Math.hypot(x - place.x, z - place.z) < 240) close = true;
+            }
+            if (close) continue;
+            const y = World.heightAt(x, z);
+            if (y < 0.4 || World.wet(x, z)) continue;
+            addBox(batches.horizonLeaf, x, y + 1.2, z, 96, 7, 96);
+        }
+    }
+    for (const place of World.places) {
+        const y = Math.max(0, World.heightAt(place.x, place.z));
+        addBox(batches.horizonWall, place.x - 16, y, place.z - 10, 12, 8, 9);
+        addBox(batches.horizonRoof, place.x - 17, y + 8, place.z - 11, 14, 3.2, 11);
+        addBox(batches.horizonWall, place.x + 2, y, place.z - 4, 11, 7, 8);
+        addBox(batches.horizonRoof, place.x + 1, y + 7, place.z - 5, 13, 2.8, 10);
+    }
+}
+
 growScenery();
+buildHorizon();
+places.forEach(addYard);
 
 const mesh = {};
 for (const name of Object.keys(batches)) {
@@ -849,6 +1088,37 @@ for (const name of Object.keys(batches)) {
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
     mesh[name] = { buffer, count: data.length / 6 };
 }
+
+textures.farTrunk = textures.trunk;
+textures.farLeaf = textures.leaf;
+textures.horizon = textures.grass;
+textures.horizonRock = textures.rock;
+textures.horizonLeaf = textures.leaf;
+textures.horizonWall = textures.wall;
+textures.horizonRoof = textures.roof;
+
+let nearMarkX = 1e9;
+let nearMarkZ = 1e9;
+function refreshNearTrees() {
+    const dx = cam.x - nearMarkX;
+    const dz = cam.z - nearMarkZ;
+    if (dx * dx + dz * dz < 40 * 40) return;
+    nearMarkX = cam.x;
+    nearMarkZ = cam.z;
+    const trunk = [];
+    const leaf = [];
+    for (const spot of treeSpots) {
+        const ox = spot.x - cam.x;
+        const oz = spot.z - cam.z;
+        if (ox * ox + oz * oz > 175 * 175) continue;
+        fullTree(trunk, leaf, spot.x, spot.z, spot.y, spot.pine);
+    }
+    textures.nearTrunk = textures.trunk;
+    textures.nearLeaf = textures.leaf;
+    uploadMesh("nearTrunk", trunk);
+    uploadMesh("nearLeaf", leaf);
+}
+refreshNearTrees();
 
 function addBox(list, x, y, z, w, h, d, xf, uv) {
     const y1 = y + h;
@@ -1021,6 +1291,39 @@ function personXf(man) {
     };
 }
 
+function mulMat4(a, b) {
+    const out = new Float32Array(16);
+    for (let c = 0; c < 4; c++) {
+        for (let r = 0; r < 4; r++) {
+            out[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
+        }
+    }
+    return out;
+}
+
+function legMatrix(man, hip, angle) {
+    const ca = Math.cos(angle);
+    const sa = Math.sin(angle);
+    const hy = hip[1];
+    const hz = hip[2];
+    const local = new Float32Array([
+        1, 0, 0, 0,
+        0, ca, sa, 0,
+        0, -sa, ca, 0,
+        0, hy - ca * hy + sa * hz, hz - sa * hy - ca * hz, 1
+    ]);
+    return mulMat4(personMatrix(man), local);
+}
+
+function plant(man) {
+    if (man.archer) return;
+    if (man.floorY != null) {
+        man.stand = man.floorY;
+        return;
+    }
+    man.stand = Math.max(0, World.heightAt(man.x, man.z));
+}
+
 function personMatrix(man) {
     const yaw = man.yaw + Math.PI;
     const c = Math.cos(yaw);
@@ -1087,6 +1390,7 @@ function rebuildMesh() {
     const steel = [];
     const cloth = [[], [], [], []];
     for (const man of men) {
+        if (man.hidden) continue;
         addPerson(cloth[man.faction], skin, pants, steel, man.x - 0.24, man.z - 0.14, personXf(man), man.swing, man.fisher);
     }
     for (let i = 0; i < 4; i++) uploadMesh("cloth" + i, cloth[i]);
@@ -1121,7 +1425,7 @@ function mergeMen(data) {
             });
         });
     });
-    const prev = new Map(men.filter((man) => !man.fisher && !man.archer).map((man) => [man.faction + ":" + man.index, man]));
+    const prev = new Map(men.filter((man) => !man.fisher && !man.archer && !man.decor && !man.driver).map((man) => [man.faction + ":" + man.index, man]));
     const next = [];
     const keep = new Set();
     for (const item of wanted) {
@@ -1168,9 +1472,9 @@ function mergeMen(data) {
             });
         }
     }
-    const keptFish = men.filter((man) => man.fisher || man.archer);
+    const keptFish = men.filter((man) => man.fisher || man.archer || man.decor || man.driver);
     for (const man of men) {
-        if (man.fisher || man.archer) continue;
+        if (man.fisher || man.archer || man.decor || man.driver) continue;
         const key = man.faction + ":" + man.index;
         if (keep.has(key)) continue;
         man.dying = true;
@@ -1188,6 +1492,7 @@ let seenRestart = 0;
 let campaign = null;
 
 function applyCampaign(data) {
+    rememberPlay(data);
     const stamp = Number(data && data.restartedAt) || 0;
     if (stamp < seenRestart) return;
     seenRestart = Math.max(seenRestart, stamp);
@@ -1196,17 +1501,23 @@ function applyCampaign(data) {
         (faction.units || []).map((unit) => unit.index + ":" + unit.health + ":" + unit.mode + ":" + unit.post).join(".")
     )).join("|");
     const attacks = (data.attacks || []).map((attack) => attack.id).join(",");
-    const fish = (data.fishermen || []).map((man) => man.village + ":" + man.slot + ":" + man.health + ":" + man.cycleStart + ":" + man.walkMs).join(",");
-    const wood = (data.woodcutters || []).map((man) => man.id + ":" + man.village + ":" + man.health + ":" + man.cycleStart + ":" + man.to.x.toFixed(1)).join(",");
+    const fish = (data.fishermen || []).map((man) => man.village + ":" + man.slot + ":" + man.health + ":" + man.cycleStart + ":" + man.walkMs + ":" + (man.bed || "")).join(",");
+    const wood = (data.woodcutters || []).map((man) => man.id + ":" + man.village + ":" + man.health + ":" + man.cycleStart + ":" + man.to.x.toFixed(1) + ":" + (man.bed || "")).join(",");
+    const carts = (data.lodges || []).map((lodge) => lodge.id + ":" + lodge.cart.phase + ":" + lodge.cart.driver + ":" + lodge.cart.hp + ":" + lodge.cart.cargo).join(",");
     const arch = (data.archers || []).map((row, village) => (
         ((data.owners || [])[village] || 0) + ":" + (row || []).join(".")
     )).join(",");
-    const key = (data.owners || []).join(",") + "#" + attacks + "#" + units + "#" + fish + "#" + wood + "#" + arch;
-    if (key === soldierKey) return;
+    const key = (data.owners || []).join(",") + "#" + attacks + "#" + units + "#" + fish + "#" + wood + "#" + arch + "#" + carts;
+    if (key === soldierKey) {
+        ensureCottages(data);
+        return;
+    }
     soldierKey = key;
+    ensureCottages(data);
     mergeMen(data);
     mergeFishermen(data);
     mergeArchers(data);
+    mergeDrivers(data);
 }
 
 function villagerKey(man) {
@@ -1240,6 +1551,9 @@ function mergeFishermen(data) {
             old.toX = item.to.x;
             old.toZ = item.to.z;
             old.path = item.path || null;
+            old.asleep = !!item.asleep;
+            old.shelter = !!item.shelter;
+            old.bed = item.bed || "manor";
             if (old.health <= 0) old.dying = true;
             nextFish.push(old);
         } else {
@@ -1263,6 +1577,9 @@ function mergeFishermen(data) {
                 toX: item.to.x,
                 toZ: item.to.z,
                 path: item.path || null,
+                asleep: !!item.asleep,
+                shelter: !!item.shelter,
+                bed: item.bed || "manor",
                 cycleStart: item.cycleStart,
                 walkMs: item.walkMs,
                 yaw: 0,
@@ -1286,6 +1603,214 @@ function mergeFishermen(data) {
     const soldiers = men.filter((man) => !man.fisher);
     men.length = 0;
     men.push(...soldiers, ...nextFish);
+}
+
+function clientCartPose(cart) {
+    if (!cart) return { x: 0, z: 0, yaw: 0 };
+    if (cart.phase === "stopped") return { x: cart.stopX, z: cart.stopZ, yaw: cart.yaw || 0 };
+    if (cart.phase === "parked" || !cart.path || cart.path.length < 2) {
+        return { x: cart.parkX, z: cart.parkZ, yaw: cart.parkYaw || 0 };
+    }
+    const travel = Math.max(1, cart.arriveAt - cart.startedAt);
+    const along = Math.max(0, Math.min(1, (Date.now() - cart.startedAt) / travel));
+    return pathPose(cart.path, along * (cart.length || 0));
+}
+
+function mergeDrivers(data) {
+    const wanted = (data.lodges || []).filter((lodge) => lodge.cart && lodge.cart.driver > 0);
+    const prev = new Map(men.filter((man) => man.driver).map((man) => [man.lodge, man]));
+    const keep = new Set();
+    const next = [];
+    for (const lodge of wanted) {
+        keep.add(lodge.id);
+        const old = prev.get(lodge.id);
+        if (old) {
+            old.health = pendingHit ? Math.min(old.health, lodge.cart.driver) : lodge.cart.driver;
+            old.faction = lodge.owner;
+            if (old.health <= 0) old.dying = true;
+            next.push(old);
+        } else {
+            const pose = clientCartPose(lodge.cart);
+            next.push({
+                driver: true,
+                fisher: false,
+                decor: false,
+                lodge: lodge.id,
+                faction: lodge.owner,
+                index: -90 - lodge.village,
+                health: lodge.cart.driver,
+                post: lodge.village,
+                mode: "drive",
+                x: pose.x,
+                z: pose.z,
+                yaw: pose.yaw,
+                bob: 0,
+                down: 0,
+                swing: -1,
+                walking: true,
+                hostile: false,
+                attackIn: 0,
+                striking: 0,
+                struck: false,
+                dying: false
+            });
+        }
+    }
+    for (const man of men) {
+        if (!man.driver || keep.has(man.lodge)) continue;
+        man.dying = true;
+        man.health = 0;
+        next.push(man);
+    }
+    const rest = men.filter((man) => !man.driver);
+    men.length = 0;
+    men.push(...rest, ...next);
+}
+
+const cottageMeshes = { cotWall: [], cotRoof: [], cotDoor: [], cotWood: [], cotGlow: [] };
+const builtLodges = new Set();
+
+function buildCottage(lodge) {
+    const x = lodge.x;
+    const z = lodge.z;
+    const w = lodge.w;
+    const d = lodge.d;
+    const facing = lodge.facing;
+    const y = lodge.ground || 0;
+    const h = 2.55;
+    const t = 0.28;
+    const doorW = 1.5;
+    const doorH = 2.05;
+    const parts = [];
+    const wall = (px, pz, ww, dd, y0, y1) => {
+        addBox(cottageMeshes.cotWall, px, y0, pz, ww, Math.max(0.08, y1 - y0), dd);
+        parts.push({ x: px, z: pz, w: ww, d: dd, y0: y0, y1: y1 });
+    };
+    if (facing === "south" || facing === "north") {
+        const front = facing === "south" ? z + d - t : z;
+        const back = facing === "south" ? z : z + d - t;
+        wall(x, back, w, t, y, y + h);
+        wall(x, z, t, d, y, y + h);
+        wall(x + w - t, z, t, d, y, y + h);
+        const gapX = x + (w - doorW) / 2;
+        wall(x, front, Math.max(0.08, gapX - x), t, y, y + h);
+        wall(gapX + doorW, front, Math.max(0.08, x + w - gapX - doorW), t, y, y + h);
+        wall(gapX, front, doorW, t, y + doorH, y + h);
+        addBox(cottageMeshes.cotDoor, gapX + 0.12, y + 0.02, front - 0.02, doorW - 0.24, doorH * 0.9, 0.06);
+    } else {
+        const front = facing === "east" ? x + w - t : x;
+        const back = facing === "east" ? x : x + w - t;
+        wall(back, z, t, d, y, y + h);
+        wall(x, z, w, t, y, y + h);
+        wall(x, z + d - t, w, t, y, y + h);
+        const gapZ = z + (d - doorW) / 2;
+        wall(front, z, t, Math.max(0.08, gapZ - z), y, y + h);
+        wall(front, gapZ + doorW, t, Math.max(0.08, z + d - gapZ - doorW), y, y + h);
+        wall(front, gapZ, t, doorW, y + doorH, y + h);
+        addBox(cottageMeshes.cotDoor, front - 0.02, y + 0.02, gapZ + 0.12, 0.06, doorH * 0.9, doorW - 0.24);
+    }
+    const ridge = y + h + 1.05;
+    const midZ = z + d / 2;
+    pushQuad(
+        cottageMeshes.cotRoof,
+        [x - 0.15, y + h, z - 0.15, 0, 0, 0.95],
+        [x - 0.15, ridge, midZ, 0, 1, 0.95],
+        [x + w + 0.15, ridge, midZ, 1, 1, 0.95],
+        [x + w + 0.15, y + h, z - 0.15, 1, 0, 0.95]
+    );
+    pushQuad(
+        cottageMeshes.cotRoof,
+        [x + w + 0.15, y + h, z + d + 0.15, 0, 0, 0.78],
+        [x + w + 0.15, ridge, midZ, 0, 1, 0.78],
+        [x - 0.15, ridge, midZ, 1, 1, 0.78],
+        [x - 0.15, y + h, z + d + 0.15, 1, 0, 0.78]
+    );
+    addBox(cottageMeshes.cotGlow, x + 0.55, y + 1.2, z - 0.05, 0.62, 0.48, 0.08);
+    addBox(cottageMeshes.cotWood, x + 0.35, y, z + 0.45, 0.7, 0.42, 0.45);
+    houses.push({
+        open: true,
+        village: lodge.village,
+        kind: "cottage",
+        id: lodge.id,
+        nap: lodge.nap || [],
+        parts,
+        decks: [],
+        x: x,
+        z: z,
+        w: w,
+        d: d,
+        h: h
+    });
+}
+
+function ensureCottages(data) {
+    let built = false;
+    for (const lodge of data.lodges || []) {
+        if (builtLodges.has(lodge.id)) continue;
+        builtLodges.add(lodge.id);
+        buildCottage(lodge);
+        built = true;
+    }
+    if (!built) return;
+    textures.cotWall = textures.wall;
+    textures.cotRoof = textures.roof;
+    textures.cotDoor = textures.door;
+    textures.cotWood = textures.trunk;
+    textures.cotGlow = textures.glow;
+    uploadMesh("cotWall", cottageMeshes.cotWall);
+    uploadMesh("cotRoof", cottageMeshes.cotRoof);
+    uploadMesh("cotDoor", cottageMeshes.cotDoor);
+    uploadMesh("cotWood", cottageMeshes.cotWood);
+    uploadMesh("cotGlow", cottageMeshes.cotGlow);
+}
+
+function paintCarts() {
+    const list = [];
+    const lodges = campaign && campaign.lodges || [];
+    for (const lodge of lodges) {
+        const cart = lodge.cart;
+        if (!cart || cart.hp <= 0) continue;
+        const pose = clientCartPose(cart);
+        const y = Math.max(0, World.heightAt(pose.x, pose.z));
+        const c = Math.cos(pose.yaw);
+        const s = Math.sin(pose.yaw);
+        const xf = (px, py, pz) => {
+            const lx = px - pose.x;
+            const lz = pz - pose.z;
+            return [pose.x + lx * c + lz * s, py, pose.z - lx * s + lz * c];
+        };
+        addBox(list, pose.x - 0.75, y + 0.34, pose.z - 0.38, 1.55, 0.12, 0.76, xf);
+        addBox(list, pose.x - 0.55, y + 0.46, pose.z - 0.3, 1.05, 0.32, 0.6, xf);
+        addBox(list, pose.x - 0.58, y + 0.02, pose.z - 0.26, 0.18, 0.32, 0.18, xf);
+        addBox(list, pose.x + 0.42, y + 0.02, pose.z + 0.08, 0.18, 0.32, 0.18, xf);
+        if ((cart.cargo || 0) > 0) addBox(list, pose.x - 0.4, y + 0.78, pose.z - 0.22, 0.72, 0.26, 0.44, xf);
+    }
+    textures.cart = textures.trunk;
+    uploadMesh("cart", list);
+}
+
+function cartUnder(x, z, faction) {
+    const lodges = campaign && campaign.lodges || [];
+    const who = faction == null ? homeVillage : faction;
+    let best = null;
+    let bestDist = 1.35;
+    for (const lodge of lodges) {
+        if (!lodge.cart || lodge.cart.hp <= 0 || lodge.owner === who) continue;
+        const pose = clientCartPose(lodge.cart);
+        const dist = Math.hypot(pose.x - x, pose.z - z);
+        if (dist < bestDist) {
+            best = lodge;
+            bestDist = dist;
+        }
+    }
+    return best;
+}
+
+function strikeCart(lodge) {
+    if (!lodge || !lodge.cart || lodge.cart.hp <= 0) return;
+    lodge.cart.hp -= 1;
+    showStrike(lodge.cart.hp > 0 ? "Cart " + lodge.cart.hp : "Cart lost");
+    postHit({ cart: lodge.id });
 }
 
 function archerSpot(village, side) {
@@ -1357,10 +1882,93 @@ function mergeArchers(data) {
     actorsDirty = true;
 }
 
+const MORNING_MS = Math.round(8 / 24 * Clock.DAY_MS);
+let playBase = null;
+let accrued = 0;
+let pendingSend = 0;
+let accrueAt = 0;
+
+function accrue() {
+    const nowMs = Date.now();
+    if (document.visibilityState !== "visible") {
+        accrueAt = 0;
+        return;
+    }
+    if (accrueAt) accrued += Math.min(1000, Math.max(0, nowMs - accrueAt));
+    accrueAt = nowMs;
+}
+
+function gameMs() {
+    const base = playBase == null ? MORNING_MS : playBase;
+    let extra = accrued + pendingSend;
+    if (document.visibilityState === "visible" && accrueAt) {
+        extra += Math.min(1000, Math.max(0, Date.now() - accrueAt));
+    }
+    return base + extra;
+}
+
+function pullPlay() {
+    accrue();
+    const send = Math.min(4000, Math.round(accrued));
+    if (send > 0) {
+        accrued -= send;
+        pendingSend += send;
+    }
+    return send;
+}
+
+function rememberPlay(data) {
+    if (!data || !Number.isFinite(Number(data.playMs))) return;
+    const next = Number(data.playMs);
+    if (playBase == null || next >= playBase) playBase = next;
+}
+
 function syncCampaign() {
     if (pendingHit) return;
-    fetch("/api/campaign", { cache: "no-store" }).then((res) => res.json()).then(applyCampaign).catch(() => {});
+    let url = "/api/campaign";
+    let sent = 0;
+    if (document.visibilityState === "visible") {
+        sent = pullPlay();
+        url += "?play=" + sent;
+    }
+    fetch(url, { cache: "no-store" }).then((res) => res.json()).then((data) => {
+        if (sent) pendingSend = Math.max(0, pendingSend - sent);
+        applyCampaign(data);
+    }).catch(() => {
+        if (sent) {
+            accrued += sent;
+            pendingSend = Math.max(0, pendingSend - sent);
+        }
+    });
 }
+
+function flushPlay() {
+    const nowMs = Date.now();
+    if (accrueAt) {
+        accrued += Math.min(1000, Math.max(0, nowMs - accrueAt));
+        accrueAt = 0;
+    }
+    const sent = Math.min(4000, Math.round(accrued));
+    if (sent <= 0) return;
+    accrued -= sent;
+    pendingSend += sent;
+    fetch("/api/campaign?play=" + sent, { cache: "no-store", keepalive: true }).then((res) => res.json()).then((data) => {
+        pendingSend = Math.max(0, pendingSend - sent);
+        applyCampaign(data);
+    }).catch(() => {
+        accrued += sent;
+        pendingSend = Math.max(0, pendingSend - sent);
+    });
+}
+
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+        accrueAt = Date.now();
+        return;
+    }
+    flushPlay();
+});
+window.addEventListener("pagehide", flushPlay);
 
 let nextSwing = 0;
 let nextShot = 0;
@@ -1480,6 +2088,18 @@ function wound(man, label, quiet, knockX, knockZ) {
         postHit({ archer: man.village, tower: man.side });
         return true;
     }
+    if (man.driver) {
+        man.health -= 1;
+        if (man.health <= 0) {
+            man.dying = true;
+            if (!quiet) showStrike("Slain");
+        } else if (!quiet) {
+            showStrike(word);
+        }
+        actorsDirty = true;
+        postHit({ driver: man.lodge });
+        return true;
+    }
     if (man.fisher) {
         man.health -= 1;
         if (man.health <= 0) {
@@ -1536,7 +2156,7 @@ function connectSwing() {
     let best = null;
     let bestT = profile.reach;
     for (const man of men) {
-        if (man.dying || man.health <= 0 || man.faction === homeVillage) continue;
+        if (man.dying || man.hidden || man.decor || man.health <= 0 || man.faction === homeVillage) continue;
         const chest = (man.stand || 0) + 0.95;
         const dx = man.x - ox;
         const dy = chest - cam.y;
@@ -1555,7 +2175,11 @@ function connectSwing() {
         strikeGate(gate);
         return;
     }
-    if (!best) return;
+    if (!best) {
+        const cart = cartUnder(ox + fx * Math.min(1.4, profile.reach), oz + fz * Math.min(1.4, profile.reach));
+        if (cart) strikeCart(cart);
+        return;
+    }
     const label = swing.kind === "chop" ? "Chop" : swing.kind === "thrust" ? "Thrust" : "Slash";
     wound(best, label, false, fx * 0.28, fz * 0.28);
 }
@@ -1611,7 +2235,103 @@ function moveToward(man, x, z, dt, speed) {
     return true;
 }
 
-function stepFisher(man) {
+function building(village, kind) {
+    return houses.find((house) => house.village === village && house.kind === kind);
+}
+
+function followRoute(man, dt, speed) {
+    const points = man.route;
+    if (!points || !points.length) return true;
+    const leg = man.leg || 0;
+    if (leg >= points.length) return true;
+    const goal = points[leg];
+    const prev = points[Math.max(0, leg - 1)];
+    if (!goal || !prev) return true;
+    const dx = goal.x - man.x;
+    const dz = goal.z - man.z;
+    const dist = Math.hypot(dx, dz);
+    const span = Math.hypot(goal.x - prev.x, goal.z - prev.z) || 1;
+    const along = 1 - Math.min(1, dist / span);
+    man.floorY = (prev.y || 0) + ((goal.y || 0) - (prev.y || 0)) * along;
+    if (dist <= speed * dt + 0.04) {
+        man.x = goal.x;
+        man.z = goal.z;
+        man.floorY = goal.y || 0;
+        man.leg = leg + 1;
+        if (man.leg >= points.length) return true;
+    } else {
+        man.x += dx / dist * Math.min(speed * dt, dist);
+        man.z += dz / dist * Math.min(speed * dt, dist);
+        man.yaw = Math.atan2(-dx, -dz);
+    }
+    man.walking = true;
+    man.stand = man.floorY;
+    return false;
+}
+
+function startTrip(man, points, key) {
+    if (man.trip === key) return;
+    man.trip = key;
+    man.route = points;
+    man.leg = 0;
+    man.hidden = false;
+    man.indoors = true;
+    man.floorY = points[0] ? points[0].y || 0 : 0;
+}
+
+function stepIndoor(man, points, dt, speed, mode, key) {
+    if (!points || points.length < 2) return false;
+    startTrip(man, points, key);
+    const done = followRoute(man, dt, speed);
+    if (!done) return true;
+    if (mode === "hide") {
+        man.hidden = true;
+        man.walking = false;
+        man.floorY = points[points.length - 1].y || 0;
+        return true;
+    }
+    if (mode === "stay") {
+        man.hidden = false;
+        man.walking = false;
+        return true;
+    }
+    man.hidden = false;
+    man.indoors = false;
+    man.floorY = null;
+    man.trip = "";
+    man.route = null;
+    return false;
+}
+
+function sleepNap(man) {
+    if (man.bed && man.bed !== "manor") {
+        const lodge = houses.find((house) => house.kind === "cottage" && house.id === man.bed);
+        if (lodge && lodge.nap && lodge.nap.length) return lodge.nap;
+    }
+    const house = building(man.post, "manor");
+    return house && house.nap;
+}
+
+function stepFisher(man, dt) {
+    const nap = sleepNap(man);
+    if (nap && (man.asleep || man.shelter)) {
+        const goal = man.asleep ? nap : nap.slice(0, 2);
+        const here = { x: man.x, z: man.z, y: man.floorY || 0 };
+        stepIndoor(man, [here].concat(goal), dt, 2.2, man.asleep ? "hide" : "stay", (man.asleep ? "bed" : "safe") + man.post);
+        man.swing = -1;
+        man.hostile = false;
+        man.mode = "fish";
+        plant(man);
+        return false;
+    }
+    if (man.hidden || man.indoors) {
+        const out = nap ? nap.slice().reverse() : [];
+        if (stepIndoor(man, out, dt, 2.2, "leave", "out" + man.post)) {
+            plant(man);
+            return false;
+        }
+        man.rejoin = true;
+    }
     const fishMs = 30000;
     const walkMs = Math.max(1, man.walkMs || 1);
     const period = walkMs * 2 + fishMs;
@@ -1626,15 +2346,36 @@ function stepFisher(man) {
         along = 1 - (t - walkMs - fishMs) / walkMs;
     }
     const spot = fisherSpot(man, along);
+    if (man.rejoin) {
+        const dx = spot.x - man.x;
+        const dz = spot.z - man.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist < 1.4) man.rejoin = false;
+        else {
+            const step = Math.min(2.2 * dt, dist);
+            man.x += dx / dist * step;
+            man.z += dz / dist * step;
+            man.yaw = Math.atan2(-dx, -dz);
+            man.floorY = null;
+            man.walking = true;
+            plant(man);
+            man.swing = -1;
+            man.hostile = false;
+            return false;
+        }
+    }
     man.x = spot.x;
     man.z = spot.z;
+    man.floorY = null;
     const face = outward ? 1 : -1;
     man.yaw = Math.atan2(-spot.dx * face, -spot.dz * face);
     const walking = t < walkMs || t >= walkMs + fishMs;
+    man.walking = walking;
     man.bob = Math.sin(performance.now() * (walking ? 0.01 : 0.004)) * (walking ? 0.04 : 0.02);
     man.swing = -1;
     man.hostile = false;
     man.mode = "fish";
+    plant(man);
     actorsDirty = true;
     return false;
 }
@@ -1790,13 +2531,23 @@ function stepArrows(dt) {
         let hit = false;
         if (campaign) {
             for (const man of men) {
-                if (man.dying || man.health <= 0 || man.faction === arrow.faction) continue;
+                if (man.dying || man.hidden || man.decor || man.health <= 0 || man.faction === arrow.faction) continue;
                 const chest = (man.stand || 0) + 0.95;
                 if (!sweptNear(x0, y0, z0, arrow.x, arrow.y, arrow.z, man.x, chest, man.z, 0.48, 1.05)) continue;
                 const speed = Math.hypot(arrow.vx, arrow.vz) || 1;
                 wound(man, "Shot", !arrow.fromPlayer, arrow.vx / speed * 0.2, arrow.vz / speed * 0.2);
                 hit = true;
                 break;
+            }
+            if (!hit) {
+                const lodge = cartUnder(arrow.x, arrow.z, arrow.faction);
+                if (lodge) {
+                    const pose = clientCartPose(lodge.cart);
+                    if (sweptNear(x0, y0, z0, arrow.x, arrow.y, arrow.z, pose.x, 0.7, pose.z, 1.15, 0.8)) {
+                        strikeCart(lodge);
+                        hit = true;
+                    }
+                }
             }
         }
         if (!hit && arrow.faction !== homeVillage && !player.dead) {
@@ -1814,7 +2565,8 @@ function stepArrows(dt) {
         }
         if (!hit && wallStops(x0, y0, z0, arrow.x, arrow.y, arrow.z)) hit = true;
         if (!hit && arrow.range && Math.hypot(arrow.x - arrow.ox, arrow.z - arrow.oz) >= arrow.range - 0.05) hit = true;
-        if (hit || arrow.age > 1.5 || arrow.y < -1 || Math.abs(arrow.x) > 140 || Math.abs(arrow.z) > 140) {
+        if (!hit && arrow.y < World.heightAt(arrow.x, arrow.z) + 0.2) hit = true;
+        if (hit || arrow.age > 1.5 || arrow.y < -4) {
             arrows.splice(i, 1);
         }
     }
@@ -1836,6 +2588,87 @@ function stepArcher(man, dt) {
         man.attackIn = Math.min(man.attackIn, 0.4);
     }
     man.bob = Math.sin(performance.now() * 0.004 + man.side) * 0.015;
+    man.walking = false;
+    return false;
+}
+
+function postAttacked(post) {
+    if (!campaign || !campaign.attacks) return false;
+    return campaign.attacks.some((attack) => !attack.resolved && attack.to === post);
+}
+
+function guardsAt(post) {
+    return men.filter((man) => (
+        !man.fisher && !man.archer && !man.decor && !man.dying && man.health > 0 && man.post === post && man.mode !== "march"
+    )).sort((a, b) => (a.slot || 0) - (b.slot || 0));
+}
+
+function stepSoldierRest(man, dt) {
+    if (man.mode === "march") return false;
+    const roster = guardsAt(man.post);
+    const index = roster.indexOf(man);
+    const attacked = postAttacked(man.post) || man.mode === "battle";
+    const wants = !attacked && Clock.soldierAsleep(index, roster.length, gameMs());
+    const house = building(man.post, "barracks");
+    const nap = house && house.nap;
+    if (!nap || index < 0) return false;
+    if (wants) {
+        stepIndoor(man, [{ x: man.x, z: man.z, y: man.floorY || 0 }].concat(nap), dt, 2.2, "hide", "sb" + man.index);
+        plant(man);
+        return true;
+    }
+    if (man.hidden || man.indoors) {
+        if (!man.riseAt) man.riseAt = performance.now() + index * 420;
+        if (performance.now() < man.riseAt) return true;
+        if (stepIndoor(man, nap.slice().reverse(), dt, 4.5, "leave", "so" + man.index)) {
+            plant(man);
+            return true;
+        }
+        man.riseAt = 0;
+    }
+    return false;
+}
+
+function stepKeeper(man, dt) {
+    const house = building(man.post, "shop");
+    if (!house || !house.nap) return false;
+    if (campaign && campaign.owners) man.faction = campaign.owners[man.post];
+    if (!Clock.shopOpen(gameMs())) {
+        stepIndoor(man, [{ x: man.x, z: man.z, y: man.floorY || 0 }].concat(house.nap), dt, 2.2, "hide", "kb" + man.post);
+    } else if (man.hidden || man.indoors) {
+        stepIndoor(man, house.nap.slice().reverse(), dt, 2.2, "leave", "ko" + man.post);
+    } else if (house.keeper) {
+        man.x = house.keeper.x;
+        man.z = house.keeper.z;
+        man.yaw = house.keeper.yaw;
+        man.floorY = null;
+        man.walking = false;
+    }
+    man.swing = -1;
+    man.hostile = false;
+    plant(man);
+    return false;
+}
+
+function stepDriver(man, dt) {
+    const lodge = (campaign && campaign.lodges || []).find((item) => item.id === man.lodge);
+    const cart = lodge && lodge.cart;
+    if (!cart || cart.driver <= 0) {
+        man.hidden = true;
+        man.walking = false;
+        return false;
+    }
+    const pose = clientCartPose(cart);
+    man.hidden = false;
+    man.x = pose.x;
+    man.z = pose.z + 0.15;
+    man.yaw = pose.yaw;
+    man.floorY = null;
+    man.walking = cart.phase === "out" || cart.phase === "back";
+    man.health = cart.driver;
+    man.swing = -1;
+    man.hostile = false;
+    plant(man);
     return false;
 }
 
@@ -1843,11 +2676,15 @@ function stepMan(man, dt) {
     if (man.dying) {
         man.down += dt * 1.5;
         man.bob = 0;
+        man.walking = false;
         actorsDirty = true;
         return man.down > 1.2;
     }
+    if (man.driver) return stepDriver(man, dt);
     if (man.archer) return stepArcher(man, dt);
-    if (man.fisher) return stepFisher(man);
+    if (man.decor) return stepKeeper(man, dt);
+    if (man.fisher) return stepFisher(man, dt);
+    if (stepSoldierRest(man, dt)) return false;
     if (man.mode === "march" && man.path && man.length) {
         const attack = marchAttack(man);
         const travel = Math.max(1, man.arriveAt - man.startedAt);
@@ -1870,6 +2707,7 @@ function stepMan(man, dt) {
         } else {
             man.swing = -1;
         }
+        man.walking = !atGate && Date.now() < man.arriveAt;
         actorsDirty = true;
         return false;
     }
@@ -1886,6 +2724,7 @@ function stepMan(man, dt) {
             man.swing = -1;
         }
         man.bob = moving ? Math.sin(performance.now() * 0.012 + man.index) * 0.05 : 0;
+        man.walking = Boolean(moving);
         if (moving || foe) actorsDirty = true;
         return false;
     }
@@ -1942,6 +2781,7 @@ function stepMan(man, dt) {
             man.yaw = 0;
         }
     }
+    const stepping = moving;
     if (man.striking > 0) {
         man.striking -= dt;
         man.swing = 1 - Math.max(0, man.striking) / 0.32;
@@ -1955,17 +2795,26 @@ function stepMan(man, dt) {
         man.swing = -1;
     }
     man.bob = moving ? Math.sin(performance.now() * 0.012 + man.index) * 0.05 : 0;
+    man.walking = stepping;
     if (moving) actorsDirty = true;
+    plant(man);
     return false;
+}
+
+function nearPerson(man, range) {
+    const dx = man.x - cam.x;
+    const dz = man.z - cam.z;
+    return dx * dx + dz * dz < range * range;
 }
 
 function separateMen(dt) {
     for (let i = 0; i < men.length; i++) {
         const man = men[i];
-        if (man.dying || man.archer || man.mode === "march") continue;
+        if (!nearPerson(man, 70)) continue;
+        if (man.dying || man.archer || man.decor || man.driver || man.hidden || man.indoors || man.mode === "march") continue;
         for (let j = i + 1; j < men.length; j++) {
             const other = men[j];
-            if (other.dying || other.archer || other.mode === "march") continue;
+            if (other.dying || other.archer || other.decor || other.driver || other.hidden || other.indoors || other.mode === "march") continue;
             const ox = man.x - other.x;
             const oz = man.z - other.z;
             const dist = Math.hypot(ox, oz);
@@ -1998,9 +2847,13 @@ function updateFight(dt) {
         if (swing.age >= 0.36) swing = null;
     }
     for (let i = men.length - 1; i >= 0; i--) {
-        if (stepMan(men[i], dt)) {
+        const man = men[i];
+        const close = man.dying || man.fisher || man.driver || (man.mode === "march" && man.path) || nearPerson(man, 500);
+        if (close ? stepMan(man, dt) : false) {
             men.splice(i, 1);
             actorsDirty = true;
+        } else if (!close) {
+            man.walking = false;
         }
     }
     stepArrows(dt);
@@ -2020,18 +2873,22 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
 ]), gl.STATIC_DRAW);
 
 let proj = new Float32Array(16);
+let horizonProj = new Float32Array(16);
 
 function resize() {
     const scale = window.innerWidth < 700 ? 1 : 0.65;
     canvas.width = Math.max(320, Math.floor(window.innerWidth * scale));
     canvas.height = Math.max(200, Math.floor(window.innerHeight * scale));
     gl.viewport(0, 0, canvas.width, canvas.height);
+    proj = perspective(0.12, 1600);
+    horizonProj = perspective(1, 6800);
+}
+
+function perspective(near, far) {
     const f = 1 / Math.tan((75 * Math.PI / 180) / 2);
-    const aspect = canvas.width / canvas.height;
-    const near = 0.08;
-    const far = 220;
+    const aspect = canvas.width / Math.max(1, canvas.height);
     const nf = 1 / (near - far);
-    proj = new Float32Array([
+    return new Float32Array([
         f / aspect, 0, 0, 0,
         0, f, 0, 0,
         0, 0, (far + near) * nf, -1,
@@ -2217,17 +3074,21 @@ function marchDistance(attack, plain) {
 }
 
 function onTower(x, z) {
-    return floorAt(x, z) > 0.2;
+    for (const floor of floors) {
+        if (!floor.tower || floor.y <= 2) continue;
+        if (x > floor.x && x < floor.x + floor.w && z > floor.z && z < floor.z + floor.d) return true;
+    }
+    return false;
 }
 
 function gateWant(village, side) {
     if (gateHealth(village, side) <= 0) return 0;
     const owner = ownerOf(village);
     const spot = gateCenter(village, side);
-    if (owner === homeVillage && !onTower(cam.x, cam.z) && Math.hypot(cam.x - spot.x, cam.z - spot.z) < 7.5) return 1;
+    if (owner === homeVillage && !onTower(cam.x, cam.z) && floorAt(cam.x, cam.z) < 2 && Math.hypot(cam.x - spot.x, cam.z - spot.z) < 7.5) return 1;
     for (const man of men) {
         if (man.dying || man.health <= 0 || man.archer || man.faction !== owner) continue;
-        if (onTower(man.x, man.z)) continue;
+        if (onTower(man.x, man.z) || man.indoors || man.hidden || (man.floorY || 0) > 1) continue;
         if (Math.hypot(man.x - spot.x, man.z - spot.z) < 7.5) return 1;
     }
     return 0;
@@ -2501,7 +3362,7 @@ function prepareTowers() {
     for (let village = 0; village < 4; village++) {
         for (let side = 0; side < 4; side++) {
             const layout = towerLayout(village, side);
-            floors.push({ x: layout.x, z: layout.z, w: layout.w, d: layout.d, y: layout.floor });
+            floors.push({ x: layout.x, z: layout.z, w: layout.w, d: layout.d, y: layout.floor, tower: true });
             const corners = [
                 [layout.x, layout.z],
                 [layout.x + layout.w - post, layout.z],
@@ -2511,7 +3372,7 @@ function prepareTowers() {
             for (const corner of corners) {
                 solids.push({ x: corner[0], z: corner[1], w: post, d: post, y0: 0, y1: layout.floor + 1.25 });
             }
-            for (const step of towerSteps(layout)) floors.push(step);
+            for (const step of towerSteps(layout)) floors.push(Object.assign({ tower: true }, step));
             for (let edge = 0; edge < 4; edge++) {
                 if (edge === layout.stair) continue;
                 const curb = curbOf(layout, edge);
@@ -2520,10 +3381,13 @@ function prepareTowers() {
             }
         }
     }
+    for (const house of houses) {
+        for (const deck of house.decks || []) floors.push(deck);
+    }
 }
 
 function floorAt(x, z) {
-    let height = 0;
+    let height = Math.max(0, World.heightAt(x, z));
     for (const floor of floors) {
         if (x > floor.x && x < floor.x + floor.w && z > floor.z && z < floor.z + floor.d) {
             height = Math.max(height, floor.y);
@@ -2593,7 +3457,7 @@ function blocked(x, z, faction, feet) {
     for (const item of scenery) {
         if (x > item.x - r && x < item.x + item.w + r && z > item.z - r && z < item.z + item.d + r) return true;
     }
-    if (x < -99 || x > 99 || z < -99 || z > 99) return true;
+    if (World.wet(x, z)) return true;
     if (hitsSolid(x, z, stand)) return true;
     return wallBlocks(x, z, who);
 }
@@ -2647,6 +3511,11 @@ function draw() {
     gl.vertexAttribPointer(skyLoc.pos, 2, gl.FLOAT, false, 0, 0);
     gl.uniform2f(skyLoc.res, canvas.width, canvas.height);
     gl.uniform1f(skyLoc.pitch, cam.pitch);
+    const dark = Clock.darkness(gameMs());
+    const sun = sunScreen();
+    gl.uniform1f(skyLoc.dark, dark);
+    gl.uniform2f(skyLoc.sun, sun.x, sun.y);
+    gl.uniform1f(skyLoc.sunUp, sun.up);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
     gl.depthMask(true);
@@ -2655,12 +3524,13 @@ function draw() {
     gl.enable(gl.CULL_FACE);
     gl.cullFace(gl.BACK);
     gl.useProgram(program);
-    gl.uniformMatrix4fv(loc.proj, false, proj);
     gl.uniformMatrix4fv(loc.view, false, lookAt());
     gl.uniformMatrix4fv(loc.model, false, identity);
+    gl.uniform2f(loc.eye, cam.x, cam.z);
+    paintCarts();
     const stride = 24;
-    for (const name of Object.keys(mesh)) {
-        if (!textures[name]) continue;
+    const drawMesh = (name, band, farPass) => {
+        if (!mesh[name] || !textures[name] || !mesh[name].count) return;
         if (mesh[name].cull === false) gl.disable(gl.CULL_FACE);
         else gl.enable(gl.CULL_FACE);
         gl.bindBuffer(gl.ARRAY_BUFFER, mesh[name].buffer);
@@ -2671,21 +3541,57 @@ function draw() {
         gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
         gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
         gl.bindTexture(gl.TEXTURE_2D, textures[name]);
+        gl.uniform1f(loc.dark, dark);
+        gl.uniform1f(loc.glow, name === "glow" ? 1 : 0);
+        gl.uniform1f(loc.band, band);
+        gl.uniformMatrix4fv(loc.proj, false, farPass ? horizonProj : proj);
         gl.drawArrays(gl.TRIANGLES, 0, mesh[name].count);
+    };
+    for (const name of ["horizon", "horizonRock"]) drawMesh(name, 2, true);
+    for (const name of ["horizonLeaf", "horizonWall", "horizonRoof"]) drawMesh(name, 3, true);
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+    for (const name of Object.keys(mesh)) {
+        if (name.indexOf("horizon") === 0 || name.indexOf("far") === 0 || name.indexOf("near") === 0) continue;
+        drawMesh(name, 1, false);
     }
+    drawMesh("farTrunk", 0.6, false);
+    drawMesh("farLeaf", 0.6, false);
+    drawMesh("nearTrunk", 1, false);
+    drawMesh("nearLeaf", 1, false);
+    gl.uniform1f(loc.band, 1);
+    gl.uniformMatrix4fv(loc.proj, false, proj);
     if (peopleReady && textures.people) {
         gl.enable(gl.CULL_FACE);
         gl.bindTexture(gl.TEXTURE_2D, textures.people);
         for (const man of men) {
-            const model = peopleModels[(man.fisher ? "fisher" : "soldier") + man.faction];
+            if (man.hidden || !nearPerson(man, 500)) continue;
+            const kind = man.fisher || man.decor || man.driver ? "fisher" : "soldier";
+            const model = peopleModels[kind + man.faction];
             if (!model) continue;
-            const hand = peopleHands[(man.fisher ? "fisher" : "soldier") + man.faction];
+            plant(man);
+            const hand = peopleHands[kind + man.faction];
             gl.uniformMatrix4fv(loc.model, false, personMatrix(man));
             gl.bindBuffer(gl.ARRAY_BUFFER, model.buffer);
             gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
             gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
             gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
             gl.drawArrays(gl.TRIANGLES, 0, model.count);
+            if (model.left && model.right) {
+                const phase = man.walking ? performance.now() * 0.008 + (man.index || 0) * 1.7 : 0;
+                const step = man.walking ? Math.sin(phase) * 0.55 : 0;
+                gl.uniformMatrix4fv(loc.model, false, legMatrix(man, model.hipL, step));
+                gl.bindBuffer(gl.ARRAY_BUFFER, model.left.buffer);
+                gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
+                gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
+                gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
+                gl.drawArrays(gl.TRIANGLES, 0, model.left.count);
+                gl.uniformMatrix4fv(loc.model, false, legMatrix(man, model.hipR, -step));
+                gl.bindBuffer(gl.ARRAY_BUFFER, model.right.buffer);
+                gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
+                gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
+                gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
+                gl.drawArrays(gl.TRIANGLES, 0, model.right.count);
+            }
             if (man.archer && bowModel && textures.wood) {
                 gl.bindTexture(gl.TEXTURE_2D, textures.wood);
                 gl.uniformMatrix4fv(loc.model, false, bowMatrix(man));
@@ -2695,7 +3601,7 @@ function draw() {
                 gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
                 gl.drawArrays(gl.TRIANGLES, 0, bowModel.count);
                 gl.bindTexture(gl.TEXTURE_2D, textures.people);
-            } else if (!man.fisher && hand && swordModel && textures.sword) {
+            } else if (!man.fisher && !man.decor && !man.driver && hand && swordModel && textures.sword) {
                 gl.bindTexture(gl.TEXTURE_2D, textures.sword);
                 gl.uniformMatrix4fv(loc.model, false, swordMatrix(man, hand));
                 gl.bindBuffer(gl.ARRAY_BUFFER, swordModel.buffer);
@@ -2766,11 +3672,22 @@ function loadCottage() {
 function loadPeople() {
     fetch("models/people.json", { cache: "no-store" }).then((res) => res.json()).then((data) => {
         for (const [name, src] of Object.entries(data.models)) {
-            const floats = new Float32Array(src);
-            const buffer = gl.createBuffer();
-            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-            gl.bufferData(gl.ARRAY_BUFFER, floats, gl.STATIC_DRAW);
-            peopleModels[name] = { buffer, count: floats.length / 6 };
+            const part = (data.legs && data.legs[name]) || null;
+            const upload = (floats) => {
+                const data = new Float32Array(floats);
+                const buffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+                gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+                return { buffer, count: data.length / 6 };
+            };
+            const model = upload(src);
+            if (part && part.left && part.right) {
+                model.left = upload(part.left);
+                model.right = upload(part.right);
+                model.hipL = part.hipL;
+                model.hipR = part.hipR;
+            }
+            peopleModels[name] = model;
         }
         Object.assign(peopleHands, data.hands || {});
         const img = new Image();
@@ -2815,10 +3732,49 @@ function loadPeople() {
 }
 
 let last = performance.now();
+function sunScreen() {
+    const h = Clock.hours(gameMs());
+    const t = (h - 5) / 18;
+    const u = Math.max(0, Math.min(1, t));
+    const elev = Math.sin(u * Math.PI);
+    let x = Math.cos(u * Math.PI);
+    let y = t > 0 && t < 1 ? elev : -0.25;
+    let z = 0.2 * Math.sin(u * Math.PI);
+    const len = Math.hypot(x, y, z) || 1;
+    x /= len; y /= len; z /= len;
+    const cp = Math.cos(cam.pitch);
+    const sp = Math.sin(cam.pitch);
+    const sy = Math.sin(cam.yaw);
+    const cy = Math.cos(cam.yaw);
+    const fx = sy * cp;
+    const fy = sp;
+    const fz = -cy * cp;
+    const rx = cy;
+    const rz = sy;
+    const ux = -sy * sp;
+    const uy = cp;
+    const uz = cy * sp;
+    const sx = x * rx + z * rz;
+    const syv = x * ux + y * uy + z * uz;
+    const sz = x * fx + y * fy + z * fz;
+    const aspect = canvas.width / Math.max(1, canvas.height);
+    const tan = Math.tan((75 * Math.PI / 180) / 2);
+    if (sz <= 0.08) return { x: -1, y: -1, up: 0 };
+    return {
+        x: (sx / sz) / tan / aspect * 0.5 + 0.5,
+        y: (syv / sz) / tan * 0.5 + 0.5,
+        up: t > 0 && t < 1 ? 1 : 0
+    };
+}
+
 function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
+    accrue();
+    const clock = document.getElementById("clock");
+    if (clock) clock.textContent = Clock.label(gameMs());
     movePlayer(dt);
+    refreshNearTrees();
     updateFight(dt);
     updatePalisade(dt);
     syncArrowMesh();
@@ -3031,6 +3987,7 @@ if (gl) {
     syncCampaign();
     setInterval(syncCampaign, 1500);
     prepareTowers();
+    spawnKeepers();
     prepareBow();
     loadCottage();
     loadPeople();

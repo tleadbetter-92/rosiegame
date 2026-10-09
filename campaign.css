@@ -68,6 +68,19 @@ h1 {
     color: #5c5852;
 }
 
+.island {
+    max-width: 880px;
+    margin: 18px auto 0;
+    padding: 0 24px;
+}
+
+.island canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: #1a5278;
+}
+
 .map {
     display: grid;
     grid-template-columns: 1fr 1fr;

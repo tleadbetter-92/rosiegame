@@ -13,7 +13,8 @@ const picks = {
     fisher2: "peasant_3.fbx",
     fisher3: "peasant_4.fbx"
 };
-const armDrop = 82 * Math.PI / 180;
+const armDrop = 62 * Math.PI / 180;
+const armForward = 18 * Math.PI / 180;
 
 function arrayOf(node, name) {
     const child = node && node.nodes.find((item) => item.name === name);
@@ -51,6 +52,12 @@ function meshOf(file) {
         addWeight(part + "_L", left);
         addWeight(part + "_R", right);
     }
+    const legL = new Float64Array(count);
+    const legR = new Float64Array(count);
+    for (const part of ["Thigh", "Calf", "Foot", "Ball"]) {
+        addWeight(part + "_L", legL);
+        addWeight(part + "_R", legR);
+    }
     const pivotOf = (bone) => {
         const node = cluster(objects, bone);
         const indexes = arrayOf(node, "Indexes");
@@ -64,7 +71,7 @@ function meshOf(file) {
             sum[2] += vertices[indexes[i] * 3 + 2];
             n += 1;
         }
-        return n ? [sum[0] / n, sum[1] / n] : [0, 140];
+        return n ? [sum[0] / n, sum[1] / n, sum[2] / n] : [0, 140, 0];
     };
     const pivotL = pivotOf("Clavicle_L");
     const pivotR = pivotOf("Clavicle_R");
@@ -75,19 +82,30 @@ function meshOf(file) {
         const dy = y - py;
         return [px + dx * c - dy * s, py + dx * s + dy * c];
     };
+    const spinForward = (x, z, px, pz, angle) => {
+        const c = Math.cos(angle);
+        const s = Math.sin(angle);
+        const dx = x - px;
+        const dz = z - pz;
+        return [px + dx * c - dz * s, pz + dx * s + dz * c];
+    };
     const posed = new Float64Array(count * 3);
     for (let v = 0; v < count; v++) {
         let x = vertices[v * 3];
         let y = vertices[v * 3 + 1];
-        const z = vertices[v * 3 + 2];
+        let z = vertices[v * 3 + 2];
         const blend = (weight) => {
             const t = Math.min(1, Math.max(0, (weight - 0.2) / 0.55));
             return t * t * (3 - 2 * t);
         };
         const turnL = -armDrop * blend(left[v]);
         const turnR = armDrop * blend(right[v]);
+        const aheadL = -armForward * blend(left[v]);
+        const aheadR = armForward * blend(right[v]);
         if (turnL) [x, y] = spin(x, y, pivotL[0], pivotL[1], turnL);
         if (turnR) [x, y] = spin(x, y, pivotR[0], pivotR[1], turnR);
+        if (aheadL) [x, z] = spinForward(x, z, pivotL[0], pivotL[2], aheadL);
+        if (aheadR) [x, z] = spinForward(x, z, pivotR[0], pivotR[2], aheadR);
         posed[v * 3] = x;
         posed[v * 3 + 1] = y;
         posed[v * 3 + 2] = z;
@@ -105,7 +123,42 @@ function meshOf(file) {
     const midZ = (min[2] + max[2]) / 2;
     const light = [0.25, 0.86, 0.28];
     const lightLen = Math.hypot(light[0], light[1], light[2]);
-    const out = [];
+    const body = [];
+    const leftLeg = [];
+    const rightLeg = [];
+    const hipPoint = (bone) => {
+        const node = cluster(objects, bone);
+        if (!node) return [0, 0.86, 0];
+        const indexes = arrayOf(node, "Indexes");
+        const weights = arrayOf(node, "Weights");
+        let best = -Infinity;
+        const picked = [];
+        for (let i = 0; i < indexes.length; i++) {
+            if (weights[i] < 0.5) continue;
+            const y = posed[indexes[i] * 3 + 1];
+            if (y > best) best = y;
+            picked.push(indexes[i]);
+        }
+        const span = max[1] - min[1];
+        const cut = best - span * 0.035;
+        let sx = 0;
+        let sy = 0;
+        let sz = 0;
+        let n = 0;
+        for (const v of picked) {
+            if (posed[v * 3 + 1] < cut) continue;
+            sx += posed[v * 3];
+            sy += posed[v * 3 + 1];
+            sz += posed[v * 3 + 2];
+            n += 1;
+        }
+        if (!n) return [0, 0.86, 0];
+        return [
+            (sx / n - midX) * scale,
+            (sy / n - min[1]) * scale,
+            (sz / n - midZ) * scale
+        ];
+    };
     let poly = [];
     let corner = 0;
     const emit = (p) => {
@@ -116,19 +169,23 @@ function meshOf(file) {
         const ni = normalIndex[p.corner] * 3;
         let nx = normals[ni];
         let ny = normals[ni + 1];
-        const nz = normals[ni + 2];
+        let nz = normals[ni + 2];
         const blend = (weight) => {
             const t = Math.min(1, Math.max(0, (weight - 0.2) / 0.55));
             return t * t * (3 - 2 * t);
         };
         const turnL = -armDrop * blend(left[v]);
         const turnR = armDrop * blend(right[v]);
+        const aheadL = -armForward * blend(left[v]);
+        const aheadR = armForward * blend(right[v]);
         if (turnL) [nx, ny] = spin(nx, ny, 0, 0, turnL);
         if (turnR) [nx, ny] = spin(nx, ny, 0, 0, turnR);
+        if (aheadL) [nx, nz] = spinForward(nx, nz, 0, 0, aheadL);
+        if (aheadR) [nx, nz] = spinForward(nx, nz, 0, 0, aheadR);
         const len = Math.hypot(nx, ny, nz) || 1;
         const lit = Math.max(0, (nx * light[0] + ny * light[1] + nz * light[2]) / (lightLen * len));
         const ui = uvIndex[p.corner] * 2;
-        out.push(px, py, pz, uvs[ui], 1 - uvs[ui + 1], 0.5 + 0.5 * lit);
+        return [px, py, pz, uvs[ui], 1 - uvs[ui + 1], 0.5 + 0.5 * lit];
     };
     for (const raw of polygons) {
         const end = raw < 0;
@@ -136,9 +193,15 @@ function meshOf(file) {
         corner += 1;
         if (!end) continue;
         for (let i = 1; i < poly.length - 1; i++) {
-            emit(poly[0]);
-            emit(poly[i]);
-            emit(poly[i + 1]);
+            const tri = [poly[0], poly[i], poly[i + 1]];
+            let l = 0;
+            let r = 0;
+            for (const corner of tri) {
+                l = Math.max(l, legL[corner.idx]);
+                r = Math.max(r, legR[corner.idx]);
+            }
+            const dest = l >= 0.35 && l >= r ? leftLeg : r >= 0.35 ? rightLeg : body;
+            for (const corner of tri) dest.push(...emit(corner));
         }
         poly = [];
     }
@@ -162,19 +225,23 @@ function meshOf(file) {
     ] : [0.22, 0.75, 0.08];
     console.log(
         file,
-        "tris", Math.round(out.length / 18),
-        "span", [max[0] - min[0], max[1] - min[1], max[2] - min[2]].map((n) => n.toFixed(1)).join("x"),
+        "tris", Math.round((body.length + leftLeg.length + rightLeg.length) / 18),
+        "legs", Math.round(leftLeg.length / 18) + "+" + Math.round(rightLeg.length / 18),
+        "hip", hipPoint("Thigh_L").map((n) => n.toFixed(2)).join(" "),
+        hipPoint("Thigh_R").map((n) => n.toFixed(2)).join(" "),
         "hand", hand.map((n) => n.toFixed(2)).join(" ")
     );
-    return { floats: out, hand };
+    return { body, left: leftLeg, right: rightLeg, hipL: hipPoint("Thigh_L"), hipR: hipPoint("Thigh_R"), hand };
 }
 
 const models = {};
 const hands = {};
+const legs = {};
 for (const [name, file] of Object.entries(picks)) {
     const baked = meshOf(file);
-    models[name] = baked.floats;
+    models[name] = baked.body;
     hands[name] = baked.hand;
+    legs[name] = { left: baked.left, right: baked.right, hipL: baked.hipL, hipR: baked.hipR };
 }
 function bakeSword() {
     const file = path.join("art", "weapons", "sword_one_handed", "sword.fbx");
@@ -228,7 +295,7 @@ function bakeSword() {
 }
 
 fs.mkdirSync("models", { recursive: true });
-fs.writeFileSync(path.join("models", "people.json"), JSON.stringify({ models, hands }));
+fs.writeFileSync(path.join("models", "people.json"), JSON.stringify({ models, hands, legs }));
 fs.writeFileSync(path.join("models", "sword.json"), JSON.stringify(bakeSword()));
 fs.copyFileSync(
     path.join("art", "weapons", "sword_one_handed", "sword_sword_BaseColor.png"),

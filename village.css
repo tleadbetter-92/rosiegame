@@ -46,6 +46,19 @@ html, body {
 
 .campaign-link:hover { color: #f0d2b4; }
 
+#clock {
+    position: fixed;
+    top: 14px;
+    left: 50%;
+    z-index: 4;
+    transform: translateX(-50%);
+    color: #f4ecdc;
+    font: 650 1rem "Palatino Linotype", Palatino, serif;
+    letter-spacing: 0.04em;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+    pointer-events: none;
+}
+
 #pack {
     position: fixed;
     top: 52px;
