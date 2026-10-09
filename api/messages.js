@@ -2,19 +2,20 @@ const { ObjectId } = require("mongodb");
 const { getDb } = require("../lib/db");
 const { currentUser, readJson } = require("../lib/auth");
 const { notifyUser } = require("../lib/push");
+const { encryptText, decryptText, encryptBytes, encryptQuote, decryptQuote } = require("../lib/secret");
 
 function toMessage(doc) {
     return {
         id: String(doc._id),
         username: doc.username,
-        text: doc.text,
-        score: doc.score || "",
-        time: doc.time || "",
+        text: decryptText(doc.text),
+        score: decryptText(doc.score || ""),
+        time: decryptText(doc.time || ""),
         reply: doc.reply || "",
         imageId: doc.imageId ? String(doc.imageId) : "",
         audioId: doc.audioId ? String(doc.audioId) : "",
         videoId: doc.videoId ? String(doc.videoId) : "",
-        quote: doc.quote && doc.quote.text ? doc.quote : null,
+        quote: decryptQuote(doc.quote),
         createdAt: doc.createdAt
     };
 }
@@ -206,10 +207,10 @@ module.exports = async function handler(req, res) {
                 conversationId: conversation._id,
                 userId: user._id,
                 username: user.username,
-                text,
-                score,
-                time,
-                quote: cleanQuote(body.quote),
+                text: encryptText(text),
+                score: encryptText(score),
+                time: encryptText(time),
+                quote: encryptQuote(cleanQuote(body.quote)),
                 createdAt
             });
             let imageId = "";
@@ -221,7 +222,7 @@ module.exports = async function handler(req, res) {
                     conversationId: conversation._id,
                     messageId: created.insertedId,
                     type: photo.type,
-                    data: photo.data,
+                    data: encryptBytes(photo.data),
                     createdAt
                 });
                 imageId = String(saved.insertedId);
@@ -232,7 +233,7 @@ module.exports = async function handler(req, res) {
                     conversationId: conversation._id,
                     messageId: created.insertedId,
                     type: voice.type,
-                    data: voice.data,
+                    data: encryptBytes(voice.data),
                     createdAt
                 });
                 audioId = String(saved.insertedId);
@@ -243,7 +244,7 @@ module.exports = async function handler(req, res) {
                     conversationId: conversation._id,
                     messageId: created.insertedId,
                     type: video.type,
-                    data: video.data,
+                    data: encryptBytes(video.data),
                     createdAt
                 });
                 videoId = String(saved.insertedId);

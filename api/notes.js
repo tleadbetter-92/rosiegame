@@ -1,5 +1,6 @@
 const { getDb } = require("../lib/db");
 const { currentUser, readJson } = require("../lib/auth");
+const { encryptText, decryptText } = require("../lib/secret");
 
 function cleanRows(rows) {
     if (!Array.isArray(rows)) return [];
@@ -30,11 +31,15 @@ module.exports = async function handler(req, res) {
         const notes = db.collection("notes");
         if (req.method === "GET") {
             const doc = await notes.findOne({ userId: user._id });
+            const rows = doc && Array.isArray(doc.rows) ? doc.rows : [];
             res.status(200).json({
-                text: doc && doc.text ? doc.text : "",
-                rows: doc && Array.isArray(doc.rows) ? doc.rows : [],
-                start: doc && doc.start ? doc.start : "",
-                taken: doc && Array.isArray(doc.taken) ? doc.taken : []
+                text: decryptText(doc && doc.text ? doc.text : ""),
+                rows: rows.map((row) => ({
+                    text: decryptText(row && row.text),
+                    amount: decryptText(row && row.amount)
+                })),
+                start: decryptText(doc && doc.start ? doc.start : ""),
+                taken: (doc && Array.isArray(doc.taken) ? doc.taken : []).map((amount) => decryptText(amount))
             });
             return;
         }
@@ -46,7 +51,14 @@ module.exports = async function handler(req, res) {
             const taken = cleanTaken(body.taken);
             await notes.updateOne(
                 { userId: user._id },
-                { $set: { userId: user._id, text, rows, start, taken, updatedAt: new Date() } },
+                { $set: {
+                    userId: user._id,
+                    text: encryptText(text),
+                    rows: rows.map((row) => ({ text: encryptText(row.text), amount: encryptText(row.amount) })),
+                    start: encryptText(start),
+                    taken: taken.map((amount) => encryptText(amount)),
+                    updatedAt: new Date()
+                } },
                 { upsert: true }
             );
             res.status(200).json({ ok: true });

@@ -1,6 +1,7 @@
 const { ObjectId } = require("mongodb");
 const { getDb } = require("../lib/db");
 const { currentUser, readJson } = require("../lib/auth");
+const { decryptText } = require("../lib/secret");
 
 const USERNAME = /^[a-zA-Z0-9_]{3,20}$/;
 
@@ -74,8 +75,8 @@ async function listConversations(db, user) {
             username: conversation.group ? (conversation.name || "Group") : (names.get(String(other)) || "Unknown"),
             group: Boolean(conversation.group),
             members,
-            lastScore: latestItem.score || "",
-            lastTime: latestItem.time || "",
+            lastScore: decryptText(latestItem.score || ""),
+            lastTime: decryptText(latestItem.time || ""),
             lastReply: latestItem.reply || "",
             lastUsername: latestItem.username || "",
             readState: readState(latestItem, unreadCounts.get(String(conversation._id)) || 0, user._id, conversation.participants)

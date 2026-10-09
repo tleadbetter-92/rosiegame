@@ -1,6 +1,7 @@
 const { ObjectId } = require("mongodb");
 const { getDb } = require("../lib/db");
 const { currentUser } = require("../lib/auth");
+const { decryptBytes } = require("../lib/secret");
 
 function photoBytes(value) {
     if (!value) return Buffer.alloc(0);
@@ -43,7 +44,7 @@ module.exports = async function handler(req, res) {
         res.status(200);
         res.setHeader("Content-Type", image.type || "image/jpeg");
         res.setHeader("Cache-Control", "private, no-store");
-        res.send(photoBytes(image.data));
+        res.send(decryptBytes(photoBytes(image.data)));
     } catch (error) {
         console.error(error);
         res.status(error.status || 500).json({ error: "Could not load the photo." });
