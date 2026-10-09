@@ -2387,6 +2387,10 @@ canvas.addEventListener("mousedown", (e) => {
     }
     if (e.button !== 0) return;
     dragging = true;
+    if (arm === "bow") {
+        shootArrow();
+        return;
+    }
     if (document.pointerLockElement === canvas && !player.dead) gesture = { x: 0, y: 0 };
 });
 window.addEventListener("mouseup", (e) => {
@@ -2414,11 +2418,13 @@ function paintArm() {
     weapon.hidden = arm !== "sword";
     viewbow.hidden = arm !== "bow";
     pad.hidden = !on;
-    attack.hidden = !(on && arm === "sword");
-    bowButton.hidden = !(on && arm === "bow");
+    attack.hidden = !on;
+    attack.classList.toggle("arm-bow", arm === "bow");
+    attack.setAttribute("aria-label", arm === "bow" ? "Shoot" : "Attack");
+    bowButton.hidden = true;
     if (helpLine) {
         helpLine.textContent = arm === "bow"
-            ? "WASD to walk · mouse to look · right click or F to shoot · Pack to switch"
+            ? "WASD to walk · mouse to look · click to shoot · Pack to switch"
             : "WASD to walk · mouse to look · drag to swing · Pack to switch";
     }
     packPanel.querySelectorAll("button").forEach((button) => {
@@ -2487,7 +2493,8 @@ pad.addEventListener("pointercancel", releaseKnob);
 attack.addEventListener("pointerdown", (e) => {
     e.preventDefault();
     attack.classList.add("down");
-    startSwing("thrust");
+    if (arm === "bow") shootArrow();
+    else startSwing("thrust");
 });
 attack.addEventListener("pointerup", () => attack.classList.remove("down"));
 attack.addEventListener("pointercancel", () => attack.classList.remove("down"));

@@ -388,6 +388,11 @@ html, body {
         filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.45));
     }
 
+    #attack .bow-icon,
+    #attack.arm-bow .sword-icon { display: none; }
+
+    #attack.arm-bow .bow-icon { display: block; }
+
     #attack.down {
         background: rgba(168, 52, 36, 0.78);
         transform: scale(0.94);
