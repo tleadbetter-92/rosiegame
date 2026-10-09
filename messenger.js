@@ -199,6 +199,7 @@ function stopTypingWatch() {
 function openConversation(id, username, extra) {
     if (selectedId !== id) {
         stopTypingWatch();
+        clearVoice();
         selectedId = id;
         selectedName = username;
         lastKey = null;
@@ -312,7 +313,7 @@ function metric(label, value) {
 }
 
 function renderMessages(messages) {
-    const key = messages.map((message) => message.id + ":" + message.reply + ":" + (message.imageId || "") + ":" + (message.seen ? "1" : "0")).join(",");
+    const key = messages.map((message) => message.id + ":" + message.reply + ":" + (message.imageId || "") + ":" + (message.audioId || "") + ":" + (message.seen ? "1" : "0")).join(",");
     if (key === lastKey) return;
     const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 40;
     lastKey = key;
@@ -349,6 +350,14 @@ function renderMessages(messages) {
             photo.alt = "Photo";
             photo.src = "/api/image?id=" + encodeURIComponent(message.imageId);
             bubble.append(photo);
+        }
+        if (message.audioId) {
+            const voice = document.createElement("audio");
+            voice.className = "chat-voice";
+            voice.controls = true;
+            voice.preload = "none";
+            voice.src = "/api/image?id=" + encodeURIComponent(message.audioId);
+            bubble.append(voice);
         }
         if (message.score || message.time) {
             const stats = document.createElement("div");
@@ -655,7 +664,7 @@ function blobToBase64(blob) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result).split(",")[1]);
-        reader.onerror = () => reject(new Error("That photo could not be added."));
+        reader.onerror = () => reject(new Error("That could not be added."));
         reader.readAsDataURL(blob);
     });
 }
@@ -665,6 +674,147 @@ document.getElementById("photoBtn").addEventListener("click", () => {
 });
 
 document.getElementById("photoClear").addEventListener("click", clearPhoto);
+
+let pendingVoice = "";
+let voiceRecorder = null;
+let voiceStream = null;
+let voiceChunks = [];
+let voiceTimer = null;
+let voiceSeconds = 0;
+
+function voiceClock(seconds) {
+    const whole = Math.max(0, Math.round(seconds));
+    return Math.floor(whole / 60) + ":" + String(whole % 60).padStart(2, "0");
+}
+
+function showVoice(seconds) {
+    const label = document.getElementById("voiceLabel");
+    const clear = document.getElementById("voiceClear");
+    const button = document.getElementById("voiceBtn");
+    const recording = voiceRecorder && voiceRecorder.state === "recording";
+    button.textContent = recording ? "Stop" : "Voice";
+    if (recording || pendingVoice) {
+        label.hidden = false;
+        label.textContent = voiceClock(seconds);
+        clear.hidden = recording || !pendingVoice;
+        return;
+    }
+    label.hidden = true;
+    label.textContent = "";
+    clear.hidden = true;
+}
+
+function releaseMic() {
+    if (!voiceStream) return;
+    voiceStream.getTracks().forEach((track) => track.stop());
+    voiceStream = null;
+}
+
+function clearVoice() {
+    if (voiceTimer) {
+        clearInterval(voiceTimer);
+        voiceTimer = null;
+    }
+    const recorder = voiceRecorder;
+    voiceRecorder = null;
+    voiceChunks = [];
+    pendingVoice = "";
+    voiceSeconds = 0;
+    if (recorder && recorder.state === "recording") {
+        recorder.onstop = () => releaseMic();
+        recorder.stop();
+    } else {
+        releaseMic();
+    }
+    showVoice(0);
+}
+
+function voiceMime() {
+    if (typeof MediaRecorder === "undefined") return "";
+    const choices = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
+    return choices.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+}
+
+function stopVoice() {
+    if (voiceRecorder && voiceRecorder.state === "recording") voiceRecorder.stop();
+}
+
+function finishVoice() {
+    if (!voiceRecorder || voiceRecorder.state !== "recording") return Promise.resolve();
+    return new Promise((resolve) => {
+        const recorder = voiceRecorder;
+        const previous = recorder.onstop;
+        recorder.onstop = async (event) => {
+            if (previous) await previous(event);
+            resolve();
+        };
+        recorder.stop();
+    });
+}
+
+async function startVoice() {
+    chatError.textContent = "";
+    if (!navigator.mediaDevices || typeof MediaRecorder === "undefined") {
+        chatError.textContent = "Voice notes are not available on this phone.";
+        return;
+    }
+    if (voiceRecorder && voiceRecorder.state === "recording") return;
+    const mime = voiceMime();
+    let stream;
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+        chatError.textContent = "Allow the microphone to record a voice note.";
+        return;
+    }
+    pendingVoice = "";
+    voiceChunks = [];
+    voiceSeconds = 0;
+    voiceStream = stream;
+    const started = Date.now();
+    const recorder = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 24000 } : undefined);
+    voiceRecorder = recorder;
+    recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size) voiceChunks.push(event.data);
+    };
+    recorder.onstop = async () => {
+        releaseMic();
+        if (voiceTimer) {
+            clearInterval(voiceTimer);
+            voiceTimer = null;
+        }
+        const blob = new Blob(voiceChunks, { type: recorder.mimeType || mime || "audio/webm" });
+        if (voiceRecorder === recorder) voiceRecorder = null;
+        if (!blob.size || blob.size > 500000) {
+            pendingVoice = "";
+            showVoice(0);
+            if (blob.size > 500000) chatError.textContent = "That voice note is too long.";
+            return;
+        }
+        try {
+            pendingVoice = await blobToBase64(blob);
+            showVoice(voiceSeconds);
+        } catch (error) {
+            pendingVoice = "";
+            showVoice(0);
+            chatError.textContent = error.message;
+        }
+    };
+    recorder.start();
+    showVoice(0);
+    voiceTimer = setInterval(() => {
+        voiceSeconds = (Date.now() - started) / 1000;
+        showVoice(voiceSeconds);
+        if (voiceSeconds >= 60) stopVoice();
+    }, 250);
+}
+
+document.getElementById("voiceBtn").addEventListener("click", () => {
+    if (voiceRecorder && voiceRecorder.state === "recording") stopVoice();
+    else startVoice();
+});
+
+document.getElementById("voiceClear").addEventListener("click", clearVoice);
 
 document.getElementById("photoInput").addEventListener("change", async () => {
     const file = document.getElementById("photoInput").files[0];
@@ -691,6 +841,7 @@ sendForm.addEventListener("submit", async (event) => {
     const time = document.getElementById("timeInput").value;
     const unit = document.getElementById("timeUnit").value;
     try {
+        await finishVoice();
         await api("/api/messages", {
             method: "POST",
             body: JSON.stringify({
@@ -699,7 +850,8 @@ sendForm.addEventListener("submit", async (event) => {
                 score,
                 time,
                 unit,
-                image: pendingPhoto
+                image: pendingPhoto,
+                voice: pendingVoice
             })
         });
         messageInput.value = "";
@@ -707,6 +859,7 @@ sendForm.addEventListener("submit", async (event) => {
         document.getElementById("scoreInput").value = "";
         document.getElementById("timeInput").value = "";
         clearPhoto();
+        clearVoice();
         lastKey = "";
         contactKey = "";
         await loadMessages();
@@ -1160,6 +1313,7 @@ chatPop.addEventListener("click", (event) => {
 messageInput.addEventListener("input", pulseTyping);
 
 chatPop.addEventListener("close", () => {
+    clearVoice();
     stopTypingWatch();
     selectedId = "";
     selectedName = "";

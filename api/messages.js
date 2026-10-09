@@ -12,6 +12,7 @@ function toMessage(doc) {
         time: doc.time || "",
         reply: doc.reply || "",
         imageId: doc.imageId ? String(doc.imageId) : "",
+        audioId: doc.audioId ? String(doc.audioId) : "",
         createdAt: doc.createdAt
     };
 }
@@ -48,6 +49,28 @@ function readPhoto(value) {
     else if (data.slice(0, 4).toString("ascii") === "RIFF" && data.slice(8, 12).toString("ascii") === "WEBP") type = "image/webp";
     if (!type) {
         const error = new Error("Use a photo.");
+        error.status = 400;
+        throw error;
+    }
+    return { data, type };
+}
+
+function readVoice(value) {
+    if (!value) return null;
+    const raw = String(value).replace(/^data:audio\/[a-zA-Z0-9.+-]+;base64,/, "");
+    const data = Buffer.from(raw, "base64");
+    if (!data.length || data.length > 500000) {
+        const error = new Error("That voice note is too long.");
+        error.status = 400;
+        throw error;
+    }
+    let type = "";
+    if (data[0] === 0x1a && data[1] === 0x45 && data[2] === 0xdf && data[3] === 0xa3) type = "audio/webm";
+    else if (data.slice(0, 4).toString("ascii") === "OggS") type = "audio/ogg";
+    else if (data.length > 8 && data.slice(4, 8).toString("ascii") === "ftyp") type = "audio/mp4";
+    else if (data.slice(0, 4).toString("ascii") === "RIFF" && data.slice(8, 12).toString("ascii") === "WAVE") type = "audio/wav";
+    if (!type) {
+        const error = new Error("That voice note could not be sent.");
         error.status = 400;
         throw error;
     }
@@ -136,11 +159,12 @@ module.exports = async function handler(req, res) {
                 }
                 time = amount + " " + unit;
             }
-            if (!text && !score && !time && !body.image) {
-                res.status(400).json({ error: "Write a message, a score, a time, or add a photo." });
+            if (!text && !score && !time && !body.image && !body.voice) {
+                res.status(400).json({ error: "Write a message, a score, a time, add a photo, or a voice note." });
                 return;
             }
             const photo = readPhoto(body.image);
+            const voice = readVoice(body.voice);
             const createdAt = new Date();
             const created = await db.collection("messages").insertOne({
                 conversationId: conversation._id,
@@ -152,6 +176,8 @@ module.exports = async function handler(req, res) {
                 createdAt
             });
             let imageId = "";
+            let audioId = "";
+            const extras = {};
             if (photo) {
                 const saved = await db.collection("images").insertOne({
                     conversationId: conversation._id,
@@ -161,9 +187,23 @@ module.exports = async function handler(req, res) {
                     createdAt
                 });
                 imageId = String(saved.insertedId);
+                extras.imageId = saved.insertedId;
+            }
+            if (voice) {
+                const saved = await db.collection("images").insertOne({
+                    conversationId: conversation._id,
+                    messageId: created.insertedId,
+                    type: voice.type,
+                    data: voice.data,
+                    createdAt
+                });
+                audioId = String(saved.insertedId);
+                extras.audioId = saved.insertedId;
+            }
+            if (imageId || audioId) {
                 await db.collection("messages").updateOne(
                     { _id: created.insertedId },
-                    { $set: { imageId: saved.insertedId } }
+                    { $set: extras }
                 );
             }
             await db.collection("conversations").updateOne(
@@ -194,6 +234,7 @@ module.exports = async function handler(req, res) {
                     score,
                     time,
                     imageId,
+                    audioId,
                     createdAt
                 })
             });
