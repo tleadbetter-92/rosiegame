@@ -69,23 +69,6 @@ html, body {
     pointer-events: none;
 }
 
-#compass {
-    position: fixed;
-    top: 36px;
-    left: 0;
-    right: 0;
-    z-index: 4;
-    margin: 0;
-    color: #f4ecdc;
-    font: 650 0.92rem "Palatino Linotype", Palatino, serif;
-    letter-spacing: 0.08em;
-    text-align: center;
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
-    pointer-events: none;
-}
-
-#compass.fast { color: #f2d15a; }
-
 #pack {
     position: fixed;
     top: 52px;

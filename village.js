@@ -2650,9 +2650,10 @@ function loadStudy() {
             const acc = json.accessors[index];
             const buf = json.bufferViews[acc.bufferView];
             const start = (buf.byteOffset || 0) + (acc.byteOffset || 0);
-            const stride = buf.byteStride || (acc.type === "VEC3" ? 12 : acc.type === "VEC2" ? 8 : 4);
-            const count = acc.count;
+            const compSize = acc.componentType === 5123 ? 2 : acc.componentType === 5121 ? 1 : 4;
             const comps = acc.type === "VEC3" ? 3 : acc.type === "VEC2" ? 2 : 1;
+            const stride = buf.byteStride || compSize * comps;
+            const count = acc.count;
             const out = [];
             for (let i = 0; i < count; i++) {
                 const at = start + i * stride;
@@ -5821,7 +5822,10 @@ function blocked(x, z, faction, feet) {
 }
 
 let lookId = null;
+let lookMoved = 0;
+let lookStarted = 0;
 let moveId = null;
+let padTapAt = 0;
 const stick = { x: 0, y: 0 };
 
 let flyLift = 0;
@@ -5829,12 +5833,6 @@ let hop = 0;
 let jumpHeld = false;
 let fastOn = true;
 let spotSaved = null;
-
-function facingName(yaw) {
-    const names = ["North", "Northeast", "East", "Southeast", "South", "Southwest", "West", "Northwest"];
-    const deg = ((yaw * 180 / Math.PI) % 360 + 360) % 360;
-    return names[Math.round(deg / 45) % 8];
-}
 
 const miniMap = document.getElementById("minimap");
 const miniX0 = -3800;
@@ -5927,7 +5925,7 @@ function paintMini() {
     const w = miniMap.width;
     const h = miniMap.height;
     const body = inside && inside.back ? inside.back : activeCam();
-    const span = 190;
+    const span = 420;
     const scale = w / span;
     ctx.clearRect(0, 0, w, h);
     ctx.save();
@@ -5972,15 +5970,6 @@ function paintMini() {
     ctx.fillText("N", nx, ny);
 }
 
-function paintCompass() {
-    const compass = document.getElementById("compass");
-    if (!compass) return;
-    const body = activeCam();
-    const name = facingName(body.yaw);
-    compass.textContent = fastOn ? name + " · Fast" : name;
-    compass.classList.toggle("fast", fastOn);
-}
-
 function saveSpot() {
     try {
         localStorage.setItem("village-spot", JSON.stringify({ x: cam.x, z: cam.z }));
@@ -5991,7 +5980,6 @@ function toggleFast() {
     fastOn = !fastOn;
     const button = document.getElementById("fly-fast");
     if (button) button.setAttribute("aria-pressed", fastOn ? "true" : "false");
-    paintCompass();
     if (helpLine && flying) paintArm();
 }
 
@@ -7241,7 +7229,10 @@ function paintDoor() {
         ? "WASD to walk · Space to jump · mouse to look · click to shoot · Alt toggles fast · Pack to switch"
         : "WASD to walk · Space to jump · mouse to look · drag to swing · Alt toggles fast · Pack to switch";
     const door = inside ? null : (aimedDoor() || nearestDoor());
-    helpLine.textContent = door ? base + (door.want ? " · right click to close" : " · right click to open") : base;
+    const tap = phone.matches;
+    const open = tap ? " · tap to open" : " · right click to open";
+    const shut = tap ? " · tap to close" : " · right click to close";
+    helpLine.textContent = door ? base + (door.want ? shut : open) : base;
 }
 
 function frame(now) {
@@ -7253,7 +7244,6 @@ function frame(now) {
     if (clock) clock.textContent = Clock.label(gameMs());
     const where = document.getElementById("where");
     if (where) where.textContent = Math.round(cam.x) + ", " + Math.round(cam.z) + " · " + Math.round(cam.y);
-    paintCompass();
     paintMini();
     if (!spotSaved || Math.hypot(cam.x - spotSaved.x, cam.z - spotSaved.z) > 12) {
         spotSaved = { x: cam.x, z: cam.z };
@@ -7422,6 +7412,13 @@ showPhoneControls();
 
 pad.addEventListener("pointerdown", (e) => {
     if (!phone.matches || player.dead || moveId !== null) return;
+    const now = performance.now();
+    if (now - padTapAt < 340) {
+        toggleFast();
+        padTapAt = 0;
+    } else {
+        padTapAt = now;
+    }
     moveId = e.pointerId;
     pad.classList.add("held");
     placeKnob(e.clientX, e.clientY);
@@ -7522,6 +7519,8 @@ canvas.addEventListener("touchstart", (e) => {
     for (const t of e.changedTouches) {
         if (lookId !== null) continue;
         lookId = t.identifier;
+        lookMoved = 0;
+        lookStarted = performance.now();
         stick.lx = t.clientX;
         stick.ly = t.clientY;
     }
@@ -7533,6 +7532,7 @@ canvas.addEventListener("touchmove", (e) => {
         if (t.identifier !== lookId) continue;
         const mx = t.clientX - stick.lx;
         const my = t.clientY - stick.ly;
+        lookMoved += Math.hypot(mx, my);
         const look = activeCam();
         look.yaw += mx * 0.006;
         look.pitch = Math.max(-1.05, Math.min(1.05, look.pitch - my * 0.006));
@@ -7544,7 +7544,10 @@ canvas.addEventListener("touchmove", (e) => {
 
 function endTouch(e) {
     for (const t of e.changedTouches) {
-        if (t.identifier === lookId) lookId = null;
+        if (t.identifier !== lookId) continue;
+        const held = performance.now() - lookStarted;
+        if (phone.matches && lookMoved < 24 && held < 400) useDoor();
+        lookId = null;
     }
 }
 canvas.addEventListener("touchend", endTouch);
