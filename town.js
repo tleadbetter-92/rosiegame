@@ -371,6 +371,7 @@
     for (const farm of farms) {
         for (const building of farm.buildings) buildings.push(building);
     }
+    buildings.push(timberBuilding(2, "lumber", -2000, 478, 9, 5.6, Math.PI, "south"));
 
     function kitDoor(b) {
         const s = Math.sin(b.yaw);

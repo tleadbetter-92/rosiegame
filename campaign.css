@@ -84,6 +84,7 @@ h1 {
     width: 100%;
     height: auto;
     background: #1a5278;
+    cursor: crosshair;
 }
 
 .map {

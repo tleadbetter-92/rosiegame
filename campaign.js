@@ -27,6 +27,7 @@ function terrainColor(h, wet) {
 }
 
 let islandBase = null;
+let shownVillages = null;
 
 function bakeIsland() {
     if (!land || !window.World || islandBase) return;
@@ -99,6 +100,7 @@ function bakeIsland() {
 }
 
 function showVillages(villages) {
+    if (villages) shownVillages = villages;
     if (!land || !islandBase) return;
     const ctx = land.getContext("2d");
     ctx.drawImage(islandBase, 0, 0);
@@ -156,8 +158,41 @@ function showVillages(villages) {
     ctx.fillText("You", labelX, labelY);
 }
 
+function rememberSpot(x, z) {
+    let px = x;
+    let pz = z;
+    if (window.World && (World.wet(x, z) || World.heightAt(x, z) < -0.2)) {
+        let found = false;
+        for (let ring = 16; ring <= 96 && !found; ring += 16) {
+            for (let step = 0; step < 8; step++) {
+                const tx = x + Math.cos(step * Math.PI / 4) * ring;
+                const tz = z + Math.sin(step * Math.PI / 4) * ring;
+                if (!World.wet(tx, tz) && World.heightAt(tx, tz) > -0.2) {
+                    px = tx;
+                    pz = tz;
+                    found = true;
+                    break;
+                }
+            }
+        }
+    }
+    try {
+        localStorage.setItem("village-spot", JSON.stringify({ x: px, z: pz }));
+    } catch (err) { /* the village still opens at the last place that was saved */ }
+    showVillages(shownVillages);
+}
+
 bakeIsland();
 showVillages(homeColors.map((color) => ({ color })));
+
+land.addEventListener("click", (event) => {
+    const rect = land.getBoundingClientRect();
+    const px = (event.clientX - rect.left) / rect.width * land.width;
+    const py = (event.clientY - rect.top) / rect.height * land.height;
+    const x = mapX0 + px / land.width * (mapX1 - mapX0);
+    const z = mapZ0 + py / land.height * (mapZ1 - mapZ0);
+    rememberSpot(x, z);
+});
 
 let nextTurnAt = 0;
 let paused = false;
@@ -176,10 +211,22 @@ function paint(data) {
         hold.classList.toggle("marching", Boolean(village.marching));
         hold.querySelector("[data-owner]").textContent = "Held by " + village.ownerName;
         hold.querySelector("[data-count]").textContent = String(village.alive);
+        const popLabel = hold.querySelector("[data-pop]");
+        if (popLabel) popLabel.textContent = (village.pop || 0) + "/" + (village.limit || 20);
+        const farmers = village.farmers || 0;
+        const farmLabel = hold.querySelector("[data-farm]");
+        if (farmLabel) farmLabel.textContent = farmers + (farmers === 1 ? " farmer" : " farmers");
         const fishers = village.fishers || 0;
         hold.querySelector("[data-fish]").textContent = fishers + (fishers === 1 ? " fisherman" : " fishermen");
         const cutters = village.woodcutters || 0;
         hold.querySelector("[data-woodcut]").textContent = cutters + (cutters === 1 ? " woodcutter" : " woodcutters");
+        const jack = hold.querySelector("[data-jack]");
+        if (jack) {
+            const n = village.lumberjacks || 0;
+            if (village.hasYard || n) {
+                jack.textContent = " · " + n + (n === 1 ? " lumberjack" : " lumberjacks") + " · yard " + (village.yardWood || 0);
+            } else jack.textContent = "";
+        }
         const food = hold.querySelector("[data-food]");
         if (document.activeElement !== food) food.value = String(village.food || 0);
         hold.querySelector("[data-wood]").textContent = String(village.wood || 0);
@@ -188,8 +235,13 @@ function paint(data) {
         const training = jobs.map((kind) => {
             if (kind === "fisher") return "Training a fisherman";
             if (kind === "wood") return "Training a woodcutter";
+            if (kind === "jack") return "Training a lumberjack";
             return "Training a soldier";
-        }).join(" · ");
+        }).concat((village.works || []).map((kind) => {
+            if (kind === "house") return "Building a house";
+            if (kind === "yard") return "Building a lumberyard";
+            return "Building a farm";
+        })).join(" · ");
         if (village.attacked) status.textContent = village.repairing ? "Under attack · Repairing a gate" : "Under attack";
         else if (village.marching) status.textContent = "Men marching out";
         else if (training) status.textContent = training;
@@ -210,7 +262,7 @@ function paint(data) {
 }
 
 function paintClock() {
-    clock.textContent = paused ? "Paused" : "Recruiting takes two minutes";
+    clock.textContent = paused ? "Paused" : "Recruiting takes five minutes";
 }
 
 let seenRestart = 0;
@@ -248,7 +300,7 @@ holds.forEach((hold) => {
 });
 
 document.getElementById("restart").addEventListener("click", async () => {
-    if (!window.confirm("Start again? Every house goes back to one fisherman and 100 food.")) return;
+    if (!window.confirm("Start again? Every village goes back to ten soldiers, two farmers, and 100 food.")) return;
     const data = await (await fetch("/api/campaign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

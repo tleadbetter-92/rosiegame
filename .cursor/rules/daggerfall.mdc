@@ -1,0 +1,10 @@
+---
+description: Use Daggerfall as the visual reference for distance, fog, and scenery
+alwaysApply: true
+---
+
+# Daggerfall reference
+
+When choosing how the world looks, follow Daggerfall. Distance is a sky-colored haze, not a second model of the whole island. Streets and the town you are standing in stay clear. The next town stays hidden until you walk there.
+
+Keep view-distance changes player-wide. They are not a Southwest-only experiment.

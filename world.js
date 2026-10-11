@@ -436,6 +436,43 @@
         return h + roll + swell;
     }
 
+    function waveMask(x, z) {
+        let mask = smooth(0.28, 0.55, coastField(x, z));
+        for (const place of places) {
+            mask = Math.min(mask, smooth(108, 188, Math.hypot(x - place.x, z - place.z)));
+        }
+        for (let i = 0; i < shelves.length; i++) {
+            const shelf = shelves[i];
+            const dx = x < shelf.x ? shelf.x - x : x > shelf.x + shelf.w ? x - (shelf.x + shelf.w) : 0;
+            const dz = z < shelf.z ? shelf.z - z : z > shelf.z + shelf.d ? z - (shelf.z + shelf.d) : 0;
+            mask = Math.min(mask, smooth(6, 48, Math.hypot(dx, dz)));
+        }
+        let px = 0;
+        let pz = 0;
+        if (x < peakBox.minX) px = peakBox.minX - x;
+        else if (x > peakBox.maxX) px = x - peakBox.maxX;
+        if (z < peakBox.minZ) pz = peakBox.minZ - z;
+        else if (z > peakBox.maxZ) pz = z - peakBox.maxZ;
+        if (px === 0 && pz === 0) return 0;
+        mask = Math.min(mask, smooth(40, 140, Math.hypot(px, pz)));
+        const wetD = Math.min(
+            chainDist(x, z, river),
+            chainDist(x, z, brook),
+            chainDist(x, z, outlet),
+            chainDist(x, z, inlet)
+        );
+        mask *= smooth(24, 64, wetD);
+        return mask;
+    }
+
+    function groundWave(x, z) {
+        const mask = waveMask(x, z);
+        if (mask < 0.001) return 0;
+        const roll = (noise(x * 0.0062 + 2.4, z * 0.0056 + 5.1) - 0.5) * 8.4;
+        const lump = (noise(x * 0.014 + 12.2, z * 0.013 + 3.6) - 0.5) * 3.4;
+        return (roll + lump) * mask;
+    }
+
     function layShelves(x, z, h) {
         let best = 1;
         let target = h;
@@ -493,7 +530,13 @@
             const d = Math.hypot(x - place.x, z - place.z);
             pad = Math.min(pad, smooth(62, 150, d));
         }
-        return carveLochs(x, z, h * pad);
+        let shaped = h * pad;
+        if (countryOn) {
+            const wave = groundWave(x, z);
+            if (wave < 0) shaped += Math.max(wave, -Math.max(0, shaped - 0.55));
+            else shaped += wave;
+        }
+        return carveLochs(x, z, shaped);
     }
 
     const lochWest = [
@@ -829,6 +872,7 @@
     keepLevel(-2420, 748, 130, 108);
     keepLevel(584, 1382, 112, 96);
     countryOn = true;
+    keepLevel(-2016, 468, 32, 24);
 
     const cliffs = [
         [[-1900, -720], [-1820, -680], [-1740, -700]],

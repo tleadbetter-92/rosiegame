@@ -1,0 +1,12 @@
+---
+description: Prototype village changes on Southwest only until the user says to copy them
+alwaysApply: true
+---
+
+# Southwest only
+
+The user will not repeat this. New village work goes on Southwest only (place index 2, `homeVillage = 2`, center about -2480, 620) until they say it is right and should be applied elsewhere.
+
+That covers buildings, ground, walls, textures, furniture, doors, names, sleep, workers, and any other per-village change. Other towns stay as they are so they can be compared.
+
+Player-wide controls and HUD stay shared. Examples: the minimap, fast mode, and the Campaign link. Do not undo work already on other villages unless asked.

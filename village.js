@@ -8,6 +8,16 @@ if (!gl) {
 const places = World.places;
 const flying = new URLSearchParams(location.search).get("fly") === "1";
 const cam = { x: places[2].ox, y: 1.62, z: places[2].oz + 20, yaw: 0, pitch: 0 };
+if (!flying) {
+    try {
+        const spot = JSON.parse(localStorage.getItem("village-spot") || "null");
+        if (spot && Number.isFinite(spot.x) && Number.isFinite(spot.z)) {
+            cam.x = spot.x;
+            cam.z = spot.z;
+            cam.y = 1.62 + Math.max(0, World.heightAt(spot.x, spot.z));
+        }
+    } catch (err) { /* start outside Southwest */ }
+}
 if (flying) {
     cam.x = -200;
     cam.y = 340;
@@ -15,6 +25,7 @@ if (flying) {
     cam.pitch = -0.62;
 }
 const homeVillage = 2;
+const allied = true;
 let inside = null;
 function activeCam() {
     return inside ? inside.view : cam;
@@ -83,6 +94,35 @@ function speck(g, s, count, a, b) {
         g.fillStyle = Math.random() < 0.5 ? a : b;
         g.fillRect((Math.random() * s) | 0, (Math.random() * s) | 0, 2, 2);
     }
+}
+
+function paintTexture(size, paint) {
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    paint(c.getContext("2d"), size);
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    return tex;
+}
+
+function blob(g, s, x, y, w, h, color) {
+    g.fillStyle = color;
+    const paint = (px, py) => {
+        const ax = ((px % s) + s) % s;
+        const ay = ((py % s) + s) % s;
+        g.fillRect(ax, ay, Math.min(w, s - ax), Math.min(h, s - ay));
+        if (ax + w > s) g.fillRect(0, ay, ax + w - s, Math.min(h, s - ay));
+        if (ay + h > s) g.fillRect(ax, 0, Math.min(w, s - ax), ay + h - s);
+        if (ax + w > s && ay + h > s) g.fillRect(0, 0, ax + w - s, ay + h - s);
+    };
+    paint(x, y);
 }
 
 const textures = {
@@ -284,10 +324,19 @@ const textures = {
         g.fillRect(0, s - 12, s, 12);
     }),
     glow: makeTexture((g, s) => {
-        g.fillStyle = "#ff9a32";
+        g.fillStyle = "#7a1c08";
         g.fillRect(0, 0, s, s);
+        g.fillStyle = "#e24a10";
+        g.fillRect(0, 8, s, 34);
+        g.fillStyle = "#ff9a28";
+        g.fillRect(6, 4, 12, 28);
+        g.fillRect(26, 0, 14, 36);
+        g.fillRect(46, 6, 10, 26);
         g.fillStyle = "#ffe08a";
-        g.fillRect(16, 16, 32, 32);
+        g.fillRect(30, 0, 6, 22);
+        g.fillRect(10, 2, 4, 16);
+        g.fillStyle = "#fff4c4";
+        g.fillRect(31, 0, 4, 10);
     }),
     linen: makeTexture((g, s) => {
         g.fillStyle = "#8d3d3a";
@@ -319,6 +368,78 @@ const textures = {
     cloth3: clothTexture("#8a5a7a")
 };
 
+textures.townGrass = paintTexture(256, (g, s) => {
+    g.fillStyle = "#5c624c";
+    g.fillRect(0, 0, s, s);
+    const tones = ["#4a523c", "#6a7058", "#545e46", "#7a7358", "#3e4634", "#656b52"];
+    for (let i = 0; i < 70; i++) {
+        const n = (salt) => {
+            const v = Math.sin(i * 12.9898 + salt * 78.233) * 43758.5453;
+            return v - Math.floor(v);
+        };
+        blob(g, s, n(1) * s, n(2) * s, 16 + n(3) * 48, 12 + n(4) * 36, tones[i % tones.length]);
+    }
+});
+textures.townDirt = paintTexture(256, (g, s) => {
+    g.fillStyle = "#8a6e4c";
+    g.fillRect(0, 0, s, s);
+    const tones = ["#6e5436", "#a4845c", "#5c4630", "#c4a878", "#7a6244", "#4e3a28"];
+    for (let i = 0; i < 64; i++) {
+        const n = (salt) => {
+            const v = Math.sin(i * 19.13 + salt * 53.7) * 43758.5453;
+            return v - Math.floor(v);
+        };
+        blob(g, s, n(1) * s, n(2) * s, 14 + n(3) * 42, 10 + n(4) * 28, tones[i % tones.length]);
+    }
+});
+textures.townCobble = paintTexture(256, (g, s) => {
+    g.fillStyle = "#4a4038";
+    g.fillRect(0, 0, s, s);
+    const tones = ["#8d7b66", "#6e5c4a", "#9a8874", "#5c4e40", "#7a6858", "#a09078", "#3e342c"];
+    const n = (i, salt) => {
+        const v = Math.sin(i * 17.13 + salt * 91.7) * 43758.5453;
+        return v - Math.floor(v);
+    };
+    let i = 0;
+    for (let row = 0; row < 18; row++) {
+        const h = 12 + (row % 4);
+        const y = row * 14;
+        let x = (row % 2) * 7;
+        while (x < s + 8) {
+            const w = 9 + ((row * 3 + i) % 7);
+            const tone = tones[(row + i) % tones.length];
+            blob(g, s, x + (n(i, 1) - 0.5) * 3, y + (n(i, 2) - 0.5) * 2, w, h - 2, tone);
+            g.fillStyle = n(i, 3) > 0.72 ? "#c4b49a" : "#2e2822";
+            blob(g, s, x + 2, y + 3, 2, 2, g.fillStyle);
+            x += w + 2;
+            i++;
+        }
+    }
+});
+textures.palisade = paintTexture(256, (g) => {
+    g.fillStyle = "#2a1a10";
+    g.fillRect(0, 0, 256, 256);
+    const planks = [36, 44, 32, 48, 40, 56];
+    const tones = ["#4a3018", "#5c3c22", "#3a2414", "#6a4528", "#2e1c10", "#50341c"];
+    let x = 0;
+    for (let i = 0; i < planks.length; i++) {
+        g.fillStyle = tones[i];
+        g.fillRect(x, 0, planks[i] - 3, 256);
+        g.fillStyle = "#1a100a";
+        g.fillRect(x + planks[i] - 3, 0, 3, 256);
+        x += planks[i];
+    }
+    g.fillStyle = "#1c100c";
+    g.fillRect(0, 0, 256, 16);
+    g.fillRect(0, 236, 256, 20);
+    g.fillStyle = "#24160e";
+    g.fillRect(0, 78, 256, 18);
+    g.fillRect(0, 162, 256, 20);
+    g.fillStyle = "#6a4528";
+    g.fillRect(0, 82, 256, 5);
+    g.fillRect(0, 166, 256, 5);
+});
+
 function clothTexture(color) {
     return makeTexture((g, s) => {
         g.fillStyle = color;
@@ -343,7 +464,9 @@ function pushTri(list, a, b, c) {
 
 const batches = {
     grass: [], dirt: [], cobble: [], sand: [], water: [], wall: [], door: [], roof: [], store: [], plaster: [], trunk: [], leaf: [], bloom: [], rock: [], linen: [], glow: [],
-    farTrunk: [], farLeaf: [], horizon: [], horizonRock: [], horizonLeaf: [], horizonWall: [], horizonRoof: []
+    townGrass: [], townDirt: [], townCobble: [],
+    bill: [], billFront: [], billBrick: [], billBrickFront: [],
+    farTrunk: [], farLeaf: []
 };
 
 function paintPatch(x, z, s, h00, h10, h11, h01) {
@@ -401,6 +524,20 @@ function landKind(x, z, rise) {
     }
     if (Town.street(x, z)) return "dirt";
     return World.groundKind(x, z, rise);
+}
+
+function townBatch(kind) {
+    if (kind === "grass") return "townGrass";
+    if (kind === "dirt") return "townDirt";
+    if (kind === "cobble") return "townCobble";
+    return kind;
+}
+
+function townTile(kind) {
+    if (kind === "cobble") return 9;
+    if (kind === "dirt") return 26;
+    if (kind === "grass") return 32;
+    return 8;
 }
 
 function paveShade(kind, x, z) {
@@ -461,6 +598,21 @@ function buildLand() {
                 }
                 continue;
             }
+            if (rise > 0.55) {
+                const sub = 16;
+                for (let sx = x; sx < x + cell; sx += sub) {
+                    for (let sz = z; sz < z + cell; sz += sub) {
+                        paintPatch(
+                            sx, sz, sub,
+                            World.heightAt(sx, sz),
+                            World.heightAt(sx + sub, sz),
+                            World.heightAt(sx + sub, sz + sub),
+                            World.heightAt(sx, sz + sub)
+                        );
+                    }
+                }
+                continue;
+            }
             if (mid > -0.35) {
                 const kind = landKind(cx, cz, rise);
                 const list = batches[kind] || batches.grass;
@@ -493,16 +645,20 @@ function buildLand() {
                 const cx = x + fine * 0.5;
                 const cz = z + fine * 0.5;
                 const kind = landKind(cx, cz, rise);
-                const list = batches[kind] || batches.grass;
+                const homeHere = place === home;
+                const list = batches[homeHere ? townBatch(kind) : kind] || batches.grass;
+                const tile = homeHere ? townTile(kind) : 4;
                 const tone = (px, pz) => (kind === "grass" ? World.turfShade(px, pz) : 1);
-                const u = x / 4;
-                const v = z / 4;
+                const u = x / tile;
+                const v = z / tile;
+                const du = fine / tile;
+                const dv = fine / tile;
                 pushQuad(
                     list,
                     [x, h00, z, u, v, tone(x, z)],
-                    [x, h01, z + fine, u, v + 1, tone(x, z + fine)],
-                    [x + fine, h11, z + fine, u + 1, v + 1, tone(x + fine, z + fine)],
-                    [x + fine, h10, z, u + 1, v, tone(x + fine, z)]
+                    [x, h01, z + fine, u, v + dv, tone(x, z + fine)],
+                    [x + fine, h11, z + fine, u + du, v + dv, tone(x + fine, z + fine)],
+                    [x + fine, h10, z, u + du, v, tone(x + fine, z)]
                 );
             }
         }
@@ -516,14 +672,18 @@ function buildLand() {
             const h01 = World.heightAt(x, z + pave);
             const rise = Math.max(h00, h10, h11, h01) - Math.min(h00, h10, h11, h01);
             const kind = landKind(x + pave * 0.5, z + pave * 0.5, rise);
-            const list = batches[kind] || batches.grass;
-            const tone = (px, pz) => (kind === "grass" ? World.turfShade(px, pz) : paveShade(kind, px, pz));
+            const list = batches[townBatch(kind)] || batches.grass;
+            const tile = townTile(kind);
+            const tone = (px, pz) => (kind === "grass" ? World.turfShade(px, pz) : 0.97);
+            const u = x / tile;
+            const v = z / tile;
+            const step = pave / tile;
             pushQuad(
                 list,
-                [x, h00, z, x / 4, z / 4, tone(x, z)],
-                [x, h01, z + pave, x / 4, (z + pave) / 4, tone(x, z + pave)],
-                [x + pave, h11, z + pave, (x + pave) / 4, (z + pave) / 4, tone(x + pave, z + pave)],
-                [x + pave, h10, z, (x + pave) / 4, z / 4, tone(x + pave, z)]
+                [x, h00, z, u, v, tone(x, z)],
+                [x, h01, z + pave, u, v + step, tone(x, z + pave)],
+                [x + pave, h11, z + pave, u + step, v + step, tone(x + pave, z + pave)],
+                [x + pave, h10, z, u + step, v, tone(x + pave, z)]
             );
         }
     }
@@ -628,10 +788,125 @@ function addWater(x, z, w, d) {
 
 buildLand();
 
+function facePoint(b, side, out) {
+    const entrance = b.entrance || "south";
+    const cx = b.x + b.w / 2;
+    const cz = b.z + b.d / 2;
+    if (entrance === "south") return { x: cx + side, z: b.z + b.d + out, nx: 0, nz: 1 };
+    if (entrance === "north") return { x: cx + side, z: b.z - out, nx: 0, nz: -1 };
+    if (entrance === "east") return { x: b.x + b.w + out, z: cz + side, nx: 1, nz: 0 };
+    return { x: b.x - out, z: cz + side, nx: -1, nz: 0 };
+}
+
+function putCivic(b, furn, side, out, w, h, d, y, batch) {
+    const p = facePoint(b, side, out);
+    let x;
+    let z;
+    let bw;
+    let bd;
+    if (p.nx !== 0) {
+        bw = d;
+        bd = w;
+        x = p.nx > 0 ? p.x : p.x - bw;
+        z = p.z - bd / 2;
+    } else {
+        bw = w;
+        bd = d;
+        z = p.nz > 0 ? p.z : p.z - bd;
+        x = p.x - bw / 2;
+    }
+    addBox(batch, x, y, z, bw, h, bd);
+    if (y < 1.5) furn.push({ x: x, z: z, w: bw, d: bd, y0: y, y1: y + h });
+}
+
+function dressCivic(b, furn) {
+    if (b.village !== 2) return;
+    const entrance = b.entrance || "south";
+    const { x, z, w, d, h } = b;
+    const skirt = (height, thick) => {
+        const gap = 2.7;
+        const sideOf = (side) => {
+            const open = entrance === side;
+            if (side === "south" || side === "north") {
+                const oz = side === "south" ? z + d : z - thick;
+                if (!open) {
+                    addBox(batches.rock, x, 0, oz, w, height, thick);
+                    furn.push({ x: x, z: oz, w: w, d: thick, y0: 0, y1: height });
+                    return;
+                }
+                const left = (w - gap) / 2;
+                addBox(batches.rock, x, 0, oz, left, height, thick);
+                addBox(batches.rock, x + left + gap, 0, oz, left, height, thick);
+                furn.push({ x: x, z: oz, w: left, d: thick, y0: 0, y1: height });
+                furn.push({ x: x + left + gap, z: oz, w: left, d: thick, y0: 0, y1: height });
+            } else {
+                const ox = side === "east" ? x + w : x - thick;
+                if (!open) {
+                    addBox(batches.rock, ox, 0, z, thick, height, d);
+                    furn.push({ x: ox, z: z, w: thick, d: d, y0: 0, y1: height });
+                    return;
+                }
+                const left = (d - gap) / 2;
+                addBox(batches.rock, ox, 0, z, thick, height, left);
+                addBox(batches.rock, ox, 0, z + left + gap, thick, height, left);
+                furn.push({ x: ox, z: z, w: thick, d: left, y0: 0, y1: height });
+                furn.push({ x: ox, z: z + left + gap, w: thick, d: left, y0: 0, y1: height });
+            }
+        };
+        sideOf("south");
+        sideOf("north");
+        sideOf("east");
+        sideOf("west");
+    };
+    const awning = () => {
+        putCivic(b, furn, 0, 0.02, 2.5, 0.08, 1.05, 2.28, batches.linen);
+        putCivic(b, furn, -1.15, 0.85, 0.1, 2.28, 0.1, 0, batches.trunk);
+        putCivic(b, furn, 1.15, 0.85, 0.1, 2.28, 0.1, 0, batches.trunk);
+    };
+    if (b.kind === "manor") {
+        skirt(0.72, 0.16);
+        putCivic(b, furn, 0, 0, 2.6, 0.16, 0.22, 2.12, batches.trunk);
+        putCivic(b, furn, 1.85, 0.2, 0.1, 2.4, 0.1, 0, batches.trunk);
+        putCivic(b, furn, 1.95, 0.15, 0.55, 0.7, 0.06, 1.55, batches.linen);
+    } else if (b.kind === "barracks") {
+        putCivic(b, furn, -1.9, 0.2, 0.1, 1.35, 0.1, 0, batches.trunk);
+        putCivic(b, furn, -1.25, 0.2, 0.1, 1.35, 0.1, 0, batches.trunk);
+        putCivic(b, furn, -1.58, 0.16, 0.8, 0.08, 0.1, 1.15, batches.trunk);
+        putCivic(b, furn, -1.78, 0.28, 0.06, 1.75, 0.06, 0, batches.trunk);
+        putCivic(b, furn, -1.58, 0.28, 0.06, 1.9, 0.06, 0, batches.trunk);
+        putCivic(b, furn, -1.38, 0.28, 0.06, 1.65, 0.06, 0, batches.trunk);
+        putCivic(b, furn, -1.78, 0.26, 0.12, 0.16, 0.12, 1.62, batches.rock);
+        putCivic(b, furn, -1.58, 0.26, 0.12, 0.16, 0.12, 1.78, batches.rock);
+        putCivic(b, furn, -1.38, 0.26, 0.12, 0.16, 0.12, 1.52, batches.rock);
+        putCivic(b, furn, 1.7, 0.06, 0.55, 0.72, 0.08, 1.1, batches.door);
+    } else if (b.kind === "smith") {
+        skirt(0.4, 0.12);
+        putCivic(b, furn, 1.75, 0.15, 0.42, 0.58, 0.42, 0, batches.trunk);
+        putCivic(b, furn, 1.75, 0.2, 0.55, 0.16, 0.32, 0.58, batches.rock);
+        putCivic(b, furn, -1.7, 0.12, 0.8, 0.32, 0.42, 0, batches.rock);
+        addBox(batches.glow, x + w * 0.48, h + 1.02, z + d * 0.38, 0.22, 0.4, 0.22);
+    } else if (b.kind === "shop") {
+        awning();
+        putCivic(b, furn, 1.7, 0.12, 0.55, 0.48, 0.5, 0, batches.trunk);
+        putCivic(b, furn, 1.85, 0.62, 0.36, 0.28, 0.3, 0, batches.linen);
+        putCivic(b, furn, -1.75, 0.15, 0.4, 0.36, 0.4, 0, batches.trunk);
+    } else if (b.kind === "stores") {
+        putCivic(b, furn, -1.9, 0.12, 0.6, 0.5, 0.55, 0, batches.trunk);
+        putCivic(b, furn, -1.85, 0.12, 0.45, 0.4, 0.45, 0.5, batches.trunk);
+        putCivic(b, furn, 1.75, 0.15, 0.5, 0.7, 0.5, 0, batches.trunk);
+        putCivic(b, furn, 1.9, 0.7, 0.42, 0.32, 0.36, 0, batches.linen);
+    } else if (b.kind === "tavern") {
+        awning();
+        putCivic(b, furn, -1.7, 0.2, 1.15, 0.42, 0.38, 0, batches.trunk);
+        putCivic(b, furn, 1.75, 0.15, 0.5, 0.68, 0.5, 0, batches.trunk);
+        putCivic(b, furn, 1.55, 0.55, 0.7, 0.4, 0.06, 1.7, batches.door);
+    }
+}
+
 function addOpenRoom(b) {
     const { x, z, w, d, h, rise } = b;
     const t = 0.28;
-    const doorW = 1.7;
+    const doorW = 2.2;
     const doorH = 2.2;
     const winW = 1.15;
     const winH = 0.85;
@@ -707,9 +982,14 @@ function addOpenRoom(b) {
     };
     glowPane(windowSide, 1.2);
     glowPane(windowSide, 3.45);
+    const flame = (px, py, pz, w, h, d) => {
+        addBox(batches.glow, px, py, pz, w, h * 0.42, d);
+        addBox(batches.glow, px + w * 0.22, py + h * 0.3, pz + d * 0.2, w * 0.56, h * 0.4, d * 0.6);
+        addBox(batches.glow, px + w * 0.38, py + h * 0.58, pz + d * 0.36, w * 0.24, h * 0.44, d * 0.28);
+    };
     const torchAt = (px, pz) => {
         addBox(batches.trunk, px, 0, pz, 0.08, 1.35, 0.08);
-        addBox(batches.glow, px - 0.06, 1.28, pz - 0.06, 0.2, 0.22, 0.2);
+        flame(px - 0.08, 1.16, pz - 0.08, 0.22, 0.48, 0.22);
     };
     const outside = entrance === "south" ? [x + w * 0.72, z + d + 0.35]
         : entrance === "north" ? [x + w * 0.28, z - 0.45]
@@ -824,6 +1104,7 @@ function addOpenRoom(b) {
     const stairL = Math.min(2.2, id - 1.35);
     const stairX = stairEast ? ix + iw - stairW - 0.08 : ix + 0.08;
     const stairZ = stairLow ? iz + id - stairL - 0.08 : iz + 0.08;
+    const stairGap = stairX + stairW + 0.62;
     const topY = 2.72;
     const stepN = 9;
     const nap = [];
@@ -879,9 +1160,9 @@ function addOpenRoom(b) {
     if (entrance === "west") b.keeper = { x: doorIn.x + 1.15, z: doorIn.z, yaw: doorOut.yaw };
     const backZ = stairLow ? iz + 0.15 : iz + Math.max(0.4, id - 1.7);
     if (b.kind === "stores") {
-        shelfAt(ix + stairW + 0.25, iz + 0.08, Math.max(1.1, iw - stairW - 0.5), "x");
-        crateAt(ix + stairW + 0.3, iz + 1.15, 0.55);
-        crateAt(ix + stairW + 0.95, iz + 1.2, 0.42);
+        shelfAt(stairGap, iz + 0.08, Math.max(1.1, ix + iw - 0.9 - stairGap), "x");
+        crateAt(stairGap, iz + 1.15, 0.55);
+        crateAt(stairGap + 0.65, iz + 1.2, 0.42);
         barrelAt(ix + iw - 0.7, iz + 0.2);
         barrelAt(ix + iw - 0.68, iz + 0.85);
         sackAt(ix + iw - 1.25, iz + 0.25);
@@ -898,8 +1179,8 @@ function addOpenRoom(b) {
         use(ix + iw - 0.5, iz + 0.2, 0.28, 1.3, 1.5);
         chestAt(ix + stairW + 0.3, iz + 0.2, 0.55, 0.4);
     } else if (b.kind === "smith") {
-        hearthAt(ix + stairW + 0.2, iz + 0.12, 1.15, 0.7);
-        addBox(batches.glow, ix + stairW + 0.45, 0.5, iz + 0.28, 0.42, 0.18, 0.32);
+        hearthAt(stairGap, iz + 0.12, 1.15, 0.7);
+        flame(stairGap + 0.28, 0.48, iz + 0.22, 0.5, 0.46, 0.34);
         addBox(batches.rock, ix + iw - 1.15, 0.55, iz + 1.15, 0.42, 0.28, 0.55);
         addBox(batches.trunk, ix + iw - 1.22, 0, iz + 1.22, 0.1, 0.55, 0.1);
         addBox(batches.trunk, ix + iw - 0.8, 0, iz + 1.55, 0.1, 0.55, 0.1);
@@ -908,18 +1189,20 @@ function addOpenRoom(b) {
         use(ix + 0.2, iz + id - 0.55, 1.3, 0.38, 0.85);
         addBox(batches.rock, x + w * 0.35, h, z + d * 0.25, 0.55, 1.15, 0.55);
     } else if (b.kind === "shop") {
-        const fx = stairEast ? ix + 0.25 : stairX + stairW + 0.2;
-        addBox(batches.trunk, fx, 0.9, iz + 1.35, Math.max(1.1, iw - stairW - 0.55), 0.1, 0.5);
-        addBox(batches.plaster, fx + 0.08, 0, iz + 1.42, Math.max(0.9, iw - stairW - 0.7), 0.9, 0.34);
-        use(fx, iz + 1.35, Math.max(1.1, iw - stairW - 0.55), 0.5, 1);
-        shelfAt(fx, iz + 0.06, Math.max(1, iw - stairW - 0.45), "x");
-        barrelAt(ix + iw - 0.62, iz + id - 0.7);
+        const fx = stairEast ? ix + 0.22 : stairGap;
+        const stop = stairEast ? stairX - 0.62 : ix + iw - 0.22;
+        const span = Math.max(1, stop - fx);
+        addBox(batches.trunk, fx, 0.9, iz + 1.35, span, 0.1, 0.5);
+        addBox(batches.plaster, fx + 0.08, 0, iz + 1.42, Math.max(0.7, span - 0.16), 0.9, 0.34);
+        use(fx, iz + 1.35, span, 0.5, 1);
+        shelfAt(fx, iz + 0.06, Math.max(0.9, span - 0.08), "x");
+        barrelAt(stop - 0.7, iz + id - 0.7);
         sackAt(fx, iz + id - 0.55);
         b.keeper = { x: fx + 0.4, z: iz + 0.85, yaw: doorOut.yaw };
     } else if (b.kind === "tavern") {
-        const fx = stairEast ? ix + 0.2 : stairX + stairW + 0.18;
+        const fx = stairEast ? ix + 0.2 : stairGap;
         hearthAt(ix + iw - 1.35, iz + 0.12, 1.05, 0.55);
-        addBox(batches.glow, ix + iw - 1.05, 0.48, iz + 0.26, 0.36, 0.16, 0.28);
+        flame(ix + iw - 1.12, 0.46, iz + 0.2, 0.42, 0.42, 0.28);
         addBox(batches.trunk, fx, 0.92, iz + 0.85, 0.5, 0.1, 1.4);
         addBox(batches.plaster, fx + 0.06, 0, iz + 0.92, 0.36, 0.92, 1.25);
         use(fx, iz + 0.85, 0.5, 1.4, 1.05);
@@ -929,12 +1212,13 @@ function addOpenRoom(b) {
     } else {
         rugAt(ix + stairW + 0.15, iz + 0.85, Math.max(1.2, iw - stairW - 0.4), Math.max(1.2, id - 1.6));
         hearthAt(ix + iw - 1.4, iz + 0.12, 1.15, 0.58);
-        addBox(batches.glow, ix + iw - 1.1, 0.5, iz + 0.26, 0.38, 0.16, 0.28);
-        tableAt(ix + stairW + 0.25, iz + 1.05, Math.min(1.6, iw - stairW - 0.45), 0.75);
-        benchAt(ix + stairW + 0.3, iz + 1.9, Math.min(1.4, iw - stairW - 0.6), "x");
-        shelfAt(ix + stairW + 0.2, iz + 0.05, Math.max(0.9, iw - stairW - 1.6), "x");
+        flame(ix + iw - 1.18, 0.48, iz + 0.2, 0.46, 0.44, 0.3);
+        tableAt(stairGap, iz + 1.15, Math.min(1.45, ix + iw - stairGap - 1.7), 0.7);
+        benchAt(stairGap, iz + 2.05, Math.min(1.3, ix + iw - stairGap - 1.8), "x");
+        shelfAt(stairGap, iz + 0.08, Math.max(0.9, ix + iw - 1.55 - stairGap), "x");
         chestAt(ix + iw - 0.75, iz + id - 0.7, 0.5, 0.38);
     }
+    dressCivic(b, furn);
     b.parts = parts.concat(furn);
     const ridge = h + rise;
     const midZ = z + d / 2;
@@ -1125,22 +1409,20 @@ uniform float uFlow;
 void main() {
     vec2 uv = vUv;
     if (uFlow > 0.5) uv.y += uTime * 0.035;
+    if (uGlow > 1.5) uv.y -= uTime * 0.45;
+    float dist = distance(vWorld, uEye);
+    if (uBand > 0.5 && uBand < 0.8 && dist < 70.0) discard;
+    if (uBand > 0.5 && dist > 280.0) discard;
     vec3 color = texture2D(uTex, uv).rgb * vShade;
     if (uFlow > 0.5) color *= vec3(0.78, 0.9, 0.86);
-    float dist = distance(vWorld, uEye);
-    float fog = clamp((dist - 60.0) / 1800.0, 0.0, 0.78);
-    if (uBand > 2.5) {
-        fog = clamp((dist - 60.0) / 1800.0, 0.0, 0.66);
-        if (dist < 1220.0) discard;
-    } else if (uBand > 1.5) {
-        fog = clamp((dist - 60.0) / 1800.0, 0.0, 0.66);
-        if (dist < 1080.0) discard;
-    } else if (uBand > 0.5) {
-        if (dist > 1280.0) discard;
-        if (uBand < 0.8 && dist < 80.0) discard;
-    }
-    vec3 fogCol = mix(vec3(0.73, 0.75, 0.68), vec3(0.05, 0.06, 0.1), uDark);
+    float fog = clamp((dist - 52.0) / 190.0, 0.0, 1.0);
+    vec3 fogCol = mix(vec3(0.80, 0.75, 0.64), vec3(0.07, 0.08, 0.13), uDark);
     if (uGlow > 0.5) {
+        if (uGlow > 1.5) {
+            float flick = 0.72 + 0.28 * sin(uTime * 9.0 + vWorld.x * 5.0 + vWorld.y * 4.0);
+            color *= flick;
+            color = mix(color, vec3(1.0, 0.58, 0.14), 0.22);
+        }
         color = mix(color, color * vec3(1.2, 0.7, 0.28), uDark);
         color += vec3(0.28, 0.12, 0.02) * uDark;
     } else {
@@ -1197,7 +1479,7 @@ void main() {
         float warm = sin(clamp(uDark, 0.0, 1.0) * 3.14159);
         vec3 sky = mix(dayCol, nightCol, nightW);
         sky = mix(sky, mornCol, warm * 0.9);
-        sky = mix(sky, haze, smoothstep(0.05, -0.22, ray.y));
+        sky = mix(sky, haze, smoothstep(0.07, -0.02, ray.y));
         col = sky;
     }
     float ang = atan(ray.x, -ray.z);
@@ -1211,16 +1493,16 @@ void main() {
     float tip = 1.0 - abs(fract(bin) - 0.5) * 2.0;
     float teeth = fract(sin(floor(bin) * 127.1) * 43758.5);
     float broad = fract(sin(floor(ang * 9.0) * 311.7) * 12543.2);
-    float woodH = (0.13 + broad * 0.045 + tip * teeth * 0.09) * (1.0 - sea * 0.78);
-    float mountH = north * (0.18 + 0.11 * sin(ang * 2.2) + 0.05 * sin(ang * 5.4 + 0.7));
+    float woodH = (0.06 + broad * 0.02 + tip * teeth * 0.035) * (1.0 - sea * 0.78);
+    float mountH = north * (0.09 + 0.05 * sin(ang * 2.2) + 0.025 * sin(ang * 5.4 + 0.7));
     float above = gl_FragCoord.y / uRes.y - horizon;
     float mount = (1.0 - smoothstep(mountH - 0.028, mountH + 0.02, above)) * smoothstep(-0.02, 0.02, above) * north;
     float wood = (1.0 - smoothstep(woodH - 0.003, woodH + 0.007, above)) * smoothstep(-0.012, 0.008, above);
     wood *= 1.0 - sea * 0.7;
     vec3 mountCol = mix(vec3(0.50, 0.56, 0.60), vec3(0.08, 0.10, 0.14), uDark);
     vec3 woodCol = mix(vec3(0.20, 0.26, 0.16), vec3(0.03, 0.04, 0.05), uDark);
-    col = mix(col, mountCol, mount * 0.62);
-    col = mix(col, woodCol, wood * 0.78);
+    col = mix(col, mountCol, mount * 0.28);
+    col = mix(col, woodCol, wood * 0.32);
     float seaBand = sea * smoothstep(-0.006, 0.012, above) * (1.0 - smoothstep(0.018, 0.05, above));
     col = mix(col, mix(vec3(0.52, 0.60, 0.64), vec3(0.04, 0.05, 0.08), uDark), seaBand * 0.5);
     if (uReady < 0.5) {
@@ -1365,65 +1647,13 @@ function fullTree(trunk, leaf, x, z, y, pine) {
 }
 
 function impostor(x, z, y, pine) {
-    addBox(batches.farTrunk, x - 0.18, y, z - 0.18, 0.36, pine ? 3.4 : 2.5, 0.36);
-    const g = pine ? 1.35 : 1.55;
-    addBox(batches.farLeaf, x - g, y + 1.45, z - g, g * 2, pine ? 2.3 : 1.7, g * 2);
     scenery.push({ x: x - 0.18, z: z - 0.18, w: 0.36, d: 0.36 });
 }
 
-function buildHorizon() {
-    const cell = 128;
-    const min = -3584;
-    const n = 56;
-    for (let iz = 0; iz < n; iz++) {
-        for (let ix = 0; ix < n; ix++) {
-            const x = min + ix * cell;
-            const z = min + iz * cell;
-            const h00 = World.heightAt(x, z);
-            const h10 = World.heightAt(x + cell, z);
-            const h11 = World.heightAt(x + cell, z + cell);
-            const h01 = World.heightAt(x, z + cell);
-            const top = Math.max(h00, h10, h11, h01);
-            if (top < -0.25) continue;
-            const cx = x + cell * 0.5;
-            const cz = z + cell * 0.5;
-            const rocky = top > 8 || World.groundKind(cx, cz, top) === "rock";
-            const list = rocky ? batches.horizonRock : batches.horizon;
-            const tone = (px, pz) => (rocky ? 0.72 : World.turfShade(px, pz) * 0.94);
-            pushQuad(
-                list,
-                [x, h00, z, x / 16, z / 16, tone(x, z)],
-                [x, h01, z + cell, x / 16, (z + cell) / 16, tone(x, z + cell)],
-                [x + cell, h11, z + cell, (x + cell) / 16, (z + cell) / 16, tone(x + cell, z + cell)],
-                [x + cell, h10, z, (x + cell) / 16, z / 16, tone(x + cell, z)]
-            );
-        }
-    }
-    for (let x = -3400; x <= 3400; x += 200) {
-        for (let z = -3400; z <= 3400; z += 200) {
-            if (World.forestAt(x, z) < 0.42) continue;
-            let close = false;
-            for (const place of World.places) {
-                if (Math.hypot(x - place.x, z - place.z) < 240) close = true;
-            }
-            if (close) continue;
-            const y = World.heightAt(x, z);
-            if (y < 0.4 || World.wet(x, z)) continue;
-            addBox(batches.horizonLeaf, x, y + 1.2, z, 96, 7, 96);
-        }
-    }
-    for (const b of Town.buildings) {
-        const y = Math.max(0, World.heightAt(b.x, b.z));
-        addBox(batches.horizonWall, b.minX, y, b.minZ, b.w, 3.1, b.d);
-        addBox(batches.horizonRoof, b.minX - 0.2, y + 3.1, b.minZ - 0.2, b.w + 0.4, 0.7, b.d + 0.4);
-    }
-    for (const place of World.places) {
-        const y = Math.max(0, World.heightAt(place.x, place.z));
-        addBox(batches.horizonWall, place.x - 16, y, place.z - 10, 12, 8, 9);
-        addBox(batches.horizonRoof, place.x - 17, y + 8, place.z - 11, 14, 3.2, 11);
-        addBox(batches.horizonWall, place.x + 2, y, place.z - 4, 11, 7, 8);
-        addBox(batches.horizonRoof, place.x + 1, y + 7, place.z - 5, 13, 2.8, 10);
-    }
+function farTree(trunk, leaf, x, z, y, pine) {
+    addBox(trunk, x - 0.18, y, z - 0.18, 0.36, pine ? 3.4 : 2.5, 0.36);
+    const g = pine ? 1.35 : 1.55;
+    addBox(leaf, x - g, y + 1.45, z - g, g * 2, pine ? 2.3 : 1.7, g * 2);
 }
 
 function dressSouthMeadow() {
@@ -1736,7 +1966,7 @@ function dressFarms() {
         const y = b.y || 0;
         const w = b.w;
         const d = b.d;
-        const h = b.role === "shed" ? 2.35 : 3.15;
+        const h = b.role === "shed" ? 2.35 : b.role === "lumber" ? 3.6 : 3.15;
         const t = 0.18;
         const doorW = b.role === "shed" ? 1.15 : 1.45;
         const doorH = 2.05;
@@ -1797,6 +2027,18 @@ function dressFarms() {
         addBox(batches.rock, x + 1.42, y + 0.05, z + 0.7, 0.32, 0.32, 0.32);
         scenery.push({ x: x, z: z - 0.08, w: 1.9, d: 1.15 });
     };
+    const drawLogs = (x, z, y) => {
+        addBox(batches.trunk, x, y, z, 2.4, 0.32, 0.42);
+        addBox(batches.trunk, x + 0.1, y + 0.32, z + 0.04, 2.2, 0.3, 0.36);
+        addBox(batches.trunk, x + 0.28, y + 0.62, z + 0.08, 1.85, 0.28, 0.3);
+        scenery.push({ x: x, z: z, w: 2.4, d: 0.42 });
+    };
+    for (const building of Town.buildings) {
+        if (building.role !== "lumber") continue;
+        drawTimber(building);
+        drawLogs(building.minX + 0.3, building.minZ + building.d + 0.45, building.y || 0);
+        drawLogs(building.minX + building.w - 2.7, building.minZ + building.d + 0.45, building.y || 0);
+    }
     for (const farm of Town.farms) {
         for (const building of farm.buildings) {
             if (building.role === "barn" || building.role === "shed") drawTimber(building);
@@ -1826,11 +2068,261 @@ function dressFarms() {
     }
 }
 
+function flatWallTexture(brick, front) {
+    const c = document.createElement("canvas");
+    c.width = 256;
+    c.height = 256;
+    const g = c.getContext("2d");
+    const s = 256;
+    g.fillStyle = brick ? "#a06a48" : "#c6aa84";
+    g.fillRect(0, 0, s, s);
+    if (brick) {
+        for (let y = 0; y < s; y += 8) {
+            g.fillStyle = y % 16 === 0 ? "#8d5a3c" : "#b47854";
+            g.fillRect(0, y, s, 7);
+            const shift = y % 16 === 0 ? 0 : 8;
+            g.fillStyle = "#6e4632";
+            for (let x = shift; x < s; x += 16) g.fillRect(x, y, 1, 7);
+        }
+    } else {
+        for (let i = 0; i < 700; i++) {
+            g.fillStyle = i % 2 ? "rgba(92,70,46,0.28)" : "rgba(232,214,180,0.35)";
+            g.fillRect((Math.random() * s) | 0, (Math.random() * s) | 0, 3, 2);
+        }
+    }
+    const quoin = (x) => {
+        for (let y = 0; y < s; y += 18) {
+            g.fillStyle = y % 36 === 0 ? "#d7c4a4" : "#8d7b66";
+            g.fillRect(x, y, 16, 16);
+            g.fillStyle = "#5c4e40";
+            g.fillRect(x, y + 15, 16, 2);
+        }
+    };
+    quoin(0);
+    quoin(s - 16);
+    g.fillStyle = "#7d6b58";
+    g.fillRect(0, 108, s, 12);
+    g.fillStyle = "#b7a48c";
+    for (let x = 0; x < s; x += 18) g.fillRect(x + 1, 110, 14, 8);
+    g.fillStyle = "#6a5848";
+    g.fillRect(0, 232, s, 24);
+    g.fillStyle = "#4a3828";
+    g.fillRect(0, 100, s, 5);
+    const pane = (x, y, w, h) => {
+        g.fillStyle = "#3a2c22";
+        g.fillRect(x - 5, y - 4, w + 10, h + 8);
+        g.fillStyle = "#2c2118";
+        g.fillRect(x - 11, y, 7, h);
+        g.fillRect(x + w + 4, y, 7, h);
+        g.fillStyle = "#e2b15c";
+        g.fillRect(x, y, w, h);
+        g.fillStyle = "#f0d090";
+        g.fillRect(x + 2, y + 2, w * 0.42, h * 0.32);
+        g.fillStyle = "#4a3828";
+        g.fillRect(x + w / 2 - 1, y, 2, h);
+        g.fillRect(x, y + h / 2 - 1, w, 2);
+    };
+    if (front) {
+        pane(14, 150, 22, 36);
+        pane(214, 150, 22, 36);
+        pane(46, 28, 40, 48);
+        pane(156, 28, 40, 48);
+    } else {
+        pane(48, 146, 42, 44);
+        pane(158, 146, 42, 44);
+        pane(48, 26, 42, 48);
+        pane(158, 26, 42, 48);
+    }
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return tex;
+}
+
+function dressFlatHouses() {
+    textures.bill = flatWallTexture(false, false);
+    textures.billFront = flatWallTexture(false, true);
+    textures.billBrick = flatWallTexture(true, false);
+    textures.billBrickFront = flatWallTexture(true, true);
+    const kinds = { house: 1, tall: 1, shop: 1, brick: 1, long: 1, grand: 1 };
+    const place = World.places[2];
+    const quad = (list, a, b, c, d) => pushQuad(list, a, b, c, d);
+    const faceX = (list, x0, x1, y0, y1, z, u0, u1, v0, v1, shade, north) => {
+        const bl = [x0, y0, z, u0, v0, shade];
+        const tl = [x0, y1, z, u0, v1, shade];
+        const tr = [x1, y1, z, u1, v1, shade];
+        const br = [x1, y0, z, u1, v0, shade];
+        if (north) quad(list, bl, tl, tr, br);
+        else quad(list, br, tr, tl, bl);
+    };
+    const faceZ = (list, z0, z1, y0, y1, x, u0, u1, v0, v1, shade, east) => {
+        const bl = [x, y0, z0, u0, v0, shade];
+        const tl = [x, y1, z0, u0, v1, shade];
+        const tr = [x, y1, z1, u1, v1, shade];
+        const br = [x, y0, z1, u1, v0, shade];
+        if (east) quad(list, bl, tl, tr, br);
+        else quad(list, br, tr, tl, bl);
+    };
+    for (const b of Town.buildings) {
+        if (b.village !== 2 || b.raised || !kinds[b.mesh]) continue;
+        if (Math.hypot(b.x - place.x, b.z - place.z) < 22) continue;
+        const tall = b.mesh === "tall" || b.mesh === "grand";
+        const brick = b.mesh === "brick";
+        const wallH = tall ? 6.35 : 4.15;
+        const roofH = tall ? 1.85 : 1.45;
+        const uvTop = tall ? 1 : 0.62;
+        const y0 = b.y || 0;
+        const y1 = y0 + wallH;
+        const x0 = b.minX;
+        const z0 = b.minZ;
+        const x1 = x0 + b.w;
+        const z1 = z0 + b.d;
+        const yaw = b.yaw || 0;
+        const s = Math.sin(yaw);
+        const c = Math.cos(yaw);
+        const fx = -s;
+        const fz = -c;
+        const front = Math.abs(fz) >= Math.abs(fx) ? (fz < 0 ? "n" : "s") : (fx > 0 ? "e" : "w");
+        const half = (Math.abs(fx) > Math.abs(fz) ? b.w : b.d) * 0.5;
+        const side = b.doorSide == null ? 1 : b.doorSide;
+        const doorX = b.x + fx * (half - 0.06) - c * side;
+        const doorZ = b.z + fz * (half - 0.06) + s * side;
+        const outer = brick ? batches.billBrick : batches.bill;
+        const outerFront = brick ? batches.billBrickFront : batches.billFront;
+        const holeW = 1.2;
+        const holeH = 2.18;
+        const putX = (list, xa, xb, ya, yb, z, north, shade, vTop) => {
+            const u0 = (xa - x0) / b.w;
+            const u1 = (xb - x0) / b.w;
+            faceX(list, xa, xb, ya, yb, z, u0, u1, (ya - y0) / wallH * vTop, (yb - y0) / wallH * vTop, shade, north);
+        };
+        const putZ = (list, za, zb, ya, yb, x, east, shade, vTop) => {
+            const u0 = (za - z0) / b.d;
+            const u1 = (zb - z0) / b.d;
+            faceZ(list, za, zb, ya, yb, x, u0, u1, (ya - y0) / wallH * vTop, (yb - y0) / wallH * vTop, shade, east);
+        };
+        const wallAlongX = (z, north, isFront) => {
+            const list = isFront ? outerFront : outer;
+            const shade = north ? 0.96 : 0.74;
+            const inset = north ? 0.07 : -0.07;
+            if (!isFront) {
+                putX(list, x0, x1, y0, y1, z, north, shade, uvTop);
+                putX(batches.plaster, x1, x0, y0, y1, z + inset, north, 0.7, uvTop);
+                return;
+            }
+            let hx0 = doorX - holeW * 0.5;
+            let hx1 = doorX + holeW * 0.5;
+            hx0 = Math.max(x0 + 0.35, hx0);
+            hx1 = Math.min(x1 - 0.35, hx1);
+            const hy = y0 + holeH;
+            putX(list, x0, hx0, y0, y1, z, north, shade, uvTop);
+            putX(list, hx1, x1, y0, y1, z, north, shade, uvTop);
+            putX(list, hx0, hx1, hy, y1, z, north, shade, uvTop);
+            putX(batches.plaster, x1, hx1, y0, y1, z + inset, north, 0.7, uvTop);
+            putX(batches.plaster, hx0, x0, y0, y1, z + inset, north, 0.7, uvTop);
+            putX(batches.plaster, hx1, hx0, hy, y1, z + inset, north, 0.7, uvTop);
+        };
+        const wallAlongZ = (x, east, isFront) => {
+            const list = isFront ? outerFront : outer;
+            const shade = east ? 0.86 : 0.8;
+            const inset = east ? -0.07 : 0.07;
+            if (!isFront) {
+                putZ(list, z0, z1, y0, y1, x, east, shade, uvTop);
+                putZ(batches.plaster, z1, z0, y0, y1, x + inset, east, 0.7, uvTop);
+                return;
+            }
+            let hz0 = doorZ - holeW * 0.5;
+            let hz1 = doorZ + holeW * 0.5;
+            hz0 = Math.max(z0 + 0.35, hz0);
+            hz1 = Math.min(z1 - 0.35, hz1);
+            const hy = y0 + holeH;
+            putZ(list, z0, hz0, y0, y1, x, east, shade, uvTop);
+            putZ(list, hz1, z1, y0, y1, x, east, shade, uvTop);
+            putZ(list, hz0, hz1, hy, y1, x, east, shade, uvTop);
+            putZ(batches.plaster, z1, hz1, y0, y1, x + inset, east, 0.7, uvTop);
+            putZ(batches.plaster, hz0, z0, y0, y1, x + inset, east, 0.7, uvTop);
+            putZ(batches.plaster, hz1, hz0, hy, y1, x + inset, east, 0.7, uvTop);
+        };
+        wallAlongX(z0, true, front === "n");
+        wallAlongX(z1, false, front === "s");
+        wallAlongZ(x1, true, front === "e");
+        wallAlongZ(x0, false, front === "w");
+        const ridge = y1 + roofH;
+        const gable = (alongZ, at, eastOrNorth) => {
+            const list = outer;
+            if (alongZ) {
+                const mid = (z0 + z1) * 0.5;
+                const tri = eastOrNorth
+                    ? [[at, y1, z0, 0, uvTop, 0.86], [at, ridge, mid, 0.5, uvTop, 0.94], [at, y1, z1, 1, uvTop, 0.86]]
+                    : [[at, y1, z1, 0, uvTop, 0.8], [at, ridge, mid, 0.5, uvTop, 0.9], [at, y1, z0, 1, uvTop, 0.8]];
+                pushTri(list, tri[0], tri[1], tri[2]);
+                const back = eastOrNorth ? -0.07 : 0.07;
+                pushTri(batches.plaster,
+                    [at + back, y1, z1, 0, 0, 0.62],
+                    [at + back, ridge - 0.05, mid, 0.5, 1, 0.62],
+                    [at + back, y1, z0, 1, 0, 0.62]
+                );
+            } else {
+                const mid = (x0 + x1) * 0.5;
+                const tri = eastOrNorth
+                    ? [[x0, y1, at, 0, uvTop, 0.96], [mid, ridge, at, 0.5, uvTop, 1], [x1, y1, at, 1, uvTop, 0.96]]
+                    : [[x1, y1, at, 0, uvTop, 0.74], [mid, ridge, at, 0.5, uvTop, 0.82], [x0, y1, at, 1, uvTop, 0.74]];
+                pushTri(list, tri[0], tri[1], tri[2]);
+                const back = eastOrNorth ? 0.07 : -0.07;
+                pushTri(batches.plaster,
+                    [x1, y1, at + back, 0, 0, 0.62],
+                    [mid, ridge - 0.05, at + back, 0.5, 1, 0.62],
+                    [x0, y1, at + back, 1, 0, 0.62]
+                );
+            }
+        };
+        const o = 0.16;
+        if (b.w >= b.d) {
+            gable(true, x1, true);
+            gable(true, x0, false);
+            const mid = (z0 + z1) * 0.5;
+            pushQuad(batches.roof,
+                [x0 - o, y1, z0 - o, 0, 0, 0.9],
+                [x0 - o, ridge, mid, 0, 1, 1],
+                [x1 + o, ridge, mid, 3, 1, 1],
+                [x1 + o, y1, z0 - o, 3, 0, 0.9]
+            );
+            pushQuad(batches.roof,
+                [x0 - o, y1, z1 + o, 0, 0, 0.78],
+                [x1 + o, y1, z1 + o, 3, 0, 0.78],
+                [x1 + o, ridge, mid, 3, 1, 1],
+                [x0 - o, ridge, mid, 0, 1, 1]
+            );
+        } else {
+            gable(false, z0, true);
+            gable(false, z1, false);
+            const mid = (x0 + x1) * 0.5;
+            pushQuad(batches.roof,
+                [x0 - o, y1, z0 - o, 0, 0, 0.9],
+                [x0 - o, y1, z1 + o, 0, 3, 0.9],
+                [mid, ridge, z1 + o, 1, 3, 1],
+                [mid, ridge, z0 - o, 1, 0, 1]
+            );
+            pushQuad(batches.roof,
+                [x1 + o, y1, z0 - o, 0, 0, 0.78],
+                [mid, ridge, z0 - o, 1, 0, 1],
+                [mid, ridge, z1 + o, 1, 3, 1],
+                [x1 + o, y1, z1 + o, 0, 3, 0.78]
+            );
+        }
+    }
+}
+
+dressFlatHouses();
 growScenery();
 raiseCliffs();
 dressSouthMeadow();
 dressFarms();
-buildHorizon();
 places.forEach(addYard);
 
 const mesh = {};
@@ -1844,11 +2336,6 @@ for (const name of Object.keys(batches)) {
 
 textures.farTrunk = textures.trunk;
 textures.farLeaf = textures.leaf;
-textures.horizon = textures.grass;
-textures.horizonRock = textures.rock;
-textures.horizonLeaf = textures.leaf;
-textures.horizonWall = textures.wall;
-textures.horizonRoof = textures.roof;
 
 let nearMarkX = 1e9;
 let nearMarkZ = 1e9;
@@ -1860,11 +2347,14 @@ function refreshNearTrees() {
     nearMarkZ = cam.z;
     const trunk = [];
     const leaf = [];
+    const farTrunk = [];
+    const farLeaf = [];
     const near = [];
     for (const spot of treeSpots) {
         const ox = spot.x - cam.x;
         const oz = spot.z - cam.z;
         const d2 = ox * ox + oz * oz;
+        if (d2 > 70 * 70 && d2 < 300 * 300) farTree(farTrunk, farLeaf, spot.x, spot.z, spot.y, spot.pine);
         if (d2 > 175 * 175) continue;
         near.push({ spot: spot, d2: d2 });
     }
@@ -1878,8 +2368,12 @@ function refreshNearTrees() {
     }
     textures.nearTrunk = textures.trunk;
     textures.nearLeaf = textures.leaf;
+    textures.farTrunk = textures.trunk;
+    textures.farLeaf = textures.leaf;
     uploadMesh("nearTrunk", trunk);
     uploadMesh("nearLeaf", leaf);
+    uploadMesh("farTrunk", farTrunk);
+    uploadMesh("farLeaf", farLeaf);
 }
 refreshNearTrees();
 
@@ -2104,6 +2598,311 @@ function personMatrix(man) {
     ]);
 }
 
+const horse = {
+    x: places[2].ox + Math.sin(0.6) * 4.5,
+    z: places[2].oz + 20 - Math.cos(0.6) * 4.5,
+    yaw: Math.PI,
+    stand: 0,
+    bob: 0,
+    swing: 0,
+    down: 0,
+    walking: false,
+    phase: 0,
+    side: 1
+};
+horse.stand = Math.max(0, World.heightAt(horse.x, horse.z));
+
+const study = {
+    x: cam.x + Math.sin(cam.yaw) * 3.2,
+    z: cam.z - Math.cos(cam.yaw) * 4,
+    y: 0,
+    yaw: cam.yaw - Math.PI / 2
+};
+study.y = Math.max(0, World.heightAt(study.x, study.z));
+let studyMesh = null;
+let studyTex = null;
+
+function studyMatrix() {
+    const c = Math.cos(study.yaw);
+    const s = Math.sin(study.yaw);
+    return new Float32Array([
+        c, 0, -s, 0,
+        0, 1, 0, 0,
+        s, 0, c, 0,
+        study.x, study.y, study.z, 1
+    ]);
+}
+
+function loadStudy() {
+    fetch("Free%20character%20medieval/GLB/Free%20character%20medieval.glb", { cache: "no-store" }).then((res) => {
+        if (!res.ok) return null;
+        return res.arrayBuffer();
+    }).then((buffer) => {
+        if (!buffer) return;
+        const view = new DataView(buffer);
+        const jsonLen = view.getUint32(12, true);
+        const json = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, 20, jsonLen)));
+        const binAt = 20 + jsonLen;
+        const binLen = view.getUint32(binAt, true);
+        const bin = buffer.slice(binAt + 8, binAt + 8 + binLen);
+        const binView = new DataView(bin);
+        const readAcc = (index) => {
+            const acc = json.accessors[index];
+            const buf = json.bufferViews[acc.bufferView];
+            const start = (buf.byteOffset || 0) + (acc.byteOffset || 0);
+            const stride = buf.byteStride || (acc.type === "VEC3" ? 12 : acc.type === "VEC2" ? 8 : 4);
+            const count = acc.count;
+            const comps = acc.type === "VEC3" ? 3 : acc.type === "VEC2" ? 2 : 1;
+            const out = [];
+            for (let i = 0; i < count; i++) {
+                const at = start + i * stride;
+                if (acc.componentType === 5126) {
+                    for (let c = 0; c < comps; c++) out.push(binView.getFloat32(at + c * 4, true));
+                } else if (acc.componentType === 5123) {
+                    out.push(binView.getUint16(at, true));
+                } else if (acc.componentType === 5125) {
+                    out.push(binView.getUint32(at, true));
+                }
+            }
+            return out;
+        };
+        const prim = json.meshes[0].primitives[0];
+        const pos = readAcc(prim.attributes.POSITION);
+        const uv = readAcc(prim.attributes.TEXCOORD_0);
+        const idx = readAcc(prim.indices);
+        let minY = Infinity;
+        let maxY = -Infinity;
+        for (let i = 1; i < pos.length; i += 3) {
+            if (pos[i] < minY) minY = pos[i];
+            if (pos[i] > maxY) maxY = pos[i];
+        }
+        const scale = 1.82 / (maxY - minY || 1);
+        const floats = new Float32Array(idx.length * 6);
+        for (let i = 0; i < idx.length; i++) {
+            const v = idx[i];
+            floats[i * 6] = pos[v * 3] * scale;
+            floats[i * 6 + 1] = (pos[v * 3 + 1] - minY) * scale;
+            floats[i * 6 + 2] = pos[v * 3 + 2] * scale;
+            floats[i * 6 + 3] = uv[v * 2];
+            floats[i * 6 + 4] = uv[v * 2 + 1];
+            floats[i * 6 + 5] = 1;
+        }
+        const gpu = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, gpu);
+        gl.bufferData(gl.ARRAY_BUFFER, floats, gl.STATIC_DRAW);
+        studyMesh = { buffer: gpu, count: idx.length };
+        const image = json.images[0];
+        const imgBuf = json.bufferViews[image.bufferView];
+        const bytes = new Uint8Array(bin, imgBuf.byteOffset || 0, imgBuf.byteLength);
+        const blob = new Blob([bytes], { type: image.mimeType || "image/jpeg" });
+        const pic = new Image();
+        pic.onload = () => {
+            const tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, pic);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            studyTex = tex;
+            URL.revokeObjectURL(pic.src);
+        };
+        pic.src = URL.createObjectURL(blob);
+    }).catch(() => {});
+}
+loadStudy();
+let horseBody = null;
+let horseLeg = null;
+
+function bakeMesh(floats) {
+    const data = new Float32Array(floats);
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    return { buffer, count: data.length / 6 };
+}
+
+function tiltX(oy, oz, angle) {
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    return (x, y, z) => {
+        const dy = y - oy;
+        const dz = z - oz;
+        return [x, oy + dy * c - dz * s, oz + dy * s + dz * c];
+    };
+}
+
+function buildHorse() {
+    textures.horse = makeTexture((g, s) => {
+        g.fillStyle = "#8d5a32";
+        g.fillRect(0, 0, s, s);
+        g.fillStyle = "#a56b3c";
+        for (let i = 0; i < 20; i++) g.fillRect((i * 7) % 26, (i * 11) % s, 3, 2);
+        g.fillStyle = "#6b4124";
+        for (let i = 0; i < 16; i++) g.fillRect((i * 5) % 24, (i * 9) % s, 2, 2);
+        g.fillStyle = "#f2e6cc";
+        g.fillRect(34, 0, 12, s);
+        g.fillStyle = "#2a1b12";
+        g.fillRect(50, 0, 14, s);
+    });
+    const coat = [0.04, 0.08, 0.4, 0.5];
+    const dark = [0.8, 0.08, 0.96, 0.5];
+    const light = [0.56, 0.12, 0.68, 0.5];
+    const neck = tiltX(1.2, 0.42, 0.72);
+    const head = tiltX(1.52, 0.78, -0.28);
+    const body = [];
+    addBox(body, -0.22, 0.96, -0.7, 0.44, 0.42, 1.05, null, coat);
+    addBox(body, -0.2, 0.9, 0.22, 0.4, 0.4, 0.36, null, coat);
+    addBox(body, -0.24, 1.02, -0.86, 0.48, 0.38, 0.34, null, coat);
+    addBox(body, -0.16, 1.32, -0.2, 0.32, 0.1, 0.55, null, coat);
+    addBox(body, -0.1, 1.16, 0.28, 0.2, 0.52, 0.24, neck, coat);
+    addBox(body, -0.05, 1.58, 0.26, 0.1, 0.16, 0.4, neck, dark);
+    addBox(body, -0.12, 1.46, 0.62, 0.24, 0.28, 0.4, head, coat);
+    addBox(body, -0.09, 1.42, 0.96, 0.18, 0.16, 0.28, head, coat);
+    addBox(body, -0.04, 1.5, 1.08, 0.08, 0.16, 0.16, head, light);
+    addBox(body, -0.11, 1.7, 0.7, 0.07, 0.16, 0.08, head, dark);
+    addBox(body, 0.04, 1.7, 0.7, 0.07, 0.16, 0.08, head, dark);
+    addBox(body, -0.14, 1.56, 0.78, 0.04, 0.05, 0.05, head, dark);
+    addBox(body, 0.1, 1.56, 0.78, 0.04, 0.05, 0.05, head, dark);
+    addBox(body, -0.05, 0.58, -1.02, 0.1, 0.58, 0.12, null, dark);
+    const limb = (x, z) => {
+        addBox(body, x, 0.46, z, 0.11, 0.5, 0.12, null, coat);
+        addBox(body, x + 0.01, 0.08, z + 0.015, 0.09, 0.4, 0.09, null, dark);
+        addBox(body, x - 0.01, 0, z, 0.13, 0.1, 0.14, null, dark);
+    };
+    limb(-0.2, 0.32);
+    limb(0.09, 0.32);
+    limb(-0.2, -0.58);
+    limb(0.09, -0.58);
+    horseBody = bakeMesh(body);
+    horseLeg = horseBody;
+}
+
+function horseAnchor() {
+    const feet = horse.stand;
+    const reach = 4.5;
+    const turns = [0.6 * horse.side, -0.6 * horse.side, 1.15 * horse.side, 0];
+    for (let i = 0; i < turns.length; i++) {
+        const yaw = cam.yaw + turns[i];
+        const tx = cam.x + Math.sin(yaw) * reach;
+        const tz = cam.z - Math.cos(yaw) * reach;
+        if (!blocked(tx, tz, homeVillage, feet)) return { x: tx, z: tz };
+    }
+    const yaw = cam.yaw + 0.6 * horse.side;
+    return { x: cam.x + Math.sin(yaw) * reach, z: cam.z - Math.cos(yaw) * reach };
+}
+
+function horseGround(x, z) {
+    const ground = Math.max(0, World.heightAt(x, z));
+    if (inside) return ground;
+    let height = ground;
+    const cap = horse.stand + 0.55;
+    for (const floor of floors) {
+        if (floor.y > cap) continue;
+        if (x > floor.x && x < floor.x + floor.w && z > floor.z && z < floor.z + floor.d) {
+            height = Math.max(height, floor.y);
+        }
+    }
+    return height;
+}
+
+function stepHorse(dt) {
+    let pace = 0;
+    if (!player.dead) {
+        const pdx = horse.x - cam.x;
+        const pdz = horse.z - cam.z;
+        const playerDist = Math.hypot(pdx, pdz) || 0.0001;
+        const dot = (pdx * Math.sin(cam.yaw) + pdz * -Math.cos(cam.yaw)) / playerDist;
+        if (playerDist > 46) {
+            const spot = horseAnchor();
+            horse.x = spot.x;
+            horse.z = spot.z;
+            horse.walking = false;
+            horse.yaw = Math.atan2(-(cam.x - horse.x), -(cam.z - horse.z));
+        } else {
+            const tooFar = playerDist > 6.8;
+            const tooClose = playerDist < 2.8;
+            const behind = dot < 0.2;
+            let tx = horse.x;
+            let tz = horse.z;
+            if (tooClose) {
+                tx = cam.x + (pdx / playerDist) * 4.5;
+                tz = cam.z + (pdz / playerDist) * 4.5;
+            } else if (tooFar || behind) {
+                const spot = horseAnchor();
+                tx = spot.x;
+                tz = spot.z;
+            }
+            const dx = tx - horse.x;
+            const dz = tz - horse.z;
+            const dist = Math.hypot(dx, dz);
+            if (dist > 0.45) {
+                horse.yaw = Math.atan2(-dx, -dz);
+                let speed = 2.2;
+                if (playerDist > 7.5) speed = Hero.walkSpeed(hero);
+                if (playerDist > 16) speed = Hero.walkSpeed(hero) * 1.15;
+                pace = speed;
+                const step = Math.min(speed * dt, dist - 0.25);
+                const ux = dx / dist;
+                const uz = dz / dist;
+                const feet = horse.stand;
+                const nx = horse.x + ux * step;
+                const nz = horse.z + uz * step;
+                const ox = horse.x;
+                const oz = horse.z;
+                if (!blocked(nx, horse.z, homeVillage, feet)) horse.x = nx;
+                if (!blocked(horse.x, nz, homeVillage, feet)) horse.z = nz;
+                if (horse.x === ox && horse.z === oz) {
+                    const leftX = ox - uz * step;
+                    const leftZ = oz + ux * step;
+                    const rightX = ox + uz * step;
+                    const rightZ = oz - ux * step;
+                    if (!blocked(leftX, leftZ, homeVillage, feet)) {
+                        horse.x = leftX;
+                        horse.z = leftZ;
+                    } else if (!blocked(rightX, rightZ, homeVillage, feet)) {
+                        horse.x = rightX;
+                        horse.z = rightZ;
+                    }
+                }
+                horse.walking = Math.hypot(horse.x - ox, horse.z - oz) > 0.001;
+            } else {
+                horse.walking = false;
+                const face = Math.atan2(-(cam.x - horse.x), -(cam.z - horse.z));
+                let diff = face - horse.yaw;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                horse.yaw += diff * Math.min(1, dt * 2.2);
+            }
+        }
+    } else {
+        horse.walking = false;
+    }
+    horse.stand = horseGround(horse.x, horse.z);
+    if (horse.walking) horse.phase += dt * (3.2 + pace * 0.4);
+    horse.bob = horse.walking ? Math.abs(Math.sin(horse.phase * 2)) * 0.03 : 0;
+}
+
+function drawHorse() {
+    if (!horseBody || !horseLeg || !textures.horse || inside) return;
+    const view = activeCam();
+    if (Math.hypot(horse.x - view.x, horse.z - view.z) > 80) return;
+    const stride = 24;
+    gl.enable(gl.CULL_FACE);
+    gl.bindTexture(gl.TEXTURE_2D, textures.horse);
+    gl.uniform1f(loc.flow, 0);
+    gl.uniformMatrix4fv(loc.model, false, personMatrix(horse));
+    gl.bindBuffer(gl.ARRAY_BUFFER, horseBody.buffer);
+    gl.enableVertexAttribArray(loc.pos);
+    gl.enableVertexAttribArray(loc.uv);
+    gl.enableVertexAttribArray(loc.shade);
+    gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
+    gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
+    gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
+    gl.drawArrays(gl.TRIANGLES, 0, horseBody.count);
+}
+
 function swordMatrix(man, hand) {
     const yaw = man.yaw + Math.PI;
     const c = Math.cos(yaw);
@@ -2188,7 +2987,7 @@ function mergeMen(data) {
             });
         });
     });
-    const prev = new Map(men.filter((man) => !man.fisher && !man.farmer && !man.archer && !man.decor && !man.driver).map((man) => [man.faction + ":" + man.index, man]));
+    const prev = new Map(men.filter((man) => !man.fisher && !man.farmer && !man.archer && !man.decor && !man.driver && !man.jack).map((man) => [man.faction + ":" + man.index, man]));
     const next = [];
     const keep = new Set();
     for (const item of wanted) {
@@ -2235,9 +3034,9 @@ function mergeMen(data) {
             });
         }
     }
-    const keptFish = men.filter((man) => man.fisher || man.farmer || man.archer || man.decor || man.driver);
+    const keptFish = men.filter((man) => man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack);
     for (const man of men) {
-        if (man.fisher || man.farmer || man.archer || man.decor || man.driver) continue;
+        if (man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack) continue;
         const key = man.faction + ":" + man.index;
         if (keep.has(key)) continue;
         man.dying = true;
@@ -2265,14 +3064,16 @@ function applyCampaign(data) {
         (faction.units || []).map((unit) => unit.index + ":" + unit.health + ":" + unit.mode + ":" + unit.post).join(".")
     )).join("|");
     const attacks = (data.attacks || []).map((attack) => attack.id).join(",");
-    const fish = (data.fishermen || []).map((man) => man.village + ":" + man.slot + ":" + man.health + ":" + man.cycleStart + ":" + man.walkMs + ":" + (man.bed || "")).join(",");
-    const wood = (data.woodcutters || []).map((man) => man.id + ":" + man.village + ":" + man.health + ":" + man.cycleStart + ":" + man.to.x.toFixed(1) + ":" + (man.bed || "")).join(",");
+    const fish = (data.fishermen || []).map((man) => man.village + ":" + man.slot + ":" + man.health + ":" + man.cycleStart + ":" + man.walkMs + ":" + (man.bed || "") + ":" + (man.name || "")).join(",");
+    const wood = (data.woodcutters || []).map((man) => man.id + ":" + man.village + ":" + man.health + ":" + man.cycleStart + ":" + man.to.x.toFixed(1) + ":" + (man.bed || "") + ":" + (man.name || "")).join(",");
+    const jacks = (data.lumberjacks || []).map((man) => man.slot + ":" + man.health + ":" + (man.hauling ? "1" : "0")).join(",");
+    const haul = data.yard && data.yard.haul ? data.yard.haul.phase + ":" + Math.round(data.yard.haul.arriveAt || 0) : "";
     const carts = (data.lodges || []).map((lodge) => lodge.id + ":" + lodge.cart.phase + ":" + lodge.cart.driver + ":" + lodge.cart.hp + ":" + lodge.cart.cargo).join(",");
     const arch = (data.archers || []).map((row, village) => (
         ((data.owners || [])[village] || 0) + ":" + (row || []).join(".")
     )).join(",");
     const farmKey = (data.farms || []).map((farm) => farm.id + ":" + farm.health + ":" + farm.phase).join(",");
-    const key = (data.owners || []).join(",") + "#" + attacks + "#" + units + "#" + fish + "#" + wood + "#" + arch + "#" + carts + "#" + farmKey;
+    const key = (data.owners || []).join(",") + "#" + attacks + "#" + units + "#" + fish + "#" + wood + "#" + arch + "#" + carts + "#" + farmKey + "#" + jacks + "#" + haul;
     if (key === soldierKey) {
         ensureCottages(data);
         touchFarmers(data);
@@ -2290,12 +3091,14 @@ function applyCampaign(data) {
 }
 
 function villagerKey(man) {
+    if (man.jack) return "j:" + (man.slot || 0);
     return man.village + ":" + (man.wood ? "w" : "f") + ":" + (man.slot || 0);
 }
 
 function mergeFishermen(data) {
     const wanted = (data.fishermen || []).map((item) => Object.assign({ wood: false }, item)).concat(
-        (data.woodcutters || []).map((item) => Object.assign({ wood: true }, item))
+        (data.woodcutters || []).map((item) => Object.assign({ wood: true }, item)),
+        (data.lumberjacks || []).map((item) => Object.assign({ jack: true, wood: false }, item))
     );
     const prev = new Map(men.filter((man) => man.fisher).map((man) => [villagerKey(man), man]));
     const keep = new Set();
@@ -2311,6 +3114,8 @@ function mergeFishermen(data) {
             old.cycleStart = item.cycleStart;
             old.walkMs = item.walkMs;
             old.wood = item.wood;
+            old.jack = !!item.jack;
+            old.hauling = !!item.hauling;
             old.slot = item.slot || 0;
             old.woodId = item.id;
             old.fromX = item.from.x;
@@ -2323,17 +3128,20 @@ function mergeFishermen(data) {
             old.asleep = !!item.asleep;
             old.shelter = !!item.shelter;
             old.bed = item.bed || "manor";
+            old.homeNap = item.home || null;
             if (old.health <= 0) old.dying = true;
             nextFish.push(old);
         } else {
             nextFish.push({
                 fisher: true,
+                jack: !!item.jack,
+                hauling: !!item.hauling,
                 wood: item.wood,
                 woodId: item.id,
                 village: item.village,
                 slot: item.slot || 0,
                 faction: item.owner,
-                index: -1 - item.village - (item.wood ? 10 : 0) - (item.slot || 0),
+                index: item.jack ? -40 - (item.slot || 0) : -1 - item.village - (item.wood ? 10 : 0) - (item.slot || 0),
                 health: item.health,
                 post: item.village,
                 mode: item.wood ? "wood" : "fish",
@@ -2349,6 +3157,7 @@ function mergeFishermen(data) {
                 asleep: !!item.asleep,
                 shelter: !!item.shelter,
                 bed: item.bed || "manor",
+                homeNap: item.home || null,
                 cycleStart: item.cycleStart,
                 walkMs: item.walkMs,
                 yaw: 0,
@@ -2374,80 +3183,94 @@ function mergeFishermen(data) {
     men.push(...soldiers, ...nextFish);
 }
 
+function farmerNap(item, hand) {
+    const nap = (item.nap || []).map((point) => ({ x: point.x, z: point.z, y: point.y }));
+    if (hand && nap.length) nap[nap.length - 1].x += 0.7;
+    return nap;
+}
+
 function touchFarmers(data) {
     for (const item of data.farms || []) {
-        const man = men.find((one) => one.farmer && one.farmId === item.id);
-        if (!man) continue;
-        man.phase = item.phase;
-        man.path = item.path || null;
-        man.along = item.along || 0;
-        man.length = item.length || 0;
-        man.playAt = item.playAt || 0;
-        man.health = pendingHit ? Math.min(man.health, item.health) : item.health;
-        man.faction = item.owner;
-        man.spots = item.spots || man.spots;
-        man.nap = item.nap || man.nap;
-        if (man.health <= 0) man.dying = true;
+        for (const man of men) {
+            if (!man.farmer || man.farmId !== item.id) continue;
+            man.phase = item.phase;
+            man.path = item.path || null;
+            man.along = item.along || 0;
+            man.length = item.length || 0;
+            man.playAt = item.playAt || 0;
+            man.health = pendingHit ? Math.min(man.health, item.health) : item.health;
+            man.faction = item.owner;
+            man.spots = item.spots || man.spots;
+            man.nap = farmerNap(item, man.hand || 0);
+            if (man.health <= 0) man.dying = true;
+        }
     }
 }
 
 function mergeFarmers(data) {
     const wanted = data.farms || [];
-    const prev = new Map(men.filter((man) => man.farmer).map((man) => [man.farmId, man]));
+    const prev = new Map(men.filter((man) => man.farmer).map((man) => [man.farmId + ":" + (man.hand || 0), man]));
     const keep = new Set();
     const next = [];
-    for (const item of wanted) {
-        if (item.health <= 0) continue;
-        keep.add(item.id);
-        const old = prev.get(item.id);
-        if (old) {
-            old.health = pendingHit ? Math.min(old.health, item.health) : item.health;
-            old.faction = item.owner;
-            old.phase = item.phase;
-            old.path = item.path || null;
-            old.along = item.along || 0;
-            old.length = item.length || 0;
-            old.playAt = item.playAt || 0;
-            old.spots = item.spots || [];
-            old.nap = item.nap || [];
-            old.village = item.village;
-            if (old.health <= 0) old.dying = true;
-            next.push(old);
-        } else {
-            next.push({
-                farmer: true,
-                fisher: false,
-                farmId: item.id,
-                village: item.village,
-                faction: item.owner,
-                index: -320 - wanted.indexOf(item),
-                health: item.health,
-                phase: item.phase,
-                post: item.village,
-                mode: "farm",
-                x: item.x,
-                z: item.z,
-                yaw: item.yaw || 0,
-                path: item.path || null,
-                along: item.along || 0,
-                length: item.length || 0,
-                playAt: item.playAt || 0,
-                spots: item.spots || [],
-                nap: item.nap || [],
-                spot: 0,
-                bob: 0,
-                down: 0,
-                swing: -1,
-                hostile: false,
-                attackIn: 0,
-                striking: 0,
-                struck: false,
-                dying: false
-            });
+    wanted.forEach((item, farmIndex) => {
+        if (item.health <= 0) return;
+        const crew = item.crew || 1;
+        for (let hand = 0; hand < crew; hand++) {
+            const key = item.id + ":" + hand;
+            keep.add(key);
+            const old = prev.get(key);
+            const nap = farmerNap(item, hand);
+            if (old) {
+                old.health = pendingHit ? Math.min(old.health, item.health) : item.health;
+                old.faction = item.owner;
+                old.phase = item.phase;
+                old.path = item.path || null;
+                old.along = item.along || 0;
+                old.length = item.length || 0;
+                old.playAt = item.playAt || 0;
+                old.spots = item.spots || [];
+                old.nap = nap;
+                old.village = item.village;
+                old.hand = hand;
+                if (old.health <= 0) old.dying = true;
+                next.push(old);
+            } else {
+                next.push({
+                    farmer: true,
+                    fisher: false,
+                    farmId: item.id,
+                    hand: hand,
+                    village: item.village,
+                    faction: item.owner,
+                    index: -320 - farmIndex * 2 - hand,
+                    health: item.health,
+                    phase: item.phase,
+                    post: item.village,
+                    mode: "farm",
+                    x: item.x + hand * 0.8,
+                    z: item.z,
+                    yaw: item.yaw || 0,
+                    path: item.path || null,
+                    along: item.along || 0,
+                    length: item.length || 0,
+                    playAt: item.playAt || 0,
+                    spots: item.spots || [],
+                    nap: nap,
+                    spot: hand,
+                    bob: 0,
+                    down: 0,
+                    swing: -1,
+                    hostile: false,
+                    attackIn: 0,
+                    striking: 0,
+                    struck: false,
+                    dying: false
+                });
+            }
         }
-    }
+    });
     for (const man of men) {
-        if (!man.farmer || keep.has(man.farmId)) continue;
+        if (!man.farmer || keep.has(man.farmId + ":" + (man.hand || 0))) continue;
         man.dying = true;
         man.health = 0;
         next.push(man);
@@ -2521,7 +3344,48 @@ function mergeDrivers(data) {
 }
 
 const cottageMeshes = { cotWall: [], cotRoof: [], cotDoor: [], cotWood: [], cotGlow: [] };
+const cottageFloor = [];
+const cottageProps = [];
 const builtLodges = new Set();
+
+function cottageGoods(lodge) {
+    const x = lodge.x;
+    const z = lodge.z;
+    const w = lodge.w;
+    const d = lodge.d;
+    const y = lodge.ground || 0;
+    const face = lodge.facing;
+    if (face === "south") {
+        return [
+            { name: "Bed_Twin1", x: x + 1.55, z: z + 1.22, yaw: Math.PI / 2, y: y, block: false },
+            { name: "Chest_Wood", x: x + w - 0.95, z: z + 1.9, yaw: 0.2, y: y, block: true },
+            { name: "Stool", x: x + 0.95, z: z + d - 1.15, yaw: 0.4, y: y, block: true },
+            { name: "Candle_1", x: x + w - 0.95, z: z + 1.9, yaw: 0, y: y + 0.72, block: false }
+        ];
+    }
+    if (face === "north") {
+        return [
+            { name: "Bed_Twin1", x: x + w - 1.55, z: z + d - 1.22, yaw: Math.PI / 2, y: y, block: false },
+            { name: "Chest_Wood", x: x + 0.95, z: z + d - 1.9, yaw: 0.4, y: y, block: true },
+            { name: "Stool", x: x + w - 0.95, z: z + 1.15, yaw: 0.2, y: y, block: true },
+            { name: "Candle_1", x: x + 0.95, z: z + d - 1.9, yaw: 0, y: y + 0.72, block: false }
+        ];
+    }
+    if (face === "east") {
+        return [
+            { name: "Bed_Twin1", x: x + 1.22, z: z + 1.55, yaw: 0, y: y, block: false },
+            { name: "Chest_Wood", x: x + 1.9, z: z + d - 0.95, yaw: 0.3, y: y, block: true },
+            { name: "Stool", x: x + w - 1.15, z: z + 0.95, yaw: 0.5, y: y, block: true },
+            { name: "Candle_1", x: x + 1.9, z: z + d - 0.95, yaw: 0, y: y + 0.72, block: false }
+        ];
+    }
+    return [
+        { name: "Bed_Twin1", x: x + w - 1.22, z: z + d - 1.55, yaw: 0, y: y, block: false },
+        { name: "Chest_Wood", x: x + w - 1.9, z: z + 0.95, yaw: 0.2, y: y, block: true },
+        { name: "Stool", x: x + 1.15, z: z + d - 0.95, yaw: 0.4, y: y, block: true },
+        { name: "Candle_1", x: x + w - 1.9, z: z + 0.95, yaw: 0, y: y + 0.72, block: false }
+    ];
+}
 
 function buildCottage(lodge) {
     const x = lodge.x;
@@ -2549,7 +3413,6 @@ function buildCottage(lodge) {
         wall(x, front, Math.max(0.08, gapX - x), t, y, y + h);
         wall(gapX + doorW, front, Math.max(0.08, x + w - gapX - doorW), t, y, y + h);
         wall(gapX, front, doorW, t, y + doorH, y + h);
-        addBox(cottageMeshes.cotDoor, gapX + 0.12, y + 0.02, front - 0.02, doorW - 0.24, doorH * 0.9, 0.06);
     } else {
         const front = facing === "east" ? x + w - t : x;
         const back = facing === "east" ? x : x + w - t;
@@ -2560,7 +3423,6 @@ function buildCottage(lodge) {
         wall(front, z, t, Math.max(0.08, gapZ - z), y, y + h);
         wall(front, gapZ + doorW, t, Math.max(0.08, z + d - gapZ - doorW), y, y + h);
         wall(front, gapZ, t, doorW, y + doorH, y + h);
-        addBox(cottageMeshes.cotDoor, front - 0.02, y + 0.02, gapZ + 0.12, 0.06, doorH * 0.9, doorW - 0.24);
     }
     const ridge = y + h + 1.05;
     const midZ = z + d / 2;
@@ -2578,8 +3440,48 @@ function buildCottage(lodge) {
         [x - 0.15, ridge, midZ, 1, 1, 0.78],
         [x - 0.15, y + h, z + d + 0.15, 1, 0, 0.78]
     );
+    pushTri(
+        cottageMeshes.cotWall,
+        [x, y + h, z, 0, 0.2, 0.8],
+        [x, y + h, z + d, 1, 0.2, 0.8],
+        [x, ridge, midZ, 0.5, 0.7, 0.8]
+    );
+    pushTri(
+        cottageMeshes.cotWall,
+        [x + w, y + h, z + d, 0, 0.2, 0.84],
+        [x + w, y + h, z, 1, 0.2, 0.84],
+        [x + w, ridge, midZ, 0.5, 0.7, 0.84]
+    );
     addBox(cottageMeshes.cotGlow, x + 0.55, y + 1.2, z - 0.05, 0.62, 0.48, 0.08);
-    addBox(cottageMeshes.cotWood, x + 0.35, y, z + 0.45, 0.7, 0.42, 0.45);
+    const inset = 0.42;
+    const floorY = y + 0.05;
+    floors.push({ x: x + inset, z: z + inset, w: w - inset * 2, d: d - inset * 2, y: floorY });
+    addBox(cottageFloor, x + inset, floorY - 0.04, z + inset, w - inset * 2, 0.05, d - inset * 2);
+    const midX = x + w / 2;
+    let doorX = midX;
+    let doorZ = midZ;
+    let fx = 0;
+    let fz = 1;
+    if (facing === "south") doorZ = z + d - t * 0.5;
+    else if (facing === "north") { doorZ = z + t * 0.5; fz = -1; }
+    else if (facing === "east") { doorX = x + w - t * 0.5; fx = 1; fz = 0; }
+    else { doorX = x + t * 0.5; fx = -1; fz = 0; }
+    doors.push({
+        id: "cottage:" + lodge.id,
+        kind: "house",
+        role: "cottage",
+        x: doorX,
+        z: doorZ,
+        y: y,
+        fx: fx,
+        fz: fz,
+        yaw: 0,
+        half: 0.7,
+        swing: 1,
+        want: true,
+        cottage: true
+    });
+    cottageProps.push(...cottageGoods(lodge));
     houses.push({
         open: true,
         village: lodge.village,
@@ -2610,11 +3512,18 @@ function ensureCottages(data) {
     textures.cotDoor = textures.door;
     textures.cotWood = textures.trunk;
     textures.cotGlow = textures.glow;
+    textures.cotFloor = textures.wood;
     uploadMesh("cotWall", cottageMeshes.cotWall);
     uploadMesh("cotRoof", cottageMeshes.cotRoof);
     uploadMesh("cotDoor", cottageMeshes.cotDoor);
     uploadMesh("cotWood", cottageMeshes.cotWood);
     uploadMesh("cotGlow", cottageMeshes.cotGlow);
+    uploadMesh("cotFloor", cottageFloor);
+    if (mesh.cotWall) mesh.cotWall.cull = false;
+    if (mesh.cotRoof) mesh.cotRoof.cull = false;
+    if (mesh.cotFloor) mesh.cotFloor.cull = false;
+    poseDoors();
+    stampCottageProps();
 }
 
 function paintCarts() {
@@ -2637,6 +3546,23 @@ function paintCarts() {
         addBox(list, pose.x - 0.58, y + 0.02, pose.z - 0.26, 0.18, 0.32, 0.18, xf);
         addBox(list, pose.x + 0.42, y + 0.02, pose.z + 0.08, 0.18, 0.32, 0.18, xf);
         if ((cart.cargo || 0) > 0) addBox(list, pose.x - 0.4, y + 0.78, pose.z - 0.22, 0.72, 0.26, 0.44, xf);
+    }
+    const haul = campaign && campaign.yard && campaign.yard.haul;
+    if (haul && (haul.phase === "out" || haul.phase === "back") && haul.path && haul.path.length > 1) {
+        const pose = clientCartPose(haul);
+        const y = Math.max(0, World.heightAt(pose.x, pose.z));
+        const c = Math.cos(pose.yaw || 0);
+        const s = Math.sin(pose.yaw || 0);
+        const xf = (px, py, pz) => {
+            const lx = px - pose.x;
+            const lz = pz - pose.z;
+            return [pose.x + lx * c + lz * s, py, pose.z - lx * s + lz * c];
+        };
+        addBox(list, pose.x - 0.75, y + 0.34, pose.z - 0.38, 1.55, 0.12, 0.76, xf);
+        addBox(list, pose.x - 0.55, y + 0.46, pose.z - 0.3, 1.05, 0.32, 0.6, xf);
+        addBox(list, pose.x - 0.58, y + 0.02, pose.z - 0.26, 0.18, 0.32, 0.18, xf);
+        addBox(list, pose.x + 0.42, y + 0.02, pose.z + 0.08, 0.18, 0.32, 0.18, xf);
+        if ((haul.cargo || 0) > 0) addBox(list, pose.x - 0.4, y + 0.78, pose.z - 0.22, 0.72, 0.26, 0.44, xf);
     }
     textures.cart = textures.trunk;
     uploadMesh("cart", list);
@@ -3053,7 +3979,7 @@ function postHit(body) {
 }
 
 function wound(man, label, quiet, knockX, knockZ) {
-    if (!man || man.dying || man.health <= 0 || man.faction === homeVillage) return false;
+    if (!man || man.dying || man.health <= 0 || man.jack || man.faction === homeVillage) return false;
     const word = label || "Hit";
     if (man.archer) {
         man.health -= 1;
@@ -3147,7 +4073,7 @@ function connectSwing() {
     let best = null;
     let bestT = profile.reach;
     for (const man of men) {
-        if (man.dying || man.hidden || man.decor || man.health <= 0 || man.faction === homeVillage) continue;
+        if (man.dying || man.hidden || man.decor || man.health <= 0 || allied || man.faction === homeVillage) continue;
         const chest = (man.stand || 0) + 0.95;
         const dx = man.x - ox;
         const dy = chest - cam.y;
@@ -3161,14 +4087,18 @@ function connectSwing() {
             bestT = t;
         }
     }
-    const gate = gateInReach(ox, oz, fx, fy, fz, profile.reach);
-    if (gate && gate.t < bestT) {
-        if (strikeGate(gate)) notePractice("sword");
-        return;
+    if (!allied) {
+        const gate = gateInReach(ox, oz, fx, fy, fz, profile.reach);
+        if (gate && gate.t < bestT) {
+            if (strikeGate(gate)) notePractice("sword");
+            return;
+        }
     }
     if (!best) {
-        const cart = cartUnder(ox + fx * Math.min(1.4, profile.reach), oz + fz * Math.min(1.4, profile.reach));
-        if (cart && strikeCart(cart)) notePractice("sword");
+        if (!allied) {
+            const cart = cartUnder(ox + fx * Math.min(1.4, profile.reach), oz + fz * Math.min(1.4, profile.reach));
+            if (cart && strikeCart(cart)) notePractice("sword");
+        }
         return;
     }
     const label = swing.kind === "chop" ? "Chop" : swing.kind === "thrust" ? "Thrust" : "Slash";
@@ -3295,6 +4225,7 @@ function stepIndoor(man, points, dt, speed, mode, key) {
 }
 
 function sleepNap(man) {
+    if (man.homeNap && man.homeNap.length) return man.homeNap;
     if (man.bed && man.bed !== "manor") {
         const lodge = houses.find((house) => house.kind === "cottage" && house.id === man.bed);
         if (lodge && lodge.nap && lodge.nap.length) return lodge.nap;
@@ -3303,13 +4234,14 @@ function sleepNap(man) {
     return house && house.nap;
 }
 
-function farmerDoor(village, door) {
+function sleepDoor(man) {
+    const spot = man.homeNap && man.homeNap[0];
+    if (!spot) return null;
     let best = null;
-    let bestDist = 2.4;
+    let bestDist = 3.2;
     for (const leaf of doors) {
-        if (leaf.role !== "farmhouse") continue;
-        if (leaf.id.indexOf(village + ":farmhouse") !== 0) continue;
-        const dist = door ? Math.hypot(leaf.x - door.x, leaf.z - door.z) : 0;
+        if (leaf.cottage) continue;
+        const dist = Math.hypot(leaf.x - spot.x, leaf.z - spot.z);
         if (dist < bestDist) {
             best = leaf;
             bestDist = dist;
@@ -3318,26 +4250,72 @@ function farmerDoor(village, door) {
     return best;
 }
 
-function holdFarmDoor(man, open) {
-    const leaf = farmerDoor(man.village, man.nap && man.nap[1]);
-    if (!leaf) return;
-    if (open) {
-        leaf.want = true;
-        leaf.farmHold = true;
-    } else if (leaf.farmHold) {
-        leaf.want = false;
-        leaf.farmHold = false;
+function farmerDoor(man) {
+    const hint = man.nap && man.nap[1];
+    const prefix = man.village + ":farmhouse";
+    let best = null;
+    let bestDist = 8;
+    for (const leaf of doors) {
+        if (leaf.role !== "farmhouse") continue;
+        if (String(leaf.id).indexOf(prefix) !== 0) continue;
+        const dist = hint
+            ? Math.hypot(leaf.x - hint.x, leaf.z - hint.z)
+            : Math.hypot(leaf.x - man.x, leaf.z - man.z);
+        if (dist < bestDist) {
+            best = leaf;
+            bestDist = dist;
+        }
     }
+    return best;
+}
+
+function farmShell(leaf) {
+    if (!leaf) return null;
+    for (const building of Town.buildings) {
+        if (building.entry === leaf) return building;
+    }
+    return null;
+}
+
+function inFarmhouse(x, z, house) {
+    if (!house) return false;
+    return x > house.minX + 0.2 && x < house.minX + house.w - 0.2
+        && z > house.minZ + 0.2 && z < house.minZ + house.d - 0.2;
+}
+
+function farmDoorClear(man, leaf) {
+    if (!leaf || (leaf.swing || 0) >= 0.85) return true;
+    const door = man.nap && man.nap[1];
+    if (!door) return true;
+    return Math.hypot(man.x - door.x, man.z - door.z) > 1.4;
 }
 
 function stepFarmer(man, dt) {
     const nap = man.nap || [];
     const door = nap[1];
+    const leaf = farmerDoor(man);
+    const house = farmShell(leaf);
+    const inside = inFarmhouse(man.x, man.z, house);
+    const nearDoor = door && Math.hypot(man.x - door.x, man.z - door.z) < 2.6;
+    if (leaf && (inside || man.hidden || man.indoors || nearDoor)) {
+        leaf.want = true;
+        leaf.farmHold = true;
+    } else if (leaf && leaf.farmHold) {
+        leaf.want = false;
+        leaf.farmHold = false;
+    }
     if (man.phase === "sleep") {
+        if (!farmDoorClear(man, leaf)) {
+            man.walking = false;
+            man.swing = -1;
+            man.mode = "farm";
+            if (door) man.yaw = Math.atan2(-(door.x - man.x), -(door.z - man.z));
+            plant(man);
+            actorsDirty = true;
+            return false;
+        }
         const here = { x: man.x, z: man.z, y: man.floorY || 0 };
         stepIndoor(man, [here].concat(nap), dt, 2.2, "hide", "farmbed" + man.farmId);
-        const near = door && Math.hypot(man.x - door.x, man.z - door.z) < 2.2;
-        holdFarmDoor(man, near || man.indoors);
         man.swing = -1;
         man.walking = !man.hidden;
         man.mode = "farm";
@@ -3345,23 +4323,38 @@ function stepFarmer(man, dt) {
         actorsDirty = true;
         return false;
     }
-    if (man.hidden || man.indoors) {
-        const leaving = nap.length ? nap.slice().reverse() : [];
-        const near = door && Math.hypot(man.x - door.x, man.z - door.z) < 2.2;
-        holdFarmDoor(man, true);
-        if (stepIndoor(man, leaving, dt, 2.2, "leave", "farmout" + man.farmId)) {
-            holdFarmDoor(man, near);
+    if (man.hidden || man.indoors || inside) {
+        if (!farmDoorClear(man, leaf)) {
+            man.walking = false;
+            man.swing = -1;
+            man.mode = "farm";
+            if (door) man.yaw = Math.atan2(-(door.x - man.x), -(door.z - man.z));
             plant(man);
             actorsDirty = true;
             return false;
         }
-        holdFarmDoor(man, false);
+        const leaving = nap.length ? nap.slice().reverse() : [];
+        if (stepIndoor(man, leaving, dt, 2.2, "leave", "farmout" + man.farmId)) {
+            plant(man);
+            actorsDirty = true;
+            return false;
+        }
+    }
+    if (inFarmhouse(man.x, man.z, house) && nap[0]) {
+        moveToward(man, nap[0].x, nap[0].z, dt, 2.2);
+        man.walking = true;
+        man.swing = -1;
+        man.floorY = null;
+        man.mode = "farm";
+        plant(man);
+        actorsDirty = true;
+        return false;
     }
     if ((man.phase === "haul" || man.phase === "back") && man.path && man.path.length > 1) {
         const extra = Math.max(0, (gameMs() - (man.playAt || 0)) / 1000) * 2.2;
         const dist = Math.min(man.length || 0, (man.along || 0) + extra);
         const pose = pathPose(man.path, dist);
-        man.x = pose.x;
+        man.x = pose.x + (man.hand ? 0.8 : 0);
         man.z = pose.z;
         man.yaw = pose.yaw;
         man.floorY = null;
@@ -3381,9 +4374,10 @@ function stepFarmer(man, dt) {
     }
     if (man.spot == null || man.spot >= spots.length) man.spot = 0;
     const goal = spots[man.spot];
+    const goalX = goal.x + (man.hand ? 0.8 : 0);
     const beforeX = man.x;
     const beforeZ = man.z;
-    const moving = moveToward(man, goal.x, goal.z, dt, 2.2);
+    const moving = moveToward(man, goalX, goal.z, dt, 2.2);
     if (!moving) man.spot = (man.spot + 1) % spots.length;
     else if (Math.hypot(man.x - beforeX, man.z - beforeZ) < 0.002) {
         man.stuck = (man.stuck || 0) + dt;
@@ -3402,9 +4396,32 @@ function stepFarmer(man, dt) {
     return false;
 }
 
+function stepJack(man, dt) {
+    const yards = [];
+    if (campaign && campaign.yard) yards.push(campaign.yard);
+    if (campaign && campaign.yards) yards.push(...campaign.yards);
+    const yard = yards.find((item) => item.id === man.yardId) || (campaign && campaign.yard);
+    const haul = yard && yard.haul;
+    if (man.hauling && haul && haul.path && haul.path.length > 1) {
+        const pose = clientCartPose(haul);
+        man.x = pose.x + 1.2;
+        man.z = pose.z;
+        man.yaw = pose.yaw || 0;
+        man.walking = haul.phase === "out" || haul.phase === "back";
+        man.swing = -1;
+        man.hostile = false;
+        man.floorY = null;
+        plant(man);
+        return false;
+    }
+    return stepFisher(man, dt);
+}
+
 function stepFisher(man, dt) {
     const nap = sleepNap(man);
     if (nap && (man.asleep || man.shelter)) {
+        const leaf = sleepDoor(man);
+        if (leaf) leaf.want = true;
         const goal = man.asleep ? nap : nap.slice(0, 2);
         const here = { x: man.x, z: man.z, y: man.floorY || 0 };
         stepIndoor(man, [here].concat(goal), dt, 2.2, man.asleep ? "hide" : "stay", (man.asleep ? "bed" : "safe") + man.post);
@@ -3475,7 +4492,7 @@ const BOW_RANGE = 22;
 function archerTarget(man) {
     let best = null;
     let bestDist = BOW_RANGE;
-    if (man.faction !== homeVillage && !player.dead) {
+    if (!allied && man.faction !== homeVillage && !player.dead) {
         const dist = Math.hypot(cam.x - man.x, cam.z - man.z);
         if (dist < bestDist && dist > 1.2) {
             best = { x: cam.x, y: cam.y - 0.35, z: cam.z };
@@ -3663,6 +4680,19 @@ function shotStop(x0, y0, z0, x1, y1, z1) {
             }
         }
     }
+    for (const door of doors) {
+        if (!door.cottage) continue;
+        if (missesFlat(x0, z0, x1, z1, door.x - 1.4, door.z - 1.4, door.x + 1.4, door.z + 1.4)) continue;
+        for (let s = 1; s <= steps; s++) {
+            const t = s / steps;
+            const py = y0 + (y1 - y0) * t;
+            if (py > (door.y || 0) + 2.3) continue;
+            if (hitsDoor(door, x0 + (x1 - x0) * t, z0 + (z1 - z0) * t, 0.05)) {
+                offer(t);
+                break;
+            }
+        }
+    }
     return best;
 }
 
@@ -3695,7 +4725,8 @@ function stepArrows(dt) {
             }
         }
         let hit = false;
-        if (campaign) {
+        const peace = allied && arrow.fromPlayer;
+        if (campaign && !peace) {
             for (const man of men) {
                 if (man.dying || man.hidden || man.decor || man.health <= 0 || man.faction === arrow.faction) continue;
                 const chest = (man.stand || 0) + 0.95;
@@ -3716,7 +4747,7 @@ function stepArrows(dt) {
                 }
             }
         }
-        if (!hit && arrow.faction !== homeVillage && !player.dead) {
+        if (!hit && !allied && arrow.faction !== homeVillage && !player.dead) {
             if (sweptNear(x0, y0, z0, arrow.x, arrow.y, arrow.z, cam.x, cam.y - 0.55, cam.z, 0.46, 1.05)) {
                 hurtPlayer(8);
                 hit = true;
@@ -3838,6 +4869,90 @@ function stepDriver(man, dt) {
     return false;
 }
 
+function pastWalls(post, x, z) {
+    const box = palisadeBox(post);
+    return x < box.minX - 1.1 || x > box.maxX + 1.1 || z < box.minZ - 1.1 || z > box.maxZ + 1.1;
+}
+
+function patrolCorners(post) {
+    const box = palisadeBox(post);
+    const out = 2.8;
+    return [
+        { x: box.minX - out, z: box.minZ - out },
+        { x: box.maxX + out, z: box.minZ - out },
+        { x: box.maxX + out, z: box.maxZ + out },
+        { x: box.minX - out, z: box.maxZ + out }
+    ];
+}
+
+function nearestPatrol(man, points) {
+    let best = 0;
+    let bestDist = Infinity;
+    for (let i = 0; i < points.length; i++) {
+        const dist = Math.hypot(points[i].x - man.x, points[i].z - man.z);
+        if (dist < bestDist) {
+            best = i;
+            bestDist = dist;
+        }
+    }
+    return best;
+}
+
+function shouldPatrol(man) {
+    const roster = guardsAt(man.post);
+    return roster.length > 1 && roster[roster.length - 1] === man;
+}
+
+function patrolToward(man, x, z, dt, speed) {
+    const dx = x - man.x;
+    const dz = z - man.z;
+    const dist = Math.hypot(dx, dz) || 0.0001;
+    man.yaw = Math.atan2(-dx, -dz);
+    if (dist < 0.45) return false;
+    const step = Math.min(speed * dt, dist);
+    const nx = man.x + dx / dist * step;
+    const nz = man.z + dz / dist * step;
+    const ox = man.x;
+    const oz = man.z;
+    if (!blocked(nx, man.z, man.faction)) man.x = nx;
+    if (!blocked(man.x, nz, man.faction)) man.z = nz;
+    return Math.hypot(man.x - ox, man.z - oz) > 0.004;
+}
+
+function stepPatrol(man, dt) {
+    man.floorY = null;
+    const outside = pastWalls(man.post, man.x, man.z);
+    let goal;
+    if (!outside) {
+        if (man.exitSide == null) man.exitSide = nearestPatrol(man, [0, 1, 2, 3].map((side) => gateCenter(man.post, side)));
+        goal = gateSpot(man.post, man.exitSide);
+    } else {
+        const loop = patrolCorners(man.post);
+        if (man.patrolAt == null) man.patrolAt = nearestPatrol(man, loop);
+        goal = loop[man.patrolAt % loop.length];
+        if (Math.hypot(goal.x - man.x, goal.z - man.z) < 0.7) {
+            man.patrolAt = (man.patrolAt + 1) % loop.length;
+            goal = loop[man.patrolAt];
+            man.patrolStuck = 0;
+        }
+    }
+    const moving = patrolToward(man, goal.x, goal.z, dt, 1.65);
+    if (moving) man.patrolStuck = 0;
+    else {
+        man.patrolStuck = (man.patrolStuck || 0) + dt;
+        if (man.patrolStuck > 1.3) {
+            man.patrolStuck = 0;
+            if (!outside) man.exitSide = ((man.exitSide || 0) + 1) % 4;
+            else man.patrolAt = ((man.patrolAt || 0) + 1) % 4;
+        }
+    }
+    man.swing = -1;
+    man.bob = moving ? Math.sin(performance.now() * 0.012 + man.index) * 0.05 : 0;
+    man.walking = moving;
+    if (moving) actorsDirty = true;
+    plant(man);
+}
+
 function stepMan(man, dt) {
     if (man.dying) {
         man.down += dt * 1.5;
@@ -3848,6 +4963,7 @@ function stepMan(man, dt) {
     }
     if (man.driver) return stepDriver(man, dt);
     if (man.archer) return stepArcher(man, dt);
+    if (man.jack) return stepJack(man, dt);
     if (man.decor) return stepKeeper(man, dt);
     if (man.fisher) return stepFisher(man, dt);
     if (man.farmer) return stepFarmer(man, dt);
@@ -3900,7 +5016,7 @@ function stepMan(man, dt) {
     const dist = Math.hypot(dx, dz) || 0.0001;
     const place = places[man.post];
     const outsideTown = (x, z) => Math.hypot(x - place.ox, z - place.oz) > townLeash;
-    if (man.faction === homeVillage) {
+    if (allied || man.faction === homeVillage) {
         man.hostile = false;
         man.striking = 0;
     } else if (!man.hostile && dist < 5.6) {
@@ -3930,6 +5046,9 @@ function stepMan(man, dt) {
                 man.struck = false;
             }
         }
+    } else if (shouldPatrol(man)) {
+        stepPatrol(man, dt);
+        return false;
     } else {
         const hx = man.homeX - man.x;
         const hz = man.homeZ - man.z;
@@ -4040,15 +5159,13 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
 ]), gl.STATIC_DRAW);
 
 let proj = new Float32Array(16);
-let horizonProj = new Float32Array(16);
 
 function resize() {
     const scale = window.innerWidth < 700 ? 1 : 0.65;
     canvas.width = Math.max(320, Math.floor(window.innerWidth * scale));
     canvas.height = Math.max(200, Math.floor(window.innerHeight * scale));
     gl.viewport(0, 0, canvas.width, canvas.height);
-    proj = perspective(0.12, 1600);
-    horizonProj = perspective(1, 6800);
+    proj = perspective(0.12, 420);
 }
 
 function perspective(near, far) {
@@ -4155,6 +5272,7 @@ function gateHealth(village, side) {
 
 function gatePasses(village, side, faction) {
     if (gateHealth(village, side) <= 0) return true;
+    if (allied && faction === homeVillage) return true;
     return faction === ownerOf(village);
 }
 
@@ -4253,7 +5371,7 @@ function gateWant(village, side) {
     if (gateHealth(village, side) <= 0) return 0;
     const owner = ownerOf(village);
     const spot = gateCenter(village, side);
-    if (!flying && owner === homeVillage && !onTower(cam.x, cam.z) && floorAt(cam.x, cam.z) < 2 && Math.hypot(cam.x - spot.x, cam.z - spot.z) < 7.5) return 1;
+    if (!flying && (allied || owner === homeVillage) && !onTower(cam.x, cam.z) && floorAt(cam.x, cam.z, cam.y - 1.62) < 2 && Math.hypot(cam.x - spot.x, cam.z - spot.z) < 7.5) return 1;
     for (const man of men) {
         if (man.dying || man.health <= 0 || man.archer || man.faction !== owner) continue;
         if (onTower(man.x, man.z) || man.indoors || man.hidden || (man.floorY || 0) > 1) continue;
@@ -4287,6 +5405,7 @@ function gateInReach(ox, oz, fx, fy, fz, reach) {
 }
 
 function strikeGate(gate) {
+    if (allied) return false;
     const row = campaign.gates && campaign.gates[gate.village];
     if (!row || row[gate.side] <= 0) return false;
     row[gate.side] -= 1;
@@ -4319,6 +5438,36 @@ function addPlank(list, hx, hz, tx, tz, ox, oz, open) {
         return [hx + c * lx + s * lz, y, hz - s * lx + c * lz];
     };
     addBox(list, hx, 0.1, hz - 0.08, len, 1.96, 0.16, xf);
+}
+
+function addFlatWall(list, x0, z0, x1, z1, gap, axis, shade) {
+    const hole = 1.95;
+    const h = 2.5;
+    const along0 = axis === "x" ? x0 : z0;
+    const along1 = axis === "x" ? x1 : z1;
+    const parts = [[along0, gap - hole], [gap + hole, along1]];
+    for (let p = 0; p < parts.length; p++) {
+        const a = parts[p][0];
+        const b = parts[p][1];
+        if (b - a < 0.2) continue;
+        const u0 = a / 2.4;
+        const u1 = b / 2.4;
+        if (axis === "x") {
+            pushQuad(list, [a, 0, z0, u0, 0, shade], [a, h, z0, u0, 1, shade], [b, h, z0, u1, 1, shade], [b, 0, z0, u1, 0, shade]);
+        } else {
+            pushQuad(list, [x0, 0, a, u0, 0, shade], [x0, h, a, u0, 1, shade], [x0, h, b, u1, 1, shade], [x0, 0, b, u1, 0, shade]);
+        }
+    }
+    const jamb = (at) => {
+        const t = 0.2;
+        if (axis === "x") {
+            pushQuad(list, [at, 0, z0 - t, 0, 0, shade * 0.7], [at, h, z0 - t, 0, 1, shade * 0.7], [at, h, z0 + t, 0.16, 1, shade * 0.7], [at, 0, z0 + t, 0.16, 0, shade * 0.7]);
+        } else {
+            pushQuad(list, [x0 - t, 0, at, 0, 0, shade * 0.7], [x0 - t, h, at, 0, 1, shade * 0.7], [x0 + t, h, at, 0.16, 1, shade * 0.7], [x0 + t, 0, at, 0.16, 0, shade * 0.7]);
+        }
+    };
+    jamb(gap - hole);
+    jamb(gap + hole);
 }
 
 function addWallRun(list, x0, z0, x1, z1, gap, axis) {
@@ -4555,18 +5704,21 @@ function prepareTowers() {
     }
 }
 
-function floorAt(x, z) {
+function floorAt(x, z, feet) {
     if (inside) {
-        const feet = inside.view.y - 1.62;
+        const stand = inside.view.y - 1.62;
         let height = 0;
         for (const floor of inside.floors) {
             if (x <= floor.x || x >= floor.x + floor.w || z <= floor.z || z >= floor.z + floor.d) continue;
-            if (floor.y <= feet + 0.52 && floor.y >= feet - 0.85) height = Math.max(height, floor.y);
+            if (floor.y <= stand + 0.52 && floor.y >= stand - 0.85) height = Math.max(height, floor.y);
         }
         return height;
     }
-    let height = Math.max(0, World.heightAt(x, z));
+    const ground = Math.max(0, World.heightAt(x, z));
+    let height = ground;
+    const cap = feet == null ? ground + 0.6 : feet + 0.55;
     for (const floor of floors) {
+        if (floor.y > cap) continue;
         if (x > floor.x && x < floor.x + floor.w && z > floor.z && z < floor.z + floor.d) {
             height = Math.max(height, floor.y);
         }
@@ -4585,12 +5737,20 @@ function hitsSolid(x, z, feet) {
 
 function rebuildPalisade() {
     const list = [];
+    const flat = [];
     for (let village = 0; village < 4; village++) {
         const box = palisadeBox(village);
-        addWallRun(list, box.minX, box.minZ, box.maxX, box.minZ, box.cx, "x");
-        addWallRun(list, box.minX, box.maxZ, box.maxX, box.maxZ, box.cx, "x");
-        addWallRun(list, box.minX, box.minZ, box.minX, box.maxZ, box.cz, "z");
-        addWallRun(list, box.maxX, box.minZ, box.maxX, box.maxZ, box.cz, "z");
+        if (village === homeVillage) {
+            addFlatWall(flat, box.minX, box.minZ, box.maxX, box.minZ, box.cx, "x", 0.98);
+            addFlatWall(flat, box.minX, box.maxZ, box.maxX, box.maxZ, box.cx, "x", 0.74);
+            addFlatWall(flat, box.minX, box.minZ, box.minX, box.maxZ, box.cz, "z", 0.8);
+            addFlatWall(flat, box.maxX, box.minZ, box.maxX, box.maxZ, box.cz, "z", 0.86);
+        } else {
+            addWallRun(list, box.minX, box.minZ, box.maxX, box.minZ, box.cx, "x");
+            addWallRun(list, box.minX, box.maxZ, box.maxX, box.maxZ, box.cx, "x");
+            addWallRun(list, box.minX, box.minZ, box.minX, box.maxZ, box.cz, "z");
+            addWallRun(list, box.maxX, box.minZ, box.maxX, box.maxZ, box.cz, "z");
+        }
         for (let side = 0; side < 4; side++) {
             addTower(list, towerLayout(village, side));
             if (gateHealth(village, side) <= 0) continue;
@@ -4598,6 +5758,8 @@ function rebuildPalisade() {
         }
     }
     uploadMesh("wood", list);
+    uploadMesh("palisade", flat);
+    mesh.palisade.cull = false;
 }
 
 function updatePalisade(dt) {
@@ -4665,13 +5827,149 @@ const stick = { x: 0, y: 0 };
 let flyLift = 0;
 let hop = 0;
 let jumpHeld = false;
-let fastOn = false;
+let fastOn = true;
 let spotSaved = null;
 
 function facingName(yaw) {
     const names = ["North", "Northeast", "East", "Southeast", "South", "Southwest", "West", "Northwest"];
     const deg = ((yaw * 180 / Math.PI) % 360 + 360) % 360;
     return names[Math.round(deg / 45) % 8];
+}
+
+const miniMap = document.getElementById("minimap");
+const miniX0 = -3800;
+const miniX1 = 3700;
+const miniZ0 = -3400;
+const miniZ1 = 3600;
+let miniBake = null;
+
+function miniColor(h, wet) {
+    if (wet || h < 0.12) return h < -2.2 ? [20, 78, 122] : [58, 140, 186];
+    if (h < 1.2) return [214, 196, 138];
+    if (h > 40) return [186, 182, 174];
+    if (h > 22) return [132, 126, 116];
+    if (h > 10) return [118, 138, 86];
+    if (h > 5) return [86, 138, 68];
+    return [70, 124, 58];
+}
+
+function bakeMini() {
+    if (!miniMap || !window.World || miniBake) return;
+    const cols = 300;
+    const rows = 280;
+    const scratch = document.createElement("canvas");
+    scratch.width = cols;
+    scratch.height = rows;
+    const image = scratch.getContext("2d").createImageData(cols, rows);
+    const data = image.data;
+    for (let row = 0; row < rows; row++) {
+        const z = miniZ0 + (row + 0.5) / rows * (miniZ1 - miniZ0);
+        for (let col = 0; col < cols; col++) {
+            const x = miniX0 + (col + 0.5) / cols * (miniX1 - miniX0);
+            const rgb = miniColor(World.heightAt(x, z), World.wet(x, z));
+            const i = (row * cols + col) * 4;
+            data[i] = rgb[0];
+            data[i + 1] = rgb[1];
+            data[i + 2] = rgb[2];
+            data[i + 3] = 255;
+        }
+    }
+    scratch.getContext("2d").putImageData(image, 0, 0);
+    miniBake = document.createElement("canvas");
+    miniBake.width = cols;
+    miniBake.height = rows;
+    const ctx = miniBake.getContext("2d");
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(scratch, 0, 0);
+    const point = (x, z) => ({
+        x: (x - miniX0) / (miniX1 - miniX0) * cols,
+        y: (z - miniZ0) / (miniZ1 - miniZ0) * rows
+    });
+    ctx.strokeStyle = "#3a8ec0";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    for (const chain of World.waterways) {
+        ctx.beginPath();
+        chain.forEach((spot, index) => {
+            const p = point(spot[0], spot[1]);
+            if (index === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+        });
+        ctx.stroke();
+    }
+    ctx.strokeStyle = "rgba(150, 108, 62, 0.95)";
+    ctx.lineWidth = 1.6;
+    for (const link of [[0, 1], [0, 2], [2, 3], [1, 3]]) {
+        const spots = [World.places[link[0]]]
+            .concat(World.trackOf(link[0], link[1]).map((spot) => ({ x: spot[0], z: spot[1] })))
+            .concat([World.places[link[1]]]);
+        ctx.beginPath();
+        spots.forEach((spot, index) => {
+            const p = point(spot.x, spot.z);
+            if (index === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+        });
+        ctx.stroke();
+    }
+    for (const tree of World.trees) {
+        if (tree.kind !== "pine" && tree.kind !== "oak") continue;
+        const p = point(tree.x, tree.z);
+        ctx.fillStyle = tree.kind === "pine" ? "rgba(28, 72, 40, 0.9)" : "rgba(36, 92, 38, 0.85)";
+        ctx.fillRect(p.x - 0.7, p.y - 0.7, 1.4, 1.4);
+    }
+}
+
+function paintMini() {
+    if (!miniBake) bakeMini();
+    if (!miniMap || !miniBake) return;
+    const ctx = miniMap.getContext("2d");
+    const w = miniMap.width;
+    const h = miniMap.height;
+    const body = inside && inside.back ? inside.back : activeCam();
+    const span = 190;
+    const scale = w / span;
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, w / 2 - 1, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate(-body.yaw);
+    const destW = (miniX1 - miniX0) * scale;
+    const destH = (miniZ1 - miniZ0) * scale;
+    ctx.drawImage(miniBake, (miniX0 - body.x) * scale, (miniZ0 - body.z) * scale, destW, destH);
+    const towns = ["#c45c3a", "#3d6b8a", "#6a7a3a", "#8a5a7a"];
+    World.places.forEach((place, index) => {
+        const sx = (place.x - body.x) * scale;
+        const sy = (place.z - body.z) * scale;
+        ctx.fillStyle = "#f4efe4";
+        ctx.strokeStyle = towns[index];
+        ctx.lineWidth = 2;
+        ctx.strokeRect(sx - 4, sy - 4, 8, 8);
+        ctx.fillRect(sx - 4, sy - 4, 8, 8);
+    });
+    ctx.restore();
+    ctx.beginPath();
+    ctx.moveTo(w / 2, h / 2 - 11);
+    ctx.lineTo(w / 2 + 7, h / 2 + 9);
+    ctx.lineTo(w / 2 - 7, h / 2 + 9);
+    ctx.closePath();
+    ctx.fillStyle = "#f2d15a";
+    ctx.strokeStyle = "#1c1408";
+    ctx.lineWidth = 2;
+    ctx.fill();
+    ctx.stroke();
+    const nx = w / 2 - Math.sin(body.yaw) * (w / 2 - 16);
+    const ny = h / 2 - Math.cos(body.yaw) * (h / 2 - 16);
+    ctx.font = "700 13px Segoe UI, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(12, 16, 20, 0.85)";
+    ctx.fillStyle = "#f7f4ea";
+    ctx.strokeText("N", nx, ny);
+    ctx.fillText("N", nx, ny);
 }
 
 function paintCompass() {
@@ -4733,7 +6031,7 @@ function flyPlayer(dt) {
 }
 
 function groundUnder(x, z, feet) {
-    if (!inside) return floorAt(x, z);
+    if (!inside) return floorAt(x, z, feet);
     let height = 0;
     let found = false;
     for (const floor of inside.floors) {
@@ -4742,7 +6040,7 @@ function groundUnder(x, z, feet) {
         height = Math.max(height, floor.y);
         found = true;
     }
-    return found ? height : floorAt(x, z);
+    return found ? height : floorAt(x, z, feet);
 }
 
 function movePlayer(dt) {
@@ -4782,7 +6080,7 @@ function movePlayer(dt) {
         mx = mx / len * dist;
         mz = mz / len * dist;
         const stepUp = (nx, nz) => {
-            const next = floorAt(nx, nz);
+            const next = floorAt(nx, nz, feet);
             if (next > feet + 0.52) return false;
             if (next < feet - 0.52 && World.tooSteep(nx, nz)) return false;
             return true;
@@ -4878,7 +6176,7 @@ function draw() {
     }
     paintCarts();
     const stride = 24;
-    const drawMesh = (name, band, farPass) => {
+    const drawMesh = (name, band) => {
         if (!mesh[name] || !textures[name] || !mesh[name].count) return;
         if (mesh[name].cull === false) gl.disable(gl.CULL_FACE);
         else gl.enable(gl.CULL_FACE);
@@ -4891,23 +6189,21 @@ function draw() {
         gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
         gl.bindTexture(gl.TEXTURE_2D, textures[name]);
         gl.uniform1f(loc.dark, dark);
-        gl.uniform1f(loc.glow, name === "glow" ? 1 : 0);
+        gl.uniform1f(loc.glow, name === "glow" ? 2 : 0);
         gl.uniform1f(loc.band, band);
         gl.uniform1f(loc.flow, name === "water" ? 1 : 0);
-        gl.uniformMatrix4fv(loc.proj, false, farPass ? horizonProj : proj);
+        gl.uniformMatrix4fv(loc.proj, false, proj);
         gl.drawArrays(gl.TRIANGLES, 0, mesh[name].count);
     };
-    for (const name of ["horizon", "horizonRock"]) drawMesh(name, 2, true);
-    for (const name of ["horizonLeaf", "horizonWall", "horizonRoof"]) drawMesh(name, 3, true);
     gl.clear(gl.DEPTH_BUFFER_BIT);
     for (const name of Object.keys(mesh)) {
-        if (name.indexOf("horizon") === 0 || name.indexOf("far") === 0 || name.indexOf("near") === 0 || name.indexOf("room") === 0) continue;
-        drawMesh(name, 1, false);
+        if (name.indexOf("far") === 0 || name.indexOf("near") === 0 || name.indexOf("room") === 0) continue;
+        drawMesh(name, 1);
     }
-    drawMesh("farTrunk", 0.6, false);
-    drawMesh("farLeaf", 0.6, false);
-    drawMesh("nearTrunk", 1, false);
-    drawMesh("nearLeaf", 1, false);
+    drawMesh("farTrunk", 0.6);
+    drawMesh("farLeaf", 0.6);
+    drawMesh("nearTrunk", 1);
+    drawMesh("nearLeaf", 1);
     gl.uniform1f(loc.band, 1);
     gl.uniform1f(loc.flow, 0);
     gl.uniformMatrix4fv(loc.proj, false, proj);
@@ -4915,7 +6211,7 @@ function draw() {
         gl.enable(gl.CULL_FACE);
         gl.bindTexture(gl.TEXTURE_2D, textures.people);
         for (const man of men) {
-            if (man.hidden || !nearPerson(man, 500)) continue;
+            if (man.hidden || !nearPerson(man, 260)) continue;
             const kind = man.fisher || man.decor || man.driver ? "fisher" : "soldier";
             const model = peopleModels[kind + man.faction];
             if (!model) continue;
@@ -4964,6 +6260,22 @@ function draw() {
             }
         }
     }
+    drawHorse();
+    if (studyMesh && studyTex) {
+        gl.enable(gl.CULL_FACE);
+        gl.bindTexture(gl.TEXTURE_2D, studyTex);
+        gl.uniformMatrix4fv(loc.model, false, studyMatrix());
+        gl.uniform1f(loc.dark, dark);
+        gl.uniform1f(loc.glow, 0);
+        gl.uniform1f(loc.band, 1);
+        gl.bindBuffer(gl.ARRAY_BUFFER, studyMesh.buffer);
+        gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
+        gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
+        gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
+        gl.drawArrays(gl.TRIANGLES, 0, studyMesh.count);
+        gl.uniformMatrix4fv(loc.model, false, identity);
+        gl.enable(gl.CULL_FACE);
+    }
     if (arrowMesh && textures.wood && arrowMesh.count) {
         gl.bindTexture(gl.TEXTURE_2D, textures.wood);
         gl.uniformMatrix4fv(loc.model, false, identity);
@@ -4983,6 +6295,7 @@ function loadTown() {
         const light = [0.25, 0.86, 0.28];
         const lightLen = Math.hypot(light[0], light[1], light[2]);
         for (const b of Town.buildings) {
+            if (b.village === 2 && (b.mesh === "house" || b.mesh === "tall" || b.mesh === "shop" || b.mesh === "brick" || b.mesh === "long" || b.mesh === "grand") && Math.hypot(b.x + 2480, b.z - 620) > 22) continue;
             const src = data.buildings[b.mesh];
             const groups = src && (src.groups || src);
             if (!groups) continue;
@@ -5197,7 +6510,7 @@ function interiorKind(mesh, role) {
 function doorLeaf(door) {
     const acrossX = door.fz;
     const acrossZ = -door.fx;
-    const hw = 0.56;
+    const hw = door.wide || 0.56;
     const angle = (door.swing || 0) * 1.7;
     const dirX = acrossX * Math.cos(angle) - door.fx * Math.sin(angle);
     const dirZ = acrossZ * Math.cos(angle) - door.fz * Math.sin(angle);
@@ -5216,7 +6529,7 @@ function hitsShell(b, x, z, r) {
     if (door) {
         const out = (x - door.x) * door.fx + (z - door.z) * door.fz;
         const lat = (x - door.x) * door.fz - (z - door.z) * door.fx;
-        if (Math.abs(lat) < 0.74 && out > -0.85 && out < 0.8) return false;
+        if (Math.abs(lat) < 0.95 && out > -0.85 && out < 0.8) return false;
     }
     const t = 0.34;
     if (z > minZ - r && z < minZ + t + r) return true;
@@ -5253,13 +6566,41 @@ function hitsDoor(door, x, z, r) {
         const x = b.x + fx * (half - 0.06) - c * side;
         const z = b.z + fz * (half - 0.06) + s * side;
         const gy = b.y || 0;
-        const door = { id: key + ":" + counts[key], kind, role: b.role || "", x, z, y: gy, fx, fz, yaw: b.yaw, half, swing: 0, want: false };
+        const door = { id: key + ":" + counts[key], kind, role: b.role || "", x, z, y: gy, fx, fz, yaw: b.yaw, half, swing: 1, want: true };
         b.entry = door;
         doors.push(door);
         const inset = 0.55;
         const floorY = gy + 0.045;
         floors.push({ x: b.minX + inset, z: b.minZ + inset, w: Math.max(0.4, b.w - inset * 2), d: Math.max(0.4, b.d - inset * 2), y: floorY });
         addBox(floorGeom, b.minX + inset, floorY - 0.04, b.minZ + inset, Math.max(0.4, b.w - inset * 2), 0.06, Math.max(0.4, b.d - inset * 2));
+    }
+    for (const b of houses) {
+        if (!b.open || b.kind === "cottage" || !b.entrance) continue;
+        const t = 0.28;
+        let fx = 0;
+        let fz = 1;
+        let x = b.x + b.w / 2;
+        let z = b.z + b.d / 2;
+        if (b.entrance === "south") z = b.z + b.d - t * 0.5;
+        else if (b.entrance === "north") { z = b.z + t * 0.5; fz = -1; }
+        else if (b.entrance === "east") { x = b.x + b.w - t * 0.5; fx = 1; fz = 0; }
+        else { x = b.x + t * 0.5; fx = -1; fz = 0; }
+        doors.push({
+            id: "home:" + b.village + ":" + b.kind,
+            kind: "house",
+            role: b.kind,
+            x: x,
+            z: z,
+            y: 0,
+            fx: fx,
+            fz: fz,
+            yaw: 0,
+            half: 0.85,
+            wide: 0.95,
+            swing: 1,
+            want: true,
+            cottage: true
+        });
     }
     textures.housedoor = textures.wood;
     textures.housefloor = textures.wood;
@@ -5391,8 +6732,8 @@ function addRaisedDoor(b, id, floorsGeom) {
         fz: fz,
         yaw: b.yaw,
         half: half,
-        swing: 0,
-        want: false,
+        swing: 1,
+        want: true,
         raised: true
     };
     b.entry = door;
@@ -5433,11 +6774,22 @@ function stampRaisedPlots() {
         );
     };
     for (const plot of plots) {
+        if (plot.kind === "yard") {
+            const x = plot.x;
+            const z = plot.z;
+            const y = Math.max(0, plot.y || World.heightAt(x, z));
+            const w = plot.w || 9;
+            const d = plot.d || 5.6;
+            addBox(trunk, x - w / 2, y, z - d / 2, w, 3.2, d);
+            addBox(trunk, x - w / 2 - 0.2, y + 3.2, z - d / 2 - 0.2, w + 0.4, 0.35, d + 0.4);
+            scenery.push({ x: x - w / 2, z: z - d / 2, w: w, d: d, raised: true });
+            continue;
+        }
         const house = plot.house;
         if (!house) continue;
         house.village = plot.village;
         house.mesh = "house";
-        house.role = "farmhouse";
+        house.role = plot.kind === "house" ? "house" : "farmhouse";
         house.raised = true;
         Town.buildings.push(house);
         stampHouse(buckets, house);
@@ -5502,7 +6854,7 @@ function swingDoors(dt) {
     if (moving) poseDoors();
 }
 
-function aimedDoor() {
+function aimedDoor(reach) {
     if (inside || flying || player.dead) return null;
     const body = activeCam();
     const sy = Math.sin(body.yaw);
@@ -5512,7 +6864,7 @@ function aimedDoor() {
     const fy = Math.sin(body.pitch);
     const fz = -cy * cp;
     let best = null;
-    let bestT = 3.4;
+    let bestT = reach || 3.4;
     for (const door of doors) {
         const denom = fx * door.fx + fz * door.fz;
         if (Math.abs(denom) < 0.25) continue;
@@ -5545,6 +6897,8 @@ function loadPropTextures() {
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
             textures[name] = tex;
             textures["farm" + name] = tex;
+            textures["lodge" + name] = tex;
+            textures["home" + name] = tex;
             if (inside && !inside.furnished) furnishInterior();
         };
         img.src = "models/" + name + ".png";
@@ -5554,6 +6908,8 @@ fetch("models/props.json", { cache: "no-store" }).then((res) => res.json()).then
     propData = data;
     loadPropTextures();
     stampFarmProps();
+    stampCottageProps();
+    stampOuterHouses();
     if (inside && !inside.furnished) furnishInterior();
 }).catch(() => {});
 
@@ -5587,6 +6943,118 @@ function propSolid(bounds, x, y, z, yaw) {
         }
     }
     return { x: minX, z: minZ, w: maxX - minX, d: maxZ - minZ, y0: minY, y1: maxY };
+}
+
+let cottageStamped = false;
+function stampCottageProps() {
+    if (!propData || cottageStamped || !cottageProps.length) return;
+    cottageStamped = true;
+    const buckets = {};
+    const light = [0.25, 0.86, 0.28];
+    const lightLen = Math.hypot(light[0], light[1], light[2]);
+    for (const item of cottageProps) {
+        const src = propData.props[item.name];
+        const bounds = propData.bounds[item.name];
+        if (!src || !bounds) continue;
+        if (item.block) {
+            const box = propSolid(bounds, item.x, item.y, item.z, item.yaw || 0);
+            scenery.push({ x: box.x, z: box.z, w: box.w, d: box.d });
+        }
+        const c = Math.cos(item.yaw || 0);
+        const s = Math.sin(item.yaw || 0);
+        for (const name of Object.keys(src)) {
+            const verts = src[name];
+            if (!buckets[name]) buckets[name] = [];
+            const list = buckets[name];
+            for (let i = 0; i < verts.length; i += 8) {
+                const px = verts[i];
+                const py = verts[i + 1];
+                const pz = verts[i + 2];
+                const nx = verts[i + 5] * c + verts[i + 7] * s;
+                const ny = verts[i + 6];
+                const nz = -verts[i + 5] * s + verts[i + 7] * c;
+                const lit = Math.max(0, (nx * light[0] + ny * light[1] + nz * light[2]) / lightLen);
+                list.push(px * c + pz * s + item.x, py + item.y, -px * s + pz * c + item.z, verts[i + 3], verts[i + 4], Math.min(1, 0.55 + 0.45 * lit));
+            }
+        }
+    }
+    for (const name of Object.keys(buckets)) {
+        uploadMesh("lodge" + name, buckets[name]);
+        if (mesh["lodge" + name]) mesh["lodge" + name].cull = false;
+        if (textures[name]) textures["lodge" + name] = textures[name];
+    }
+}
+
+function outerHouseGoods(b) {
+    if (b.village !== 3) return [];
+    if (b.role === "barn" || b.role === "shed") return [];
+    if (b.mesh !== "house" && b.mesh !== "tall" && b.role !== "farmhouse") return [];
+    const s = Math.sin(b.yaw);
+    const c = Math.cos(b.yaw);
+    const fx = -s;
+    const fz = -c;
+    const ax = -c;
+    const az = s;
+    const y = b.y || 0;
+    const spot = (forward, across) => ({
+        x: b.x + fx * forward + ax * across,
+        z: b.z + fz * forward + az * across
+    });
+    const bedYaw = Math.atan2(ax, az);
+    const seatName = Math.abs(Math.round(b.x * 3 + b.z * 7)) % 2 ? "Chair_1" : "Stool";
+    const bed = spot(-0.95, 0.15);
+    const chest = spot(0.85, -1.15);
+    const seat = spot(0.95, -0.3);
+    const goods = [
+        { name: "Bed_Twin1", x: bed.x, z: bed.z, yaw: bedYaw, y: y, block: false },
+        { name: "Chest_Wood", x: chest.x, z: chest.z, yaw: bedYaw, y: y, block: true },
+        { name: "Candle_1", x: chest.x, z: chest.z, yaw: 0, y: y + 0.72, block: false },
+        { name: seatName, x: seat.x, z: seat.z, yaw: bedYaw + Math.PI, y: y, block: true }
+    ];
+    return goods;
+}
+
+let outerStamped = false;
+function stampOuterHouses() {
+    if (!propData || outerStamped || !Town.buildings) return;
+    const items = [];
+    for (const building of Town.buildings) items.push(...outerHouseGoods(building));
+    if (!items.length) return;
+    outerStamped = true;
+    const buckets = {};
+    const light = [0.25, 0.86, 0.28];
+    const lightLen = Math.hypot(light[0], light[1], light[2]);
+    for (const item of items) {
+        const src = propData.props[item.name];
+        const bounds = propData.bounds[item.name];
+        if (!src || !bounds) continue;
+        if (item.block) {
+            const box = propSolid(bounds, item.x, item.y, item.z, item.yaw || 0);
+            scenery.push({ x: box.x, z: box.z, w: box.w, d: box.d });
+        }
+        const co = Math.cos(item.yaw || 0);
+        const si = Math.sin(item.yaw || 0);
+        for (const name of Object.keys(src)) {
+            const verts = src[name];
+            if (!buckets[name]) buckets[name] = [];
+            const list = buckets[name];
+            for (let i = 0; i < verts.length; i += 8) {
+                const px = verts[i];
+                const py = verts[i + 1];
+                const pz = verts[i + 2];
+                const nx = verts[i + 5] * co + verts[i + 7] * si;
+                const ny = verts[i + 6];
+                const nz = -verts[i + 5] * si + verts[i + 7] * co;
+                const lit = Math.max(0, (nx * light[0] + ny * light[1] + nz * light[2]) / lightLen);
+                list.push(px * co + pz * si + item.x, py + item.y, -px * si + pz * co + item.z, verts[i + 3], verts[i + 4], Math.min(1, 0.55 + 0.45 * lit));
+            }
+        }
+    }
+    for (const name of Object.keys(buckets)) {
+        uploadMesh("home" + name, buckets[name]);
+        if (mesh["home" + name]) mesh["home" + name].cull = false;
+        if (textures[name]) textures["home" + name] = textures[name];
+    }
 }
 
 function stampFarmProps() {
@@ -5736,6 +7204,35 @@ function useDoor() {
     toggleDoor(aimedDoor() || nearestDoor());
 }
 
+const civicTitle = {
+    manor: "Southwest Lord's House",
+    barracks: "Southwest Barracks",
+    smith: "Southwest Blacksmith",
+    shop: "Southwest Shop",
+    stores: "Southwest Storehouse",
+    tavern: "Southwest Inn"
+};
+
+function houseTitle(door) {
+    if (!door) return "";
+    if (door.id && door.id.indexOf("home:2:") === 0 && civicTitle[door.role]) return civicTitle[door.role];
+    if (!campaign) return "";
+    const people = (campaign.fishermen || []).concat(campaign.woodcutters || []);
+    for (const man of people) {
+        if (!man.name || !man.plate) continue;
+        if (Math.hypot(man.plate.x - door.x, man.plate.z - door.z) < 0.6) return man.name + "'s house";
+    }
+    return "";
+}
+
+function paintLook() {
+    const label = document.getElementById("look");
+    if (!label) return;
+    const title = inside || flying ? "" : houseTitle(aimedDoor(8));
+    label.hidden = !title;
+    label.textContent = title;
+}
+
 function paintDoor() {
     const button = document.getElementById("enter");
     if (button) button.hidden = true;
@@ -5757,17 +7254,20 @@ function frame(now) {
     const where = document.getElementById("where");
     if (where) where.textContent = Math.round(cam.x) + ", " + Math.round(cam.z) + " · " + Math.round(cam.y);
     paintCompass();
+    paintMini();
     if (!spotSaved || Math.hypot(cam.x - spotSaved.x, cam.z - spotSaved.z) > 12) {
         spotSaved = { x: cam.x, z: cam.z };
         saveSpot();
     }
     movePlayer(dt);
+    stepHorse(dt);
     swingDoors(dt);
     refreshNearTrees();
     updateFight(dt);
     updatePalisade(dt);
     syncArrowMesh();
     paintDoor();
+    paintLook();
     draw();
     requestAnimationFrame(frame);
 }
@@ -6058,6 +7558,7 @@ if (gl) {
     prepareTowers();
     spawnKeepers();
     prepareBow();
+    buildHorse();
     loadCottage();
     loadTown();
     loadPeople();
