@@ -2339,10 +2339,61 @@ textures.farLeaf = textures.leaf;
 
 let nearMarkX = 1e9;
 let nearMarkZ = 1e9;
+const meadowSeen = new Set();
+const meadowProps = [];
+
+function growMeadow(x, z, yaw) {
+    const ahead = 80;
+    const spots = [
+        [x, z],
+        [x + Math.sin(yaw) * ahead, z - Math.cos(yaw) * ahead]
+    ];
+    let grew = false;
+    for (let i = 0; i < spots.length; i++) {
+        if (fillMeadow(spots[i][0], spots[i][1])) grew = true;
+    }
+    return grew;
+}
+
+function fillMeadow(x, z) {
+    const reach = 320;
+    const step = 26;
+    const i0 = Math.floor((x - reach) / step);
+    const i1 = Math.floor((x + reach) / step);
+    const k0 = Math.floor((z - reach) / step);
+    const k1 = Math.floor((z + reach) / step);
+    const r2 = reach * reach;
+    let grew = false;
+    for (let ix = i0; ix <= i1; ix++) {
+        for (let iz = k0; iz <= k1; iz++) {
+            const key = ix + "," + iz;
+            if (meadowSeen.has(key)) continue;
+            const dx = ix * step + step * 0.5 - x;
+            const dz = iz * step + step * 0.5 - z;
+            if (dx * dx + dz * dz > r2) continue;
+            meadowSeen.add(key);
+            const spot = World.meadowAt(ix, iz);
+            if (!spot) continue;
+            grew = true;
+            const y = Math.max(0, World.heightAt(spot.x, spot.z));
+            if (spot.kind === "pine" || spot.kind === "oak") {
+                treeSpots.push({ x: spot.x, z: spot.z, y: y, pine: spot.kind === "pine" });
+                impostor(spot.x, spot.z, y, spot.kind === "pine");
+            } else {
+                meadowProps.push({ x: spot.x, z: spot.z, y: y, kind: spot.kind, roll: spot.roll });
+                const s = spot.kind === "rock" ? 0.8 : 0.7;
+                scenery.push({ x: spot.x - s / 2, z: spot.z - s / 2, w: s, d: s });
+            }
+        }
+    }
+    return grew;
+}
+
 function refreshNearTrees() {
+    const grew = growMeadow(cam.x, cam.z, cam.yaw);
     const dx = cam.x - nearMarkX;
     const dz = cam.z - nearMarkZ;
-    if (dx * dx + dz * dz < 40 * 40) return;
+    if (!grew && dx * dx + dz * dz < 40 * 40) return;
     nearMarkX = cam.x;
     nearMarkZ = cam.z;
     const trunk = [];
@@ -2374,6 +2425,30 @@ function refreshNearTrees() {
     uploadMesh("nearLeaf", leaf);
     uploadMesh("farTrunk", farTrunk);
     uploadMesh("farLeaf", farLeaf);
+    const bush = [];
+    const rock = [];
+    for (let i = 0; i < meadowProps.length; i++) {
+        const prop = meadowProps[i];
+        const ox = prop.x - cam.x;
+        const oz = prop.z - cam.z;
+        if (ox * ox + oz * oz > 200 * 200) continue;
+        if (prop.kind === "bush") {
+            const w = 1.5 + prop.roll * 0.8;
+            const d = 1.3 + prop.roll * 0.6;
+            addBox(bush, prop.x - w / 2, prop.y, prop.z - d / 2, w, 0.85, d);
+            addBox(bush, prop.x - w * 0.28, prop.y + 0.55, prop.z - d * 0.28, w * 0.55, 0.55, d * 0.55);
+        } else {
+            const w = 1.1 + prop.roll * 1.1;
+            const d = 0.85 + prop.roll * 0.7;
+            const h = 0.45 + prop.roll * 0.7;
+            addBox(rock, prop.x - w / 2, prop.y, prop.z - d / 2, w, h, d);
+            if (prop.roll > 0.4) addBox(rock, prop.x - w * 0.15, prop.y + h * 0.65, prop.z - d * 0.15, w * 0.45, h * 0.5, d * 0.4);
+        }
+    }
+    textures.meadowBush = textures.leaf;
+    textures.meadowRock = textures.rock;
+    uploadMesh("meadowBush", bush);
+    uploadMesh("meadowRock", rock);
 }
 refreshNearTrees();
 
@@ -7243,7 +7318,10 @@ function frame(now) {
     const clock = document.getElementById("clock");
     if (clock) clock.textContent = Clock.label(gameMs());
     const where = document.getElementById("where");
-    if (where) where.textContent = Math.round(cam.x) + ", " + Math.round(cam.z) + " · " + Math.round(cam.y);
+    if (where) {
+        where.textContent = Math.round(cam.x) + ", " + Math.round(cam.z) + (flying ? " · " + Math.round(cam.y) : "");
+        where.hidden = !(flying || phone.matches);
+    }
     paintMini();
     if (!spotSaved || Math.hypot(cam.x - spotSaved.x, cam.z - spotSaved.z) > 12) {
         spotSaved = { x: cam.x, z: cam.z };
@@ -7329,6 +7407,40 @@ window.addEventListener("mouseup", (e) => {
 });
 
 const phone = window.matchMedia("(hover: none) and (pointer: coarse)");
+
+function settlePhone() {
+    if (!phone.matches) return;
+    const meta = document.querySelector('meta[name="viewport"]');
+    if (meta) {
+        meta.setAttribute("content", "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover");
+    }
+}
+
+function blockPhoneGesture(e) {
+    if (!phone.matches) return;
+    e.preventDefault();
+}
+
+settlePhone();
+phone.addEventListener("change", settlePhone);
+document.addEventListener("selectstart", blockPhoneGesture);
+document.addEventListener("gesturestart", blockPhoneGesture, { passive: false });
+document.addEventListener("gesturechange", blockPhoneGesture, { passive: false });
+document.addEventListener("touchmove", (e) => {
+    if (phone.matches && e.touches.length > 1) e.preventDefault();
+}, { passive: false });
+
+let gameModeTried = false;
+function enterGameMode() {
+    if (!phone.matches || gameModeTried) return;
+    if (!/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) return;
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!req) return;
+    gameModeTried = true;
+    req.call(el).catch(() => {});
+}
+window.addEventListener("pointerdown", enterGameMode);
 const pad = document.getElementById("pad");
 const knob = pad.querySelector(".knob");
 const attack = document.getElementById("attack");
@@ -7355,7 +7467,7 @@ function paintArm() {
     const land = document.getElementById("land");
     if (land) land.hidden = !flying;
     const where = document.getElementById("where");
-    if (where) where.hidden = !flying;
+    if (where) where.hidden = !(flying || phone.matches);
     if (helpLine && flying) {
         helpLine.textContent = fastOn
             ? "WASD to fly · mouse to look · Space up · Shift down · Alt toggles fast · fast on"

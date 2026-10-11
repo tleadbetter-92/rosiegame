@@ -530,21 +530,87 @@ html, body {
 }
 
 @media (hover: none) and (pointer: coarse) {
-    .help { display: none; }
-
-    #minimap {
-        width: 108px;
-        height: 108px;
+    html, body, body * {
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
     }
 
+    html, body {
+        touch-action: manipulation;
+        --stick: clamp(88px, 24vw, 99px);
+        --attack: clamp(56px, 15vw, 66px);
+        --jump: clamp(44px, 12vw, 48px);
+    }
+
+    .help { display: none; }
+
+    .nav {
+        top: calc(8px + env(safe-area-inset-top));
+        left: calc(10px + env(safe-area-inset-left));
+        gap: 0;
+    }
+
+    .nav .back { display: none; }
+
+    .campaign-link { font-size: 0.75rem; }
+
+    #clock {
+        top: calc(6px + env(safe-area-inset-top));
+        font-size: 0.75rem;
+        letter-spacing: 0.02em;
+    }
+
+    #where {
+        top: calc(22px + env(safe-area-inset-top));
+        font-size: 0.65rem;
+    }
+
+    #minimap {
+        top: calc(6px + env(safe-area-inset-top));
+        right: calc(8px + env(safe-area-inset-right));
+        width: clamp(76px, 22vw, 92px);
+        height: clamp(76px, 22vw, 92px);
+    }
+
+    #pack,
+    #self {
+        top: calc(32px + env(safe-area-inset-top));
+        min-height: 32px;
+        padding: 3px 8px;
+        border-width: 1px;
+        border-color: rgba(255, 255, 255, 0.4);
+        border-radius: 6px;
+        background: rgba(20, 16, 14, 0.28);
+        font-size: 0.72rem;
+        font-weight: 600;
+    }
+
+    #pack { left: calc(10px + env(safe-area-inset-left)); }
+
+    #self { left: calc(58px + env(safe-area-inset-left)); }
+
+    #pack-panel,
+    #self-panel { top: calc(70px + env(safe-area-inset-top)); }
+
     #vitals {
-        bottom: calc(168px + env(safe-area-inset-bottom));
-        width: 150px;
+        left: calc(10px + env(safe-area-inset-left));
+        bottom: calc(8px + var(--stick) + 6px + env(safe-area-inset-bottom));
+        width: clamp(104px, 30vw, 128px);
+        font-size: 0.62rem;
+        line-height: 1.05;
+    }
+
+    #vitals .bar {
+        height: 5px;
+        margin-top: 1px;
+        margin-bottom: 3px;
+        border-width: 1px;
     }
 
     #self-panel {
-        top: 96px;
-        max-height: calc(100dvh - 250px - env(safe-area-inset-bottom));
+        max-height: calc(100dvh - 180px - env(safe-area-inset-bottom));
     }
 
     #fly-pad:not([hidden]) { display: flex; }
@@ -568,27 +634,27 @@ html, body {
 
     #pad {
         position: fixed;
-        left: calc(18px + env(safe-area-inset-left));
-        bottom: calc(22px + env(safe-area-inset-bottom));
+        left: calc(10px + env(safe-area-inset-left));
+        bottom: calc(10px + env(safe-area-inset-bottom));
         z-index: 4;
-        width: 132px;
-        height: 132px;
+        width: var(--stick);
+        height: var(--stick);
         border-radius: 50%;
         background: rgba(12, 14, 16, 0.38);
-        border: 3px solid rgba(255, 255, 255, 0.55);
-        box-shadow: inset 0 0 0 18px rgba(255, 255, 255, 0.06);
+        border: 2px solid rgba(255, 255, 255, 0.55);
+        box-shadow: inset 0 0 0 14px rgba(255, 255, 255, 0.06);
         touch-action: none;
     }
 
     #pad .knob {
         position: absolute;
-        left: 40px;
-        top: 40px;
-        width: 52px;
-        height: 52px;
+        left: 31%;
+        top: 31%;
+        width: 38%;
+        height: 38%;
         border-radius: 50%;
         background: rgba(255, 255, 255, 0.82);
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+        box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
     }
 
     #pad.held {
@@ -598,23 +664,23 @@ html, body {
 
     #attack {
         position: fixed;
-        right: calc(22px + env(safe-area-inset-right));
-        bottom: calc(34px + env(safe-area-inset-bottom));
+        right: calc(12px + env(safe-area-inset-right));
+        bottom: calc(12px + env(safe-area-inset-bottom));
         z-index: 4;
-        width: 86px;
-        height: 86px;
+        width: var(--attack);
+        height: var(--attack);
         padding: 0;
-        border: 3px solid rgba(255, 255, 255, 0.85);
+        border: 2px solid rgba(255, 255, 255, 0.7);
         border-radius: 50%;
-        background: rgba(20, 16, 14, 0.48);
+        background: rgba(20, 16, 14, 0.42);
         color: white;
         touch-action: none;
     }
 
     #attack svg {
         display: block;
-        width: 46px;
-        height: 46px;
+        width: 54%;
+        height: 54%;
         margin: 0 auto;
         filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.45));
     }
@@ -631,17 +697,17 @@ html, body {
 
     #jump {
         position: fixed;
-        right: calc(36px + env(safe-area-inset-right));
-        bottom: calc(132px + env(safe-area-inset-bottom));
+        right: calc(12px + (var(--attack) - var(--jump)) / 2 + env(safe-area-inset-right));
+        bottom: calc(12px + var(--attack) + 8px + env(safe-area-inset-bottom));
         z-index: 4;
-        width: 64px;
-        height: 64px;
+        width: var(--jump);
+        height: var(--jump);
         padding: 0;
-        border: 3px solid rgba(255, 255, 255, 0.85);
+        border: 2px solid rgba(255, 255, 255, 0.7);
         border-radius: 50%;
-        background: rgba(20, 16, 14, 0.48);
+        background: rgba(20, 16, 14, 0.42);
         color: #f3ead7;
-        font: 13px sans-serif;
+        font: 11px sans-serif;
         touch-action: none;
     }
 

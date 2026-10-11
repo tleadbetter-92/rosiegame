@@ -961,6 +961,57 @@
         };
     }
 
+    function meadowClear(x, z) {
+        const h = heightAt(x, z);
+        if (h < 0.45 || h > 18 || wet(x, z)) return false;
+        if (roadDist(x, z) < 16 || inField(x, z) || tooSteep(x, z)) return false;
+        if (forestAt(x, z) > 0.42) return false;
+        for (let i = 0; i < places.length; i++) {
+            const dx = x - places[i].x;
+            const dz = z - places[i].z;
+            if (dx * dx + dz * dz < 130 * 130) return false;
+        }
+        for (let i = 0; i < fishTrail.length; i++) {
+            if (chainDist(x, z, fishTrail[i]) < 16) return false;
+        }
+        return true;
+    }
+
+    function meadowAt(ix, iz) {
+        const step = 26;
+        const x = ix * step + (hash(ix + 41, iz + 17) - 0.5) * 14;
+        const z = iz * step + (hash(ix - 9, iz + 23) - 0.5) * 14;
+        if (hash(ix + 5, iz - 3) > 0.97) return null;
+        if (!meadowClear(x, z)) return null;
+        const roll = hash(ix + 13, iz + 29);
+        let kind = "rock";
+        if (roll < 0.38) kind = "pine";
+        else if (roll < 0.72) kind = "oak";
+        else if (roll < 0.88) kind = "bush";
+        return { x: x, z: z, kind: kind, ix: ix, iz: iz, roll: roll };
+    }
+
+    function meadowNear(x, z, reach) {
+        const step = 26;
+        const list = [];
+        const i0 = Math.floor((x - reach) / step);
+        const i1 = Math.floor((x + reach) / step);
+        const k0 = Math.floor((z - reach) / step);
+        const k1 = Math.floor((z + reach) / step);
+        const r2 = reach * reach;
+        for (let ix = i0; ix <= i1; ix++) {
+            for (let iz = k0; iz <= k1; iz++) {
+                const spot = meadowAt(ix, iz);
+                if (!spot) continue;
+                const dx = spot.x - x;
+                const dz = spot.z - z;
+                if (dx * dx + dz * dz > r2) continue;
+                list.push(spot);
+            }
+        }
+        return list;
+    }
+
     return {
         places,
         links,
@@ -985,6 +1036,8 @@
         forestAt,
         trackOf,
         coastField,
-        cottageLayout
+        cottageLayout,
+        meadowAt,
+        meadowNear
     };
 });

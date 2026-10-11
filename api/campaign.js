@@ -680,16 +680,21 @@ function stretchMarches(state, now) {
 const trees = treeCenters();
 
 function nearestTree(from, slot) {
-    if (!trees.length) return { x: from.x, z: from.z };
-    let best = trees[0];
+    let best = null;
     let bestDist = Infinity;
-    for (const tree of trees) {
+    const consider = (tree) => {
         const dist = Math.hypot(tree.x - from.x, tree.z - from.z);
         if (dist < bestDist) {
             best = tree;
             bestDist = dist;
         }
+    };
+    for (const tree of trees) consider(tree);
+    const meadow = World.meadowNear(from.x, from.z, 240);
+    for (let i = 0; i < meadow.length; i++) {
+        if (meadow[i].kind === "pine" || meadow[i].kind === "oak") consider(meadow[i]);
     }
+    if (!best) return { x: from.x, z: from.z };
     const dx = from.x - best.x;
     const dz = from.z - best.z;
     const len = Math.hypot(dx, dz) || 1;
