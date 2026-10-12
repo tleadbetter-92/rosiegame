@@ -90,7 +90,7 @@ h1 {
 .map {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    grid-template-rows: 1fr 1fr;
+    grid-template-rows: 1fr 1fr auto;
     gap: 22px;
     max-width: 880px;
     margin: 22px auto;
@@ -136,6 +136,30 @@ h1 {
     background: white;
     color: #1c1c1c;
     font: 650 1rem "Segoe UI", system-ui, sans-serif;
+}
+
+.hold.minor {
+    grid-column: 1 / -1;
+    min-height: 0;
+    background: #6f7a44;
+}
+
+.stance {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9rem;
+}
+
+.stance[hidden] { display: none; }
+
+.stance select {
+    padding: 3px 6px;
+    border: 1px solid #c8c2b6;
+    border-radius: 6px;
+    background: white;
+    color: #1c1c1c;
+    font: 650 0.9rem "Segoe UI", system-ui, sans-serif;
 }
 
 .hold.defending { outline: 3px solid #f0d2b4; outline-offset: -6px; }

@@ -11,7 +11,8 @@ const picks = {
     fisher0: "peasant_1.fbx",
     fisher1: "peasant_6.fbx",
     fisher2: "peasant_3.fbx",
-    fisher3: "peasant_4.fbx"
+    fisher3: "peasant_4.fbx",
+    fisher4: "city_dwellers_2.fbx"
 };
 const armDrop = 62 * Math.PI / 180;
 const armForward = 18 * Math.PI / 180;

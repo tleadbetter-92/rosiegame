@@ -6,6 +6,9 @@
     const edit = typeof require === "function" ? require("./world-edit.js") : (typeof self !== "undefined" && self.WorldEdit) || { rise: null, water: [], rocks: [] };
     const editPaths = edit.paths || [];
     const editRoads = edit.roads || [];
+    const editBridges = edit.bridges || [];
+    let bridges = null;
+    let loaded = false;
     const places = [
         { x: -1480, z: -980, ox: -1480, oz: -980 },
         { x: 1220, z: -1560, ox: 1220, oz: -1560 },
@@ -13,6 +16,9 @@
         { x: 780, z: 1320, ox: 780, oz: 1320 }
     ];
     const links = [[1, 2], [0, 3], [0, 3], [1, 2]];
+    const hamlets = [
+        { id: "ashby", x: -2000, z: 940 }
+    ];
 
     function hash(ix, iz) {
         let n = Math.imul(ix, 374761393) + Math.imul(iz, 668265263);
@@ -85,6 +91,7 @@
         return h;
     }
 
+    // The old hand-made river, brook, lake and lochs hold no water now; their lines only keep the land shaped as the editor saw it.
     const river = [
         [620, -2280],
         [380, -1960],
@@ -135,115 +142,14 @@
         return best;
     }
 
-    const fords = [[-180, -180], [-980, 520], [1760, 2480]];
-
-    function nearFord(x, z) {
-        for (const ford of fords) {
-            if (Math.hypot(x - ford[0], z - ford[1]) < 46) return true;
-        }
-        return false;
-    }
-
-    function riverCourse() {
-        const src = river;
-        const out = [];
-        for (let i = 0; i < src.length - 1; i++) {
-            const p0 = src[Math.max(0, i - 1)];
-            const p1 = src[i];
-            const p2 = src[i + 1];
-            const p3 = src[Math.min(src.length - 1, i + 2)];
-            const ax = p2[0] - p0[0];
-            const az = p2[1] - p0[1];
-            const bx = p3[0] - p1[0];
-            const bz = p3[1] - p1[1];
-            const turn = Math.abs(ax * bz - az * bx) / ((Math.hypot(ax, az) || 1) * (Math.hypot(bx, bz) || 1));
-            const wide = 22 + Math.min(0.85, turn) * 16;
-            for (let s = 0; s < 6; s++) {
-                const t = s / 6;
-                const t2 = t * t;
-                const t3 = t2 * t;
-                out.push({
-                    x: 0.5 * (2 * p1[0] + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3),
-                    z: 0.5 * (2 * p1[1] + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3),
-                    wide: wide
-                });
-            }
-        }
-        const tail = src[src.length - 1];
-        out.push({ x: tail[0], z: tail[1], wide: 24 });
-        return out;
-    }
-
-    const riverBed = riverCourse();
-
-    function riverInfo(x, z) {
-        let best = 1e9;
-        let wide = 26;
-        for (let i = 1; i < riverBed.length; i++) {
-            const a = riverBed[i - 1];
-            const b = riverBed[i];
-            const d = segDist(x, z, [a.x, a.z], [b.x, b.z]);
-            if (d < best) {
-                best = d;
-                wide = (a.wide + b.wide) * 0.5;
-            }
-        }
-        const n = fbm(x * 0.00135 + 2, z * 0.00135);
-        return { d: best, w: wide * (0.78 + n * 0.4) };
-    }
-
     function nearRiver(x, z) {
-        if (editRivers.length && nearChainDist(x, z, editRivers, riverBoxes) < 50) return true;
-        return riverInfo(x, z).d < 58;
+        return editRivers.length > 0 && nearChainDist(x, z, editRivers, riverBoxes) < 50;
     }
 
     function lakeField(x, z) {
         const dx = (x - lake.x) / lake.rx;
         const dz = (z - lake.z) / lake.rz;
         return 1 - (dx * dx + dz * dz);
-    }
-
-    function carve(x, z, h) {
-        const info = riverInfo(x, z);
-        if (info.d < info.w) {
-            const u = info.d / info.w;
-            const pinch = fbm(x * 0.0034 + 5, z * 0.0034) > 0.74;
-            const lip = pinch ? 0.48 : 0.66;
-            let drop;
-            if (u > lip) {
-                const t = (1 - u) / (1 - lip);
-                drop = t * t * 0.24;
-            } else if (u > 0.32) {
-                const t = (lip - u) / (lip - 0.32);
-                drop = 0.24 + t * (pinch ? 0.64 : 0.42);
-            } else {
-                const t = 1 - u / 0.32;
-                drop = (pinch ? 0.88 : 0.66) + t * t * (pinch ? 0.12 : 0.34);
-            }
-            const depth = nearFord(x, z) ? 0.4 : 2.2 + fbm(x * 0.0017, z * 0.0017) * 0.7;
-            h -= drop * depth;
-        }
-        const bw = 8 + fbm(x * 0.003 + 3, z * 0.003) * 6;
-        const bd = chainDist(x, z, brook);
-        if (bd < bw) {
-            const u = 1 - bd / bw;
-            h -= u * u * (nearFord(x, z) ? 0.35 : Math.min(2.8, h * 0.35 + 1.2));
-        }
-        const lf = lakeField(x, z);
-        if (lf > 0) h -= lf * lf * 6.5;
-        const ow = 14 + fbm(x * 0.002 + 8, z * 0.002) * 10;
-        const od = chainDist(x, z, outlet);
-        if (od < ow) {
-            const u = 1 - od / ow;
-            h -= u * u * (nearFord(x, z) ? 0.4 : Math.min(h + 1.5, 4.2));
-        }
-        const iw = 22 + fbm(x * 0.003 + 12, z * 0.003) * 16;
-        const ind = chainDist(x, z, inlet);
-        if (ind < iw) {
-            const u = 1 - ind / iw;
-            h -= u * u * 5.4;
-        }
-        return h;
     }
 
     const tracks = {
@@ -335,12 +241,69 @@
         const info = editRiverInfo(x, z);
         if (!info || info.d >= info.w || !editRiverOpen(x, z)) return h;
         const drop = 1 - smooth(0.36, 1, info.d / info.w);
-        return h - drop * (roadDist(x, z) < 12 ? 0.35 : 1.8);
+        return h - drop * (roadDist(x, z) < 12 && !underBridge(x, z) ? 0.35 : 1.8);
     }
 
     function inEditRiver(x, z, part) {
         const info = editRiverInfo(x, z);
-        return !!info && info.d < info.w * part && editRiverOpen(x, z) && roadDist(x, z) >= 12;
+        return !!info && info.d < info.w * part && editRiverOpen(x, z) && (roadDist(x, z) >= 12 || underBridge(x, z));
+    }
+
+    const editGround = edit.ground || [];
+
+    // The last disc painted over a spot wins; edges wobble so patches do not look like circles.
+    function paintedGround(x, z) {
+        for (let i = editGround.length - 1; i >= 0; i--) {
+            const [gx, gz, r, kind] = editGround[i];
+            const dx = x - gx;
+            const dz = z - gz;
+            const reach = r * 1.2;
+            if (dx > reach || dx < -reach || dz > reach || dz < -reach) continue;
+            const edge = r * (0.82 + fbm(x * 0.03 + i * 0.7, z * 0.03) * 0.36);
+            if (dx * dx + dz * dz < edge * edge) return kind;
+        }
+        return null;
+    }
+
+    function paintedNear(x, z, pad) {
+        for (const [gx, gz, r] of editGround) {
+            const reach = r * 1.2 + pad;
+            if (Math.abs(x - gx) < reach && Math.abs(z - gz) < reach) return true;
+        }
+        return false;
+    }
+
+    function paintedSurface(kind, x, z) {
+        if (kind === "rocky") return fbm(x * 0.06 + 4, z * 0.06 + 1) > 0.56 ? "gravel" : "grass";
+        return kind;
+    }
+
+    // Small loose stones over rocky grass; they are only looks, so you can walk through them: [x, z, ry, size].
+    const groundStones = [];
+    {
+        const rocky = editGround.filter((g) => g[3] === "rocky");
+        if (rocky.length) {
+            const box = { minX: 1e9, maxX: -1e9, minZ: 1e9, maxZ: -1e9 };
+            for (const [gx, gz, r] of rocky) {
+                box.minX = Math.min(box.minX, gx - r);
+                box.maxX = Math.max(box.maxX, gx + r);
+                box.minZ = Math.min(box.minZ, gz - r);
+                box.maxZ = Math.max(box.maxZ, gz + r);
+            }
+            const cell = 5;
+            for (let ix = Math.floor(box.minX / cell); ix <= box.maxX / cell; ix++) {
+                for (let iz = Math.floor(box.minZ / cell); iz <= box.maxZ / cell; iz++) {
+                    const roll = hash(ix, iz);
+                    if (roll > 0.5) continue;
+                    const x = (ix + hash(ix + 7, iz)) * cell;
+                    const z = (iz + hash(ix, iz + 7)) * cell;
+                    const inGravel = fbm(x * 0.06 + 4, z * 0.06 + 1) > 0.56;
+                    if (!inGravel && roll > 0.06) continue;
+                    if (paintedGround(x, z) !== "rocky") continue;
+                    groundStones.push([Math.round(x * 10) / 10, Math.round(z * 10) / 10, Number((hash(ix, iz + 3) * 6.28).toFixed(2)), Number((0.3 + hash(ix + 5, iz) * 1.3).toFixed(2))]);
+                }
+            }
+        }
     }
 
     const editCliffs = edit.cliffs || [];
@@ -357,7 +320,9 @@
         if (!editCliffs.length) return 0;
         const d = cliffDist(x, z);
         if (d >= CLIFF_FOOT) return 0;
-        const tall = 12 + fbm(x * 0.012 + 5, z * 0.012 + 9) * 10;
+        const gap = smooth(14, 40, roadDist(x, z));
+        if (gap <= 0) return 0;
+        const tall = (12 + fbm(x * 0.012 + 5, z * 0.012 + 9) * 10) * gap;
         if (d <= CLIFF_TOP) return tall + (fbm(x * 0.07, z * 0.07) - 0.5) * 1.6;
         const t = (d - CLIFF_TOP) / (CLIFF_FOOT - CLIFF_TOP);
         return tall * Math.pow(1 - Math.pow(t, 0.4), 1.5);
@@ -373,12 +338,12 @@
             if (len < 1) continue;
             const nx = -(bz - az) / len;
             const nz = (bx - ax) / len;
-            const put = (t, out, ry, s) => cliffRocks.push([
-                Math.round(ax + (bx - ax) * t + nx * out),
-                Math.round(az + (bz - az) * t + nz * out),
-                Number(ry.toFixed(2)),
-                Number(s.toFixed(2))
-            ]);
+            const put = (t, out, ry, s) => {
+                const x = ax + (bx - ax) * t + nx * out;
+                const z = az + (bz - az) * t + nz * out;
+                if (roadDist(x, z) < 26) return;
+                cliffRocks.push([Math.round(x), Math.round(z), Number(ry.toFixed(2)), Number(s.toFixed(2))]);
+            };
             for (let along = 0; along < len; ) {
                 const k = Math.round(ax + along) * 7 + Math.round(az) * 13 + i;
                 const t = along / len;
@@ -647,7 +612,6 @@
         h += mountains(x, z) * shore;
         if (field < 0.08) h = Math.min(h, smooth(-0.04, 0.08, field) * 1.6);
         else h = Math.max(h, shore * 0.7);
-        h = carve(x, z, h);
         if (countryOn) h = layCountry(x, z, h);
         h = pullRoad(x, z, h);
         h += testPeaks(x, z);
@@ -667,7 +631,7 @@
             if (wave < 0) shaped += Math.max(wave, -Math.max(0, shaped - 0.55));
             else shaped += wave;
         }
-        return carveEditWater(x, z, carveLochs(x, z, carveEditRivers(x, z, shaped)));
+        return carveEditWater(x, z, carveEditRivers(x, z, shaped));
     }
 
     function editRise(x, z) {
@@ -698,7 +662,7 @@
     }
 
     function editWaterOpen(x, z) {
-        if (inField(x, z) || roadDist(x, z) < 28) return false;
+        if (inField(x, z) || (roadDist(x, z) < 28 && !underBridge(x, z))) return false;
         for (const place of places) {
             if (Math.hypot(x - place.x, z - place.z) < 160) return false;
         }
@@ -708,9 +672,9 @@
         return true;
     }
 
-    function carveEditWater(x, z, h) {
+    function editWaterReach(x, z) {
         const box = editWaterBox;
-        if (x < box.minX || x > box.maxX || z < box.minZ || z > box.maxZ) return h;
+        if (x < box.minX || x > box.maxX || z < box.minZ || z > box.maxZ) return null;
         let d = 1e9;
         let w = 1e9;
         let n = -1;
@@ -725,9 +689,135 @@
             if (n < 0) n = fbm(x * 0.0034 + 6, z * 0.0034);
             w = Math.min(58 + n * 30, 22 + fromTip * 0.2);
         }
-        if (d >= w || !editWaterOpen(x, z)) return h;
-        const t = d / w;
+        return d < w ? { d, w } : null;
+    }
+
+    function carveEditWater(x, z, h) {
+        const reach = editWaterReach(x, z);
+        if (!reach || !editWaterOpen(x, z)) return h;
+        const t = reach.d / reach.w;
         return Math.min(h, -5.4 + 12 * t * t);
+    }
+
+    // Where painted water or a painted river stands, before roads and towns hold it back.
+    function paintedWater(x, z) {
+        const reach = editWaterReach(x, z);
+        if (reach && reach.d < reach.w * 0.68) return true;
+        const info = editRiverInfo(x, z);
+        return !!info && info.d < info.w * 0.45;
+    }
+
+    // A bridge runs along the road or path it was dropped on; with none near, it runs straight across the water.
+    function crossingDir(x, z) {
+        const roads = editRoads.concat(editPaths, Object.keys(tracks).filter((key) => key[0] < key[2]).map((key) => tracks[key]));
+        let best = 40;
+        let dir = null;
+        for (const chain of roads) {
+            for (let i = 1; i < chain.length; i++) {
+                const d = segDist(x, z, chain[i - 1], chain[i]);
+                if (d >= best) continue;
+                best = d;
+                dir = [chain[i][0] - chain[i - 1][0], chain[i][1] - chain[i - 1][1]];
+            }
+        }
+        if (!dir) {
+            best = 1e9;
+            for (const chain of edit.water.concat(editRivers)) {
+                for (let i = 1; i < chain.length; i++) {
+                    const d = segDist(x, z, chain[i - 1], chain[i]);
+                    if (d >= best) continue;
+                    best = d;
+                    dir = [chain[i - 1][1] - chain[i][1], chain[i][0] - chain[i - 1][0]];
+                }
+            }
+        }
+        const len = dir ? Math.hypot(dir[0], dir[1]) : 0;
+        return len > 0 ? [dir[0] / len, dir[1] / len] : [1, 0];
+    }
+
+    function layBridge(spot) {
+        const [x, z] = spot;
+        const [dx, dz] = crossingDir(x, z);
+        const runs = [];
+        for (let t = -150; t <= 150; t++) {
+            if (!paintedWater(x + dx * t, z + dz * t)) continue;
+            const run = runs[runs.length - 1];
+            if (run && run[1] === t - 1) run[1] = t;
+            else runs.push([t, t]);
+        }
+        const off = (run) => (run[0] > 0 ? run[0] : run[1] < 0 ? -run[1] : 0);
+        runs.sort((a, b) => off(a) - off(b));
+        const wet = runs[0] || [-6, 6];
+        const lo = wet[0] - 6;
+        const hi = wet[1] + 6;
+        const mid = (lo + hi) / 2;
+        const half = (hi - lo) / 2;
+        const cx = x + dx * mid;
+        const cz = z + dz * mid;
+        return {
+            x: cx,
+            z: cz,
+            dx,
+            dz,
+            half,
+            width: 6,
+            wetFrom: wet[0] - mid,
+            wetTo: wet[1] - mid,
+            hA: Math.max(0, heightAt(cx - dx * half, cz - dz * half)),
+            hB: Math.max(0, heightAt(cx + dx * half, cz + dz * half))
+        };
+    }
+
+    // Laid out on first use after the island is built, since the ground must be whole to find the banks.
+    function bridgeList() {
+        if (!loaded) return [];
+        if (bridges) return bridges;
+        bridges = [];
+        const laid = editBridges.map(layBridge);
+        bridges = laid;
+        for (const bridge of laid) {
+            bridge.water = waterLevel(bridge.x, bridge.z) ?? 0.03;
+            bridge.hump = Math.min(5, Math.max(1.2, bridge.water + 3.2 - (bridge.hA + bridge.hB) / 2));
+        }
+        return bridges;
+    }
+
+    // Along is measured from the bridge middle; the deck meets the bank at both ends and humps over the water.
+    function deckY(bridge, along) {
+        const s = (along + bridge.half) / (bridge.half * 2);
+        return bridge.hA + (bridge.hB - bridge.hA) * s + bridge.hump * Math.sin(Math.PI * s);
+    }
+
+    function bridgeLocal(bridge, x, z) {
+        const rx = x - bridge.x;
+        const rz = z - bridge.z;
+        return { along: rx * bridge.dx + rz * bridge.dz, across: rz * bridge.dx - rx * bridge.dz };
+    }
+
+    function underBridge(x, z) {
+        for (const bridge of bridgeList()) {
+            const p = bridgeLocal(bridge, x, z);
+            if (Math.abs(p.along) < bridge.half - 3 && Math.abs(p.across) < 30) return true;
+        }
+        return false;
+    }
+
+    function bridgeDeck(x, z) {
+        for (const bridge of bridgeList()) {
+            const p = bridgeLocal(bridge, x, z);
+            if (Math.abs(p.along) <= bridge.half && Math.abs(p.across) <= bridge.width / 2) return deckY(bridge, p.along);
+        }
+        return null;
+    }
+
+    // The parapets along both sides; returns the deck height there so callers can block walking off the edge.
+    function bridgeWall(x, z) {
+        for (const bridge of bridgeList()) {
+            const p = bridgeLocal(bridge, x, z);
+            const edge = Math.abs(p.across);
+            if (Math.abs(p.along) < bridge.half - 0.5 && edge > bridge.width / 2 - 0.45 && edge <= bridge.width / 2 + 0.1) return deckY(bridge, p.along);
+        }
+        return null;
     }
 
     function nearEditRock(x, z, pad) {
@@ -751,11 +841,6 @@
         [-1720, -1040],
         [-1584, -990]
     ];
-    const lochWestBays = [
-        [[-2540, -1000], [-2500, -900], [-2420, -960]],
-        [[-2180, -1000], [-2140, -900], [-2060, -960]],
-        [[-1860, -1020], [-1800, -920], [-1740, -980]]
-    ];
     const lochEast = [
         [3040, -1680],
         [2780, -1560],
@@ -768,89 +853,25 @@
         [1560, -1580],
         [1362, -1550]
     ];
-    const lochEastBays = [
-        [[2580, -1660], [2520, -1760], [2460, -1640]],
-        [[2220, -1580], [2160, -1460], [2080, -1560]],
-        [[1860, -1560], [1800, -1440], [1720, -1540]]
-    ];
-    const lochMesh = [
-        { minX: -3136, maxX: -1568, minZ: -1120, maxZ: -864 },
-        { minX: 1312, maxX: 3008, minZ: -1824, maxZ: -1376 }
-    ];
-
-    function lochOpen(x, z) {
-        if (z > -400) return false;
-        if (Math.hypot(x + 1480, z + 980) < 92) return false;
-        if (x > -1564 && x < -1380 && z > -1085 && z < -800) return false;
-        if (Math.hypot(x - 1220, z + 1560) < 125) return false;
-        if (x < 1340 && x > 1080 && z > -1660 && z < -1410) return false;
-        if (inField(x, z)) return false;
-        if (roadDist(x, z) < 28) return false;
-        if (x >= peakBox.minX && x <= peakBox.maxX && z >= peakBox.minZ && z <= peakBox.maxZ) return false;
-        for (const trail of fishTrail) {
-            if (chainDist(x, z, trail) < 26) return false;
-        }
-        return true;
-    }
-
-    function carveOneLoch(x, z, h, chain, bays, salt) {
-        let d = chainDist(x, z, chain);
-        for (const bay of bays) d = Math.min(d, chainDist(x, z, bay));
-        const n = fbm(x * 0.0034 + salt, z * 0.0034);
-        const bulge = fbm(x * 0.00115 + salt * 3, z * 0.00125);
-        let w = 16 + n * 14;
-        if (bulge > 0.64) w += (bulge - 0.64) * 46;
-        const tip = chain[chain.length - 1];
-        const fromTip = Math.hypot(x - tip[0], z - tip[1]);
-        if (fromTip < 180) w = Math.min(w, 18 + fromTip * 0.08);
-        if (d >= w || !lochOpen(x, z)) return h;
-        const u = 1 - d / w;
-        return h - u * u * Math.max(5.4, h + 2.6);
-    }
-
-    function carveLochs(x, z, h) {
-        if (z > -400) return h;
-        if (x < -1500) h = carveOneLoch(x, z, h, lochWest, lochWestBays, 4);
-        if (x > 1200) h = carveOneLoch(x, z, h, lochEast, lochEastBays, 9);
-        return h;
-    }
 
     function waterLevel(x, z) {
         const h = heightAt(x, z);
         if (h < -0.08) return 0.03;
-        if (!nearFord(x, z)) {
-            const info = riverInfo(x, z);
-            if (info.d < info.w * 0.34 && h > 0.2) return h + 0.14;
-            const stream = Math.min(chainDist(x, z, brook), chainDist(x, z, outlet));
-            if (stream < 7 && h > 0.6) return h + 0.22;
-        }
         if (h > 0.2 && inEditRiver(x, z, 0.4)) return h + 0.14;
-        if (lakeField(x, z) > 0.08 && h < 0.2) return 0.03;
         return null;
     }
 
     function wet(x, z) {
         const h = heightAt(x, z);
         if (h < -0.05) return true;
-        if (!nearFord(x, z)) {
-            const info = riverInfo(x, z);
-            if (info.d < info.w * 0.3) return true;
-        }
-        if (inEditRiver(x, z, 0.34)) return true;
-        const level = waterLevel(x, z);
-        if (level != null && level <= 0.05 && h < 0.14) return true;
-        if (level != null && level > 0.5) {
-            const stream = Math.min(chainDist(x, z, brook), chainDist(x, z, outlet));
-            if (stream < 4.5 && !nearFord(x, z)) return true;
-        }
-        return false;
+        return inEditRiver(x, z, 0.34);
     }
 
     const fishTrail = [
         [[-1480, -1400], [-1460, -1800], [-1500, -2140], [-1480, -2420]],
         [[1280, -1360], [1500, -1180], [2000, -1200], [2500, -1220], [2820, -1240]],
         [[-2700, 640], [-2940, 660], [-3180, 620], [-3280, 600]],
-        [[782, 1442], [792, 1470], [820, 1500]]
+        [[782, 1442], [792, 1470], [1018, 1954], [1241, 2433]]
     ];
 
     const fields = [
@@ -873,40 +894,34 @@
         return false;
     }
 
-    function groundKind(x, z, rise) {
-        const h = heightAt(x, z);
+    function groundKind(x, z, rise, known) {
+        const h = known ?? heightAt(x, z);
         const peak = testPeaks(x, z);
         if (peak > 0.4) {
             if ((rise || 0) > 2.2 || peak > 22) return "rock";
             if ((rise || 0) > 1.05 || peak > 16) return "dirt";
         }
-        if (editCliffs.length) {
-            const cliff = cliffDist(x, z);
+        const cliff = editCliffs.length ? cliffDist(x, z) : 1e9;
+        if (cliff < CLIFF_FOOT + 4 && roadDist(x, z) > 24) {
             if ((rise || 0) > 2.5 && cliff < CLIFF_FOOT - 4) return "rock";
             if (cliff < CLIFF_TOP - 1.5) return "grass";
             const scree = (cliff - (CLIFF_FOOT - 5)) / 9;
             if (scree < 0) return "rock";
             if (scree < 1) return fbm(x * 0.11 + 2, z * 0.11 + 5) + scree * 0.6 < 0.72 ? "rock" : "grass";
         }
-        if ((rise || 0) > 6.5 || h > 24) return "rock";
+        const painted = editGround.length ? paintedGround(x, z) : null;
+        if (painted && (rise || 0) <= 6.5 && trackDist(x, z) >= 14 && pathDist(x, z) >= 5) return paintedSurface(painted, x, z);
+        if ((rise || 0) > 6.5 || (h > 24 && (rise || 0) > 2.5)) return "rock";
         const stone = stoneDist(x, z);
-        if (stone < 5) return fbm(x * 0.09 + 3.1, z * 0.09 + 7.7) + (stone / 5) * 0.35 < 0.66 ? "cobble" : "grass";
+        if (stone < 4.5) return "dirt";
         if (trackDist(x, z) < 14 || pathDist(x, z) < 3.5 || inField(x, z)) return "dirt";
-        const bank = riverInfo(x, z);
-        if (bank.d < bank.w && bank.d > bank.w * 0.26) {
-            const n = fbm(x * 0.018, z * 0.018);
-            const edge = (bank.d - bank.w * 0.26) / (bank.w * 0.74);
-            if (edge < 0.28 && n > 0.3) return n > 0.84 ? "rock" : "dirt";
-            if (edge < 0.55 && n > 0.74) return "dirt";
-        }
         const er = editRiverInfo(x, z);
         if (er && er.d < er.w * 1.1 && er.d > er.w * 0.3) {
             const n = fbm(x * 0.05 + 1, z * 0.05);
             if (n > 0.68) return n > 0.82 ? "rock" : "dirt";
         }
         const coast = coastField(x, z);
-        if (h < 1.15 && (coast < 0.2 || lakeField(x, z) > -0.12)) return "sand";
-        if (lakeField(x, z) > -0.55 && h < 2.2) return "dirt";
+        if (h < 1.15 && coast < 0.2) return "sand";
         return "grass";
     }
 
@@ -939,10 +954,6 @@
         let mid = 0;
         const heart = woodBlob(x, z, 160, 40, 440, 380, 11);
         if (heart < 1.04) mid = smooth(1.04, 0.24, heart);
-        if (mid > 0) {
-            const bank = Math.min(chainDist(x, z, river), chainDist(x, z, brook));
-            mid *= smooth(52, 118, bank);
-        }
         thick = Math.max(thick, mid);
         const south = woodBlob(x, z, -80, 1780, 280, 250, 19);
         if (south < 1) thick = Math.max(thick, smooth(1, 0.28, south));
@@ -1221,6 +1232,9 @@
             const dz = z - places[i].z;
             if (dx * dx + dz * dz < 130 * 130) return false;
         }
+        for (let i = 0; i < hamlets.length; i++) {
+            if (Math.hypot(x - hamlets[i].x, z - hamlets[i].z) < 50) return false;
+        }
         for (let i = 0; i < fishTrail.length; i++) {
             if (chainDist(x, z, fishTrail[i]) < 16) return false;
         }
@@ -1262,8 +1276,10 @@
         return list;
     }
 
+    loaded = true;
     return {
         places,
+        hamlets,
         links,
         fields,
         fishTrail,
@@ -1272,9 +1288,13 @@
         cliffs,
         peakBox,
         peakPass,
-        lochMesh,
         tooSteep,
-        waterways: [river, brook, outlet].concat(editRivers),
+        waterways: editRivers,
+        stoneRoads: editRoads,
+        bridgeList,
+        bridgeDeck,
+        bridgeWall,
+        deckY,
         heightAt,
         waterLevel,
         wet,
@@ -1291,7 +1311,9 @@
         meadowNear,
         pathDist,
         cliffDist,
+        paintedNear,
         editRocks: edit.rocks,
-        cliffRocks
+        cliffRocks,
+        groundStones
     };
 });

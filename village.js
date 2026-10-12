@@ -170,6 +170,27 @@ const textures = {
         g.fillRect(0, 0, s, s);
         speck(g, s, 240, "rgba(150,110,60,0.35)", "rgba(230,210,160,0.4)");
     }),
+    gravel: makeTexture((g, s) => {
+        g.fillStyle = "#5e5a53";
+        g.fillRect(0, 0, s, s);
+        const tones = ["#6c675f", "#4f4b45", "#77726a", "#45423d", "#66625a", "#827d73"];
+        for (let i = 0; i < 200; i++) {
+            const size = 2 + ((i * 7) % 3);
+            blob(g, s, (Math.random() * s) | 0, (Math.random() * s) | 0, size, size - 1, tones[i % tones.length]);
+        }
+        speck(g, s, 120, "rgba(34,32,28,0.45)", "rgba(170,164,150,0.25)");
+    }),
+    marsh: makeTexture((g, s) => {
+        g.fillStyle = "#4b5a2e";
+        g.fillRect(0, 0, s, s);
+        for (let i = 0; i < 9; i++) {
+            blob(g, s, (Math.random() * s) | 0, (Math.random() * s) | 0, 6 + ((i * 5) % 9), 3 + (i % 3), "rgba(48,58,44,0.85)");
+        }
+        for (let i = 0; i < 5; i++) {
+            blob(g, s, (Math.random() * s) | 0, (Math.random() * s) | 0, 5 + i, 2, "rgba(70,96,92,0.7)");
+        }
+        speck(g, s, 260, "rgba(30,40,18,0.45)", "rgba(140,150,80,0.35)");
+    }),
     water: makeTexture((g, s) => {
         g.fillStyle = "#2c5c58";
         g.fillRect(0, 0, s, s);
@@ -365,8 +386,39 @@ const textures = {
     cloth0: clothTexture("#c45c3a"),
     cloth1: clothTexture("#3d6b8a"),
     cloth2: clothTexture("#6a7a3a"),
-    cloth3: clothTexture("#8a5a7a")
+    cloth3: clothTexture("#8a5a7a"),
+    cloth4: clothTexture("#b0883a")
 };
+
+// Bare rock out in the country: weathered and uneven, with nothing square that would show the tiling.
+textures.crag = paintTexture(128, (g, s) => {
+    g.fillStyle = "#7a766e";
+    g.fillRect(0, 0, s, s);
+    const n = (i, salt) => {
+        const v = Math.sin(i * 12.9898 + salt * 78.233) * 43758.5453;
+        return v - Math.floor(v);
+    };
+    const tones = ["#6a665f", "#8a857c", "#5f5b55", "#938e84", "#726e67"];
+    for (let i = 0; i < 260; i++) {
+        const w = 2 + n(i, 3) * 9;
+        blob(g, s, n(i, 1) * s, n(i, 2) * s, w, 1 + n(i, 4) * w * 0.6, tones[i % tones.length]);
+    }
+    speck(g, s, 500, "rgba(60,57,52,0.55)", "rgba(176,170,158,0.45)");
+    g.strokeStyle = "rgba(40,38,35,0.55)";
+    g.lineWidth = 1;
+    for (let i = 0; i < 7; i++) {
+        let x = n(i, 9) * s;
+        let y = n(i, 11) * s;
+        g.beginPath();
+        g.moveTo(x, y);
+        for (let k = 0; k < 6; k++) {
+            x += (n(i * 7 + k, 13) - 0.5) * 14;
+            y += 3 + n(i * 7 + k, 17) * 6;
+            g.lineTo(x, y);
+        }
+        g.stroke();
+    }
+});
 
 textures.townDirt = paintTexture(256, (g, s) => {
     g.fillStyle = "#8a6e4c";
@@ -451,31 +503,46 @@ function pushTri(list, a, b, c) {
 }
 
 const batches = {
-    grass: [], dirt: [], cobble: [], sand: [], water: [], wall: [], door: [], roof: [], store: [], plaster: [], trunk: [], leaf: [], bloom: [], rock: [], linen: [], glow: [],
+    grass: [], dirt: [], cobble: [], sand: [], gravel: [], marsh: [], water: [], wall: [], door: [], roof: [], store: [], plaster: [], trunk: [], leaf: [], bloom: [], rock: [], linen: [], glow: [],
     townDirt: [], townCobble: [],
     bill: [], billFront: [], billBrick: [], billBrickFront: [],
-    farTrunk: [], farLeaf: []
+    farTrunk: [], farLeaf: [],
+    crag: []
 };
 
-function paintPatch(x, z, s, h00, h10, h11, h01) {
+// Ground laid over the base ground with a fade, so the edge between two kinds runs smoothly instead of in square steps.
+const blends = {};
+
+function groundTone(kind, x, z) {
+    if (kind === "grass") return World.turfShade(x, z);
+    return kind === "crag" ? 0.9 : kind === "dirt" ? 0.9 : 1;
+}
+
+function countryKind(kind) {
+    return kind === "rock" ? "crag" : kind;
+}
+
+// Corner kinds run 00, 10, 11, 01; the most common one is the base and each other kind fades in from its corners.
+function paintPatch(x, z, s, h00, h10, h11, h01, corners) {
     const rise = Math.max(h00, h10, h11, h01) - Math.min(h00, h10, h11, h01);
     const mid = (h00 + h10 + h11 + h01) * 0.25;
     const cx = x + s * 0.5;
     const cz = z + s * 0.5;
     if (mid > -0.35) {
-        const kind = landKind(cx, cz, rise);
-        const list = batches[kind] || batches.grass;
-        const plain = kind === "rock" ? 0.76 : kind === "dirt" ? 0.9 : 1;
-        const tone = (px, pz) => (kind === "grass" ? World.turfShade(px, pz) : plain);
+        const kinds = (corners || Array(4).fill(landKind(cx, cz, rise, mid))).map(countryKind);
+        const count = (k) => kinds.filter((c) => c === k).length;
+        const kind = kinds.reduce((best, k) => (count(k) > count(best) ? k : best), kinds[0]);
         const u = x / s;
         const v = z / s;
-        pushQuad(
-            list,
-            [x, h00, z, u, v, tone(x, z)],
-            [x, h01, z + s, u, v + 1, tone(x, z + s)],
-            [x + s, h11, z + s, u + 1, v + 1, tone(x + s, z + s)],
-            [x + s, h10, z, u + 1, v, tone(x + s, z)]
-        );
+        const spots = [[x, h00, z, u, v], [x + s, h10, z, u + 1, v], [x + s, h11, z + s, u + 1, v + 1], [x, h01, z + s, u, v + 1]];
+        const at = (i, k, extra) => spots[i].concat(groundTone(k, spots[i][0], spots[i][2]), extra);
+        pushQuad(batches[kind] || batches.grass, at(0, kind, []), at(3, kind, []), at(2, kind, []), at(1, kind, []));
+        for (const other of new Set(kinds)) {
+            if (other === kind || !batches[other]) continue;
+            const list = blends[other] || (blends[other] = []);
+            const a = (i) => at(i, other, [kinds[i] === other ? 1 : 0]);
+            pushQuad(list, a(0), a(3), a(2), a(1));
+        }
     }
     const level = World.waterLevel(cx, cz);
     if (level != null && level > 0.4 && Math.min(h00, h10, h11, h01) < level + 0.08) {
@@ -503,15 +570,15 @@ function paintPatch(x, z, s, h00, h10, h11, h01) {
     );
 }
 
-function landKind(x, z, rise) {
+function landKind(x, z, rise, h) {
     const home = World.places[2];
     if (Math.hypot(x - home.x, z - home.z) < 125) {
         const pave = Town.groundAt(x, z);
         if (pave) return pave;
-        return World.groundKind(x, z, rise);
+        return World.groundKind(x, z, rise, h);
     }
     if (Town.street(x, z)) return "dirt";
-    return World.groundKind(x, z, rise);
+    return World.groundKind(x, z, rise, h);
 }
 
 function townBatch(kind) {
@@ -533,6 +600,17 @@ function paveShade(kind, x, z) {
     return 1;
 }
 
+// How finely a 32 m country cell is cut: finer near rivers, paths, cliffs, shores and painted ground.
+function countrySub(x, z, h00, h10, h11, h01) {
+    const cx = x + 16;
+    const cz = z + 16;
+    const fine = World.nearRiver(cx, cz) || World.pathDist(cx, cz) < 28 || World.cliffDist(cx, cz) < 40;
+    if (fine) return 4;
+    if (Math.min(h00, h10, h11, h01) < 0.35 || World.paintedNear(cx, cz, 16)) return 8;
+    if (Math.max(h00, h10, h11, h01) - Math.min(h00, h10, h11, h01) > 0.55) return 16;
+    return 32;
+}
+
 // The fine ground around a village, widened to whole 32 m land cells so no strip is left undrawn.
 function townPatch(place) {
     const min = -3616;
@@ -549,6 +627,68 @@ function buildLand() {
     const n = span / cell;
     const heights = new Float32Array((n + 1) * (n + 1));
     const sample = (ix, iz) => heights[iz * (n + 1) + ix];
+    // Each corner height is looked up once and shared by the patches that meet there.
+    const subdivide = (x, z, sub, h00, h10, h11, h01) => {
+        const k = cell / sub + 1;
+        const grid = new Float32Array(k * k);
+        for (let j = 0; j < k; j++) {
+            for (let i = 0; i < k; i++) {
+                const last = k - 1;
+                if (i === 0 && j === 0) grid[0] = h00;
+                else if (i === last && j === 0) grid[i] = h10;
+                else if (i === last && j === last) grid[j * k + i] = h11;
+                else if (i === 0 && j === last) grid[j * k] = h01;
+                else grid[j * k + i] = World.heightAt(x + i * sub, z + j * sub);
+            }
+        }
+        const kinds = [];
+        for (let j = 0; j < k; j++) {
+            for (let i = 0; i < k; i++) {
+                const h = grid[j * k + i];
+                const near = (di, dj) => {
+                    const ni = Math.min(k - 1, Math.max(0, i + di));
+                    const nj = Math.min(k - 1, Math.max(0, j + dj));
+                    return Math.abs(grid[nj * k + ni] - h);
+                };
+                // Steepness is measured per 4 m whatever the cell size, so coarse cells on a hillside do not turn to rock.
+                const rise = Math.max(near(1, 0), near(-1, 0), near(0, 1), near(0, -1), near(1, 1), near(-1, -1)) * 4 / sub;
+                kinds.push(landKind(x + i * sub, z + j * sub, rise, h));
+            }
+        }
+        for (let i = 0; i < k - 1; i++) {
+            for (let j = 0; j < k - 1; j++) {
+                const c = j * k + i;
+                paintPatch(
+                    x + i * sub, z + j * sub, sub,
+                    grid[c],
+                    grid[c + 1],
+                    grid[c + k + 1],
+                    grid[c + k],
+                    [kinds[c], kinds[c + 1], kinds[c + k + 1], kinds[c + k]]
+                );
+            }
+        }
+        // A short skirt under the cell edge hides the cracks where it meets a coarser neighbour.
+        const edges = [];
+        for (let i = 0; i < k - 1; i++) edges.push([i, 0, i + 1, 0], [i, k - 1, i + 1, k - 1], [0, i, 0, i + 1], [k - 1, i, k - 1, i + 1]);
+        for (const [i0, j0, i1, j1] of edges) {
+            const a = j0 * k + i0;
+            const b = j1 * k + i1;
+            if (grid[a] < -0.35 && grid[b] < -0.35) continue;
+            const kind = countryKind(kinds[a]);
+            const list = batches[kind] || batches.grass;
+            const x0 = x + i0 * sub;
+            const z0 = z + j0 * sub;
+            const x1 = x + i1 * sub;
+            const z1 = z + j1 * sub;
+            const t0 = [x0, grid[a], z0, x0 / sub, z0 / sub, groundTone(kind, x0, z0)];
+            const t1 = [x1, grid[b], z1, x1 / sub, z1 / sub, groundTone(kind, x1, z1)];
+            const d0 = [x0, grid[a] - 1, z0, x0 / sub, z0 / sub + 0.25, groundTone(kind, x0, z0)];
+            const d1 = [x1, grid[b] - 1, z1, x1 / sub, z1 / sub + 0.25, groundTone(kind, x1, z1)];
+            pushQuad(list, t0, t1, d1, d0);
+            pushQuad(list, t0, d0, d1, t1);
+        }
+    };
     for (let iz = 0; iz <= n; iz++) {
         for (let ix = 0; ix <= n; ix++) {
             heights[iz * (n + 1) + ix] = World.heightAt(min + ix * cell, min + iz * cell);
@@ -574,47 +714,15 @@ function buildLand() {
             if (town) continue;
             const box = World.peakBox;
             if (x + cell > box.minX && x < box.maxX && z + cell > box.minZ && z < box.maxZ) continue;
-            let loch = false;
-            for (const arm of World.lochMesh) {
-                if (x + cell > arm.minX && x < arm.maxX && z + cell > arm.minZ && z < arm.maxZ) loch = true;
-            }
-            if (loch) continue;
-            const fine = World.nearRiver(cx, cz) || World.pathDist(cx, cz) < 28 || World.cliffDist(cx, cz) < 40;
-            if (Math.min(h00, h10, h11, h01) < 0.35 || fine) {
-                const sub = fine ? 4 : 8;
-                for (let sx = x; sx < x + cell; sx += sub) {
-                    for (let sz = z; sz < z + cell; sz += sub) {
-                        paintPatch(
-                            sx, sz, sub,
-                            World.heightAt(sx, sz),
-                            World.heightAt(sx + sub, sz),
-                            World.heightAt(sx + sub, sz + sub),
-                            World.heightAt(sx, sz + sub)
-                        );
-                    }
-                }
-                continue;
-            }
-            if (rise > 0.55) {
-                const sub = 16;
-                for (let sx = x; sx < x + cell; sx += sub) {
-                    for (let sz = z; sz < z + cell; sz += sub) {
-                        paintPatch(
-                            sx, sz, sub,
-                            World.heightAt(sx, sz),
-                            World.heightAt(sx + sub, sz),
-                            World.heightAt(sx + sub, sz + sub),
-                            World.heightAt(sx, sz + sub)
-                        );
-                    }
-                }
+            const sub = countrySub(x, z, h00, h10, h11, h01);
+            if (sub < cell) {
+                subdivide(x, z, sub, h00, h10, h11, h01);
                 continue;
             }
             if (mid > -0.35) {
-                const kind = landKind(cx, cz, rise);
+                const kind = countryKind(landKind(cx, cz, rise, mid));
                 const list = batches[kind] || batches.grass;
-                const plain = kind === "rock" ? 0.76 : 1;
-                const tone = (px, pz) => (kind === "grass" ? World.turfShade(px, pz) : plain);
+                const tone = (px, pz) => groundTone(kind, px, pz);
                 const u = x / 8;
                 const v = z / 8;
                 pushQuad(
@@ -685,49 +793,6 @@ function buildLand() {
             );
         }
     }
-    const lochCell = 8;
-    for (const arm of World.lochMesh) {
-        for (let x = arm.minX; x < arm.maxX; x += lochCell) {
-            for (let z = arm.minZ; z < arm.maxZ; z += lochCell) {
-                let town = false;
-                for (const place of World.places) {
-                    const b = townPatch(place);
-                    if (x + lochCell > b.x0 && x < b.x1 && z + lochCell > b.z0 && z < b.z1) town = true;
-                }
-                if (town) continue;
-                const h00 = World.heightAt(x, z);
-                const h10 = World.heightAt(x + lochCell, z);
-                const h11 = World.heightAt(x + lochCell, z + lochCell);
-                const h01 = World.heightAt(x, z + lochCell);
-                const rise = Math.max(h00, h10, h11, h01) - Math.min(h00, h10, h11, h01);
-                const mid = (h00 + h10 + h11 + h01) * 0.25;
-                const cx = x + lochCell * 0.5;
-                const cz = z + lochCell * 0.5;
-                if (mid > -0.35) {
-                    const kind = landKind(cx, cz, rise);
-                    const list = batches[kind] || batches.grass;
-                    const plain = kind === "rock" ? 0.76 : 1;
-                    const tone = (px, pz) => (kind === "grass" ? World.turfShade(px, pz) : plain);
-                    pushQuad(
-                        list,
-                        [x, h00, z, x / 8, z / 8, tone(x, z)],
-                        [x, h01, z + lochCell, x / 8, (z + lochCell) / 8, tone(x, z + lochCell)],
-                        [x + lochCell, h11, z + lochCell, (x + lochCell) / 8, (z + lochCell) / 8, tone(x + lochCell, z + lochCell)],
-                        [x + lochCell, h10, z, (x + lochCell) / 8, z / 8, tone(x + lochCell, z)]
-                    );
-                }
-                if (Math.min(h00, h10, h11, h01) > -0.04) continue;
-                const y = 0.08;
-                pushQuad(
-                    batches.water,
-                    [x, y, z, x / 8, z / 8, 0.95],
-                    [x, y, z + lochCell, x / 8, (z + lochCell) / 8, 0.95],
-                    [x + lochCell, y, z + lochCell, (x + lochCell) / 8, (z + lochCell) / 8, 0.95],
-                    [x + lochCell, y, z, (x + lochCell) / 8, z / 8, 0.95]
-                );
-            }
-        }
-    }
     const peak = World.peakBox;
     const peakCell = 4;
     for (let x = peak.minX; x < peak.maxX; x += peakCell) {
@@ -741,10 +806,9 @@ function buildLand() {
             const cx = x + peakCell * 0.5;
             const cz = z + peakCell * 0.5;
             if (mid > -0.35) {
-                const kind = landKind(cx, cz, rise);
+                const kind = countryKind(landKind(cx, cz, rise));
                 const list = batches[kind] || batches.grass;
-                const plain = kind === "rock" ? 0.76 : kind === "dirt" ? 0.9 : 1;
-                const tone = (px, pz) => (kind === "grass" ? World.turfShade(px, pz) : plain);
+                const tone = (px, pz) => groundTone(kind, px, pz);
                 pushQuad(
                     list,
                     [x, h00, z, x / 4, z / 4, tone(x, z)],
@@ -1375,6 +1439,7 @@ gl.attachShader(program, compile(gl.VERTEX_SHADER, `
 attribute vec3 aPos;
 attribute vec2 aUv;
 attribute float aShade;
+attribute float aAlpha;
 uniform mat4 uProj;
 uniform mat4 uView;
 uniform mat4 uModel;
@@ -1382,6 +1447,7 @@ varying vec2 vUv;
 varying float vShade;
 varying float vDepth;
 varying vec2 vWorld;
+varying float vAlpha;
 void main() {
     vec4 world = uModel * vec4(aPos, 1.0);
     vWorld = world.xz;
@@ -1389,6 +1455,7 @@ void main() {
     vDepth = -view.z;
     vUv = aUv;
     vShade = aShade;
+    vAlpha = aAlpha;
     gl_Position = uProj * view;
 }
 `));
@@ -1398,6 +1465,7 @@ varying vec2 vUv;
 varying float vShade;
 varying float vDepth;
 varying vec2 vWorld;
+varying float vAlpha;
 uniform sampler2D uTex;
 uniform float uDark;
 uniform float uGlow;
@@ -1427,9 +1495,10 @@ void main() {
     } else {
         color *= mix(1.0, 0.2, uDark);
     }
-    gl_FragColor = vec4(mix(color, fogCol, fog), 1.0);
+    gl_FragColor = vec4(mix(color, fogCol, fog), vAlpha);
 }
 `));
+gl.bindAttribLocation(program, 0, "aPos");
 gl.linkProgram(program);
 
 const skyProgram = gl.createProgram();
@@ -1521,6 +1590,7 @@ const loc = {
     pos: gl.getAttribLocation(program, "aPos"),
     uv: gl.getAttribLocation(program, "aUv"),
     shade: gl.getAttribLocation(program, "aShade"),
+    alpha: gl.getAttribLocation(program, "aAlpha"),
     dark: gl.getUniformLocation(program, "uDark"),
     glow: gl.getUniformLocation(program, "uGlow"),
     eye: gl.getUniformLocation(program, "uEye"),
@@ -1626,6 +1696,15 @@ function growScenery() {
     for (const [x, z, ry, s] of World.cliffRocks) {
         if (World.heightAt(x, z) > 0.3 && !World.wet(x, z)) crag(x, z, ry, s);
     }
+    for (const [x, z, ry, size] of World.groundStones) pebble(x, z, ry, size);
+}
+
+function pebble(x, z, ry, size) {
+    const c = Math.cos(ry);
+    const sn = Math.sin(ry);
+    const turn = (px, py, pz) => [x + (px - x) * c - (pz - z) * sn, py, z + (px - x) * sn + (pz - z) * c];
+    const y = World.heightAt(x, z) - size * 0.15;
+    addBox(batches.rock, x - size / 2, y, z - size * 0.4, size, size * 0.5, size * 0.8, turn, [0, 0, size / 3, size / 3]);
 }
 
 function crag(x, z, ry, s) {
@@ -1891,11 +1970,17 @@ function raiseCliffs() {
             const h = 1.7 + taper * (4.4 + roll * 2.1);
             const w = 3.1 + taper * 1.6 + roll * 0.5;
             const d = 3.2 + taper * 1.3;
-            addBox(batches.rock, x - w / 2, y, z - d / 2, w, h, d);
+            const ahead = pointAlong(line, Math.min(1, u + 0.01));
+            const behind = pointAlong(line, Math.max(0, u - 0.01));
+            const yaw = Math.atan2(ahead[1] - behind[1], ahead[0] - behind[0]) + (roll - 0.5) * 0.7;
+            const c = Math.cos(yaw);
+            const s = Math.sin(yaw);
+            const turn = (px, py, pz) => [x + (px - x) * c - (pz - z) * s, py, z + (px - x) * s + (pz - z) * c];
+            addBox(batches.crag, x - w / 2, y - 0.6, z - d / 2, w, h + 0.6, d, turn, [roll, 0, roll + w / 3.5, (h + 0.6) / 3.5]);
             if (taper > 0.4) {
                 const cw = w * 0.58;
                 const cd = d * 0.5;
-                addBox(batches.rock, x - cw / 2 + (roll - 0.5) * 0.7, y + h * 0.58, z - cd / 2, cw, h * 0.5, cd);
+                addBox(batches.crag, x - cw / 2 + (roll - 0.5) * 0.7, y + h * 0.58, z - cd / 2, cw, h * 0.5, cd, turn, [0.3, roll, 0.3 + cw / 3.5, roll + h * 0.5 / 3.5]);
             }
             scenery.push({ x: x - w / 2, z: z - d / 2, w: w, d: d });
         }
@@ -2357,6 +2442,14 @@ for (const name of Object.keys(batches)) {
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
     mesh[name] = { buffer, count: data.length / 6 };
 }
+const blendMesh = {};
+for (const kind of Object.keys(blends)) {
+    const data = new Float32Array(blends[kind]);
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    blendMesh[kind] = { buffer, count: data.length / 7 };
+}
 
 textures.farTrunk = textures.trunk;
 textures.farLeaf = textures.leaf;
@@ -2520,6 +2613,220 @@ function uploadMesh(name, floats) {
     mesh[name].count = data.length / 6;
 }
 
+// Stone arch bridges from the map editor: a humped deck with parapets, arches springing from the water between piers.
+function addBridge(list, bridge) {
+    const hw = bridge.width / 2;
+    const inner = hw - 0.45;
+    const wall = 0.95;
+    const pier = 1;
+    const spring = bridge.water - 0.4;
+    const wetLen = bridge.wetTo - bridge.wetFrom;
+    const arches = Math.max(1, Math.round(wetLen / 18));
+    const archLen = wetLen / arches;
+    const at = (along, across, y) => [
+        bridge.x + bridge.dx * along - bridge.dz * across,
+        y,
+        bridge.z + bridge.dz * along + bridge.dx * across
+    ];
+    const top = (u) => World.deckY(bridge, u);
+    const bottom = (u) => {
+        const w = u - bridge.wetFrom;
+        if (w < 0 || w > wetLen) return -6;
+        const k = Math.min(arches - 1, Math.floor(w / archLen));
+        const f = w - k * archLen;
+        if (Math.min(f, archLen - f) < pier) return -6;
+        const rise = Math.max(0.5, Math.min(archLen * 0.45, top(bridge.wetFrom + (k + 0.5) * archLen) - 1.1 - spring));
+        const g = (f - pier) / (archLen - pier * 2);
+        return Math.min(top(u) - 0.6, spring + rise * Math.sin(Math.PI * g));
+    };
+    const cuts = [];
+    for (let u = -bridge.half; u < bridge.half; u += 0.75) cuts.push(u);
+    cuts.push(bridge.half);
+    for (let k = 0; k <= arches; k++) {
+        const edge = bridge.wetFrom + k * archLen;
+        for (const side of [-pier, pier]) cuts.push(edge + side - 0.01, edge + side + 0.01);
+    }
+    const along = cuts.filter((u) => u >= -bridge.half && u <= bridge.half).sort((a, b) => a - b);
+    const quad = (shade, corners) => {
+        pushQuad(list, ...corners.map((c) => at(c[0], c[1], c[2]).concat(c[3], c[4], shade)));
+    };
+    for (let i = 1; i < along.length; i++) {
+        const a = along[i - 1];
+        const b = along[i];
+        if (b - a < 1e-4) continue;
+        const ta = top(a);
+        const tb = top(b);
+        const ba = bottom(a);
+        const bb = bottom(b);
+        const ua = a / 2.5;
+        const ub = b / 2.5;
+        for (const side of [-1, 1]) {
+            quad(0.82, [[a, side * hw, ba, ua, ba / 2.5], [a, side * hw, ta + wall, ua, (ta + wall) / 2.5], [b, side * hw, tb + wall, ub, (tb + wall) / 2.5], [b, side * hw, bb, ub, bb / 2.5]]);
+            quad(0.78, [[a, side * inner, ta, ua, ta / 2.5], [a, side * inner, ta + wall, ua, (ta + wall) / 2.5], [b, side * inner, tb + wall, ub, (tb + wall) / 2.5], [b, side * inner, tb, ub, tb / 2.5]]);
+            quad(1, [[a, side * inner, ta + wall, ua, 0], [a, side * hw, ta + wall, ua, 0.18], [b, side * hw, tb + wall, ub, 0.18], [b, side * inner, tb + wall, ub, 0]]);
+        }
+        quad(0.95, [[a, -inner, ta, ua, -inner / 2.5], [a, inner, ta, ua, inner / 2.5], [b, inner, tb, ub, inner / 2.5], [b, -inner, tb, ub, -inner / 2.5]]);
+        quad(0.5, [[a, -hw, ba, ua, -hw / 2.5], [a, hw, ba, ua, hw / 2.5], [b, hw, bb, ub, hw / 2.5], [b, -hw, bb, ub, -hw / 2.5]]);
+    }
+    for (const end of [-bridge.half, bridge.half]) {
+        const t = top(end);
+        for (const side of [-1, 1]) {
+            quad(0.86, [[end, side * inner, t, 0, 0], [end, side * inner, t + wall, 0, 0.38], [end, side * hw, t + wall, 0.18, 0.38], [end, side * hw, t, 0.18, 0]]);
+        }
+    }
+}
+
+function buildBridges() {
+    const list = [];
+    for (const bridge of World.bridgeList()) addBridge(list, bridge);
+    textures.bridge = textures.cobble;
+    uploadMesh("bridge", list);
+    mesh.bridge.cull = false;
+}
+buildBridges();
+
+// Corner-cut the rough editor stroke a few times so the road bends in smooth curves.
+function smoothRoad(chain) {
+    let line = chain.map((p) => [p[0], p[1]]);
+    for (let pass = 0; pass < 3; pass++) {
+        const next = [line[0]];
+        for (let i = 0; i < line.length - 1; i++) {
+            const a = line[i];
+            const b = line[i + 1];
+            next.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25], [a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
+        }
+        next.push(line[line.length - 1]);
+        line = next;
+    }
+    const out = [line[0]];
+    for (let i = 1; i < line.length; i++) {
+        const a = line[i - 1];
+        const b = line[i];
+        const steps = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 2);
+        for (let s = 1; s <= steps; s++) out.push([a[0] + (b[0] - a[0]) * s / steps, a[1] + (b[1] - a[1]) * s / steps]);
+    }
+    return out;
+}
+
+// Height of the drawn land, not the true ground, found from the same cells buildLand lays (each split corner 00 to 11).
+function landMeshHeight(x, z) {
+    const home = World.places[2];
+    if (Math.abs(x - home.x) < 100 && Math.abs(z - home.z) < 100) return cellHeight(x, z, 2, home.x - 100, home.z - 100);
+    for (const place of World.places) {
+        const b = townPatch(place);
+        if (x >= b.x0 && x < b.x1 && z >= b.z0 && z < b.z1) return cellHeight(x, z, 4, b.x0, b.z0);
+    }
+    const peak = World.peakBox;
+    if (x >= peak.minX && x < peak.maxX && z >= peak.minZ && z < peak.maxZ) return cellHeight(x, z, 4, peak.minX, peak.minZ);
+    const x0 = -3616 + Math.floor((x + 3616) / 32) * 32;
+    const z0 = -3616 + Math.floor((z + 3616) / 32) * 32;
+    const key = x0 + "," + z0;
+    let sub = cellSubs.get(key);
+    if (sub == null) {
+        sub = countrySub(x0, z0, World.heightAt(x0, z0), World.heightAt(x0 + 32, z0), World.heightAt(x0 + 32, z0 + 32), World.heightAt(x0, z0 + 32));
+        cellSubs.set(key, sub);
+    }
+    return cellHeight(x, z, sub, x0, z0);
+}
+const cellSubs = new Map();
+
+function cellHeight(x, z, s, ox, oz) {
+    const x0 = ox + Math.floor((x - ox) / s) * s;
+    const z0 = oz + Math.floor((z - oz) / s) * s;
+    const fx = (x - x0) / s;
+    const fz = (z - z0) / s;
+    const h00 = World.heightAt(x0, z0);
+    const h10 = World.heightAt(x0 + s, z0);
+    const h11 = World.heightAt(x0 + s, z0 + s);
+    const h01 = World.heightAt(x0, z0 + s);
+    return fz > fx ? h00 + (h11 - h01) * fx + (h01 - h00) * fz : h00 + (h10 - h00) * fx + (h11 - h10) * fz;
+}
+
+// Worn trails where workers walk their rounds: patchy, darker grass along the middle, fading out at the sides.
+function trailWear(x, z) {
+    if (landKind(x, z, 0) !== "grass") return 0;
+    const n = Math.sin(x * 0.37 + Math.sin(z * 0.21) * 2) * Math.sin(z * 0.43 + x * 0.11);
+    return Math.max(0, Math.min(0.85, 0.5 + n * 0.5));
+}
+
+let trailSeen = "";
+function buildTrails(trails) {
+    const seen = trails.length + ":" + (trails.length ? trails[trails.length - 1].join(";") : "");
+    if (seen === trailSeen) return;
+    trailSeen = seen;
+    const list = [];
+    for (const trail of trails) {
+        let prev = null;
+        for (let i = 1; i < trail.length; i++) {
+            const a = trail[i - 1];
+            const b = trail[i];
+            const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+            if (len < 0.01) continue;
+            const nx = -(b[1] - a[1]) / len;
+            const nz = (b[0] - a[0]) / len;
+            const steps = Math.ceil(len);
+            for (let s = prev ? 1 : 0; s <= steps; s++) {
+                const x = a[0] + (b[0] - a[0]) * s / steps;
+                const z = a[1] + (b[1] - a[1]) * s / steps;
+                const wear = trailWear(x, z);
+                const row = [-1, 0, 1].map((o) => {
+                    const px = x + nx * o * 1.1;
+                    const pz = z + nz * o * 1.1;
+                    return [px, Math.max(0, landMeshHeight(px, pz)) + 0.03, pz, px / 3, pz / 3, 0.62, o === 0 ? wear : 0];
+                });
+                if (prev) {
+                    pushQuad(list, prev[0], row[0], row[1], prev[1]);
+                    pushQuad(list, prev[1], row[1], row[2], prev[2]);
+                }
+                prev = row;
+            }
+        }
+    }
+    const data = new Float32Array(list);
+    if (!blendMesh.trail) blendMesh.trail = { buffer: gl.createBuffer(), count: 0 };
+    gl.bindBuffer(gl.ARRAY_BUFFER, blendMesh.trail.buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    blendMesh.trail.count = data.length / 7;
+    textures.trail = textures.dirt;
+}
+
+// The old stone roads: a strip of worn paving laid over the ground, its stones running along the road.
+function buildRoads() {
+    const list = [];
+    const across = [-1, -0.55, 0, 0.55, 1];
+    const shade = [0.74, 0.92, 1, 0.92, 0.74];
+    for (const chain of World.stoneRoads) {
+        if (chain.length < 2) continue;
+        const line = smoothRoad(chain);
+        let run = 0;
+        let prev = null;
+        for (let i = 0; i < line.length; i++) {
+            const p = line[i];
+            const a = line[Math.max(0, i - 1)];
+            const b = line[Math.min(line.length - 1, i + 1)];
+            const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+            const nx = -(b[1] - a[1]) / len;
+            const nz = (b[0] - a[0]) / len;
+            if (i > 0) run += Math.hypot(p[0] - line[i - 1][0], p[1] - line[i - 1][1]);
+            const half = 2.3 + Math.sin(run * 0.07) * 0.18 + Math.sin(run * 0.23 + 1.3) * 0.1;
+            const row = across.map((o, k) => {
+                const x = p[0] + nx * o * half;
+                const z = p[1] + nz * o * half;
+                return [x, Math.max(0, landMeshHeight(x, z)) + 0.1, z, (o + 1) * 0.5 * 1.15, run / 4, shade[k]];
+            });
+            if (prev) {
+                for (let k = 0; k < across.length - 1; k++) pushQuad(list, prev[k], row[k], row[k + 1], prev[k + 1]);
+            }
+            prev = row;
+        }
+    }
+    textures.road = textures.cobble;
+    uploadMesh("road", list);
+    mesh.road.cull = false;
+    mesh.road.lift = true;
+}
+buildRoads();
+
 function addLocalBox(list, map, xf, x, y, z, w, h, d, shade) {
     const y1 = y + h;
     const z1 = z + d;
@@ -2677,7 +2984,7 @@ function plant(man) {
         man.stand = man.floorY;
         return;
     }
-    man.stand = Math.max(0, World.heightAt(man.x, man.z));
+    man.stand = Math.max(0, World.heightAt(man.x, man.z), World.bridgeDeck(man.x, man.z) ?? 0);
 }
 
 function personMatrix(man) {
@@ -3050,12 +3357,12 @@ function rebuildMesh() {
     const skin = [];
     const pants = [];
     const steel = [];
-    const cloth = [[], [], [], []];
+    const cloth = [[], [], [], [], []];
     for (const man of men) {
-        if (man.hidden) continue;
+        if (man.hidden || !cloth[man.faction]) continue;
         addPerson(cloth[man.faction], skin, pants, steel, man.x - 0.24, man.z - 0.14, personXf(man), man.swing, man.fisher || man.farmer);
     }
-    for (let i = 0; i < 4; i++) uploadMesh("cloth" + i, cloth[i]);
+    for (let i = 0; i < cloth.length; i++) uploadMesh("cloth" + i, cloth[i]);
     uploadMesh("skin", skin);
     uploadMesh("pants", pants);
     uploadMesh("steel", steel);
@@ -3160,6 +3467,7 @@ function applyCampaign(data) {
     seenRestart = Math.max(seenRestart, stamp);
     adoptHero(data.hero);
     campaign = data;
+    buildTrails(data.trails || []);
     const units = data.factions.map((faction) => (
         (faction.units || []).map((unit) => unit.index + ":" + unit.health + ":" + unit.mode + ":" + unit.post).join(".")
     )).join("|");
@@ -4080,6 +4388,7 @@ function postHit(body) {
 
 function wound(man, label, quiet, knockX, knockZ) {
     if (!man || man.dying || man.health <= 0 || man.jack || man.faction === homeVillage) return false;
+    if (campaign && campaign.peace && campaign.peace.includes(man.faction)) return false;
     const word = label || "Hit";
     if (man.archer) {
         man.health -= 1;
@@ -5817,6 +6126,8 @@ function floorAt(x, z, feet) {
     const ground = Math.max(0, World.heightAt(x, z));
     let height = ground;
     const cap = feet == null ? ground + 0.6 : feet + 0.55;
+    const deck = World.bridgeDeck(x, z);
+    if (deck != null && deck <= cap) height = Math.max(height, deck);
     for (const floor of floors) {
         if (floor.y > cap) continue;
         if (x > floor.x && x < floor.x + floor.w && z > floor.z && z < floor.z + floor.d) {
@@ -5828,6 +6139,8 @@ function floorAt(x, z, feet) {
 
 function hitsSolid(x, z, feet) {
     const body = feet + 1.6;
+    const parapet = World.bridgeWall(x, z);
+    if (parapet != null && body > parapet && feet < parapet + 0.93) return true;
     for (const solid of solids) {
         if (x <= solid.x || x >= solid.x + solid.w || z <= solid.z || z >= solid.z + solid.d) continue;
         if (body > solid.y0 + 0.02 && feet < solid.y1 - 0.02) return true;
@@ -6162,7 +6475,8 @@ function movePlayer(dt) {
         mz = mz / len * dist;
         const stepUp = (nx, nz) => {
             const next = floorAt(nx, nz, feet);
-            if (next > feet + 0.52) return false;
+            // Open ground can be climbed however steep it is; only cliffs, peaks and raised floors stop the player.
+            if (next > feet + 0.52 && (next > Math.max(0, World.heightAt(nx, nz)) + 0.01 || World.tooSteep(nx, nz))) return false;
             if (next < feet - 0.52 && World.tooSteep(nx, nz)) return false;
             return true;
         };
@@ -6226,6 +6540,8 @@ function draw() {
     gl.enable(gl.CULL_FACE);
     gl.cullFace(gl.BACK);
     gl.useProgram(program);
+    gl.disableVertexAttribArray(loc.alpha);
+    gl.vertexAttrib1f(loc.alpha, 1);
     gl.uniformMatrix4fv(loc.view, false, lookAt());
     gl.uniformMatrix4fv(loc.model, false, identity);
     gl.uniform2f(loc.eye, view.x, view.z);
@@ -6274,13 +6590,54 @@ function draw() {
         gl.uniform1f(loc.band, band);
         gl.uniform1f(loc.flow, name === "water" ? 1 : 0);
         gl.uniformMatrix4fv(loc.proj, false, proj);
+        if (mesh[name].lift) {
+            gl.enable(gl.POLYGON_OFFSET_FILL);
+            gl.polygonOffset(-2, -8);
+        }
         gl.drawArrays(gl.TRIANGLES, 0, mesh[name].count);
+        gl.disable(gl.POLYGON_OFFSET_FILL);
     };
     gl.clear(gl.DEPTH_BUFFER_BIT);
     for (const name of Object.keys(mesh)) {
         if (name.indexOf("far") === 0 || name.indexOf("near") === 0 || name.indexOf("room") === 0) continue;
         drawMesh(name, 1);
     }
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthFunc(gl.LEQUAL);
+    gl.depthMask(false);
+    gl.enable(gl.CULL_FACE);
+    gl.enableVertexAttribArray(loc.alpha);
+    gl.uniform1f(loc.dark, dark);
+    gl.uniform1f(loc.glow, 0);
+    gl.uniform1f(loc.band, 1);
+    gl.uniform1f(loc.flow, 0);
+    gl.uniformMatrix4fv(loc.proj, false, proj);
+    for (const kind of Object.keys(blendMesh)) {
+        const blend = blendMesh[kind];
+        if (!blend.count || !textures[kind]) continue;
+        gl.bindBuffer(gl.ARRAY_BUFFER, blend.buffer);
+        gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 28, 0);
+        gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, 28, 12);
+        gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, 28, 20);
+        gl.vertexAttribPointer(loc.alpha, 1, gl.FLOAT, false, 28, 24);
+        gl.bindTexture(gl.TEXTURE_2D, textures[kind]);
+        if (kind === "trail") {
+            gl.disable(gl.CULL_FACE);
+            gl.enable(gl.POLYGON_OFFSET_FILL);
+            gl.polygonOffset(-1, -4);
+        }
+        gl.drawArrays(gl.TRIANGLES, 0, blend.count);
+        if (kind === "trail") {
+            gl.disable(gl.POLYGON_OFFSET_FILL);
+            gl.enable(gl.CULL_FACE);
+        }
+    }
+    gl.disableVertexAttribArray(loc.alpha);
+    gl.vertexAttrib1f(loc.alpha, 1);
+    gl.depthMask(true);
+    gl.depthFunc(gl.LESS);
+    gl.disable(gl.BLEND);
     drawMesh("farTrunk", 0.6);
     drawMesh("farLeaf", 0.6);
     drawMesh("nearTrunk", 1);
@@ -6293,7 +6650,7 @@ function draw() {
         gl.bindTexture(gl.TEXTURE_2D, textures.people);
         for (const man of men) {
             if (man.hidden || !nearPerson(man, 260)) continue;
-            const kind = man.fisher || man.decor || man.driver ? "fisher" : "soldier";
+            const kind = man.fisher || man.decor || man.driver || man.faction >= 4 ? "fisher" : "soldier";
             const model = peopleModels[kind + man.faction];
             if (!model) continue;
             plant(man);
@@ -6500,7 +6857,7 @@ function loadPeople() {
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
             textures.people = tex;
-            for (let i = 0; i < 4; i++) uploadMesh("cloth" + i, []);
+            for (let i = 0; i < 5; i++) uploadMesh("cloth" + i, []);
             uploadMesh("skin", []);
             uploadMesh("pants", []);
             uploadMesh("steel", []);
@@ -6864,6 +7221,15 @@ function stampRaisedPlots() {
             addBox(trunk, x - w / 2, y, z - d / 2, w, 3.2, d);
             addBox(trunk, x - w / 2 - 0.2, y + 3.2, z - d / 2 - 0.2, w + 0.4, 0.35, d + 0.4);
             scenery.push({ x: x - w / 2, z: z - d / 2, w: w, d: d, raised: true });
+            continue;
+        }
+        if (plot.kind === "outhouse") {
+            const x = plot.x - plot.w / 2;
+            const z = plot.z - plot.d / 2;
+            const y = Math.max(0, plot.y || World.heightAt(plot.x, plot.z));
+            addBox(trunk, x, y, z, plot.w, 2.1, plot.d);
+            addBox(trunk, x - 0.15, y + 2.1, z - 0.15, plot.w + 0.3, 0.14, plot.d + 0.3);
+            scenery.push({ x: x, z: z, w: plot.w, d: plot.d, raised: true });
             continue;
         }
         const house = plot.house;

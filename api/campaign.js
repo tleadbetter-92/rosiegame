@@ -20,6 +20,14 @@ const factions = [
     { id: "southeast", name: "Southeast", color: "#8a5a7a" }
 ];
 
+// Rural communities: minor factions numbered from MINOR_BASE. They farm, keep no soldiers, and seek a protector.
+const minors = [
+    { name: "Ashby", color: "#b0883a" }
+].map((minor, index) => Object.assign({}, World.hamlets[index], minor));
+const MINOR_BASE = factions.length;
+const FOLK_PER_HOUSE = 2;
+const SEIZE_COMPANY = 6;
+
 const places = World.places;
 
 const MAX_HP = 3;
@@ -31,7 +39,6 @@ const FISHER_COST = 50;
 const SOLDIER_COST = 100;
 const BUILD_WOOD = 100;
 const BUILD_DAYS = 2;
-const UPKEEP = 10;
 const fisherAim = [2, 4, 3, 3];
 const FISH_MS = 30000;
 const FISH_WALK = 2.2;
@@ -235,6 +242,44 @@ function note(state, text) {
     if (state.log.length > 8) state.log = state.log.slice(-8);
 }
 
+function nameOf(faction) {
+    return faction < MINOR_BASE ? factions[faction].name : minors[faction - MINOR_BASE].name;
+}
+
+function pairKey(a, b) {
+    return Math.min(a, b) + "-" + Math.max(a, b);
+}
+
+function relation(state, a, b) {
+    if (a === b) return "ally";
+    const set = state.relations && state.relations[pairKey(a, b)];
+    if (set) return set;
+    return a < MINOR_BASE && b < MINOR_BASE ? "war" : "peace";
+}
+
+function atWar(state, a, b) {
+    return a !== b && relation(state, a, b) === "war";
+}
+
+function setRelation(state, a, b, kind) {
+    if (a === b || relation(state, a, b) === kind) return false;
+    if (!state.relations) state.relations = {};
+    state.relations[pairKey(a, b)] = kind;
+    if (kind === "war") note(state, nameOf(a) + " declares war on " + nameOf(b) + ".");
+    else if (kind === "peace") note(state, nameOf(a) + " and " + nameOf(b) + " make peace.");
+    else note(state, nameOf(a) + " and " + nameOf(b) + " become allies.");
+    return true;
+}
+
+function hamletOwner(state, index) {
+    const held = state.minors && state.minors[index] && state.minors[index].owner;
+    return Number.isInteger(held) && held >= 0 ? held : MINOR_BASE + index;
+}
+
+function farmOwner(state, village) {
+    return village < MINOR_BASE ? state.owners[village] : hamletOwner(state, village - MINOR_BASE);
+}
+
 function eachLiving(state, faction, visit) {
     const total = state.nextIndex[faction] || 0;
     for (let index = 0; index < total; index++) {
@@ -305,6 +350,13 @@ function restartCampaign(state, now) {
     state.siteJobs = [];
     state.fedDay = [-1, -1, -1, -1];
     state.hamlet = 1;
+    state.minors = freshMinors();
+    state.relations = {};
+    state.trails = [];
+}
+
+function freshMinors() {
+    return minors.map(() => ({ food: 100, owner: -1, protector: -1, declined: [], fedDay: -1, calmUntil: 0 }));
 }
 
 function ensureHamlet(state, now) {
@@ -456,7 +508,7 @@ function strongest(state, faction) {
 function attackTarget(state, from, faction, turn) {
     const enemies = [];
     for (let village = 0; village < 4; village++) {
-        if (state.owners[village] === faction) continue;
+        if (!atWar(state, faction, state.owners[village])) continue;
         if (state.attacks.some((attack) => !attack.resolved && attack.to === village)) continue;
         enemies.push({ village, neighbor: World.links[from].includes(village) });
     }
@@ -783,6 +835,16 @@ function factionPop(state, faction) {
         if (state.owners[job.village] === faction) n += 1;
     }
     return n;
+}
+
+// Everyone alive eats 1 food a day; people still in training start eating once they are done.
+function dailyFood(state, faction) {
+    const trainees = (state.training || []).filter((job) => state.owners[job.village] === faction).length;
+    let held = 0;
+    minors.forEach((minor, index) => {
+        if (state.minors && state.minors[index] && state.minors[index].owner === faction) held += hamletPop(index);
+    });
+    return factionPop(state, faction) - trainees + held;
 }
 
 function ensureEconomy(state, now) {
@@ -1139,7 +1201,7 @@ function orderTraining(state, now) {
         if (village < 0) continue;
         const has = (kind) => state.training.some((job) => state.owners[job.village] === faction && job.kind === kind);
         const pay = (cost) => {
-            if ((state.food[faction] || 0) < cost + UPKEEP) return false;
+            if ((state.food[faction] || 0) < cost + dailyFood(state, faction)) return false;
             state.food[faction] -= cost;
             return true;
         };
@@ -1153,7 +1215,7 @@ function orderTraining(state, now) {
         else if (!has("jack") && yards.length && jacks < 1) {
             kind = "jack";
             at = yards[0].village;
-        } else if (!has("fisher") && workerCount(state, faction, state.fishermen) < 1 && producingFarms(state, faction) * FARM_PER_DAY < UPKEEP) kind = "fisher";
+        } else if (!has("fisher") && workerCount(state, faction, state.fishermen) < 1 && producingFarms(state, faction) * FARM_PER_DAY < dailyFood(state, faction)) kind = "fisher";
         else if (!has("soldier") && livingCount(state, faction) < CAP) kind = "soldier";
         if (!kind) continue;
         const cost = kind === "soldier" ? SOLDIER_COST : FISHER_COST;
@@ -1210,12 +1272,27 @@ function consumeFood(state) {
             continue;
         }
         const have = state.food[faction] || 0;
-        const meal = Math.min(UPKEEP, have);
+        const need = dailyFood(state, faction);
+        const meal = Math.min(need, have);
         state.food[faction] = have - meal;
         state.fedDay[faction] = today;
-        if (meal < UPKEEP) note(state, factions[faction].name + " cannot feed the settlement.");
+        if (meal < need) note(state, factions[faction].name + " cannot feed the settlement.");
         dirty = true;
     }
+    (state.minors || []).forEach((minor, index) => {
+        if (minor.owner >= 0 || minor.fedDay === today) return;
+        if (minor.fedDay < 0) {
+            minor.fedDay = today;
+            dirty = true;
+            return;
+        }
+        const need = hamletPop(index);
+        const meal = Math.min(need, minor.food || 0);
+        minor.food = (minor.food || 0) - meal;
+        minor.fedDay = today;
+        if (meal < need) note(state, minors[index].name + " cannot feed its people.");
+        dirty = true;
+    });
     return dirty;
 }
 
@@ -1819,6 +1896,38 @@ function routeOf(state, man, cutting) {
     };
 }
 
+// A worker's first round wears its route into the grass; the trail stays after the worker is gone.
+const MAX_TRAILS = 160;
+
+function wearTrail(state, path, worn) {
+    if (!path || path.length < 2) return false;
+    const points = path.map((p) => [Math.round(p.x * 10) / 10, Math.round(p.z * 10) / 10]);
+    const key = points.map((p) => Math.round(p[0]) + "," + Math.round(p[1])).join(";");
+    if (worn.has(key)) return false;
+    worn.add(key);
+    state.trails.push(points);
+    if (state.trails.length > MAX_TRAILS) state.trails.shift();
+    return true;
+}
+
+function wearTrails(state) {
+    if (!Array.isArray(state.trails)) state.trails = [];
+    const worn = new Set(state.trails.map((points) => points.map((p) => Math.round(p[0]) + "," + Math.round(p[1])).join(";")));
+    let dirty = false;
+    for (const man of state.fishermen || []) {
+        if (man.health > 0 && man.delivered > 0 && !man.repair && wearTrail(state, routeOf(state, man, false).path, worn)) dirty = true;
+    }
+    for (const man of state.woodcutters || []) {
+        if (man.health > 0 && man.delivered > 0 && !man.repair && wearTrail(state, routeOf(state, man, true).path, worn)) dirty = true;
+    }
+    for (const farm of state.farms || []) {
+        if (farm.health <= 0 || farm.phase !== "haul") continue;
+        const site = farmSite(state, farm.id);
+        if (site && wearTrail(state, pathToStore(site), worn)) dirty = true;
+    }
+    return dirty;
+}
+
 function presentCart(cart, now) {
     const pose = cartPose(cart, now);
     return {
@@ -1956,7 +2065,7 @@ function present(state, now, turn, paused) {
             yaw: yard.yaw,
             w: yard.w,
             d: yard.d
-        }))),
+        }))).concat(hamletPlots()),
         raising: (state.farmJobs || []).map((job) => ({
             id: job.id,
             village: job.village,
@@ -2083,6 +2192,28 @@ function present(state, now, turn, paused) {
             return list;
         }, []),
         hero: Hero.normalize(state.hero),
+        stance: factions.concat(minors).map((faction, index) => relation(state, PLAYER_FACTION, index)),
+        peace: factions.concat(minors).map((faction, index) => index).filter((index) => !atWar(state, PLAYER_FACTION, index)),
+        trails: state.trails || [],
+        minors: minors.map((minor, index) => {
+            const own = state.minors[index];
+            const owner = hamletOwner(state, index);
+            const farm = (state.farms || []).find((item) => item.id === hamlets[index].farm.id);
+            return {
+                index: MINOR_BASE + index,
+                name: minor.name,
+                color: minor.color,
+                owner,
+                ownerName: nameOf(owner),
+                ownerColor: owner < MINOR_BASE ? factions[owner].color : minor.color,
+                protector: own.protector,
+                protectorName: own.protector >= 0 ? nameOf(own.protector) : "",
+                food: own.food || 0,
+                pop: hamletPop(index),
+                houses: 1 + hamlets[index].cottages.length,
+                farmers: farm && farm.health > 0 ? farmCrew(farm) : 0
+            };
+        }),
         factions: factions.map((faction, index) => {
             let alive = 0;
             eachLiving(state, index, () => { alive += 1; });
@@ -2102,6 +2233,185 @@ function present(state, now, turn, paused) {
 
 const farmSiteList = Town.farmSites();
 
+function hamletHouse(village, x, z, yaw, role) {
+    const size = 4.7;
+    return {
+        x: x,
+        z: z,
+        y: Math.max(0, World.heightAt(x, z)),
+        yaw: yaw,
+        w: size,
+        d: size,
+        minX: x - size / 2,
+        minZ: z - size / 2,
+        mesh: "house",
+        role: role,
+        doorSide: 1,
+        village: village
+    };
+}
+
+function hamletLayout(minor, index) {
+    const village = MINOR_BASE + index;
+    const house = hamletHouse(village, minor.x + 8, minor.z, 0, "farmhouse");
+    const field = { x: minor.x - 26, z: minor.z - 6, w: 18, d: 14 };
+    const door = doorOf(house);
+    const gate = Town.fieldGate(field, { x: house.x, z: house.z });
+    const farm = {
+        id: minor.id + "-farm",
+        village: village,
+        yaw: house.yaw,
+        y: house.y,
+        house: house,
+        hay: [house.x - 5.5, house.z + 4],
+        out: door.out,
+        inn: door.inn,
+        door: door.door,
+        bed: { x: house.x, z: house.z, y: house.y },
+        exits: [{ x: door.out.x, z: door.out.z }],
+        fields: [field],
+        haul: [{ x: gate.out.x, z: gate.out.z }, { x: door.out.x, z: door.out.z }]
+    };
+    const cottages = [
+        hamletHouse(village, minor.x + 8, minor.z - 16, 0, "house"),
+        hamletHouse(village, minor.x + 21, minor.z - 4, 0, "house")
+    ];
+    const outY = Math.max(0, World.heightAt(minor.x + 14, minor.z + 8));
+    const outhouse = { x: minor.x + 14, z: minor.z + 8, y: outY, w: 1.3, d: 1.3 };
+    return { village, farm, cottages, outhouse };
+}
+
+const hamlets = minors.map(hamletLayout);
+
+function hamletPop(index) {
+    return (1 + hamlets[index].cottages.length) * FOLK_PER_HOUSE;
+}
+
+function hamletPlots() {
+    const plots = [];
+    hamlets.forEach((hamlet, index) => {
+        const id = minors[index].id;
+        const farm = hamlet.farm;
+        plots.push({ id: farm.id, village: hamlet.village, kind: "farm", yaw: farm.yaw, house: farm.house, field: farm.fields[0], hay: farm.hay, door: farm.door });
+        hamlet.cottages.forEach((house, n) => {
+            plots.push({ id: id + "-house-" + n, village: hamlet.village, kind: "house", yaw: house.yaw, house: house });
+        });
+        const o = hamlet.outhouse;
+        plots.push({ id: id + "-outhouse", village: hamlet.village, kind: "outhouse", x: o.x, z: o.z, y: o.y, w: o.w, d: o.d });
+    });
+    return plots;
+}
+
+function ensureMinors(state) {
+    let dirty = false;
+    if (!Array.isArray(state.minors) || state.minors.length !== minors.length) {
+        state.minors = freshMinors();
+        dirty = true;
+    }
+    if (!state.relations || typeof state.relations !== "object") {
+        state.relations = {};
+        dirty = true;
+    }
+    return dirty;
+}
+
+function companyAt(state, faction) {
+    const from = strongest(state, faction);
+    return from < 0 ? 0 : fielded(state, faction, from).length;
+}
+
+function nearestMajor(state, minorIndex, accept) {
+    const spot = minors[minorIndex];
+    let best = -1;
+    let bestD = Infinity;
+    for (let faction = 0; faction < MINOR_BASE; faction++) {
+        if (!accept(faction)) continue;
+        for (const village of ownedBy(state, faction)) {
+            const d = Math.hypot(places[village].x - spot.x, places[village].z - spot.z);
+            if (d < bestD) {
+                bestD = d;
+                best = faction;
+            }
+        }
+    }
+    return best;
+}
+
+function considerMinors(state, now) {
+    let dirty = false;
+    state.minors.forEach((minor, index) => {
+        const self = MINOR_BASE + index;
+        const name = minors[index].name;
+        if (now < (minor.calmUntil || 0)) return;
+        if (minor.owner >= 0) {
+            const holder = minor.owner;
+            const p = minor.protector;
+            if (p >= 0 && p !== holder && atWar(state, p, holder) && companyAt(state, p) >= Math.max(SEIZE_COMPANY, companyAt(state, holder))) {
+                minor.owner = -1;
+                minor.calmUntil = now + TURN_MS;
+                note(state, nameOf(p) + " frees " + name + ".");
+                dirty = true;
+            }
+            return;
+        }
+        const p = minor.protector;
+        if (p >= 0 && (relation(state, p, self) !== "ally" || homeVillage(state, p) < 0)) {
+            minor.protector = -1;
+            dirty = true;
+        }
+        if (minor.protector < 0) {
+            const ally = nearestMajor(state, index, (f) => relation(state, f, self) === "ally");
+            const pick = ally >= 0 ? ally : nearestMajor(state, index, (f) => relation(state, f, self) === "peace" && !(minor.declined || []).includes(f));
+            if (pick >= 0) {
+                minor.protector = pick;
+                note(state, name + " asks " + nameOf(pick) + " for protection.");
+                setRelation(state, pick, self, "ally");
+                dirty = true;
+            }
+        }
+        const guard = minor.protector >= 0 ? companyAt(state, minor.protector) : 0;
+        for (let f = 0; f < MINOR_BASE; f++) {
+            if (f === PLAYER_FACTION || f === minor.protector) continue;
+            if (relation(state, f, self) !== "peace" || (state.food[f] || 0) >= URGENT_FOOD) continue;
+            if (companyAt(state, f) <= guard) continue;
+            if (setRelation(state, f, self, "war")) dirty = true;
+        }
+        if (now < (state.marchAfter || 0)) return;
+        for (let f = 0; f < MINOR_BASE; f++) {
+            if (!atWar(state, f, self)) continue;
+            const company = companyAt(state, f);
+            if (company < SEIZE_COMPANY || (f !== PLAYER_FACTION && company <= guard)) continue;
+            minor.owner = f;
+            minor.calmUntil = now + TURN_MS;
+            state.food[f] = (state.food[f] || 0) + (minor.food || 0);
+            minor.food = 0;
+            note(state, nameOf(f) + " occupies " + name + ".");
+            if (minor.protector >= 0 && minor.protector !== f) setRelation(state, minor.protector, f, "war");
+            dirty = true;
+            break;
+        }
+    });
+    return dirty;
+}
+
+function setStance(state, other, kind) {
+    const self = PLAYER_FACTION;
+    if (!Number.isInteger(other) || other < 0 || other >= MINOR_BASE + minors.length || other === self) return;
+    if (!["war", "peace", "ally"].includes(kind)) return;
+    if (other < MINOR_BASE && homeVillage(state, other) < 0) return;
+    setRelation(state, self, other, kind);
+    if (other < MINOR_BASE) return;
+    const minor = state.minors[other - MINOR_BASE];
+    if (!minor.declined) minor.declined = [];
+    if (kind === "ally") {
+        minor.declined = minor.declined.filter((f) => f !== self);
+        if (minor.protector < 0) minor.protector = self;
+    } else {
+        if (!minor.declined.includes(self)) minor.declined.push(self);
+        if (minor.protector === self) minor.protector = -1;
+    }
+}
+
 function farmCrew(farm) {
     if (farm && Number.isInteger(farm.crew) && farm.crew > 0) return farm.crew;
     if (farm && farmSiteList.some((site) => site.id === farm.id)) return 2;
@@ -2111,6 +2421,8 @@ function farmCrew(farm) {
 function farmSite(state, id) {
     const fixed = farmSiteList.find((site) => site.id === id);
     if (fixed) return fixed;
+    const hamlet = hamlets.find((item) => item.farm.id === id);
+    if (hamlet) return hamlet.farm;
     return (state.builtFarms || []).find((site) => site.id === id) || null;
 }
 
@@ -2267,10 +2579,18 @@ function takenRects(state) {
         const cot = World.cottageLayout(village);
         rects.push({ minX: cot.x, minZ: cot.z, w: cot.w, d: cot.d });
     }
+    for (const plot of hamletPlots()) {
+        if (plot.kind === "outhouse") rects.push({ minX: plot.x - plot.w / 2, minZ: plot.z - plot.d / 2, w: plot.w, d: plot.d });
+    }
     const sites = (state.builtFarms || []).concat((state.farmJobs || []).map((job) => job.site));
     for (const house of state.houses || []) rects.push(rectOf(house.house || house));
     for (const yard of state.yards || []) rects.push({ minX: yard.x - yard.w / 2, minZ: yard.z - yard.d / 2, w: yard.w, d: yard.d });
     for (const job of state.siteJobs || []) if (job.rect) rects.push(job.rect);
+    for (const hamlet of hamlets) {
+        for (const house of [hamlet.farm.house].concat(hamlet.cottages)) rects.push(rectOf(house));
+        const field = hamlet.farm.fields[0];
+        rects.push({ minX: field.x, minZ: field.z, w: field.w, d: field.d });
+    }
     for (const site of sites) {
         rects.push(rectOf(site.house));
         const field = site.fields[0];
@@ -2795,6 +3115,7 @@ function workSpots(site) {
 }
 
 function pathToStore(site) {
+    if (site.haul) return site.haul;
     return villagerPath(site.village, { x: site.out.x, z: site.out.z }).slice().reverse();
 }
 
@@ -2843,7 +3164,7 @@ function walkHome(farm, site) {
 function ensureFarms(state) {
     if (!Array.isArray(state.farms)) state.farms = [];
     let dirty = false;
-    const sites = farmSiteList.concat(state.builtFarms || []);
+    const sites = farmSiteList.concat(state.builtFarms || [], hamlets.map((hamlet) => hamlet.farm));
     for (const site of sites) {
         if (state.farms.some((farm) => farm.id === site.id)) continue;
         state.farms.push({
@@ -2860,7 +3181,7 @@ function ensureFarms(state) {
             sentDay: -1,
             sentSlot: -1,
             retryAt: 0,
-            crew: farmSiteList.some((fixed) => fixed.id === site.id) ? 2 : 1
+            crew: farmSiteList.some((fixed) => fixed.id === site.id) || site.village >= MINOR_BASE ? 2 : 1
         });
         dirty = true;
     }
@@ -2912,12 +3233,16 @@ function stepFarms(state, now) {
             dirty = true;
             if (farm.along >= farm.length) {
                 if (farm.phase === "haul") {
-                    const owner = state.owners[farm.village];
+                    const owner = farmOwner(state, farm.village);
                     const load = farm.carry || 0;
                     farm.carry = 0;
-                    if (load > 0) {
+                    if (load > 0 && owner >= MINOR_BASE) {
+                        const minor = state.minors[owner - MINOR_BASE];
+                        minor.food = (minor.food || 0) + load;
+                        note(state, nameOf(owner) + " brings " + load + " food to the farmhouse.");
+                    } else if (load > 0) {
                         state.food[owner] = (state.food[owner] || 0) + load;
-                        note(state, factions[owner].name + " brings " + load + " food to the store.");
+                        note(state, nameOf(owner) + " brings " + load + " food to the store.");
                     }
                     markDelivery(farm, play);
                     walkHome(farm, site);
@@ -2974,7 +3299,7 @@ function presentFarms(state, now) {
         return {
             id: farm.id,
             village: farm.village,
-            owner: state.owners[farm.village],
+            owner: farmOwner(state, farm.village),
             health: farm.health,
             phase: farm.phase,
             stock: farm.stock || 0,
@@ -3009,10 +3334,12 @@ function syncWorld(state, now) {
     if (capArmies(state)) dirty = true;
     if (ensureEconomy(state, now)) dirty = true;
     if (ensureLodges(state)) dirty = true;
+    if (ensureMinors(state)) dirty = true;
     if (ensureFarms(state)) dirty = true;
     if (finishTraining(state, now)) dirty = true;
     if (orderTraining(state, now)) dirty = true;
     if (considerAttacks(state, now)) dirty = true;
+    if (considerMinors(state, now)) dirty = true;
     if (creditFish(state, now)) dirty = true;
     if (moveCarts(state, now)) dirty = true;
     if (consumeFood(state)) dirty = true;
@@ -3024,6 +3351,7 @@ function syncWorld(state, now) {
     if (considerFarms(state, now)) dirty = true;
     if (ensureFarms(state)) dirty = true;
     if (stepFarms(state, now)) dirty = true;
+    if (wearTrails(state)) dirty = true;
     if (besiege(state, now)) dirty = true;
     if (fight(state, now)) dirty = true;
     if (ensureHero(state)) dirty = true;
@@ -3059,7 +3387,7 @@ async function hitDriver(id) {
     const now = Date.now();
     syncWorld(state, now);
     const lodge = (state.lodges || []).find((item) => item.id === id);
-    if (lodge && lodge.cart && state.owners[lodge.village] !== PLAYER_FACTION && lodge.cart.driver > 0) {
+    if (lodge && lodge.cart && atWar(state, PLAYER_FACTION, state.owners[lodge.village]) && lodge.cart.driver > 0) {
         lodge.cart.driver -= 1;
     }
     moveCarts(state, now);
@@ -3073,7 +3401,7 @@ async function hitCart(id) {
     const now = Date.now();
     syncWorld(state, now);
     const lodge = (state.lodges || []).find((item) => item.id === id);
-    if (lodge && lodge.cart && state.owners[lodge.village] !== PLAYER_FACTION && lodge.cart.hp > 0) {
+    if (lodge && lodge.cart && atWar(state, PLAYER_FACTION, state.owners[lodge.village]) && lodge.cart.hp > 0) {
         lodge.cart.hp -= 1;
     }
     moveCarts(state, now);
@@ -3087,7 +3415,7 @@ async function hitWood(id) {
     const now = Date.now();
     syncWorld(state, now);
     const man = state.woodcutters[id];
-    if (man && man.health > 0 && state.owners[man.village] !== PLAYER_FACTION) {
+    if (man && man.health > 0 && atWar(state, PLAYER_FACTION, state.owners[man.village])) {
         man.health -= 1;
         if (man.health <= 0) dropRepair(state, man);
     }
@@ -3102,7 +3430,7 @@ async function hitFarmer(id) {
     const now = Date.now();
     syncWorld(state, now);
     const farm = (state.farms || []).find((item) => item.id === id);
-    if (farm && farm.health > 0 && state.owners[farm.village] !== PLAYER_FACTION) {
+    if (farm && farm.health > 0 && atWar(state, PLAYER_FACTION, farmOwner(state, farm.village))) {
         farm.health -= 1;
         if (farm.health <= 0) {
             if (farm.carry > 0) {
@@ -3123,7 +3451,7 @@ async function hitFisher(village) {
     const now = Date.now();
     syncWorld(state, now);
     const man = livingFisher(state, village);
-    if (man) {
+    if (man && atWar(state, PLAYER_FACTION, state.owners[man.village])) {
         man.health -= 1;
         if (man.health <= 0) dropRepair(state, man);
     }
@@ -3137,7 +3465,7 @@ async function hitGate(village, side) {
     const state = await readState();
     const now = Date.now();
     syncWorld(state, now);
-    if (village >= 0 && village <= 3 && side >= 0 && side <= 3 && state.owners[village] !== PLAYER_FACTION) {
+    if (village >= 0 && village <= 3 && side >= 0 && side <= 3 && atWar(state, PLAYER_FACTION, state.owners[village])) {
         const row = state.gates && state.gates[village];
         if (row && row[side] > 0) {
             row[side] -= 1;
@@ -3157,7 +3485,7 @@ async function hitArcher(village, side) {
     const state = await readState();
     const now = Date.now();
     syncWorld(state, now);
-    if (village >= 0 && village <= 3 && side >= 0 && side <= 3 && state.owners[village] !== PLAYER_FACTION) {
+    if (village >= 0 && village <= 3 && side >= 0 && side <= 3 && atWar(state, PLAYER_FACTION, state.owners[village])) {
         const row = state.archers && state.archers[village];
         if (row && row[side] > 0) {
             row[side] -= 1;
@@ -3182,6 +3510,19 @@ async function setFood(village, amount) {
         if (!Array.isArray(state.food) || state.food.length !== 4) state.food = [0, 0, 0, 0];
         state.food[owner] = next;
     }
+    const minor = state.minors && state.minors[village - MINOR_BASE];
+    if (minor && minor.owner < 0 && Number.isFinite(next) && next >= 0 && next <= 99999) minor.food = next;
+    await writeState(state);
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+}
+
+async function changeStance(other, kind) {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    setStance(state, other, kind);
+    considerMinors(state, now);
     await writeState(state);
     const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
     return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
@@ -3192,7 +3533,7 @@ async function hit(village, index) {
     const now = Date.now();
     syncWorld(state, now);
     const faction = village;
-    if (faction >= 0 && faction <= 3 && index >= 0 && index < (state.nextIndex[faction] || 0)) {
+    if (faction >= 0 && faction <= 3 && atWar(state, PLAYER_FACTION, faction) && index >= 0 && index < (state.nextIndex[faction] || 0)) {
         const key = keyOf(faction, index);
         const current = healthOf(state, faction, index);
         if (current > 0) state.health[key] = current - 1;
@@ -3209,6 +3550,10 @@ module.exports = async function handler(req, res) {
         if (req.method === "POST") {
             if (req.body && Number.isInteger(req.body.setFood) && Number.isFinite(Number(req.body.amount))) {
                 res.status(200).json(await setFood(req.body.setFood, req.body.amount));
+                return;
+            }
+            if (req.body && Number.isInteger(req.body.stance) && typeof req.body.kind === "string") {
+                res.status(200).json(await changeStance(req.body.stance, req.body.kind));
                 return;
             }
             if (req.body && req.body.restart) {

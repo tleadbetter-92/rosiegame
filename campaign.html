@@ -19,7 +19,7 @@
         <p id="clock">Recruiting takes five minutes</p>
         <button id="restart" type="button">Restart</button>
     </header>
-    <p class="lead">A settlement holds 20. Soldiers and workers each take 1. A new house adds 2. A house, a lumberyard, or a farm costs 100 wood and takes two days. A villager costs 50 food and a soldier costs 100. Training takes five minutes. The settlement eats 10 food a day. Fishermen bring food from the sea, and woodcutters bring wood from the trees. The houses choose when to build, train, and march.</p>
+    <p class="lead">A settlement holds 20. Soldiers and workers each take 1. A new house adds 2. A house, a lumberyard, or a farm costs 100 wood and takes two days. A villager costs 50 food and a soldier costs 100. Training takes five minutes. Every soldier and worker eats 1 food a day. Fishermen bring food from the sea, and woodcutters bring wood from the trees. The houses choose when to build, train, and march, and only march on those they are at war with. Rural communities keep no soldiers and ask the nearest friendly house for protection.</p>
     <figure class="island">
         <canvas id="land" width="680" height="640" aria-label="The whole island from above"></canvas>
     </figure>
@@ -28,6 +28,7 @@
             <h2>Northwest</h2>
             <p class="owner" data-owner>Held by Northwest</p>
             <p class="count">pop <span data-pop>0/20</span> · <span data-count>0</span> soldiers · <span data-farm>0 farmers</span> · <span data-fish>0 fishermen</span> · <span data-woodcut>0 woodcutters</span><span data-jack></span> · <label class="food">food <input data-food type="number" min="0" max="99999" step="1" value="0" aria-label="Northwest food"></label> · <span data-wood>0</span> wood</p>
+            <label class="stance"><span data-stance-name>Southwest and Northwest:</span> <select data-stance="0" aria-label="Southwest and Northwest"><option value="war">War</option><option value="peace">Peace</option><option value="ally">Allied</option></select></label>
             <p class="status" data-status></p>
             <div class="men" data-men></div>
         </article>
@@ -35,6 +36,7 @@
             <h2>Northeast</h2>
             <p class="owner" data-owner>Held by Northeast</p>
             <p class="count">pop <span data-pop>0/20</span> · <span data-count>0</span> soldiers · <span data-farm>0 farmers</span> · <span data-fish>0 fishermen</span> · <span data-woodcut>0 woodcutters</span><span data-jack></span> · <label class="food">food <input data-food type="number" min="0" max="99999" step="1" value="0" aria-label="Northeast food"></label> · <span data-wood>0</span> wood</p>
+            <label class="stance"><span data-stance-name>Southwest and Northeast:</span> <select data-stance="1" aria-label="Southwest and Northeast"><option value="war">War</option><option value="peace">Peace</option><option value="ally">Allied</option></select></label>
             <p class="status" data-status></p>
             <div class="men" data-men></div>
         </article>
@@ -42,6 +44,7 @@
             <h2>Southwest</h2>
             <p class="owner" data-owner>Held by Southwest</p>
             <p class="count">pop <span data-pop>0/20</span> · <span data-count>0</span> soldiers · <span data-farm>0 farmers</span> · <span data-fish>0 fishermen</span> · <span data-woodcut>0 woodcutters</span><span data-jack></span> · <label class="food">food <input data-food type="number" min="0" max="99999" step="1" value="0" aria-label="Southwest food"></label> · <span data-wood>0</span> wood</p>
+            <label class="stance" hidden><span data-stance-name>Southwest and Southwest:</span> <select data-stance="2" aria-label="Southwest and the holder"><option value="war">War</option><option value="peace">Peace</option><option value="ally">Allied</option></select></label>
             <p class="status" data-status></p>
             <div class="men" data-men></div>
         </article>
@@ -49,8 +52,16 @@
             <h2>Southeast</h2>
             <p class="owner" data-owner>Held by Southeast</p>
             <p class="count">pop <span data-pop>0/20</span> · <span data-count>0</span> soldiers · <span data-farm>0 farmers</span> · <span data-fish>0 fishermen</span> · <span data-woodcut>0 woodcutters</span><span data-jack></span> · <label class="food">food <input data-food type="number" min="0" max="99999" step="1" value="0" aria-label="Southeast food"></label> · <span data-wood>0</span> wood</p>
+            <label class="stance"><span data-stance-name>Southwest and Southeast:</span> <select data-stance="3" aria-label="Southwest and Southeast"><option value="war">War</option><option value="peace">Peace</option><option value="ally">Allied</option></select></label>
             <p class="status" data-status></p>
             <div class="men" data-men></div>
+        </article>
+        <article class="hold minor" data-i="4">
+            <h2>Ashby</h2>
+            <p class="owner" data-owner>Rural community</p>
+            <p class="count">pop <span data-pop>0</span> · <span data-houses>0 houses</span> · <span data-farm>0 farmers</span> · <label class="food">food <input data-food type="number" min="0" max="99999" step="1" value="0" aria-label="Ashby food"></label></p>
+            <label class="stance"><span data-stance-name>Southwest and Ashby:</span> <select data-stance="4" aria-label="Southwest and Ashby"><option value="war">War</option><option value="peace">Peace</option><option value="ally">Allied</option></select></label>
+            <p class="status" data-status></p>
         </article>
     </div>
     <section class="log">

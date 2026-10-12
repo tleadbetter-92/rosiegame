@@ -7,7 +7,7 @@ const Town = require("../town.js");
 const ORIGIN = -3616;
 const STEP = 8;
 const SIZE = 7232 / STEP + 1;
-const KINDS = ["grass", "dirt", "rock", "sand", "cobble"];
+const KINDS = ["grass", "dirt", "rock", "sand", "cobble", "gravel", "marsh"];
 
 const heights = new Float32Array(SIZE * SIZE);
 const ground = new Uint8Array(SIZE * SIZE);

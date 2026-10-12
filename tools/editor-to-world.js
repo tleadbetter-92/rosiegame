@@ -104,7 +104,12 @@ const paths = strokesOf("path", 100).filter((s) => s.length > 1);
 const roads = strokesOf("road", 100).filter((s) => s.length > 1);
 const cliffs = strokesOf("cliff", 100).filter((s) => s.length > 1);
 const rivers = strokesOf("river", 100).filter((s) => s.length > 1);
+// Painted ground in the order it was laid, so later paint covers earlier paint: [x, z, radius, kind].
+const ground = added
+    .filter((o) => o.type.startsWith("ground-"))
+    .map((o) => spot(o).concat(Math.round(ACROSS * o.s), o.type.slice(7)));
 const forests = added.filter((o) => o.type === "forest").map((o) => spot(o).concat(Math.round(48 * o.s)));
+const bridges = added.filter((o) => o.type === "bridge").map(spot);
 // Trees copied out of the game are tiny (s 0.03); trees placed by hand in the editor are full size.
 const trees = after.things.filter((o) => o.type === "tree" && o.s > 0.1).map(spot);
 
@@ -122,11 +127,13 @@ const code = `// Made by tools/editor-to-world.js from the terrain editor map. D
         roads: ${JSON.stringify(roads)},
         cliffs: ${JSON.stringify(cliffs)},
         rivers: ${JSON.stringify(rivers)},
+        ground: ${JSON.stringify(ground)},
         forests: ${JSON.stringify(forests)},
-        trees: ${JSON.stringify(trees)}
+        trees: ${JSON.stringify(trees)},
+        bridges: ${JSON.stringify(bridges)}
     };
 });
 `;
 const out = path.join(__dirname, "..", "world-edit.js");
 fs.writeFileSync(out, code);
-console.log("wrote", out, "ground", rise ? rise.nx + "x" + rise.nz : "none", "water strokes", water.map((s) => s.length).join(","), "rocks", rocks.length, "paths", paths.length, "stone roads", roads.length, "cliffs", cliffs.length, "rivers", rivers.length, "forest pieces", forests.length, "trees", trees.length);
+console.log("wrote", out, "ground", rise ? rise.nx + "x" + rise.nz : "none", "water strokes", water.map((s) => s.length).join(","), "rocks", rocks.length, "paths", paths.length, "stone roads", roads.length, "cliffs", cliffs.length, "rivers", rivers.length, "ground paint", ground.length, "forest pieces", forests.length, "trees", trees.length, "bridges", bridges.length);

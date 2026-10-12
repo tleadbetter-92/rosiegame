@@ -156,6 +156,18 @@
                 <label><input type="radio" name="brushMode" value="road"> Stone road</label>
                 <label><input type="radio" name="brushMode" value="cliff"> Cliff</label>
                 <label><input type="radio" name="brushMode" value="river"> River</label>
+                <label><input type="radio" name="brushMode" value="bridge"> Stone bridge (click once on the crossing)</label>
+            </div>
+        </div>
+        <div class="control-group">
+            <label>Ground Paint (Shift+Click, uses Brush Radius):</label>
+            <div class="radio-row">
+                <label><input type="radio" name="brushMode" value="ground-grass"> Grass</label>
+                <label><input type="radio" name="brushMode" value="ground-rocky"> Rocky grass</label>
+                <label><input type="radio" name="brushMode" value="ground-gravel"> Gravel</label>
+                <label><input type="radio" name="brushMode" value="ground-dirt"> Dirt</label>
+                <label><input type="radio" name="brushMode" value="ground-sand"> Sand</label>
+                <label><input type="radio" name="brushMode" value="ground-marsh"> Marsh</label>
             </div>
         </div>
         <div class="control-group">
@@ -1080,15 +1092,29 @@
           }
 
           // Forest, path, road and cliff pieces are only markers here; the game turns them into woodland, dirt paths, old stone roads and cliffs.
+          // Ground paint is a flat disc the size of the brush; the game paints that patch with the chosen ground.
+          const groundColors = {
+            'ground-grass': 0x5fa040, 'ground-rocky': 0x8fa080, 'ground-gravel': 0x9a968c,
+            'ground-dirt': 0x8b6a40, 'ground-sand': 0xd8c08a, 'ground-marsh': 0x4a5a30
+          };
+
+          function groundMesh(type) {
+            const geom = new THREE.CylinderGeometry(1, 1, 0.15, 32);
+            geom.translate(0, 0.1, 0);
+            const mat = new THREE.MeshStandardMaterial({ color: groundColors[type], roughness: 0.9, transparent: true, opacity: 0.45, depthWrite: false });
+            return new THREE.Mesh(geom, mat);
+          }
+
           function markerMesh(type) {
             const forest = type === 'forest';
             let geom;
             if (forest) geom = new THREE.CylinderGeometry(3, 3, 0.6, 24);
             else if (type === 'cliff') geom = new THREE.BoxGeometry(1, 4, 1);
             else if (type === 'river') geom = new THREE.CylinderGeometry(0.9, 0.9, 0.3, 16);
+            else if (type === 'bridge') geom = new THREE.BoxGeometry(1.6, 0.6, 1.6);
             else geom = new THREE.CylinderGeometry(0.5, 0.5, 0.4, 12);
-            geom.translate(0, forest ? 0.3 : type === 'cliff' ? 2 : 0.2, 0);
-            const colors = { forest: 0x2f6b2a, road: 0x9a9a92, cliff: 0x6f675c, path: 0x8a6a3c, river: 0x2f7fd0 };
+            geom.translate(0, forest ? 0.3 : type === 'cliff' ? 2 : type === 'bridge' ? 0.3 : 0.2, 0);
+            const colors = { forest: 0x2f6b2a, road: 0x9a9a92, cliff: 0x6f675c, path: 0x8a6a3c, river: 0x2f7fd0, bridge: 0xc8b48a };
             const mat = new THREE.MeshStandardMaterial({
                 color: colors[type],
                 roughness: 0.9,
@@ -1102,6 +1128,8 @@
             if (point.distanceTo(lastPlacedPosition) < Math.max(1.5, brushSize / 3)) {
                 return; 
             }
+            // One bridge per crossing, however long the click is held.
+            if (type === 'bridge' && placedObjects.some(o => o.type === 'bridge' && o.object.position.distanceTo(point) < 3)) return;
 
             let clone = null;
             let visibleChildIndex = -1;
@@ -1117,8 +1145,10 @@
                 scene.add(sim.mesh);
                 waterSims.push(sim);
                 clone = sim.mesh;
-            } else if (['forest', 'path', 'road', 'cliff', 'river'].includes(type)) {
+            } else if (['forest', 'path', 'road', 'cliff', 'river', 'bridge'].includes(type)) {
                 clone = markerMesh(type);
+            } else if (groundColors[type]) {
+                clone = groundMesh(type);
             } else if (type === 'tree' && window.treeGltf) {
                 clone = SkeletonUtils.clone(window.treeGltf.scene);
                 
@@ -1166,6 +1196,7 @@
                 clone.rotation.y = Math.random() * Math.PI * 2;
                 const scale = 0.8 + Math.random() * 0.4;
                 clone.scale.set(scale, scale, scale);
+                if (groundColors[type]) clone.scale.set(brushSize, 1, brushSize);
                 
                 scene.add(clone);
                 lastPlacedPosition.copy(point);
@@ -1346,8 +1377,10 @@
                               const sim = new WaterSim(6, 12);
                               waterSims.push(sim);
                               clone = sim.mesh;
-                          } else if (['forest', 'path', 'road', 'cliff', 'river'].includes(data.type)) {
+                          } else if (['forest', 'path', 'road', 'cliff', 'river', 'bridge'].includes(data.type)) {
                               clone = markerMesh(data.type);
+                          } else if (groundColors[data.type]) {
+                              clone = groundMesh(data.type);
                           } else if (data.type === 'grass' && window.grassModel) {
                               clone = SkeletonUtils.clone(window.grassModel);
                           } else if (data.type === 'rock' && window.rockModel) {
@@ -1372,7 +1405,7 @@
                           if (clone) {
                               clone.position.set(data.px, data.py, data.pz);
                               clone.rotation.y = data.ry;
-                              clone.scale.set(data.s, data.s, data.s);
+                              clone.scale.set(data.s, groundColors[data.type] ? 1 : data.s, data.s);
                               scene.add(clone);
                               placedObjects.push({ type: data.type, object: clone, visibleChildIndex: data.vi, url: data.url, color: data.color });
                           }

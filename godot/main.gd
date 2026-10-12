@@ -9,6 +9,8 @@ const GROUND := [
 	Color(0.50, 0.49, 0.46),
 	Color(0.80, 0.73, 0.52),
 	Color(0.56, 0.55, 0.52),
+	Color(0.47, 0.45, 0.42),
+	Color(0.30, 0.35, 0.18),
 ]
 const STOREYS := { "house": 5.0, "tall": 7.5, "shop": 6.0, "brick": 6.0, "long": 5.0, "grand": 7.5 }
 

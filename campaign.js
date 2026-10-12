@@ -28,6 +28,8 @@ function terrainColor(h, wet) {
 
 let islandBase = null;
 let shownVillages = null;
+let shownMinors = [];
+const minorSpots = window.World ? World.hamlets : [];
 
 function bakeIsland() {
     if (!land || !window.World || islandBase) return;
@@ -124,6 +126,23 @@ function showVillages(villages) {
         const ly = below ? p.y + 24 : p.y - 14;
         ctx.strokeText(placeNames[index], p.x, ly);
         ctx.fillText(placeNames[index], p.x, ly);
+    });
+    shownMinors.forEach((minor, index) => {
+        const spot = minorSpots[index];
+        if (!spot) return;
+        const p = mapPoint(spot.x, spot.z);
+        ctx.beginPath();
+        ctx.fillStyle = "#f4efe4";
+        ctx.strokeStyle = minor.ownerColor || minor.color;
+        ctx.lineWidth = 3;
+        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.font = "700 12px Segoe UI, system-ui, sans-serif";
+        ctx.strokeStyle = "rgba(20, 24, 18, 0.75)";
+        ctx.fillStyle = "#f7f4ea";
+        ctx.strokeText(minor.name, p.x, p.y + 20);
+        ctx.fillText(minor.name, p.x, p.y + 20);
     });
     let spot = null;
     try { spot = JSON.parse(localStorage.getItem("village-spot") || "null"); } catch (err) { spot = null; }
@@ -251,7 +270,34 @@ function paint(data) {
         else if (village.fishing) status.textContent = "Fisherman working";
         else status.textContent = "";
         hold.querySelector("[data-men]").innerHTML = men(village.alive, village.color);
+        const select = hold.querySelector("[data-stance]");
+        if (select) {
+            select.dataset.stance = String(village.owner);
+            select.setAttribute("aria-label", "Southwest and " + village.ownerName);
+            select.closest(".stance").hidden = village.owner === 2;
+            hold.querySelector("[data-stance-name]").textContent = "Southwest and " + village.ownerName + ":";
+        }
     });
+    (data.minors || []).forEach((minor) => {
+        const hold = holds[minor.index];
+        if (!hold) return;
+        hold.style.borderTop = "6px solid " + minor.ownerColor;
+        let owner = "Rural community";
+        if (minor.owner !== minor.index) owner = "Held by " + minor.ownerName;
+        else if (minor.protectorName) owner = "Rural community · protected by " + minor.protectorName;
+        hold.querySelector("[data-owner]").textContent = owner;
+        hold.querySelector("[data-pop]").textContent = String(minor.pop || 0);
+        hold.querySelector("[data-houses]").textContent = minor.houses + (minor.houses === 1 ? " house" : " houses");
+        hold.querySelector("[data-farm]").textContent = minor.farmers + (minor.farmers === 1 ? " farmer" : " farmers");
+        const food = hold.querySelector("[data-food]");
+        food.disabled = minor.owner !== minor.index;
+        if (document.activeElement !== food) food.value = String(minor.food || 0);
+    });
+    for (const select of document.querySelectorAll("[data-stance]")) {
+        const kind = (data.stance || [])[Number(select.dataset.stance)];
+        if (kind && document.activeElement !== select) select.value = kind;
+    }
+    shownMinors = data.minors || shownMinors;
     showVillages(villages);
     const lines = data.log || [];
     if (!lines.length) {
@@ -298,6 +344,19 @@ holds.forEach((hold) => {
         take(await res.json());
     });
 });
+
+for (const select of document.querySelectorAll("[data-stance]")) {
+    select.addEventListener("change", async () => {
+        const res = await fetch("/api/campaign", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            cache: "no-store",
+            body: JSON.stringify({ stance: Number(select.dataset.stance), kind: select.value })
+        });
+        if (!res.ok) return;
+        take(await res.json());
+    });
+}
 
 document.getElementById("restart").addEventListener("click", async () => {
     if (!window.confirm("Start again? Every village goes back to ten soldiers, two farmers, and 100 food.")) return;

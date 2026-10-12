@@ -4,6 +4,8 @@
     else root.Clock = api;
 })(typeof self !== "undefined" ? self : this, function () {
     const DAY_MS = 40 * 60 * 1000;
+    // Nights stay light while the game is being built; turn this on for release.
+    const DARK_NIGHTS = false;
 
     function hours(now) {
         const t = ((now % DAY_MS) + DAY_MS) % DAY_MS;
@@ -15,6 +17,7 @@
     }
 
     function darkness(now) {
+        if (!DARK_NIGHTS) return 0;
         const h = hours(now);
         if (h >= 23 || h < 5) return 1;
         if (h < 6.5) return 1 - (h - 5) / 1.5;
