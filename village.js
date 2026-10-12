@@ -2809,6 +2809,10 @@ function buildRoads() {
             const nz = (b[0] - a[0]) / len;
             if (i > 0) run += Math.hypot(p[0] - line[i - 1][0], p[1] - line[i - 1][1]);
             const half = 2.3 + Math.sin(run * 0.07) * 0.18 + Math.sin(run * 0.23 + 1.3) * 0.1;
+            if (World.bridgeDeck(p[0], p[1]) != null) {
+                prev = null;
+                continue;
+            }
             const row = across.map((o, k) => {
                 const x = p[0] + nx * o * half;
                 const z = p[1] + nz * o * half;

@@ -328,6 +328,75 @@
         return tall * Math.pow(1 - Math.pow(t, 0.4), 1.5);
     }
 
+    // Where a stone road runs between high ground, it goes through a cut: sheer rock walls a few metres either side.
+    let cuts = null;
+    let cutBox = null;
+    let cutting = false;
+
+    function layCuts() {
+        cuts = [];
+        cutting = true;
+        for (const chain of editRoads) {
+            for (let i = 1; i < chain.length; i++) {
+                const a = chain[i - 1];
+                const b = chain[i];
+                const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+                if (len < 0.01) continue;
+                const nx = -(b[1] - a[1]) / len;
+                const nz = (b[0] - a[0]) / len;
+                for (let s = 0; s < len; s += 6) {
+                    const x = a[0] + (b[0] - a[0]) * s / len;
+                    const z = a[1] + (b[1] - a[1]) * s / len;
+                    const h0 = heightAt(x, z);
+                    let hL = -1e9;
+                    let hR = -1e9;
+                    for (let o = 25; o <= 90; o += 5) {
+                        hL = Math.max(hL, heightAt(x + nx * o, z + nz * o));
+                        hR = Math.max(hR, heightAt(x - nx * o, z - nz * o));
+                    }
+                    const strength = Math.max(0, Math.min(1, (Math.min(hL, hR) - h0 - 10) / 10));
+                    if (strength > 0) cuts.push({ x, z, nx, nz, h0, hL, hR, strength });
+                }
+            }
+        }
+        cutting = false;
+        cutBox = cuts.length ? boxOf(cuts.map((c) => [c.x, c.z])) : null;
+    }
+
+    function nearCut(x, z) {
+        if (!loaded || cutting) return null;
+        if (!cuts) layCuts();
+        if (!cutBox || outsideBox(x, z, cutBox) > 60) return null;
+        let best = null;
+        let bestD = 60;
+        for (const c of cuts) {
+            const d = Math.hypot(x - c.x, z - c.z);
+            if (d < bestD) { bestD = d; best = c; }
+        }
+        return best;
+    }
+
+    function passCut(x, z, h) {
+        const c = nearCut(x, z);
+        if (!c) return h;
+        const across = (x - c.x) * c.nx + (z - c.z) * c.nz;
+        const d = Math.abs(across) + (fbm(x * 0.09 + 2, z * 0.09 + 7) - 0.5) * 3;
+        if (d < 9) return h;
+        const along = (x - c.x) * c.nz - (z - c.z) * c.nx;
+        const strength = c.strength * (1 - smooth(4, 30, Math.abs(along)));
+        const side = across > 0 ? c.hL : c.hR;
+        const top = c.h0 + (side - c.h0 + (fbm(x * 0.05, z * 0.05) - 0.5) * 3) * strength * smooth(9, 12, d);
+        const fade = 1 - smooth(35, 60, d);
+        return Math.max(h, h + (top - h) * fade);
+    }
+
+    function inCut(x, z) {
+        const c = nearCut(x, z);
+        if (!c) return false;
+        const d = Math.abs((x - c.x) * c.nx + (z - c.z) * c.nz);
+        return d > 7 && d < 15;
+    }
+
     // Rock slabs jutting from the cliff faces and fallen boulders below them: [x, z, ry, s].
     const cliffRocks = [];
     for (const chain of editCliffs) {
@@ -462,7 +531,7 @@
 
     function tooSteep(x, z) {
         const inPeak = x >= peakBox.minX && x <= peakBox.maxX && z >= peakBox.minZ && z <= peakBox.maxZ;
-        if (!inPeak && !(editCliffs.length && cliffDist(x, z) < CLIFF_FOOT)) return false;
+        if (!inPeak && !(editCliffs.length && cliffDist(x, z) < CLIFF_FOOT) && !inCut(x, z)) return false;
         const h = heightAt(x, z);
         const s = 1.6;
         if (Math.abs(heightAt(x + s, z) - h) > 1.5) return true;
@@ -631,7 +700,7 @@
             if (wave < 0) shaped += Math.max(wave, -Math.max(0, shaped - 0.55));
             else shaped += wave;
         }
-        return carveEditWater(x, z, carveEditRivers(x, z, shaped));
+        return carveEditWater(x, z, carveEditRivers(x, z, passCut(x, z, shaped)));
     }
 
     function editRise(x, z) {
@@ -689,6 +758,7 @@
             if (n < 0) n = fbm(x * 0.0034 + 6, z * 0.0034);
             w = Math.min(58 + n * 30, 22 + fromTip * 0.2);
         }
+        for (const b of editBridges) w = Math.min(w, 12 + Math.hypot(x - b[0], z - b[1]) * 0.3);
         return d < w ? { d, w } : null;
     }
 
