@@ -3,6 +3,9 @@
     if (typeof module === "object" && module.exports) module.exports = api;
     else root.World = api;
 })(typeof self !== "undefined" ? self : this, function () {
+    const edit = typeof require === "function" ? require("./world-edit.js") : (typeof self !== "undefined" && self.WorldEdit) || { rise: null, water: [], rocks: [] };
+    const editPaths = edit.paths || [];
+    const editRoads = edit.roads || [];
     const places = [
         { x: -1480, z: -980, ox: -1480, oz: -980 },
         { x: 1220, z: -1560, ox: 1220, oz: -1560 },
@@ -190,6 +193,7 @@
     }
 
     function nearRiver(x, z) {
+        if (editRivers.length && nearChainDist(x, z, editRivers, riverBoxes) < 50) return true;
         return riverInfo(x, z).d < 58;
     }
 
@@ -257,13 +261,138 @@
         return tracks[from + "-" + to] || [];
     }
 
-    function roadDist(x, z) {
+    function trackDist(x, z) {
         let best = 1e9;
         for (const key of Object.keys(tracks)) {
             if (key[0] > key[2]) continue;
             best = Math.min(best, chainDist(x, z, tracks[key]));
         }
         return best;
+    }
+
+    function boxOf(chain) {
+        const box = { minX: 1e9, maxX: -1e9, minZ: 1e9, maxZ: -1e9 };
+        for (const p of chain) {
+            box.minX = Math.min(box.minX, p[0]);
+            box.maxX = Math.max(box.maxX, p[0]);
+            box.minZ = Math.min(box.minZ, p[1]);
+            box.maxZ = Math.max(box.maxZ, p[1]);
+        }
+        return box;
+    }
+
+    function outsideBox(x, z, box) {
+        const dx = x < box.minX ? box.minX - x : x > box.maxX ? x - box.maxX : 0;
+        const dz = z < box.minZ ? box.minZ - z : z > box.maxZ ? z - box.maxZ : 0;
+        return Math.max(dx, dz);
+    }
+
+    // Callers only care about distances under 200 m, so far-off chains report the distance to their box instead.
+    function nearChainDist(x, z, chains, boxes) {
+        let best = 1e9;
+        for (let i = 0; i < chains.length; i++) {
+            const out = outsideBox(x, z, boxes[i]);
+            best = Math.min(best, out > 200 ? out : chainDist(x, z, chains[i]));
+        }
+        return best;
+    }
+
+    const pathBoxes = editPaths.map(boxOf);
+    const roadBoxes = editRoads.map(boxOf);
+
+    function stoneDist(x, z) {
+        return nearChainDist(x, z, editRoads, roadBoxes);
+    }
+
+    function pathDist(x, z) {
+        return Math.min(stoneDist(x, z), nearChainDist(x, z, editPaths, pathBoxes));
+    }
+
+    function roadDist(x, z) {
+        return Math.min(trackDist(x, z), pathDist(x, z));
+    }
+
+    const editRivers = edit.rivers || [];
+    const riverBoxes = editRivers.map(boxOf);
+
+    function editRiverInfo(x, z) {
+        if (!editRivers.length) return null;
+        const d = nearChainDist(x, z, editRivers, riverBoxes);
+        if (d > 60) return null;
+        return { d, w: 8 + fbm(x * 0.004 + 3, z * 0.004) * 6 };
+    }
+
+    function editRiverOpen(x, z) {
+        if (inField(x, z)) return false;
+        for (const place of places) {
+            if (Math.hypot(x - place.x, z - place.z) < 170) return false;
+        }
+        return true;
+    }
+
+    // Painted rivers follow the ground like the old river: a shallow bed with water laid just above it, so they can run over hills.
+    function carveEditRivers(x, z, h) {
+        const info = editRiverInfo(x, z);
+        if (!info || info.d >= info.w || !editRiverOpen(x, z)) return h;
+        const drop = 1 - smooth(0.36, 1, info.d / info.w);
+        return h - drop * (roadDist(x, z) < 12 ? 0.35 : 1.8);
+    }
+
+    function inEditRiver(x, z, part) {
+        const info = editRiverInfo(x, z);
+        return !!info && info.d < info.w * part && editRiverOpen(x, z) && roadDist(x, z) >= 12;
+    }
+
+    const editCliffs = edit.cliffs || [];
+    const cliffBoxes = editCliffs.map(boxOf);
+    const CLIFF_TOP = 7;
+    const CLIFF_FOOT = 16;
+
+    function cliffDist(x, z) {
+        return nearChainDist(x, z, editCliffs, cliffBoxes);
+    }
+
+    // A rock wall along each cliff stroke: flat grassy top, a steep face, then loose scree at the foot.
+    function cliffRise(x, z) {
+        if (!editCliffs.length) return 0;
+        const d = cliffDist(x, z);
+        if (d >= CLIFF_FOOT) return 0;
+        const tall = 12 + fbm(x * 0.012 + 5, z * 0.012 + 9) * 10;
+        if (d <= CLIFF_TOP) return tall + (fbm(x * 0.07, z * 0.07) - 0.5) * 1.6;
+        const t = (d - CLIFF_TOP) / (CLIFF_FOOT - CLIFF_TOP);
+        return tall * Math.pow(1 - Math.pow(t, 0.4), 1.5);
+    }
+
+    // Rock slabs jutting from the cliff faces and fallen boulders below them: [x, z, ry, s].
+    const cliffRocks = [];
+    for (const chain of editCliffs) {
+        for (let i = 1; i < chain.length; i++) {
+            const [ax, az] = chain[i - 1];
+            const [bx, bz] = chain[i];
+            const len = Math.hypot(bx - ax, bz - az);
+            if (len < 1) continue;
+            const nx = -(bz - az) / len;
+            const nz = (bx - ax) / len;
+            const put = (t, out, ry, s) => cliffRocks.push([
+                Math.round(ax + (bx - ax) * t + nx * out),
+                Math.round(az + (bz - az) * t + nz * out),
+                Number(ry.toFixed(2)),
+                Number(s.toFixed(2))
+            ]);
+            for (let along = 0; along < len; ) {
+                const k = Math.round(ax + along) * 7 + Math.round(az) * 13 + i;
+                const t = along / len;
+                along += 5 + hash(k, 57) * 13;
+                const turn = Math.atan2(nz, nx);
+                for (const side of [-1, 1]) {
+                    if (hash(k, 40 + side) < 0.5) put(t, side * (CLIFF_TOP + 1 + hash(k, 43 + side) * 6), turn + (hash(k, 46 + side) - 0.5) * 1.2, 0.3 + hash(k, 49 + side) * 0.55);
+                }
+                if (hash(k, 52) < 0.45) {
+                    const side = hash(k, 53) < 0.5 ? -1 : 1;
+                    put(t, side * (CLIFF_FOOT + 1 + hash(k, 54) * 8), hash(k, 55) * 6.28, 0.16 + hash(k, 56) * 0.18);
+                }
+            }
+        }
     }
 
     const peakBox = { minX: -2528, maxX: -1760, minZ: -1984, maxZ: -1152 };
@@ -367,7 +496,8 @@
     }
 
     function tooSteep(x, z) {
-        if (x < peakBox.minX || x > peakBox.maxX || z < peakBox.minZ || z > peakBox.maxZ) return false;
+        const inPeak = x >= peakBox.minX && x <= peakBox.maxX && z >= peakBox.minZ && z <= peakBox.maxZ;
+        if (!inPeak && !(editCliffs.length && cliffDist(x, z) < CLIFF_FOOT)) return false;
         const h = heightAt(x, z);
         const s = 1.6;
         if (Math.abs(heightAt(x + s, z) - h) > 1.5) return true;
@@ -521,6 +651,7 @@
         if (countryOn) h = layCountry(x, z, h);
         h = pullRoad(x, z, h);
         h += testPeaks(x, z);
+        h += editRise(x, z) + cliffRise(x, z);
         if (countryOn) {
             h = layShelves(x, z, h);
             h = pullRoad(x, z, h);
@@ -536,7 +667,76 @@
             if (wave < 0) shaped += Math.max(wave, -Math.max(0, shaped - 0.55));
             else shaped += wave;
         }
-        return carveLochs(x, z, shaped);
+        return carveEditWater(x, z, carveLochs(x, z, carveEditRivers(x, z, shaped)));
+    }
+
+    function editRise(x, z) {
+        const r = edit.rise;
+        if (!r) return 0;
+        const fx = (x - r.x0) / r.step;
+        const fz = (z - r.z0) / r.step;
+        if (fx < 0 || fz < 0 || fx >= r.nx - 1 || fz >= r.nz - 1) return 0;
+        const ix = Math.floor(fx);
+        const iz = Math.floor(fz);
+        const tx = fx - ix;
+        const tz = fz - iz;
+        const i = iz * r.nx + ix;
+        const top = r.dm[i] * (1 - tx) + r.dm[i + 1] * tx;
+        const bottom = r.dm[i + r.nx] * (1 - tx) + r.dm[i + r.nx + 1] * tx;
+        return (top * (1 - tz) + bottom * tz) * 0.1;
+    }
+
+    const waterBoxes = edit.water.map(boxOf);
+    const editWaterBox = { minX: 1e9, maxX: -1e9, minZ: 1e9, maxZ: -1e9 };
+    for (const stroke of edit.water) {
+        for (const p of stroke) {
+            editWaterBox.minX = Math.min(editWaterBox.minX, p[0] - 100);
+            editWaterBox.maxX = Math.max(editWaterBox.maxX, p[0] + 100);
+            editWaterBox.minZ = Math.min(editWaterBox.minZ, p[1] - 100);
+            editWaterBox.maxZ = Math.max(editWaterBox.maxZ, p[1] + 100);
+        }
+    }
+
+    function editWaterOpen(x, z) {
+        if (inField(x, z) || roadDist(x, z) < 28) return false;
+        for (const place of places) {
+            if (Math.hypot(x - place.x, z - place.z) < 160) return false;
+        }
+        for (const trail of fishTrail) {
+            if (chainDist(x, z, trail) < 26) return false;
+        }
+        return true;
+    }
+
+    function carveEditWater(x, z, h) {
+        const box = editWaterBox;
+        if (x < box.minX || x > box.maxX || z < box.minZ || z > box.maxZ) return h;
+        let d = 1e9;
+        let w = 1e9;
+        let n = -1;
+        for (let i = 0; i < edit.water.length; i++) {
+            if (outsideBox(x, z, waterBoxes[i]) > 100) continue;
+            const stroke = edit.water[i];
+            const sd = chainDist(x, z, stroke);
+            if (sd >= d) continue;
+            d = sd;
+            const tip = stroke[stroke.length - 1];
+            const fromTip = Math.hypot(x - tip[0], z - tip[1]);
+            if (n < 0) n = fbm(x * 0.0034 + 6, z * 0.0034);
+            w = Math.min(58 + n * 30, 22 + fromTip * 0.2);
+        }
+        if (d >= w || !editWaterOpen(x, z)) return h;
+        const t = d / w;
+        return Math.min(h, -5.4 + 12 * t * t);
+    }
+
+    function nearEditRock(x, z, pad) {
+        for (const rock of edit.rocks) {
+            const r = 9 * rock[3] + pad;
+            if (Math.abs(x - rock[0]) < r && Math.abs(z - rock[1]) < r) return true;
+        }
+        if (editRivers.length && nearChainDist(x, z, editRivers, riverBoxes) < 16 + pad) return true;
+        return editCliffs.length > 0 && cliffDist(x, z) < CLIFF_FOOT + pad;
     }
 
     const lochWest = [
@@ -624,6 +824,7 @@
             const stream = Math.min(chainDist(x, z, brook), chainDist(x, z, outlet));
             if (stream < 7 && h > 0.6) return h + 0.22;
         }
+        if (h > 0.2 && inEditRiver(x, z, 0.4)) return h + 0.14;
         if (lakeField(x, z) > 0.08 && h < 0.2) return 0.03;
         return null;
     }
@@ -635,6 +836,7 @@
             const info = riverInfo(x, z);
             if (info.d < info.w * 0.3) return true;
         }
+        if (inEditRiver(x, z, 0.34)) return true;
         const level = waterLevel(x, z);
         if (level != null && level <= 0.05 && h < 0.14) return true;
         if (level != null && level > 0.5) {
@@ -678,14 +880,29 @@
             if ((rise || 0) > 2.2 || peak > 22) return "rock";
             if ((rise || 0) > 1.05 || peak > 16) return "dirt";
         }
+        if (editCliffs.length) {
+            const cliff = cliffDist(x, z);
+            if ((rise || 0) > 2.5 && cliff < CLIFF_FOOT - 4) return "rock";
+            if (cliff < CLIFF_TOP - 1.5) return "grass";
+            const scree = (cliff - (CLIFF_FOOT - 5)) / 9;
+            if (scree < 0) return "rock";
+            if (scree < 1) return fbm(x * 0.11 + 2, z * 0.11 + 5) + scree * 0.6 < 0.72 ? "rock" : "grass";
+        }
         if ((rise || 0) > 6.5 || h > 24) return "rock";
-        if (roadDist(x, z) < 14 || inField(x, z)) return "dirt";
+        const stone = stoneDist(x, z);
+        if (stone < 5) return fbm(x * 0.09 + 3.1, z * 0.09 + 7.7) + (stone / 5) * 0.35 < 0.66 ? "cobble" : "grass";
+        if (trackDist(x, z) < 14 || pathDist(x, z) < 3.5 || inField(x, z)) return "dirt";
         const bank = riverInfo(x, z);
         if (bank.d < bank.w && bank.d > bank.w * 0.26) {
             const n = fbm(x * 0.018, z * 0.018);
             const edge = (bank.d - bank.w * 0.26) / (bank.w * 0.74);
             if (edge < 0.28 && n > 0.3) return n > 0.84 ? "rock" : "dirt";
             if (edge < 0.55 && n > 0.74) return "dirt";
+        }
+        const er = editRiverInfo(x, z);
+        if (er && er.d < er.w * 1.1 && er.d > er.w * 0.3) {
+            const n = fbm(x * 0.05 + 1, z * 0.05);
+            if (n > 0.68) return n > 0.82 ? "rock" : "dirt";
         }
         const coast = coastField(x, z);
         if (h < 1.15 && (coast < 0.2 || lakeField(x, z) > -0.12)) return "sand";
@@ -696,7 +913,7 @@
     function woodRoom(x, z) {
         const h = heightAt(x, z);
         if (h < 0.35 || h > 26 || wet(x, z) || roadDist(x, z) < 16) return false;
-        if (inField(x, z)) return false;
+        if (inField(x, z) || nearEditRock(x, z, 4)) return false;
         if (x >= peakBox.minX && x <= peakBox.maxX && z >= peakBox.minZ && z <= peakBox.maxZ) return false;
         for (const place of places) {
             if (Math.hypot(x - place.x, z - place.z) < 168) return false;
@@ -802,6 +1019,39 @@
     }
 
     const trees = buildTrees();
+
+    function plantEditWoods() {
+        const made = [];
+        const add = (x, z) => {
+            for (const tree of trees) {
+                if (Math.abs(tree.x - x) < 4 && Math.abs(tree.z - z) < 4) return;
+            }
+            const kind = hash(Math.floor(x) + 11, Math.floor(z) + 4) < 0.6 ? "pine" : "oak";
+            made.push({ x, z, kind, edit: true });
+        };
+        const step = 9;
+        const seen = new Set();
+        for (const [fx, fz, r] of edit.forests || []) {
+            for (let ix = Math.floor((fx - r) / step); ix <= Math.ceil((fx + r) / step); ix++) {
+                for (let iz = Math.floor((fz - r) / step); iz <= Math.ceil((fz + r) / step); iz++) {
+                    const key = ix + "," + iz;
+                    if (seen.has(key)) continue;
+                    const x = ix * step + (hash(ix + 71, iz + 3) - 0.5) * step * 0.8;
+                    const z = iz * step + (hash(ix + 5, iz + 83) - 0.5) * step * 0.8;
+                    const d = Math.hypot(x - fx, z - fz);
+                    if (d > r) continue;
+                    seen.add(key);
+                    if (hash(ix + 19, iz + 61) > (d > r * 0.75 ? 0.5 : 0.88)) continue;
+                    if (woodRoom(x, z)) add(x, z);
+                }
+            }
+        }
+        for (const [x, z] of edit.trees || []) {
+            if (heightAt(x, z) > 0.3 && !wet(x, z)) add(x, z);
+        }
+        for (const tree of made) trees.push(tree);
+    }
+    plantEditWoods();
 
     const groveSpecs = [
         { x: -1720, z: -860, r: 18, count: 28, pine: 0.85 },
@@ -964,7 +1214,7 @@
     function meadowClear(x, z) {
         const h = heightAt(x, z);
         if (h < 0.45 || h > 18 || wet(x, z)) return false;
-        if (roadDist(x, z) < 16 || inField(x, z) || tooSteep(x, z)) return false;
+        if (roadDist(x, z) < 16 || inField(x, z) || tooSteep(x, z) || nearEditRock(x, z, 4)) return false;
         if (forestAt(x, z) > 0.42) return false;
         for (let i = 0; i < places.length; i++) {
             const dx = x - places[i].x;
@@ -1024,7 +1274,7 @@
         peakPass,
         lochMesh,
         tooSteep,
-        waterways: [river, brook, outlet],
+        waterways: [river, brook, outlet].concat(editRivers),
         heightAt,
         waterLevel,
         wet,
@@ -1038,6 +1288,10 @@
         coastField,
         cottageLayout,
         meadowAt,
-        meadowNear
+        meadowNear,
+        pathDist,
+        cliffDist,
+        editRocks: edit.rocks,
+        cliffRocks
     };
 });

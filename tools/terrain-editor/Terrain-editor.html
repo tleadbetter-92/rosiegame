@@ -1,0 +1,1441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>3D Terrain Editor</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; }
+        #ui { 
+            position: absolute; 
+            top: 15px; 
+            right: 15px; 
+            background: rgba(255, 255, 255, 0.95); 
+            padding: 20px; 
+            border-radius: 8px; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
+            width: 290px; 
+            max-height: 90vh;
+            overflow-y: auto;
+            z-index: 10;
+            transition: opacity 0.5s ease-in-out;
+            opacity: 1;
+        }
+        #ui::-webkit-scrollbar { width: 6px; }
+        #ui::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+        
+        h3 { margin-top: 0; margin-bottom: 15px; color: #333; }
+        .control-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-size: 14px; font-weight: 500; color: #555; }
+        input[type="range"] { width: 100%; margin-bottom: 5px; }
+        .radio-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 5px; }
+        .radio-row label { font-weight: normal; font-size: 13px; display: flex; align-items: center; gap: 4px; cursor: pointer; }
+        button { 
+            width: 100%; 
+            padding: 10px; 
+            background: #2563eb; 
+            color: white; 
+            border: none; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-weight: 600;
+            transition: background 0.2s;
+            margin-top: 10px; 
+        }
+        button:hover { background: #1d4ed8; }
+        
+        .modal { 
+            display: none; 
+            position: absolute; 
+            top: 50%; 
+            left: 50%; 
+            transform: translate(-50%, -50%); 
+            background: white; 
+            padding: 25px; 
+            border-radius: 12px; 
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3); 
+            width: 90%; 
+            max-width: 750px; 
+            z-index: 1000; 
+        }
+        .modal h3 { margin-top: 0; }
+        .modal textarea { 
+            width: 100%; 
+            height: 350px; 
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; 
+            font-size: 13px;
+            padding: 10px;
+            margin-bottom: 15px; 
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+            background: #f8fafc;
+            white-space: pre;
+            overflow-wrap: normal;
+            overflow-x: auto;
+        }
+        .closeModalBtn { background: #ef4444; width: auto; padding: 10px 20px; float: right; margin-left: 10px; }
+        .closeModalBtn:hover { background: #dc2626; }
+        .modalOverlay {
+            display: none;
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 999;
+        }
+
+        #instructions {
+            position: absolute;
+            bottom: 15px;
+            left: 15px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            line-height: 1.5;
+            color: #333;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .loading-badge {
+            display: inline-block;
+            background: #f59e0b;
+            color: white;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-size: 9px;
+            font-weight: bold;
+            margin-left: 2px;
+            vertical-align: middle;
+        }
+        .loaded-badge { background: #10b981; }
+    </style>
+    
+    <!-- Import Maps for Three.js -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+</head>
+<body>
+    <div id="ui">
+        <h3>Terrain Editor</h3>
+        <div class="control-group">
+            <label for="brushSize">Brush Radius: <span id="brushSizeVal">5</span></label>
+            <input type="range" id="brushSize" min="1" max="25" step="0.5" value="5">
+        </div>
+        <div class="control-group">
+            <label for="brushStrength">Brush Strength: <span id="brushStrengthVal">0.5</span></label>
+            <input type="range" id="brushStrength" min="0.05" max="2" step="0.05" value="0.5">
+        </div>
+        <div class="control-group">
+            <label>Terrain Tools (Shift+Click):</label>
+            <div class="radio-row">
+                <label><input type="radio" name="brushMode" value="raise" checked> Raise</label>
+                <label><input type="radio" name="brushMode" value="lower"> Lower</label>
+                <label><input type="radio" name="brushMode" value="flatten"> Flatten</label>
+                <label><input type="radio" name="brushMode" value="addTerrain"> Add Tile</label>
+                <label><input type="radio" name="brushMode" value="addTerrain"> Add Tile</label>
+                <label><input type="radio" name="brushMode" value="addTerrain"> Add Tile</label>
+            </div>
+        </div>
+        <div class="control-group">
+            <label>Nature Tools (Shift+Click):</label>
+            <div class="radio-row">
+                <label><input type="radio" name="brushMode" value="tree"> Tree <span id="treeBadge" class="loading-badge">...</span></label>
+                <label><input type="radio" name="brushMode" value="grass"> Grass <span id="grassBadge" class="loading-badge">...</span></label>
+                <label><input type="radio" name="brushMode" value="rock"> Rock <span id="rockBadge" class="loading-badge">...</span></label>
+                <label><input type="radio" name="brushMode" value="water"> Water</label>
+                <label><input type="radio" name="brushMode" value="forest"> Forest</label>
+                <label><input type="radio" name="brushMode" value="path"> Dirt path</label>
+                <label><input type="radio" name="brushMode" value="road"> Stone road</label>
+                <label><input type="radio" name="brushMode" value="cliff"> Cliff</label>
+                <label><input type="radio" name="brushMode" value="river"> River</label>
+            </div>
+        </div>
+        <div class="control-group">
+            <label>Shape Tools (Shift+Click):</label>
+            <div class="radio-row">
+                <label><input type="radio" name="brushMode" value="cube"> Cube</label>
+                <label><input type="radio" name="brushMode" value="sphere"> Sphere</label>
+                <label><input type="radio" name="brushMode" value="cone"> Cone</label>
+                <label><input type="radio" name="brushMode" value="cylinder"> Cylinder</label>
+            </div>
+        </div>
+        <div class="control-group" style="background: #f8fafc; padding: 10px; border-radius: 6px; margin-bottom: 10px;">
+            <label>Custom Model (Shift+Click):</label>
+            <input type="text" id="customGlbUrl" placeholder="https://.../model.glb" style="width: 100%; box-sizing: border-box; margin-bottom: 5px; font-size:12px; padding:4px;">
+            <button id="loadCustomGlbBtn" style="margin-top: 0; padding:6px; font-size:12px; background:#4f46e5;">Load URL</button>
+            <div class="radio-row">
+                <label><input type="radio" name="brushMode" value="custom"> Place Custom <span id="customBadge" class="loading-badge" style="display:none;">...</span></label>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>Object Tools (Click):</label>
+            <div class="radio-row">
+                <label><input type="radio" name="brushMode" value="select"> Select/Edit Object</label>
+            </div>
+        </div>
+
+        <div id="propertiesPanel" style="display: none; margin-top: 15px; border-top: 1px solid #ccc; padding-top: 10px;">
+            <h4 style="margin: 0 0 10px 0; color: #333;">Object Properties</h4>
+            <div class="radio-row" style="margin-bottom: 10px;">
+                <label><input type="radio" name="transformMode" value="translate" checked> Move</label>
+                <label><input type="radio" name="transformMode" value="rotate"> Rotate</label>
+                <label><input type="radio" name="transformMode" value="scale"> Scale</label>
+            </div>
+            <div style="display: flex; gap: 5px; margin-bottom: 5px;">
+                <label style="flex:1;">X: <input type="number" id="propPosX" step="0.1" style="width:100%; box-sizing:border-box;"></label>
+                <label style="flex:1;">Y: <input type="number" id="propPosY" step="0.1" style="width:100%; box-sizing:border-box;"></label>
+                <label style="flex:1;">Z: <input type="number" id="propPosZ" step="0.1" style="width:100%; box-sizing:border-box;"></label>
+            </div>
+            <div style="display: flex; gap: 5px; margin-bottom: 5px;">
+                <label style="flex:1;">Rot Y (deg): <input type="number" id="propRotY" step="1" style="width:100%; box-sizing:border-box;"></label>
+                <label style="flex:1;">Scale: <input type="number" id="propScale" step="0.1" style="width:100%; box-sizing:border-box;"></label>
+            </div>
+            <div style="display: flex; gap: 5px; margin-bottom: 5px; align-items: center;">
+                <label style="flex:1; display:flex; align-items:center; gap: 10px;" id="colorLabelWrapper">
+                    <span>Color:</span>
+                    <input type="color" id="propColor" style="width:100%; box-sizing:border-box; height:30px; cursor:pointer;" value="#ffffff">
+                </label>
+            </div>
+            <button id="duplicateObjectBtn" style="background: #3b82f6; margin-top: 10px;">Duplicate Selected</button>
+            <button id="deleteObjectBtn" style="background: #ef4444; margin-top: 5px;">Delete Selected</button>
+        </div>
+
+        <hr style="margin: 15px 0; border: none; border-top: 1px solid #ccc;">
+        <button id="exportBtn" style="margin-top:0;">Export Map JS</button>
+        <button id="loadFileBtn" style="background:#10b981;">Load Map from File</button>
+        <button id="loadPasteBtn" style="background:#10b981;">Load Map from Paste</button>
+    </div>
+
+    <div id="instructions">
+        <strong>Controls:</strong><br>
+        <strong>Terrain/Nature:</strong> Hold <strong>Shift + Left Click</strong><br>
+        <strong>Select Tool:</strong> <strong>Left Click</strong> on object<br>
+        <strong>Left Click + Drag</strong> to rotate camera<br>
+        <strong>Right Click + Drag</strong> to pan<br>
+        <strong>Scroll</strong> to zoom
+    </div>
+
+    <div id="modalOverlay" class="modalOverlay"></div>
+    
+    <div id="exportModal" class="modal">
+        <h3>Generated Three.js Code</h3>
+        <p>Copy this module or download it to recreate your custom terrain:</p>
+        <textarea id="exportCode" readonly></textarea>
+        <button id="closeExportModal" class="closeModalBtn">Close</button>
+        <button id="downloadCodeBtn" style="width: auto; padding: 10px 20px; float: right; margin-top: 0;">Download .js</button>
+    </div>
+
+    <div id="loadModal" class="modal">
+        <h3 style="margin-top:0;">Paste Generated JS Code</h3>
+        <textarea id="loadCode"></textarea>
+        <button id="confirmLoadBtn" style="background:#10b981; width: auto; padding: 10px 20px; float: right;">Load Scene</button>
+        <button id="closeLoadModal" class="closeModalBtn">Cancel</button>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { TransformControls } from 'three/addons/controls/TransformControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+
+        // UI Fade logic
+        let uiTimeout;
+        const uiElement = document.getElementById('ui');
+        function resetUiTimeout() {
+            uiElement.style.opacity = '1';
+            clearTimeout(uiTimeout);
+            uiTimeout = setTimeout(() => {
+                if (document.getElementById('modalOverlay').style.display !== 'block') {
+                    uiElement.style.opacity = '0.15';
+                }
+            }, 5000);
+        }
+        document.addEventListener('mousemove', resetUiTimeout);
+        document.addEventListener('mousedown', resetUiTimeout);
+        document.addEventListener('keydown', resetUiTimeout);
+        uiElement.addEventListener('mouseenter', () => {
+            uiElement.style.opacity = '1';
+            clearTimeout(uiTimeout);
+        });
+        uiElement.addEventListener('mouseleave', () => resetUiTimeout());
+        resetUiTimeout();
+
+
+        // Update loop logic to support water
+        class WaterSim {
+            constructor(size = 20, grid = 40) {
+                this.size = size;
+                this.grid = grid;
+                this.h0 = new Float32Array((grid + 1) * (grid + 1));
+                this.h1 = new Float32Array((grid + 1) * (grid + 1));
+                this.hTmp = new Float32Array((grid + 1) * (grid + 1));
+                this.h0.fill(0); this.h1.fill(0);
+                this.damping = 0.993;
+                this.waveC = 0.22;
+                this.autoDisturbTimer = 0;
+
+                if (!window.waterCubeRenderTarget) {
+                    window.waterCubeRenderTarget = new THREE.WebGLCubeRenderTarget(256, {
+                        format: THREE.RGBFormat,
+                        generateMipmaps: true,
+                        minFilter: THREE.LinearMipmapLinearFilter
+                    });
+                    window.waterCubeCamera = new THREE.CubeCamera(0.1, 500, window.waterCubeRenderTarget);
+                    scene.add(window.waterCubeCamera);
+                }
+
+                this.geo = new THREE.PlaneGeometry(size, size, grid, grid);
+                this.geo.rotateX(-Math.PI / 2);
+
+                const waterVertexShader = `
+                  varying vec3 vWorldPos;
+                  varying vec3 vNormal;
+                  varying vec2 vUv;
+                  varying float vHeight;
+
+                  void main() {
+                    vUv = uv;
+                    vNormal = normalize(normalMatrix * normal);
+                    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+                    vWorldPos = worldPos.xyz;
+                    vHeight = position.y;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                  }
+                `;
+
+                const waterFragmentShader = `
+                  precision highp float;
+
+                  uniform vec3 uCameraPos;
+                  uniform float uTime;
+                  uniform samplerCube uEnvMap;
+
+                  varying vec3 vWorldPos;
+                  varying vec3 vNormal;
+                  varying vec2 vUv;
+                  varying float vHeight;
+
+                  float fresnel(vec3 viewDir, vec3 normal, float f0) {
+                    float cosTheta = clamp(dot(viewDir, normal), 0.0, 1.0);
+                    return f0 + (1.0 - f0) * pow(1.0 - cosTheta, 5.0);
+                  }
+
+                  float caustics(vec2 uv, float t) {
+                    vec2 p = uv * 6.0;
+                    float c = 0.0;
+                    c += sin(p.x * 2.1 + t * 1.3 + sin(p.y * 1.7 + t * 0.9)) * 0.5 + 0.5;
+                    c += sin(p.x * 1.4 - t * 0.8 + cos(p.y * 2.3 + t * 1.1)) * 0.5 + 0.5;
+                    c += sin((p.x + p.y) * 1.8 + t * 1.0) * 0.5 + 0.5;
+                    c /= 3.0;
+                    return c * c;
+                  }
+
+                  void main() {
+                    vec3 N = normalize(vNormal);
+                    vec3 V = normalize(uCameraPos - vWorldPos);
+                    if (dot(N, V) < 0.0) N = -N;
+                    vec3 R = reflect(-V, N);
+                    vec3 envColor = textureCube(uEnvMap, R).rgb;
+
+                    vec3 deepColor = vec3(0.02, 0.12, 0.28);
+                    vec3 shallowColor = vec3(0.08, 0.38, 0.62);
+                    float depth = clamp((vHeight + 0.12) * 4.0, 0.0, 1.0);
+                    vec3 waterColor = mix(deepColor, shallowColor, depth);
+
+                    float caus = caustics(vUv, uTime * 0.4);
+                    waterColor += caus * 0.06 * vec3(0.4, 0.8, 1.0);
+
+                    float f = fresnel(V, N, 0.04);
+                    f = clamp(f, 0.0, 1.0);
+
+                    vec3 lightDir = normalize(vec3(2.0, 4.0, 2.0));
+                    vec3 H = normalize(V + lightDir);
+                    float spec = pow(max(dot(N, H), 0.0), 280.0);
+                    float spec2 = pow(max(dot(N, H), 0.0), 60.0) * 0.08;
+                    vec3 specColor = vec3(1.0, 0.97, 0.93) * spec + vec3(0.5, 0.85, 1.0) * spec2;
+
+                    vec3 baseColor = mix(waterColor, envColor * 0.6 + vec3(0.1, 0.3, 0.5) * 0.4, f);
+                    vec3 finalColor = baseColor + specColor;
+                    finalColor += vec3(0.0, 0.04, 0.08) * caus * 0.3;
+                    
+                    float edgeFade = clamp(min(vUv.x, min(1.0-vUv.x, min(vUv.y, 1.0-vUv.y))) * 12.0, 0.0, 1.0);
+                    float alpha = mix(0.55, 0.88, f) * edgeFade;
+
+                    gl_FragColor = vec4(finalColor, alpha);
+                  }
+                `;
+
+                this.mat = new THREE.ShaderMaterial({
+                  vertexShader: waterVertexShader,
+                  fragmentShader: waterFragmentShader,
+                  uniforms: {
+                    uCameraPos: { value: camera.position },
+                    uTime: { value: 0.0 },
+                    uEnvMap: { value: window.waterCubeRenderTarget.texture },
+                  },
+                  transparent: true,
+                  side: THREE.DoubleSide,
+                  depthWrite: false,
+                });
+
+                this.mesh = new THREE.Mesh(this.geo, this.mat);
+            }
+
+            idx(i, j) { return i * (this.grid + 1) + j; }
+
+            step() {
+                const N = this.grid;
+                for (let i = 1; i < N; i++) {
+                    for (let j = 1; j < N; j++) {
+                        const center = this.h0[this.idx(i, j)];
+                        const neighbors = this.h0[this.idx(i-1, j)] + this.h0[this.idx(i+1, j)] + this.h0[this.idx(i, j-1)] + this.h0[this.idx(i, j+1)];
+                        this.hTmp[this.idx(i, j)] = (
+                            this.waveC * (neighbors - 4.0 * center) +
+                            2.0 * center -
+                            this.h1[this.idx(i, j)]
+                        ) * this.damping;
+                    }
+                }
+                for (let k = 0; k <= N; k++) {
+                    this.hTmp[this.idx(0, k)] = 0;
+                    this.hTmp[this.idx(N, k)] = 0;
+                    this.hTmp[this.idx(k, 0)] = 0;
+                    this.hTmp[this.idx(k, N)] = 0;
+                }
+                this.h1.set(this.h0);
+                this.h0.set(this.hTmp);
+            }
+
+            disturb(gx, gz, strength = 0.5, radius = 3) {
+                const x = (gx - this.mesh.position.x) / ((this.size * this.mesh.scale.x) / 2);
+                const z = (gz - this.mesh.position.z) / ((this.size * this.mesh.scale.z) / 2);
+                
+                if (Math.abs(x) > 1 || Math.abs(z) > 1) return;
+
+                const gi = Math.round(((x + 1) / 2) * this.grid);
+                const gj = Math.round(((z + 1) / 2) * this.grid);
+                const r = Math.round(radius);
+                for (let di = -r; di <= r; di++) {
+                    for (let dj = -r; dj <= r; dj++) {
+                        const ni = gi + di, nj = gj + dj;
+                        if (ni >= 0 && ni <= this.grid && nj >= 0 && nj <= this.grid) {
+                            const dist = Math.sqrt(di*di + dj*dj);
+                            if (dist <= r) {
+                                const amp = strength * Math.cos((dist / r) * Math.PI * 0.5);
+                                this.h0[this.idx(ni, nj)] += amp;
+                            }
+                        }
+                    }
+                }
+            }
+
+            updateGeometry() {
+                const N = this.grid;
+                const posAttr = this.geo.attributes.position;
+                const normAttr = this.geo.attributes.normal;
+                const maxWaveHeight = 1.0; 
+
+                for (let i = 0; i <= N; i++) {
+                    for (let j = 0; j <= N; j++) {
+                        const vidx = i * (N + 1) + j;
+                        const h = this.h0[this.idx(i, j)];
+                        const clampedH = Math.max(-maxWaveHeight, Math.min(maxWaveHeight, h));
+                        posAttr.setY(vidx, clampedH);
+                    }
+                }
+                for (let i = 0; i <= N; i++) {
+                    for (let j = 0; j <= N; j++) {
+                        const vidx = i * (N + 1) + j;
+                        const ip = Math.min(i + 1, N), im = Math.max(i - 1, 0);
+                        const jp = Math.min(j + 1, N), jm = Math.max(j - 1, 0);
+                        const dhdx = (this.h0[this.idx(ip, j)] - this.h0[this.idx(im, j)]) / (ip - im) * N * 0.5;
+                        const dhdz = (this.h0[this.idx(i, jp)] - this.h0[this.idx(i, jm)]) / (jp - jm) * N * 0.5;
+                        const len = Math.sqrt(dhdx*dhdx + 1 + dhdz*dhdz);
+                        normAttr.setXYZ(vidx, -dhdx/len, 1/len, -dhdz/len);
+                    }
+                }
+                posAttr.needsUpdate = true;
+                normAttr.needsUpdate = true;
+                this.geo.computeBoundingSphere();
+            }
+
+            update(t) {
+                for (let s = 0; s < 3; s++) this.step();
+                this.updateGeometry();
+
+                if (t - this.autoDisturbTimer > 3.5) {
+                    this.autoDisturbTimer = t;
+                    const angle = Math.random() * Math.PI * 2;
+                    const r = (0.4 + Math.random() * 0.45) * (this.size / 2);
+                    this.disturb(
+                        this.mesh.position.x + Math.cos(angle) * r,
+                        this.mesh.position.z + Math.sin(angle) * r,
+                        0.5 + Math.random() * 0.5,
+                        2 + Math.floor(Math.random() * 3)
+                    );
+                }
+
+                this.mat.uniforms.uTime.value = t;
+                this.mat.uniforms.uCameraPos.value.copy(camera.position);
+            }
+        }
+        
+        const waterSims = [];
+
+        // 1. Scene Setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xa0d8ef); // Sky blue
+        scene.fog = new THREE.FogExp2(0xa0d8ef, 0.005);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 40, 60);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        // Fix for dark/black models in modern Three.js
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        document.body.appendChild(renderer.domElement);
+
+        // Controls
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxPolarAngle = Math.PI / 2 - 0.05; // Don't go below ground
+
+        // Transform Controls
+        const transformControl = new TransformControls(camera, renderer.domElement);
+        transformControl.addEventListener('change', updatePropertiesUI);
+        transformControl.addEventListener('dragging-changed', function (event) {
+            controls.enabled = !event.value;
+        });
+        scene.add(transformControl);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        dirLight.position.set(50, 100, 50);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.near = 0.5;
+        dirLight.shadow.camera.far = 500;
+        dirLight.shadow.camera.left = -100;
+        dirLight.shadow.camera.right = 100;
+        dirLight.shadow.camera.top = 100;
+        dirLight.shadow.camera.bottom = -100;
+        scene.add(dirLight);
+
+        // 2. Terrain Setup
+          const width = 100;
+          const height = 100;
+          const segments = 100;
+
+          const terrains = [];
+          const terrainGroup = new THREE.Group();
+          scene.add(terrainGroup);
+
+          const baseMaterial = new THREE.MeshStandardMaterial({ 
+              color: 0x4caf50, 
+              roughness: 0.8,
+              metalness: 0.1,
+              side: THREE.DoubleSide
+          });
+          const wireframeMaterial = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.05 });
+
+          function createTerrainTile(gx, gz) {
+              const geometry = new THREE.PlaneGeometry(width, height, segments, segments);
+              geometry.rotateX(-Math.PI / 2);
+              geometry.translate(gx * width, 0, gz * height);
+
+              const mesh = new THREE.Mesh(geometry, baseMaterial);
+              mesh.receiveShadow = true;
+              mesh.castShadow = true;
+              
+              const wireframe = new THREE.LineSegments(new THREE.WireframeGeometry(geometry), wireframeMaterial);
+              mesh.add(wireframe);
+
+              terrainGroup.add(mesh);
+              terrains.push({ gx, gz, mesh, geometry });
+              return mesh;
+          }
+
+          // Initial terrain
+          createTerrainTile(0, 0);
+
+          const gridHelper = new THREE.GridHelper(width * 10, (width * 10) / 10, 0x000000, 0x000000);
+          gridHelper.material.opacity = 0.1;
+          gridHelper.material.transparent = true;
+          scene.add(gridHelper);
+
+          const addTerrainPlane = new THREE.Mesh(
+              new THREE.PlaneGeometry(10000, 10000),
+              new THREE.MeshBasicMaterial({ visible: false })
+          );
+          addTerrainPlane.rotateX(-Math.PI / 2);
+          scene.add(addTerrainPlane);
+
+          const addTileHighlight = new THREE.Mesh(
+              new THREE.PlaneGeometry(width, height),
+              new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.3, side: THREE.DoubleSide })
+          );
+          addTileHighlight.rotateX(-Math.PI / 2);
+          addTileHighlight.position.y = 0.1;
+          addTileHighlight.visible = false;
+          scene.add(addTileHighlight);
+
+          function hasNeighbor(gx, gz) {
+              if (terrains.length === 0) return true;
+              for (let t of terrains) {
+                  const dx = Math.abs(t.gx - gx);
+                  const dz = Math.abs(t.gz - gz);
+                  if ((dx === 1 && dz === 0) || (dx === 0 && dz === 1)) return true;
+              }
+              return false;
+          }
+
+          function hasTerrain(gx, gz) {
+              return terrains.some(t => t.gx === gx && t.gz === gz);
+          }
+
+          // 3. Load Nature Assets
+        const loader = new GLTFLoader();
+        window.grassModel = null;
+        window.rockModel = null;
+        window.treeGltf = null;
+        window.customModel = null;
+        
+        const mixers = [];
+        const clock = new THREE.Clock();
+        const placedObjects = [];
+        const lastPlacedPosition = new THREE.Vector3(9999, 9999, 9999);
+
+        // Utility to fix materials so they don't appear black
+        function fixMaterials(model) {
+            model.traverse(c => {
+                if (c.isMesh) {
+                    c.castShadow = true;
+                    c.receiveShadow = true;
+                    if (c.material) {
+                        c.material.metalness = 0.0;
+                        c.material.roughness = 1.0;
+                        c.material.needsUpdate = true;
+                    }
+                }
+            });
+        }
+
+        loader.load('https://raw.githubusercontent.com/Ren23447/Rotstorm-FPS/main/grass.glb', (gltf) => {
+            window.grassModel = gltf.scene;
+            fixMaterials(window.grassModel);
+            const badge = document.getElementById('grassBadge');
+            badge.textContent = 'OK';
+            badge.classList.replace('loading-badge', 'loaded-badge');
+        });
+
+        loader.load('https://raw.githubusercontent.com/Ren23447/Rotstorm-FPS/main/rock.glb', (gltf) => {
+            window.rockModel = gltf.scene;
+            fixMaterials(window.rockModel);
+            // Rocks can be slightly metallic
+            window.rockModel.traverse(c => {
+                if (c.isMesh && c.material) {
+                    c.material.metalness = 0.2;
+                    c.material.roughness = 0.8;
+                }
+            });
+            const badge = document.getElementById('rockBadge');
+            badge.textContent = 'OK';
+            badge.classList.replace('loading-badge', 'loaded-badge');
+        });
+
+        loader.load('https://raw.githubusercontent.com/Ren23447/Rotstorm-FPS/main/tree_animate.glb', (gltf) => {
+            window.treeGltf = gltf;
+            fixMaterials(window.treeGltf.scene);
+            const badge = document.getElementById('treeBadge');
+            badge.textContent = 'OK';
+            badge.classList.replace('loading-badge', 'loaded-badge');
+        });
+
+        document.getElementById('loadCustomGlbBtn').addEventListener('click', () => {
+            const url = document.getElementById('customGlbUrl').value;
+            if(!url) return;
+            const badge = document.getElementById('customBadge');
+            badge.style.display = 'inline-block';
+            badge.textContent = '...';
+            badge.className = 'loading-badge';
+            loader.load(url, (gltf) => {
+                window.customModel = gltf.scene;
+                fixMaterials(window.customModel);
+                badge.textContent = 'OK';
+                badge.classList.replace('loading-badge', 'loaded-badge');
+            }, undefined, (err) => {
+                console.error(err);
+                alert("Failed to load model from URL. Check console for details.");
+                badge.style.display = 'none';
+            });
+        });
+
+        // 4. Brush Marker
+        const brushGeometry = new THREE.RingGeometry(4.8, 5.2, 32);
+        brushGeometry.rotateX(-Math.PI / 2);
+        const brushMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
+        const brushMarker = new THREE.Mesh(brushGeometry, brushMaterial);
+        scene.add(brushMarker);
+
+        // 5. Interaction Logic
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        
+        let isDrawing = false;
+        let isShiftDown = false;
+        let brushSize = 5;
+        let brushStrength = 0.5;
+
+        document.getElementById('brushSize').addEventListener('input', (e) => {
+            brushSize = parseFloat(e.target.value);
+            document.getElementById('brushSizeVal').textContent = brushSize;
+            brushMarker.geometry.dispose();
+            const newGeom = new THREE.RingGeometry(Math.max(0.1, brushSize - 0.2), brushSize + 0.2, 32);
+            newGeom.rotateX(-Math.PI / 2);
+            brushMarker.geometry = newGeom;
+        });
+
+        document.getElementById('brushStrength').addEventListener('input', (e) => {
+            brushStrength = parseFloat(e.target.value);
+            document.getElementById('brushStrengthVal').textContent = brushStrength;
+        });
+
+        const getBrushMode = () => document.querySelector('input[name="brushMode"]:checked').value;
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Shift') {
+                isShiftDown = true;
+                if (getBrushMode() !== 'select') {
+                    controls.enabled = false;
+                    document.body.style.cursor = 'crosshair';
+                }
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'Shift') {
+                isShiftDown = false;
+                isDrawing = false;
+                controls.enabled = true;
+                document.body.style.cursor = 'default';
+                lastPlacedPosition.set(9999, 9999, 9999);
+            }
+        });
+
+        // Object Selection Logic
+        let selectedObject = null;
+        function selectObject(obj) {
+            selectedObject = obj;
+            transformControl.attach(obj);
+            document.getElementById('propertiesPanel').style.display = 'block';
+            updatePropertiesUI();
+        }
+
+        function deselectObject() {
+            selectedObject = null;
+            transformControl.detach();
+            document.getElementById('propertiesPanel').style.display = 'none';
+        }
+
+        function updatePropertiesUI() {
+            if (!selectedObject) return;
+            document.getElementById('propPosX').value = selectedObject.position.x.toFixed(2);
+            document.getElementById('propPosY').value = selectedObject.position.y.toFixed(2);
+            document.getElementById('propPosZ').value = selectedObject.position.z.toFixed(2);
+            document.getElementById('propRotY').value = (selectedObject.rotation.y * 180 / Math.PI).toFixed(2);
+            document.getElementById('propScale').value = selectedObject.scale.x.toFixed(2);
+            
+            // Check if it's a shape we can color easily
+            let colorHex = null;
+            selectedObject.traverse(c => {
+                if (c.isMesh && c.material && c.material.color) {
+                    colorHex = c.material.color.getHexString();
+                }
+            });
+            if (colorHex) {
+                document.getElementById('colorLabelWrapper').style.display = 'block';
+                document.getElementById('propColor').value = '#' + colorHex;
+            } else {
+                document.getElementById('colorLabelWrapper').style.display = 'none';
+            }
+        }
+
+        ['propPosX', 'propPosY', 'propPosZ', 'propRotY', 'propScale'].forEach(id => {
+            document.getElementById(id).addEventListener('input', (e) => {
+                if (!selectedObject) return;
+                const val = parseFloat(e.target.value);
+                if (isNaN(val)) return;
+                
+                if (id === 'propPosX') selectedObject.position.x = val;
+                if (id === 'propPosY') selectedObject.position.y = val;
+                if (id === 'propPosZ') selectedObject.position.z = val;
+                if (id === 'propRotY') selectedObject.rotation.y = val * Math.PI / 180;
+                if (id === 'propScale') selectedObject.scale.set(val, val, val);
+            });
+        });
+
+        document.getElementById('propColor').addEventListener('change', (e) => {
+            if (!selectedObject) return;
+            const val = e.target.value;
+            selectedObject.traverse(c => {
+                if (c.isMesh && c.material && c.material.color) {
+                    c.material.color.set(val);
+                }
+            });
+            const index = placedObjects.findIndex(obj => obj.object === selectedObject);
+            if (index > -1) {
+                placedObjects[index].color = parseInt(val.replace('#',''), 16);
+            }
+        });
+
+        document.querySelectorAll('input[name="transformMode"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                transformControl.setMode(e.target.value);
+            });
+        });
+
+        document.getElementById('duplicateObjectBtn').addEventListener('click', () => {
+            if (selectedObject) {
+                const index = placedObjects.findIndex(obj => obj.object === selectedObject);
+                if (index > -1) {
+                    const originalData = placedObjects[index];
+                    let clone = null;
+
+                    if (['cube', 'sphere', 'cone', 'cylinder'].includes(originalData.type)) {
+                        let geom;
+                        if (originalData.type === 'cube') geom = new THREE.BoxGeometry(2, 2, 2);
+                        else if (originalData.type === 'sphere') geom = new THREE.SphereGeometry(1.2, 32, 32);
+                        else if (originalData.type === 'cone') geom = new THREE.ConeGeometry(1.2, 2.5, 32);
+                        else if (originalData.type === 'cylinder') geom = new THREE.CylinderGeometry(1, 1, 2.5, 32);
+                        
+                        const mat = new THREE.MeshStandardMaterial({
+                            color: originalData.color !== undefined ? originalData.color : 0x888888, 
+                            roughness: 0.6, 
+                            metalness: 0.1
+                        });
+                        clone = new THREE.Mesh(geom, mat);
+                        clone.castShadow = true; clone.receiveShadow = true;
+                    } else if (originalData.type === 'tree' && window.treeGltf) {
+                        clone = SkeletonUtils.clone(window.treeGltf.scene);
+                        if (originalData.visibleChildIndex !== -1 && originalData.visibleChildIndex !== undefined) {
+                            const children = clone.children.filter(c => c.isMesh || c.isGroup || c.type === 'Object3D');
+                            children.forEach((c, i) => { if (i !== originalData.visibleChildIndex) c.visible = false; });
+                        }
+                        if (window.treeGltf.animations && window.treeGltf.animations.length > 0) {
+                            const mixer = new THREE.AnimationMixer(clone);
+                            window.treeGltf.animations.forEach(clip => mixer.clipAction(clip).play());
+                            mixer.setTime(Math.random() * 10);
+                            mixers.push(mixer);
+                        }
+                    } else if (originalData.type === 'grass' && window.grassModel) {
+                        clone = SkeletonUtils.clone(window.grassModel);
+                    } else if (originalData.type === 'rock' && window.rockModel) {
+                        clone = SkeletonUtils.clone(window.rockModel);
+                    } else if (originalData.type === 'custom' && originalData.url) {
+                        if (window.customModel && document.getElementById('customGlbUrl').value === originalData.url) {
+                            clone = SkeletonUtils.clone(window.customModel);
+                        } else {
+                            loader.load(originalData.url, (gltf) => {
+                                const asyncClone = SkeletonUtils.clone(gltf.scene);
+                                fixMaterials(asyncClone);
+                                asyncClone.position.copy(selectedObject.position);
+                                asyncClone.position.x += 1;
+                                asyncClone.position.z += 1;
+                                asyncClone.rotation.copy(selectedObject.rotation);
+                                asyncClone.scale.copy(selectedObject.scale);
+                                scene.add(asyncClone);
+                                placedObjects.push({ 
+                                    type: originalData.type, 
+                                    object: asyncClone, 
+                                    url: originalData.url, 
+                                    visibleChildIndex: originalData.visibleChildIndex 
+                                });
+                                selectObject(asyncClone);
+                            });
+                            return;
+                        }
+                    }
+
+                    if (clone) {
+                        clone.position.copy(selectedObject.position);
+                        // Offset slightly so it's not exactly on top
+                        clone.position.x += 1;
+                        clone.position.z += 1;
+                        
+                        clone.rotation.copy(selectedObject.rotation);
+                        clone.scale.copy(selectedObject.scale);
+                        
+                        // Copy color if it was changed
+                        if (originalData.color !== undefined && originalData.color !== null) {
+                            clone.traverse(c => {
+                                if (c.isMesh && c.material && c.material.color) {
+                                    c.material.color.setHex(originalData.color);
+                                }
+                            });
+                        }
+                        
+                        scene.add(clone);
+                        placedObjects.push({ 
+                            type: originalData.type, 
+                            object: clone, 
+                            visibleChildIndex: originalData.visibleChildIndex, 
+                            url: originalData.url, 
+                            color: originalData.color 
+                        });
+                        
+                        // Select the new duplicate
+                        selectObject(clone);
+                    }
+                }
+            }
+        });
+
+        document.getElementById('deleteObjectBtn').addEventListener('click', () => {
+            if (selectedObject) {
+                scene.remove(selectedObject);
+                const index = placedObjects.findIndex(obj => obj.object === selectedObject);
+                if (index > -1) placedObjects.splice(index, 1);
+                deselectObject();
+            }
+        });
+
+        renderer.domElement.addEventListener('pointerdown', (e) => {
+              if (e.button !== 0) return;
+              
+              const mode = getBrushMode();
+              if (mode === 'select') {
+                  raycaster.setFromCamera(mouse, camera);
+                  if (transformControl.axis !== null) {
+                      return; // Dragging handles
+                  }
+                  const placeableMeshes = placedObjects.map(obj => obj.object);
+                  const intersects = raycaster.intersectObjects(placeableMeshes, true);
+                  if (intersects.length > 0) {
+                      let object = intersects[0].object;
+                      while (object.parent && !placeableMeshes.includes(object)) {
+                          object = object.parent;
+                      }
+                      if (placeableMeshes.includes(object)) {
+                          selectObject(object);
+                      }
+                  } else {
+                      deselectObject();
+                  }
+              } else if (isShiftDown) {
+                  isDrawing = true;
+                  if (mode === 'addTerrain') {
+                      raycaster.setFromCamera(mouse, camera);
+                      const intersects = raycaster.intersectObject(addTerrainPlane);
+                      if (intersects.length > 0) {
+                          const gx = Math.round(intersects[0].point.x / width);
+                          const gz = Math.round(intersects[0].point.z / height);
+                          if (!hasTerrain(gx, gz) && hasNeighbor(gx, gz)) {
+                              createTerrainTile(gx, gz);
+                          }
+                      }
+                  } else {
+                      applyBrush(e);
+                  }
+              }
+          });
+
+          renderer.domElement.addEventListener('pointerup', () => {
+            isDrawing = false;
+            lastPlacedPosition.set(9999, 9999, 9999);
+        });
+
+        renderer.domElement.addEventListener('pointermove', (e) => {
+              mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+              mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+              const mode = getBrushMode();
+              if (mode === 'select') {
+                  brushMarker.visible = false;
+                  if (typeof addTileHighlight !== 'undefined') addTileHighlight.visible = false;
+                  return;
+              }
+
+              raycaster.setFromCamera(mouse, camera);
+              
+              if (mode === 'addTerrain') {
+                  brushMarker.visible = false;
+                  const intersects = raycaster.intersectObject(addTerrainPlane);
+                  if (intersects.length > 0) {
+                      const point = intersects[0].point;
+                      const gx = Math.round(point.x / width);
+                      const gz = Math.round(point.z / height);
+                      if (!hasTerrain(gx, gz) && hasNeighbor(gx, gz)) {
+                          addTileHighlight.position.set(gx * width, 0.1, gz * height);
+                          addTileHighlight.visible = true;
+                          addTileHighlight.material.color.setHex(0x00ff00);
+                          
+                          if (isDrawing && isShiftDown) {
+                              createTerrainTile(gx, gz);
+                              isDrawing = false; // Prevent holding and spawning multiple
+                          }
+                      } else {
+                          addTileHighlight.position.set(gx * width, 0.1, gz * height);
+                          addTileHighlight.visible = true;
+                          addTileHighlight.material.color.setHex(0xff0000);
+                      }
+                  } else {
+                      addTileHighlight.visible = false;
+                  }
+                  return;
+              }
+
+              if (typeof addTileHighlight !== 'undefined') addTileHighlight.visible = false;
+
+              const intersects = raycaster.intersectObjects(terrains.map(t => t.mesh));
+
+              if (intersects.length > 0) {
+                  const intersect = intersects[0];
+                  brushMarker.position.copy(intersect.point);
+                  brushMarker.position.y += 0.2; 
+                  brushMarker.visible = true;
+
+                  if (isDrawing && isShiftDown) {
+                      applyBrush(e);
+                  }
+              } else {
+                  brushMarker.visible = false;
+              }
+          });
+
+          document.querySelectorAll('input[name="brushMode"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                if (getBrushMode() !== 'select') {
+                    deselectObject();
+                }
+            });
+        });
+
+        function applyBrush(event) {
+              if (getBrushMode() === 'addTerrain') return;
+
+              raycaster.setFromCamera(mouse, camera);
+              const intersects = raycaster.intersectObjects(terrains.map(t => t.mesh));
+
+              if (intersects.length > 0) {
+                  const point = intersects[0].point;
+                  const mode = getBrushMode();
+                  
+                  if (['raise', 'lower', 'flatten'].includes(mode)) {
+                      terrains.forEach(t => {
+                          const positions = t.geometry.attributes.position;
+                          let updated = false;
+                          for (let i = 0; i < positions.count; i++) {
+                              const vx = positions.getX(i);
+                              const vy = positions.getY(i);
+                              const vz = positions.getZ(i);
+
+                              const dx = vx - point.x;
+                              const dz = vz - point.z;
+                              const dist = Math.sqrt(dx * dx + dz * dz);
+
+                              if (dist < brushSize) {
+                                  const normalizedDist = dist / brushSize;
+                                  const falloff = 1 - normalizedDist;
+                                  const smoothFalloff = falloff * falloff * (3 - 2 * falloff);
+                                  const intensity = smoothFalloff * brushStrength;
+
+                                  if (mode === 'raise') {
+                                      positions.setY(i, vy + intensity);
+                                  } else if (mode === 'lower') {
+                                      positions.setY(i, vy - intensity);
+                                  } else if (mode === 'flatten') {
+                                      positions.setY(i, THREE.MathUtils.lerp(vy, point.y, intensity * 0.5));
+                                  }
+                                  updated = true;
+                              }
+                          }
+                          if (updated) {
+                              t.geometry.computeVertexNormals();
+                              positions.needsUpdate = true;
+                          }
+                      });
+                  } else {
+                      placeNature(mode, point);
+                  }
+              }
+          }
+
+          // Forest, path, road and cliff pieces are only markers here; the game turns them into woodland, dirt paths, old stone roads and cliffs.
+          function markerMesh(type) {
+            const forest = type === 'forest';
+            let geom;
+            if (forest) geom = new THREE.CylinderGeometry(3, 3, 0.6, 24);
+            else if (type === 'cliff') geom = new THREE.BoxGeometry(1, 4, 1);
+            else if (type === 'river') geom = new THREE.CylinderGeometry(0.9, 0.9, 0.3, 16);
+            else geom = new THREE.CylinderGeometry(0.5, 0.5, 0.4, 12);
+            geom.translate(0, forest ? 0.3 : type === 'cliff' ? 2 : 0.2, 0);
+            const colors = { forest: 0x2f6b2a, road: 0x9a9a92, cliff: 0x6f675c, path: 0x8a6a3c, river: 0x2f7fd0 };
+            const mat = new THREE.MeshStandardMaterial({
+                color: colors[type],
+                roughness: 0.9,
+                transparent: forest,
+                opacity: forest ? 0.55 : 1
+            });
+            return new THREE.Mesh(geom, mat);
+          }
+
+          function placeNature(type, point) {
+            if (point.distanceTo(lastPlacedPosition) < Math.max(1.5, brushSize / 3)) {
+                return; 
+            }
+
+            let clone = null;
+            let visibleChildIndex = -1;
+            let objUrl = null;
+            let shapeColor = null;
+
+            if (type === 'grass' && window.grassModel) {
+                clone = SkeletonUtils.clone(window.grassModel);
+            } else if (type === 'rock' && window.rockModel) {
+                clone = SkeletonUtils.clone(window.rockModel);
+            } else if (type === 'water') {
+                const sim = new WaterSim(6, 12);
+                scene.add(sim.mesh);
+                waterSims.push(sim);
+                clone = sim.mesh;
+            } else if (['forest', 'path', 'road', 'cliff', 'river'].includes(type)) {
+                clone = markerMesh(type);
+            } else if (type === 'tree' && window.treeGltf) {
+                clone = SkeletonUtils.clone(window.treeGltf.scene);
+                
+                const children = clone.children.filter(c => c.isMesh || c.isGroup || c.type === 'Object3D');
+                if (children.length > 1) {
+                    visibleChildIndex = Math.floor(Math.random() * children.length);
+                    children.forEach((c, i) => {
+                        if (i !== visibleChildIndex) c.visible = false;
+                    });
+                }
+
+                if (window.treeGltf.animations.length > 0) {
+                    const mixer = new THREE.AnimationMixer(clone);
+                    window.treeGltf.animations.forEach(clip => mixer.clipAction(clip).play());
+                    mixer.setTime(Math.random() * 10); 
+                    mixers.push(mixer);
+                }
+            } else if (['cube', 'sphere', 'cone', 'cylinder'].includes(type)) {
+                let geom;
+                if (type === 'cube') geom = new THREE.BoxGeometry(2, 2, 2);
+                else if (type === 'sphere') geom = new THREE.SphereGeometry(1.2, 32, 32);
+                else if (type === 'cone') geom = new THREE.ConeGeometry(1.2, 2.5, 32);
+                else if (type === 'cylinder') geom = new THREE.CylinderGeometry(1, 1, 2.5, 32);
+                
+                shapeColor = 0x888888;
+                const mat = new THREE.MeshStandardMaterial({color: shapeColor, roughness: 0.6, metalness: 0.1});
+                clone = new THREE.Mesh(geom, mat);
+                clone.castShadow = true; clone.receiveShadow = true;
+            } else if (type === 'custom') {
+                if (window.customModel) {
+                    clone = SkeletonUtils.clone(window.customModel);
+                    objUrl = document.getElementById('customGlbUrl').value;
+                } else {
+                    alert("Please load a custom model URL first.");
+                    return;
+                }
+            }
+
+            if (clone) {
+                clone.position.copy(point);
+                if (type === 'cube' || type === 'cylinder') clone.position.y += 1;
+                else if (type === 'cone') clone.position.y += 1.25;
+                else if (type === 'sphere') clone.position.y += 1.2;
+
+                clone.rotation.y = Math.random() * Math.PI * 2;
+                const scale = 0.8 + Math.random() * 0.4;
+                clone.scale.set(scale, scale, scale);
+                
+                scene.add(clone);
+                lastPlacedPosition.copy(point);
+                placedObjects.push({ type, object: clone, visibleChildIndex, url: objUrl, color: shapeColor });
+            }
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // 6. Code Generation / Export
+        document.getElementById('exportBtn').addEventListener('click', () => {
+              const terrainDataExport = terrains.map(t => {
+                  const positions = t.geometry.attributes.position.array;
+                  const yHeights = [];
+                  for (let i = 0; i < positions.length; i += 3) {
+                      yHeights.push(Number(positions[i+1].toFixed(3)));
+                  }
+                  return { gx: t.gx, gz: t.gz, heights: yHeights };
+              });
+
+              const objectsData = placedObjects.map(obj => {
+                  const data = {
+                      type: obj.type,
+                      px: Number(obj.object.position.x.toFixed(3)),
+                      py: Number(obj.object.position.y.toFixed(3)),
+                      pz: Number(obj.object.position.z.toFixed(3)),
+                      ry: Number(obj.object.rotation.y.toFixed(3)),
+                      s: Number(obj.object.scale.x.toFixed(3))
+                  };
+                  if (obj.visibleChildIndex !== undefined && obj.visibleChildIndex !== -1) data.vi = obj.visibleChildIndex;
+                  if (obj.url) data.url = obj.url;
+                  if (obj.color !== undefined && obj.color !== null) data.color = obj.color;
+                  return data;
+              });
+
+              const codeTemplate = `// Generated Terrain Module
+  import * as THREE from 'three';
+
+  export function createGeneratedTerrain() {
+      const width = ${width};
+      const height = ${height};
+      const segments = ${segments};
+      
+      const terrainGroup = new THREE.Group();
+      const terrainData = ${JSON.stringify(terrainDataExport)};
+      
+      const material = new THREE.MeshStandardMaterial({ 
+          color: 0x4caf50,
+          roughness: 0.8,
+          metalness: 0.1,
+          side: THREE.DoubleSide
+      });
+      
+      terrainData.forEach(data => {
+          const geometry = new THREE.PlaneGeometry(width, height, segments, segments);
+          geometry.rotateX(-Math.PI / 2); // Lay flat
+          geometry.translate(data.gx * width, 0, data.gz * height);
+          
+          const positions = geometry.attributes.position;
+          for (let i = 0; i < positions.count; i++) {
+              positions.setY(i, data.heights[i]);
+          }
+          geometry.computeVertexNormals();
+          
+          const mesh = new THREE.Mesh(geometry, material);
+          mesh.receiveShadow = true;
+          mesh.castShadow = true;
+          terrainGroup.add(mesh);
+      });
+      
+      return terrainGroup;
+  }
+
+  // Nature Placement Data
+  export const natureData = ${JSON.stringify(objectsData, null, 2)};
+  `;
+
+              document.getElementById('exportCode').value = codeTemplate;
+              document.getElementById('exportModal').style.display = 'block';
+              document.getElementById('modalOverlay').style.display = 'block';
+          });
+
+          document.getElementById('closeExportModal').addEventListener('click', () => {
+            document.getElementById('exportModal').style.display = 'none';
+            document.getElementById('modalOverlay').style.display = 'none';
+        });
+
+        document.getElementById('downloadCodeBtn').addEventListener('click', () => {
+            const code = document.getElementById('exportCode').value;
+            const blob = new Blob([code], { type: 'application/javascript' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'generated_terrain.js';
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        // 7. Load Logic
+        function checkModelsLoaded() {
+            return window.grassModel && window.rockModel && window.treeGltf;
+        }
+
+        function loadSceneFromJS(code) {
+              if (!checkModelsLoaded()) {
+                  alert("Core models are still loading. Please wait a moment and try again.");
+                  return;
+              }
+              try {
+                  const terrainDataMatch = code.match(/const terrainData = (\[[\s\S]*?\]);/);
+                  const heightsMatch = code.match(/const heights = (\[[\s\S]*?\]);/);
+                  
+                  if (terrainDataMatch) {
+                      const tData = JSON.parse(terrainDataMatch[1]);
+                      terrains.forEach(t => terrainGroup.remove(t.mesh));
+                      terrains.length = 0;
+                      
+                      tData.forEach(data => {
+                          const mesh = createTerrainTile(data.gx, data.gz);
+                          const positions = mesh.geometry.attributes.position;
+                          for (let i = 0; i < positions.count && i < data.heights.length; i++) {
+                              positions.setY(i, data.heights[i]);
+                          }
+                          mesh.geometry.computeVertexNormals();
+                          positions.needsUpdate = true;
+                      });
+                  } else if (heightsMatch) {
+                      const heights = JSON.parse(heightsMatch[1]);
+                      terrains.forEach(t => terrainGroup.remove(t.mesh));
+                      terrains.length = 0;
+                      const mesh = createTerrainTile(0, 0);
+                      const positions = mesh.geometry.attributes.position;
+                      for (let i = 0; i < positions.count && i < heights.length; i++) {
+                          positions.setY(i, heights[i]);
+                      }
+                      mesh.geometry.computeVertexNormals();
+                      positions.needsUpdate = true;
+                  }
+
+                  const natureMatch = code.match(/export const natureData = (\[[\s\S]*?\]);/);
+                  if (natureMatch) {
+                      const natureData = JSON.parse(natureMatch[1]);
+                      
+                      deselectObject();
+                      placedObjects.forEach(obj => scene.remove(obj.object));
+                      placedObjects.length = 0;
+                      waterSims.length = 0;
+
+                      natureData.forEach(data => {
+                          let clone = null;
+                          if (['cube', 'sphere', 'cone', 'cylinder'].includes(data.type)) {
+                              let geom;
+                              if (data.type === 'cube') geom = new THREE.BoxGeometry(2, 2, 2);
+                              else if (data.type === 'sphere') geom = new THREE.SphereGeometry(1.2, 32, 32);
+                              else if (data.type === 'cone') geom = new THREE.ConeGeometry(1.2, 2.5, 32);
+                              else if (data.type === 'cylinder') geom = new THREE.CylinderGeometry(1, 1, 2.5, 32);
+                              
+                              const mat = new THREE.MeshStandardMaterial({color: data.color !== undefined ? data.color : 0x888888, roughness: 0.6, metalness: 0.1});
+                              clone = new THREE.Mesh(geom, mat);
+                              clone.castShadow = true; clone.receiveShadow = true;
+                          } else if (data.type === 'tree' && window.treeGltf) {
+                              clone = SkeletonUtils.clone(window.treeGltf.scene);
+                              if (data.vi !== -1 && data.vi !== undefined) {
+                                  const children = clone.children.filter(c => c.isMesh || c.isGroup || c.type === 'Object3D');
+                                  children.forEach((c, i) => { if (i !== data.vi) c.visible = false; });
+                              }
+                              if (window.treeGltf.animations && window.treeGltf.animations.length > 0) {
+                                  const mixer = new THREE.AnimationMixer(clone);
+                                  window.treeGltf.animations.forEach(clip => mixer.clipAction(clip).play());
+                                  mixer.setTime(Math.random() * 10);
+                                  mixers.push(mixer);
+                              }
+                          } else if (data.type === 'water') {
+                              const sim = new WaterSim(6, 12);
+                              waterSims.push(sim);
+                              clone = sim.mesh;
+                          } else if (['forest', 'path', 'road', 'cliff', 'river'].includes(data.type)) {
+                              clone = markerMesh(data.type);
+                          } else if (data.type === 'grass' && window.grassModel) {
+                              clone = SkeletonUtils.clone(window.grassModel);
+                          } else if (data.type === 'rock' && window.rockModel) {
+                              clone = SkeletonUtils.clone(window.rockModel);
+                          } else if (data.type === 'custom') {
+                              if (window.customModel && document.getElementById('customGlbUrl').value === data.url) {
+                                  clone = SkeletonUtils.clone(window.customModel);
+                              } else if (data.url) {
+                                  loader.load(data.url, (gltf) => {
+                                      const asyncClone = SkeletonUtils.clone(gltf.scene);
+                                      fixMaterials(asyncClone);
+                                      asyncClone.position.set(data.px, data.py, data.pz);
+                                      asyncClone.rotation.y = data.ry;
+                                      asyncClone.scale.set(data.s, data.s, data.s);
+                                      scene.add(asyncClone);
+                                      placedObjects.push({ type: data.type, object: asyncClone, url: data.url, visibleChildIndex: data.vi });
+                                  });
+                                  return;
+                              }
+                          }
+
+                          if (clone) {
+                              clone.position.set(data.px, data.py, data.pz);
+                              clone.rotation.y = data.ry;
+                              clone.scale.set(data.s, data.s, data.s);
+                              scene.add(clone);
+                              placedObjects.push({ type: data.type, object: clone, visibleChildIndex: data.vi, url: data.url, color: data.color });
+                          }
+                      });
+                  }
+                  alert("Scene loaded successfully!");
+              } catch (e) {
+                  alert("Failed to parse and load scene. Ensure the code is correctly formatted.");
+                  console.error(e);
+              }
+          }
+
+          document.getElementById('loadFileBtn').addEventListener('click', () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.js,.txt';
+            input.onchange = e => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => loadSceneFromJS(event.target.result);
+                reader.readAsText(file);
+            };
+            input.click();
+        });
+
+        document.getElementById('loadPasteBtn').addEventListener('click', () => {
+            document.getElementById('loadCode').value = "";
+            document.getElementById('loadModal').style.display = 'block';
+            document.getElementById('modalOverlay').style.display = 'block';
+        });
+
+        document.getElementById('closeLoadModal').addEventListener('click', () => {
+            document.getElementById('loadModal').style.display = 'none';
+            document.getElementById('modalOverlay').style.display = 'none';
+        });
+
+        document.getElementById('confirmLoadBtn').addEventListener('click', () => {
+            const code = document.getElementById('loadCode').value;
+            loadSceneFromJS(code);
+            document.getElementById('loadModal').style.display = 'none';
+            // Fixed typo below: loadModalOverlay -> modalOverlay
+            document.getElementById('modalOverlay').style.display = 'none';
+        });
+
+        // Main animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            const elapsed = clock.getElapsedTime();
+            
+            for (const mixer of mixers) {
+                mixer.update(delta);
+            }
+
+            for (const sim of waterSims) {
+                sim.update(elapsed);
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

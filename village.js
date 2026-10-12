@@ -368,18 +368,6 @@ const textures = {
     cloth3: clothTexture("#8a5a7a")
 };
 
-textures.townGrass = paintTexture(256, (g, s) => {
-    g.fillStyle = "#5c624c";
-    g.fillRect(0, 0, s, s);
-    const tones = ["#4a523c", "#6a7058", "#545e46", "#7a7358", "#3e4634", "#656b52"];
-    for (let i = 0; i < 70; i++) {
-        const n = (salt) => {
-            const v = Math.sin(i * 12.9898 + salt * 78.233) * 43758.5453;
-            return v - Math.floor(v);
-        };
-        blob(g, s, n(1) * s, n(2) * s, 16 + n(3) * 48, 12 + n(4) * 36, tones[i % tones.length]);
-    }
-});
 textures.townDirt = paintTexture(256, (g, s) => {
     g.fillStyle = "#8a6e4c";
     g.fillRect(0, 0, s, s);
@@ -464,7 +452,7 @@ function pushTri(list, a, b, c) {
 
 const batches = {
     grass: [], dirt: [], cobble: [], sand: [], water: [], wall: [], door: [], roof: [], store: [], plaster: [], trunk: [], leaf: [], bloom: [], rock: [], linen: [], glow: [],
-    townGrass: [], townDirt: [], townCobble: [],
+    townDirt: [], townCobble: [],
     bill: [], billFront: [], billBrick: [], billBrickFront: [],
     farTrunk: [], farLeaf: []
 };
@@ -527,7 +515,6 @@ function landKind(x, z, rise) {
 }
 
 function townBatch(kind) {
-    if (kind === "grass") return "townGrass";
     if (kind === "dirt") return "townDirt";
     if (kind === "cobble") return "townCobble";
     return kind;
@@ -536,7 +523,6 @@ function townBatch(kind) {
 function townTile(kind) {
     if (kind === "cobble") return 9;
     if (kind === "dirt") return 26;
-    if (kind === "grass") return 32;
     return 8;
 }
 
@@ -545,6 +531,15 @@ function paveShade(kind, x, z) {
     if (kind === "cobble") return 0.72 + n * 0.34;
     if (kind === "dirt") return 0.86 + n * 0.16;
     return 1;
+}
+
+// The fine ground around a village, widened to whole 32 m land cells so no strip is left undrawn.
+function townPatch(place) {
+    const min = -3616;
+    const cell = 32;
+    const down = (v) => min + Math.floor((v - min) / cell) * cell;
+    const up = (v) => min + Math.ceil((v - min) / cell) * cell;
+    return { x0: down(place.x - 180), x1: up(place.x + 180), z0: down(place.z - 180), z1: up(place.z + 180) };
 }
 
 function buildLand() {
@@ -573,7 +568,8 @@ function buildLand() {
             const cz = z + cell * 0.5;
             let town = false;
             for (const place of World.places) {
-                if (x + cell > place.x - 180 && x < place.x + 180 && z + cell > place.z - 180 && z < place.z + 180) town = true;
+                const b = townPatch(place);
+                if (x >= b.x0 && x < b.x1 && z >= b.z0 && z < b.z1) town = true;
             }
             if (town) continue;
             const box = World.peakBox;
@@ -583,8 +579,9 @@ function buildLand() {
                 if (x + cell > arm.minX && x < arm.maxX && z + cell > arm.minZ && z < arm.maxZ) loch = true;
             }
             if (loch) continue;
-            if (Math.min(h00, h10, h11, h01) < 0.35 || World.nearRiver(cx, cz)) {
-                const sub = World.nearRiver(cx, cz) ? 4 : 8;
+            const fine = World.nearRiver(cx, cz) || World.pathDist(cx, cz) < 28 || World.cliffDist(cx, cz) < 40;
+            if (Math.min(h00, h10, h11, h01) < 0.35 || fine) {
+                const sub = fine ? 4 : 8;
                 for (let sx = x; sx < x + cell; sx += sub) {
                     for (let sz = z; sz < z + cell; sz += sub) {
                         paintPatch(
@@ -634,8 +631,9 @@ function buildLand() {
     const home = World.places[2];
     const inner = 100;
     for (const place of World.places) {
-        for (let x = place.x - 180; x < place.x + 180; x += fine) {
-            for (let z = place.z - 180; z < place.z + 180; z += fine) {
+        const b = townPatch(place);
+        for (let x = b.x0; x < b.x1; x += fine) {
+            for (let z = b.z0; z < b.z1; z += fine) {
                 if (place === home && x >= home.x - inner && x < home.x + inner && z >= home.z - inner && z < home.z + inner) continue;
                 const h00 = World.heightAt(x, z);
                 const h10 = World.heightAt(x + fine, z);
@@ -693,7 +691,8 @@ function buildLand() {
             for (let z = arm.minZ; z < arm.maxZ; z += lochCell) {
                 let town = false;
                 for (const place of World.places) {
-                    if (x + lochCell > place.x - 180 && x < place.x + 180 && z + lochCell > place.z - 180 && z < place.z + 180) town = true;
+                    const b = townPatch(place);
+                    if (x + lochCell > b.x0 && x < b.x1 && z + lochCell > b.z0 && z < b.z1) town = true;
                 }
                 if (town) continue;
                 const h00 = World.heightAt(x, z);
@@ -1623,6 +1622,31 @@ function growScenery() {
         treeSpots.push({ x: spot.x, z: spot.z, y: y, pine: spot.kind === "pine" });
         impostor(spot.x, spot.z, y, spot.kind === "pine");
     }
+    for (const [x, z, ry, s] of World.editRocks) crag(x, z, ry, s);
+    for (const [x, z, ry, s] of World.cliffRocks) {
+        if (World.heightAt(x, z) > 0.3 && !World.wet(x, z)) crag(x, z, ry, s);
+    }
+}
+
+function crag(x, z, ry, s) {
+    const c = Math.cos(ry);
+    const sn = Math.sin(ry);
+    const turn = (px, py, pz) => [x + (px - x) * c - (pz - z) * sn, py, z + (px - x) * sn + (pz - z) * c];
+    let y = World.heightAt(x, z);
+    for (const [ox, oz] of [[-6, -5], [6, -5], [6, 5], [-6, 5]]) y = Math.min(y, World.heightAt(x + ox * s, z + oz * s));
+    y -= 0.6;
+    const parts = [
+        [0, 0, 14, 11, 4.5, 0],
+        [-1.6, 0.8, 10, 8, 4, 3.6],
+        [1.2, -0.7, 5.5, 5, 3, 7]
+    ];
+    for (const [ox, oz, w, d, h, up] of parts) {
+        const px = x + ox * s;
+        const pz = z + oz * s;
+        addBox(batches.rock, px - (w * s) / 2, y + up * s, pz - (d * s) / 2, w * s, h * s, d * s, turn, [0, 0, (w * s) / 3, (h * s) / 3]);
+    }
+    const r = 5.5 * s;
+    scenery.push({ x: x - r, z: z - r, w: r * 2, d: r * 2 });
 }
 
 const treeSpots = [];
@@ -5985,12 +6009,6 @@ function bakeMini() {
         });
         ctx.stroke();
     }
-    for (const tree of World.trees) {
-        if (tree.kind !== "pine" && tree.kind !== "oak") continue;
-        const p = point(tree.x, tree.z);
-        ctx.fillStyle = tree.kind === "pine" ? "rgba(28, 72, 40, 0.9)" : "rgba(36, 92, 38, 0.85)";
-        ctx.fillRect(p.x - 0.7, p.y - 0.7, 1.4, 1.4);
-    }
 }
 
 function paintMini() {
@@ -6000,7 +6018,7 @@ function paintMini() {
     const w = miniMap.width;
     const h = miniMap.height;
     const body = inside && inside.back ? inside.back : activeCam();
-    const span = 420;
+    const span = 5000;
     const scale = w / span;
     ctx.clearRect(0, 0, w, h);
     ctx.save();
@@ -7320,7 +7338,7 @@ function frame(now) {
     const where = document.getElementById("where");
     if (where) {
         where.textContent = Math.round(cam.x) + ", " + Math.round(cam.z) + (flying ? " · " + Math.round(cam.y) : "");
-        where.hidden = !(flying || phone.matches);
+        where.hidden = !flying;
     }
     paintMini();
     if (!spotSaved || Math.hypot(cam.x - spotSaved.x, cam.z - spotSaved.z) > 12) {
@@ -7467,7 +7485,7 @@ function paintArm() {
     const land = document.getElementById("land");
     if (land) land.hidden = !flying;
     const where = document.getElementById("where");
-    if (where) where.hidden = !(flying || phone.matches);
+    if (where) where.hidden = !flying;
     if (helpLine && flying) {
         helpLine.textContent = fastOn
             ? "WASD to fly · mouse to look · Space up · Shift down · Alt toggles fast · fast on"

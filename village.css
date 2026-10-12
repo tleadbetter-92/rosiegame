@@ -546,26 +546,9 @@ html, body {
 
     .help { display: none; }
 
-    .nav {
-        top: calc(8px + env(safe-area-inset-top));
-        left: calc(10px + env(safe-area-inset-left));
-        gap: 0;
-    }
-
-    .nav .back { display: none; }
-
-    .campaign-link { font-size: 0.75rem; }
-
-    #clock {
-        top: calc(6px + env(safe-area-inset-top));
-        font-size: 0.75rem;
-        letter-spacing: 0.02em;
-    }
-
-    #where {
-        top: calc(22px + env(safe-area-inset-top));
-        font-size: 0.65rem;
-    }
+    .nav,
+    #clock,
+    #where { display: none; }
 
     #minimap {
         top: calc(6px + env(safe-area-inset-top));
@@ -576,7 +559,7 @@ html, body {
 
     #pack,
     #self {
-        top: calc(32px + env(safe-area-inset-top));
+        top: calc(10px + env(safe-area-inset-top));
         min-height: 32px;
         padding: 3px 8px;
         border-width: 1px;
@@ -592,7 +575,7 @@ html, body {
     #self { left: calc(58px + env(safe-area-inset-left)); }
 
     #pack-panel,
-    #self-panel { top: calc(70px + env(safe-area-inset-top)); }
+    #self-panel { top: calc(48px + env(safe-area-inset-top)); }
 
     #vitals {
         left: calc(10px + env(safe-area-inset-left));
