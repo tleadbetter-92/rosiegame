@@ -1473,6 +1473,7 @@ uniform vec2 uEye;
 uniform float uBand;
 uniform float uTime;
 uniform float uFlow;
+uniform vec3 uTint;
 void main() {
     vec2 uv = vUv;
     if (uFlow > 0.5) uv.y += uTime * 0.035;
@@ -1480,7 +1481,7 @@ void main() {
     float dist = distance(vWorld, uEye);
     if (uBand > 0.5 && uBand < 0.8 && dist < 70.0) discard;
     if (uBand > 0.5 && dist > 280.0) discard;
-    vec3 color = texture2D(uTex, uv).rgb * vShade;
+    vec3 color = texture2D(uTex, uv).rgb * vShade * uTint;
     if (uFlow > 0.5) color *= vec3(0.78, 0.9, 0.86);
     float fog = clamp((dist - 52.0) / 190.0, 0.0, 1.0);
     vec3 fogCol = mix(vec3(0.80, 0.75, 0.64), vec3(0.07, 0.08, 0.13), uDark);
@@ -1596,7 +1597,8 @@ const loc = {
     eye: gl.getUniformLocation(program, "uEye"),
     band: gl.getUniformLocation(program, "uBand"),
     time: gl.getUniformLocation(program, "uTime"),
-    flow: gl.getUniformLocation(program, "uFlow")
+    flow: gl.getUniformLocation(program, "uFlow"),
+    tint: gl.getUniformLocation(program, "uTint")
 };
 const identity = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 const peopleModels = {};
@@ -2993,16 +2995,17 @@ function plant(man) {
 
 function personMatrix(man) {
     const yaw = man.yaw + Math.PI;
-    const c = Math.cos(yaw);
-    const s = Math.sin(yaw);
+    const k = man.goblin ? 0.74 : 1;
+    const c = Math.cos(yaw) * k;
+    const s = Math.sin(yaw) * k;
     const slash = man.swing > 0 ? Math.sin(man.swing * Math.PI) : 0;
     const lunge = slash * 0.22;
-    const y = (man.stand || 0) + man.bob - Math.min(man.down, 1.05);
+    const y = (man.stand || 0) + man.bob - Math.min(man.down, 1.05) * k;
     const px = man.x + Math.sin(man.yaw) * lunge;
     const pz = man.z - Math.cos(man.yaw) * lunge;
     return new Float32Array([
         c, 0, -s, 0,
-        0, 1, 0, 0,
+        0, k, 0, 0,
         s, 0, c, 0,
         px, y, pz, 1
     ]);
@@ -3323,16 +3326,17 @@ function swordMatrix(man, hand) {
     const st = Math.sin(tilt);
     const slash = man.swing > 0 ? Math.sin(man.swing * Math.PI) : 0;
     const lunge = slash * 0.22;
-    const y = (man.stand || 0) + man.bob - Math.min(man.down, 1.05);
-    const hx = Math.min(hand[0] - 0.16, -0.36);
-    const hy = hand[1] - 0.04;
-    const hz = hand[2] + 0.04;
+    const k = man.goblin ? 0.74 : 1;
+    const y = (man.stand || 0) + man.bob - Math.min(man.down, 1.05) * k;
+    const hx = Math.min(hand[0] - 0.16, -0.36) * k;
+    const hy = (hand[1] - 0.04) * k;
+    const hz = (hand[2] + 0.04) * k;
     const px = man.x + Math.sin(man.yaw) * lunge;
     const pz = man.z - Math.cos(man.yaw) * lunge;
     return new Float32Array([
-        c * ct, st, s * ct, 0,
-        -c * st, ct, -s * st, 0,
-        -s, 0, c, 0,
+        c * ct * k, st * k, s * ct * k, 0,
+        -c * st * k, ct * k, -s * st * k, 0,
+        -s * k, 0, c * k, 0,
         px + c * hx + s * hz, y + hy, pz - s * hx + c * hz, 1
     ]);
 }
@@ -3398,6 +3402,27 @@ function mergeMen(data) {
             });
         });
     });
+    const raid = data.goblins;
+    if (raid) {
+        raid.hp.forEach((hp, i) => {
+            if (hp <= 0) return;
+            wanted.push({
+                goblin: true,
+                faction: GOBLINS,
+                index: i,
+                health: hp,
+                post: raid.to,
+                mode: "march",
+                slot: i,
+                homeX: raid.path[0].x,
+                homeZ: raid.path[0].z,
+                path: raid.path,
+                startedAt: raid.startedAt,
+                arriveAt: raid.arriveAt,
+                length: raid.length
+            });
+        });
+    }
     const prev = new Map(men.filter((man) => !man.fisher && !man.farmer && !man.archer && !man.decor && !man.driver && !man.jack).map((man) => [man.faction + ":" + man.index, man]));
     const next = [];
     const keep = new Set();
@@ -3420,6 +3445,7 @@ function mergeMen(data) {
             next.push(old);
         } else {
             next.push({
+                goblin: !!item.goblin,
                 faction: item.faction,
                 index: item.index,
                 health: item.health,
@@ -3460,6 +3486,7 @@ function mergeMen(data) {
 }
 
 let soldierKey = "";
+const GOBLINS = 9;
 let pendingHit = 0;
 let seenRestart = 0;
 let campaign = null;
@@ -3485,7 +3512,8 @@ function applyCampaign(data) {
         ((data.owners || [])[village] || 0) + ":" + (row || []).join(".")
     )).join(",");
     const farmKey = (data.farms || []).map((farm) => farm.id + ":" + farm.health + ":" + farm.phase).join(",");
-    const key = (data.owners || []).join(",") + "#" + attacks + "#" + units + "#" + fish + "#" + wood + "#" + arch + "#" + carts + "#" + farmKey + "#" + jacks + "#" + haul;
+    const goblins = data.goblins ? data.goblins.id + ":" + data.goblins.hp.join(".") : "";
+    const key = (data.owners || []).join(",") + "#" + attacks + "#" + units + "#" + fish + "#" + wood + "#" + arch + "#" + carts + "#" + farmKey + "#" + jacks + "#" + haul + "#" + goblins;
     if (key === soldierKey) {
         ensureCottages(data);
         touchFarmers(data);
@@ -4394,6 +4422,18 @@ function wound(man, label, quiet, knockX, knockZ) {
     if (!man || man.dying || man.health <= 0 || man.jack || man.faction === homeVillage) return false;
     if (campaign && campaign.peace && campaign.peace.includes(man.faction)) return false;
     const word = label || "Hit";
+    if (man.goblin) {
+        man.health -= 1;
+        if (man.health <= 0) {
+            man.dying = true;
+            if (!quiet) showStrike("Slain");
+        } else if (!quiet) {
+            showStrike(word);
+        }
+        actorsDirty = true;
+        postHit({ goblin: man.index });
+        return true;
+    }
     if (man.archer) {
         man.health -= 1;
         if (man.health <= 0) {
@@ -4486,8 +4526,9 @@ function connectSwing() {
     let best = null;
     let bestT = profile.reach;
     for (const man of men) {
-        if (man.dying || man.hidden || man.decor || man.health <= 0 || allied || man.faction === homeVillage) continue;
-        const chest = (man.stand || 0) + 0.95;
+        if (man.dying || man.hidden || man.decor || man.health <= 0) continue;
+        if (!man.goblin && (allied || man.faction === homeVillage)) continue;
+        const chest = (man.stand || 0) + (man.goblin ? 0.7 : 0.95);
         const dx = man.x - ox;
         const dy = chest - cam.y;
         const dz = man.z - oz;
@@ -5139,17 +5180,18 @@ function stepArrows(dt) {
         }
         let hit = false;
         const peace = allied && arrow.fromPlayer;
-        if (campaign && !peace) {
+        if (campaign) {
             for (const man of men) {
                 if (man.dying || man.hidden || man.decor || man.health <= 0 || man.faction === arrow.faction) continue;
-                const chest = (man.stand || 0) + 0.95;
+                if (peace && !man.goblin) continue;
+                const chest = (man.stand || 0) + (man.goblin ? 0.7 : 0.95);
                 if (!sweptNear(x0, y0, z0, arrow.x, arrow.y, arrow.z, man.x, chest, man.z, 0.48, 1.05)) continue;
                 const speed = Math.hypot(arrow.vx, arrow.vz) || 1;
                 if (wound(man, "Shot", !arrow.fromPlayer, arrow.vx / speed * 0.2, arrow.vz / speed * 0.2) && arrow.fromPlayer) notePractice("bow");
                 hit = true;
                 break;
             }
-            if (!hit) {
+            if (!hit && !peace) {
                 const lodge = cartUnder(arrow.x, arrow.z, arrow.faction);
                 if (lodge) {
                     const pose = clientCartPose(lodge.cart);
@@ -5366,6 +5408,54 @@ function stepPatrol(man, dt) {
     plant(man);
 }
 
+// Goblins run the path from their den in a loose pack, then fight the nearest soldier, or the player if close by.
+function stepGoblin(man, dt) {
+    const now = Date.now();
+    const back = Math.floor(man.slot / 2) * 1.6;
+    const side = man.slot % 2 === 0 ? -0.9 : 0.9;
+    if (now < man.arriveAt || !man.landed) {
+        const covered = man.length * Math.max(0, Math.min(1, (now - man.startedAt) / Math.max(1, man.arriveAt - man.startedAt)));
+        const pose = pathPose(man.path, Math.max(0, covered - back));
+        man.x = pose.x + pose.rx * side;
+        man.z = pose.z + pose.rz * side;
+        man.yaw = pose.yaw;
+        man.mode = "march";
+        man.swing = -1;
+        man.walking = now < man.arriveAt;
+        man.bob = man.walking ? Math.sin(performance.now() * 0.016 + man.index) * 0.05 : 0;
+        if (now >= man.arriveAt) man.landed = true;
+        actorsDirty = true;
+        plant(man);
+        return false;
+    }
+    man.mode = "battle";
+    const foe = nearestFoe(man);
+    const foeDist = foe ? Math.hypot(foe.x - man.x, foe.z - man.z) : Infinity;
+    const playerDist = player.dead || inside || flying ? Infinity : Math.hypot(cam.x - man.x, cam.z - man.z);
+    const chase = playerDist < 9 && playerDist < foeDist;
+    const target = chase ? { x: cam.x, z: cam.z } : foe;
+    const moving = target ? moveToward(man, target.x, target.z, dt, 2.9) : false;
+    const reach = chase ? playerDist : foeDist;
+    if (target && reach < 1.8) {
+        const cycle = (performance.now() / 1000 + man.index * 0.29) % 0.9;
+        man.swing = cycle < 0.38 ? cycle / 0.38 : -1;
+        if (chase) {
+            man.attackIn = (man.attackIn || 0) - dt;
+            if (man.attackIn <= 0) {
+                man.attackIn = 1.3 + Math.random() * 0.5;
+                hurtPlayer(4);
+            }
+        }
+    } else {
+        man.swing = -1;
+    }
+    man.walking = Boolean(moving);
+    man.bob = moving ? Math.sin(performance.now() * 0.016 + man.index) * 0.05 : 0;
+    actorsDirty = true;
+    plant(man);
+    return false;
+}
+
 function stepMan(man, dt) {
     if (man.dying) {
         man.down += dt * 1.5;
@@ -5374,6 +5464,7 @@ function stepMan(man, dt) {
         actorsDirty = true;
         return man.down > 1.2;
     }
+    if (man.goblin) return stepGoblin(man, dt);
     if (man.driver) return stepDriver(man, dt);
     if (man.archer) return stepArcher(man, dt);
     if (man.jack) return stepJack(man, dt);
@@ -6546,6 +6637,7 @@ function draw() {
     gl.useProgram(program);
     gl.disableVertexAttribArray(loc.alpha);
     gl.vertexAttrib1f(loc.alpha, 1);
+    gl.uniform3f(loc.tint, 1, 1, 1);
     gl.uniformMatrix4fv(loc.view, false, lookAt());
     gl.uniformMatrix4fv(loc.model, false, identity);
     gl.uniform2f(loc.eye, view.x, view.z);
@@ -6655,10 +6747,12 @@ function draw() {
         for (const man of men) {
             if (man.hidden || !nearPerson(man, 260)) continue;
             const kind = man.fisher || man.decor || man.driver || man.faction >= 4 ? "fisher" : "soldier";
-            const model = peopleModels[kind + man.faction];
+            const look = man.goblin ? "fisher1" : kind + man.faction;
+            const model = peopleModels[look];
             if (!model) continue;
             plant(man);
-            const hand = peopleHands[kind + man.faction];
+            const hand = peopleHands[look];
+            if (man.goblin) gl.uniform3f(loc.tint, 0.5, 0.95, 0.4);
             gl.uniformMatrix4fv(loc.model, false, personMatrix(man));
             gl.bindBuffer(gl.ARRAY_BUFFER, model.buffer);
             gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
@@ -6700,6 +6794,7 @@ function draw() {
                 gl.drawArrays(gl.TRIANGLES, 0, swordModel.count);
                 gl.bindTexture(gl.TEXTURE_2D, textures.people);
             }
+            if (man.goblin) gl.uniform3f(loc.tint, 1, 1, 1);
         }
     }
     drawHorse();

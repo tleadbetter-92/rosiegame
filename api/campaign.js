@@ -66,6 +66,14 @@ const JACK_MS = 45000;
 const storePlan = { x: -12, z: -16, w: 8, d: 5.5 };
 const GATE_HP = 50;
 const PLAYER_FACTION = 2;
+// Goblin raids on Southwest from a den in the hills; move GOBLIN_DEN to change where they come from.
+const GOBLIN_DEN = { x: -2822, z: -320 };
+const GOBLIN_VILLAGE = 2;
+const GOBLIN_SPEED = 6;
+const GOBLIN_MIN = 7;
+const GOBLIN_MAX = 14;
+const GOBLIN_EVERY = 2 * Clock.DAY_MS;
+const GOBLIN_ROUNDS = 60;
 const WALL_HALF = 17;
 const WALL_CX = -0.5;
 const WALL_CZ = -4;
@@ -353,6 +361,7 @@ function restartCampaign(state, now) {
     state.minors = freshMinors();
     state.relations = {};
     state.trails = [];
+    state.goblins = { nextAt: nextGoblinRaid(now), raid: null };
 }
 
 function freshMinors() {
@@ -1852,7 +1861,71 @@ function modeOf(state, faction, index, post, now) {
             return now + 8000 >= attack.arriveAt ? "battle" : "guard";
         }
     }
+    const raid = state.goblins && state.goblins.raid;
+    if (raid && post === GOBLIN_VILLAGE && faction === state.owners[GOBLIN_VILLAGE] && now + 8000 >= raid.arriveAt) return "battle";
     return "guard";
+}
+
+function nextGoblinRaid(now) {
+    return now + Math.round(GOBLIN_EVERY * (0.6 + Math.random() * 0.8));
+}
+
+function endGoblinRaid(state, now, text) {
+    state.goblins.raid = null;
+    state.goblins.nextAt = nextGoblinRaid(now);
+    note(state, text);
+}
+
+// Goblins have one hit point and land a blow far less often than a soldier, so a garrison usually wins.
+function goblinRaids(state, now) {
+    if (!state.goblins) {
+        state.goblins = { nextAt: nextGoblinRaid(now), raid: null };
+        return true;
+    }
+    const raid = state.goblins.raid;
+    const place = factions[GOBLIN_VILLAGE].name;
+    if (!raid) {
+        if (Number.isFinite(state.pausedAt) || now < state.goblins.nextAt) return false;
+        const count = GOBLIN_MIN + Math.floor(Math.random() * (GOBLIN_MAX - GOBLIN_MIN + 1));
+        const path = [{ x: GOBLIN_DEN.x, z: GOBLIN_DEN.z }, gateSpot(GOBLIN_VILLAGE, sideFacing(GOBLIN_VILLAGE, GOBLIN_DEN), 8)];
+        const length = pathLength(path);
+        state.goblins.raid = {
+            id: "goblins-" + now,
+            startedAt: now,
+            arriveAt: now + Math.round(length / GOBLIN_SPEED * 1000),
+            path,
+            length,
+            hp: new Array(count).fill(1),
+            rounds: 0
+        };
+        note(state, count + " goblins run out of the hills toward " + place + ".");
+        return true;
+    }
+    let dirty = false;
+    while (now >= raid.arriveAt + (raid.rounds + 1) * BATTLE_MS) {
+        raid.rounds += 1;
+        dirty = true;
+        const owner = state.owners[GOBLIN_VILLAGE];
+        const guards = fielded(state, owner, GOBLIN_VILLAGE).map((unit) => unit.index);
+        const left = raid.hp.filter((hp) => hp > 0).length;
+        if (!left) {
+            endGoblinRaid(state, now, place + " drives off the goblins.");
+            break;
+        }
+        if (!guards.length || raid.rounds > GOBLIN_ROUNDS) {
+            endGoblinRaid(state, now, "The goblins ransack " + place + " and slip away.");
+            break;
+        }
+        for (let i = 0; i < guards.length; i++) {
+            if (Math.random() >= 0.3) continue;
+            const target = raid.hp.findIndex((hp) => hp > 0);
+            if (target >= 0) raid.hp[target] = 0;
+        }
+        for (let i = 0; i < left; i++) {
+            if (Math.random() < 0.1) wound(state, owner, guards);
+        }
+    }
+    return dirty;
 }
 
 function shoreRoute(village) {
@@ -2116,6 +2189,16 @@ function present(state, now, turn, paused) {
             breachedAt: attack.breachedAt || 0,
             heldForGate: !!attack.heldForGate
         })),
+        goblins: state.goblins && state.goblins.raid ? {
+            id: state.goblins.raid.id,
+            to: GOBLIN_VILLAGE,
+            path: state.goblins.raid.path,
+            length: state.goblins.raid.length,
+            startedAt: state.goblins.raid.startedAt,
+            arriveAt: state.goblins.raid.arriveAt,
+            hp: state.goblins.raid.hp.slice()
+        } : null,
+        nextGoblinsAt: state.goblins ? state.goblins.nextAt : null,
         gates: (state.gates || freshGates()).map((row) => row.slice()),
         archers: (state.archers || freshArchers()).map((row) => row.slice()),
         villages: factions.map((place, index) => {
@@ -3354,6 +3437,7 @@ function syncWorld(state, now) {
     if (wearTrails(state)) dirty = true;
     if (besiege(state, now)) dirty = true;
     if (fight(state, now)) dirty = true;
+    if (goblinRaids(state, now)) dirty = true;
     if (ensureHero(state)) dirty = true;
     return { dirty, turn, paused };
 }
@@ -3500,6 +3584,17 @@ async function hitArcher(village, side) {
     return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
 }
 
+async function hitGoblin(index) {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    const raid = state.goblins && state.goblins.raid;
+    if (raid && raid.hp[index] > 0) raid.hp[index] -= 1;
+    await writeState(state);
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+}
+
 async function setFood(village, amount) {
     const state = await readState();
     const now = Date.now();
@@ -3589,6 +3684,10 @@ module.exports = async function handler(req, res) {
             }
             if (req.body && Number.isInteger(req.body.gate) && Number.isInteger(req.body.side)) {
                 res.status(200).json(await hitGate(req.body.gate, req.body.side));
+                return;
+            }
+            if (req.body && Number.isInteger(req.body.goblin)) {
+                res.status(200).json(await hitGoblin(req.body.goblin));
                 return;
             }
             if (req.body && Number.isInteger(req.body.archer) && Number.isInteger(req.body.tower)) {
