@@ -527,6 +527,29 @@
         controls.dampingFactor = 0.05;
         controls.maxPolarAngle = Math.PI / 2 - 0.05; // Don't go below ground
 
+        // Orbit zoom only ever closes a fraction of the gap to its pivot, so near the pivot it stalls and
+        // panning crawls. Once close, scrolling in carries the pivot forward with the camera instead.
+        const NEAR_PIVOT = 6;
+        const zoomRay = new THREE.Raycaster();
+        window.addEventListener('wheel', (event) => {
+            if (event.target !== renderer.domElement || !controls.enabled || event.deltaY >= 0) return;
+            if (camera.position.distanceTo(controls.target) > NEAR_PIVOT) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            const rect = renderer.domElement.getBoundingClientRect();
+            zoomRay.setFromCamera(new THREE.Vector2(
+                (event.clientX - rect.left) / rect.width * 2 - 1,
+                -(event.clientY - rect.top) / rect.height * 2 + 1), camera);
+            const ahead = zoomRay.ray.direction.clone();
+            let step = Math.min(3, Math.abs(event.deltaY) * 0.01);
+            const hit = zoomRay.intersectObjects(terrains.map(t => t.mesh))[0];
+            // Stop short of the ground rather than flying through it.
+            if (hit) step = Math.min(step, hit.distance - 1);
+            if (step <= 0) return;
+            camera.position.addScaledVector(ahead, step);
+            controls.target.addScaledVector(ahead, step);
+        }, { capture: true, passive: false });
+
         // Transform Controls
         const transformControl = new TransformControls(camera, renderer.domElement);
         transformControl.addEventListener('change', updatePropertiesUI);
