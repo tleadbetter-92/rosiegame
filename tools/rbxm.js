@@ -174,9 +174,13 @@ function readRbxm(file) {
 }
 
 // The plain parts under a model. Roblox meshes, unions and decals live on Roblox's servers, not in the file, so they are left out.
+// Doors are opened by scripts in Roblox, so anything named door is left walk-through like parts with CanCollide off.
+// Roblox characters (models with a Humanoid) are left out.
 function partsIn(group) {
     const list = [];
-    const walk = (inst) => {
+    const walk = (inst, door) => {
+        if (inst.children.some((c) => c.className === "Humanoid")) return;
+        door = door || /door/i.test(inst.props.Name || "");
         const solid = inst.className === "Part" || inst.className === "WedgePart" || inst.className === "Seat";
         if (solid && inst.props.CFrame && inst.props.size && (inst.props.Transparency || 0) < 0.5) {
             const special = inst.children.find((c) => c.className === "SpecialMesh");
@@ -185,12 +189,13 @@ function partsIn(group) {
                 const scaled = inst.children.find((c) => c.className === "BlockMesh" || c.className === "CylinderMesh");
                 if (scaled && scaled.props.Scale) size = size.map((v, k) => v * scaled.props.Scale[k]);
                 const kind = inst.className === "WedgePart" ? "wedge" : ["ball", "box", "cyl"][inst.props.shape] || "box";
-                list.push({ kind, size, pos: inst.props.CFrame.pos, rot: inst.props.CFrame.rot, color: inst.props.Color3uint8 || [0.6, 0.6, 0.6] });
+                const collide = inst.props.CanCollide !== false && !door;
+                list.push({ kind, size, pos: inst.props.CFrame.pos, rot: inst.props.CFrame.rot, color: inst.props.Color3uint8 || [0.6, 0.6, 0.6], collide });
             }
         }
-        inst.children.forEach(walk);
+        inst.children.forEach((child) => walk(child, door));
     };
-    walk(group);
+    walk(group, false);
     return list;
 }
 
@@ -208,7 +213,7 @@ function boundsOf(parts) {
 }
 
 // Packs parts for the game: metres, centred on the whole model, ground at y 0.
-// Each part is [kind, sx, sy, sz, px, py, pz, r0..r8, colour, grounded]; rect(bounds) gives a centred footprint in the same frame.
+// Each part is [kind, sx, sy, sz, px, py, pz, r0..r8, colour, grounded, collide]; rect(bounds) gives a centred footprint in the same frame.
 function packModel(all, scale) {
     const whole = boundsOf(all);
     const cx = (whole[0][0] + whole[0][1]) / 2;
@@ -236,7 +241,8 @@ function packModel(all, scale) {
             +((p.pos[0] - cx) * scale).toFixed(3), +((p.pos[1] - base) * scale).toFixed(3), +((p.pos[2] - cz) * scale).toFixed(3),
             ...p.rot.map((v) => +v.toFixed(4)),
             paletteIndex.get(key),
-            bottom - base < 0.6 ? 1 : 0
+            bottom - base < 0.6 ? 1 : 0,
+            p.collide ? 1 : 0
         ];
     });
     return { scale, w: rect(whole).w, d: rect(whole).d, palette, parts, rect };

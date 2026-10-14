@@ -47,6 +47,7 @@ const RECRUIT_MS = 5 * 60 * 1000;
 const FISHER_COST = 50;
 const SOLDIER_COST = 100;
 const BUILD_WOOD = 100;
+const MINE_WOOD = 100;
 // Two minutes for now so building can be watched in play; was 2 * Clock.DAY_MS.
 const BUILD_MS = 2 * 60 * 1000;
 const fisherAim = [2, 4, 3, 3];
@@ -347,6 +348,8 @@ function restartCampaign(state, now) {
     state.owners = [0, 1, 2, 3];
     state.food = [100, 100, 100, 100];
     state.wood = [0, 0, 0, 0];
+    state.stone = [0, 0, 0, 0];
+    state.gold = [0, 0, 0, 0];
     seedSoldiers(state);
     state.attacks = [];
     state.training = [];
@@ -365,6 +368,7 @@ function restartCampaign(state, now) {
     state.yard = null;
     state.yards = [];
     state.houses = [];
+    state.mines = [];
     state.siteJobs = [];
     state.fedDay = [-1, -1, -1, -1];
     state.hamlet = 1;
@@ -875,6 +879,13 @@ function ensureEconomy(state, now) {
     if (!Array.isArray(state.wood) || state.wood.length !== 4) {
         state.wood = [0, 0, 0, 0];
         dirty = true;
+    }
+    // Stone and gold will come from mines once there is ore on the map to dig.
+    for (const key of ["stone", "gold"]) {
+        if (!Array.isArray(state[key]) || state[key].length !== 4) {
+            state[key] = [0, 0, 0, 0];
+            dirty = true;
+        }
     }
     if (!Array.isArray(state.fishermen)) {
         state.fishermen = [];
@@ -2079,6 +2090,8 @@ function present(state, now, turn, paused) {
         log: state.log.slice(),
         food: state.food.slice(),
         wood: state.wood.slice(),
+        stone: (state.stone || [0, 0, 0, 0]).slice(),
+        gold: (state.gold || [0, 0, 0, 0]).slice(),
         fishermen: state.fishermen.filter((man) => man.health > 0).map((man, index) => {
             const route = routeOf(state, man, false);
             const shelter = state.attacks.some((attack) => !attack.resolved && attack.to === man.village);
@@ -2135,8 +2148,7 @@ function present(state, now, turn, paused) {
             hay: site.hay,
             door: site.door,
             model: site.model || null,
-            at: site.at || null,
-            solids: site.solids || null
+            at: site.at || null
         })).concat((state.houses || []).map((house) => ({
             id: house.id,
             village: house.village,
@@ -2144,8 +2156,14 @@ function present(state, now, turn, paused) {
             yaw: house.yaw,
             house: house.house,
             model: house.model || null,
-            at: house.at || null,
-            solids: house.solids || null
+            at: house.at || null
+        }))).concat((state.mines || []).map((mine) => ({
+            id: mine.id,
+            village: mine.village,
+            kind: "mine",
+            yaw: mine.yaw,
+            model: mine.model,
+            at: mine.at
         }))).concat((state.yards || []).map((yard) => ({
             id: yard.id,
             village: yard.village,
@@ -2334,6 +2352,9 @@ function present(state, now, turn, paused) {
                 limit: popLimit(state, index),
                 upkeep: dailyFood(state, index),
                 wood: state.wood[index] || 0,
+                stone: (state.stone || [])[index] || 0,
+                gold: (state.gold || [])[index] || 0,
+                mines: (state.mines || []).filter((mine) => state.owners[mine.village] === index).length,
                 houses: (state.houses || []).filter((house) => state.owners[house.village] === index).reduce((n, house) => n + (house.model === "houses" ? 5 : 1), 0),
                 farms: producingFarms(state, index),
                 yards: yardsOf(state, index).length,
@@ -2357,9 +2378,11 @@ function campaignRules() {
             housesModel
                 ? { name: "Houses (five)", wood: BUILD_WOOD, ms: BUILD_MS, gives: "Room for " + HOUSES_POP + " more people", when: "Built when a faction is within 2 of its population limit" }
                 : { name: "House", wood: BUILD_WOOD, ms: BUILD_MS, gives: "Room for " + HOUSE_POP + " more people", when: "Built when a faction is within 2 of its population limit" },
-            { name: "Farm", wood: FARM_WOOD, ms: BUILD_MS, gives: FARM_PER_DAY + " food a day, worked by 1 farmer", when: "Built when food runs short; up to " + FARM_EXTRA + " extra per faction" },
+            { name: "Farm", wood: FARM_WOOD, ms: BUILD_MS, gives: FARM_PER_DAY + " food a day, worked by 2 farmers who live in the farmhouse", when: "Built when food runs short; up to " + FARM_EXTRA + " extra per faction" },
             { name: "Lumberyard", wood: BUILD_WOOD, ms: BUILD_MS, gives: "Lumberjacks bring " + WOOD_YIELD + " wood every " + Math.round(JACK_MS / 1000) + " s", when: "Built once, when a faction has none" }
-        ],
+        ].concat(mineModel ? [
+            { name: "Mine", wood: MINE_WOOD, ms: BUILD_MS, gives: "Stone and gold, once there is ore on the map to dig", when: "Built once a faction has a lumberyard and no mine" }
+        ] : []),
         fixed: [
             { name: "Village", gives: "Palisade, gates and a garrison post; holds " + POP_BASE + " people before houses" },
             { name: "Fishing cottage", gives: "One per village; fishermen land " + FISH_FOOD + " food a trip and carts carry it home" },
@@ -2446,12 +2469,16 @@ function hamletPlots() {
     });
     const shown = shownFarm();
     if (shown) {
-        plots.push({ id: shown.id, village: 2, kind: "farm", yaw: shown.yaw, house: shown.house, field: shown.fields[0], hay: shown.hay, door: shown.door, model: shown.model, at: shown.at, solids: shown.solids });
+        plots.push({ id: shown.id, village: 2, kind: "farm", yaw: shown.yaw, house: shown.house, field: shown.fields[0], hay: shown.hay, door: shown.door, model: shown.model, at: shown.at });
+    }
+    for (const site of [shownHouses(), shownMine()]) {
+        if (site) plots.push({ id: site.id, village: 2, kind: site.kind, yaw: site.yaw, house: site.house, model: site.model, at: site.at });
     }
     return plots;
 }
 
-// The Roblox farm stood outside Southwest to look at. It is not part of the campaign save.
+// The Roblox farm, five houses and mine stood outside Southwest to look at. They are not part of the campaign save,
+// but the farm is worked for Southwest like any other farm.
 let showFarm;
 function shownFarm() {
     if (showFarm !== undefined) return showFarm;
@@ -2459,6 +2486,35 @@ function shownFarm() {
     if (farmModel) showFarm = layoutModelFarm({}, 2, -2407.2, 540.2, nearbyWood(2), []);
     if (showFarm) showFarm.id = "show-farm-2";
     return showFarm;
+}
+
+let showHouses;
+function shownHouses() {
+    if (showHouses !== undefined) return showHouses;
+    showHouses = null;
+    const farm = shownFarm();
+    if (!housesModel || !farm) return null;
+    for (const spot of [[-2365, 540], [-2365, 505], [-2405, 495], [-2365, 575]]) {
+        showHouses = layoutModelSite({}, 2, spot[0], spot[1], [farm.rect], "house");
+        if (showHouses) break;
+    }
+    if (showHouses) showHouses.id = "show-houses-2";
+    return showHouses;
+}
+
+let showMine;
+function shownMine() {
+    if (showMine !== undefined) return showMine;
+    showMine = null;
+    const farm = shownFarm();
+    const homes = shownHouses();
+    if (!mineModel || !farm || !homes) return null;
+    for (const spot of [[-2440, 530], [-2405, 505], [-2365, 535], [-2340, 600], [-2400, 590]]) {
+        showMine = layoutModelSite({}, 2, spot[0], spot[1], [farm.rect, homes.rect], "mine");
+        if (showMine) break;
+    }
+    if (showMine) showMine.id = "show-mine-2";
+    return showMine;
 }
 
 function ensureMinors(state) {
@@ -2593,6 +2649,8 @@ function farmSite(state, id) {
     if (fixed) return fixed;
     const hamlet = hamlets.find((item) => item.farm.id === id);
     if (hamlet) return hamlet.farm;
+    const shown = shownFarm();
+    if (shown && shown.id === id) return shown;
     return (state.builtFarms || []).find((site) => site.id === id) || null;
 }
 
@@ -2753,6 +2811,9 @@ function takenRects(state) {
         if (plot.kind === "outhouse") rects.push({ minX: plot.x - plot.w / 2, minZ: plot.z - plot.d / 2, w: plot.w, d: plot.d });
     }
     if (shownFarm()) rects.push(shownFarm().rect);
+    if (shownHouses()) rects.push(shownHouses().rect);
+    if (shownMine()) rects.push(shownMine().rect);
+    for (const mine of state.mines || []) rects.push(mine.rect);
     const sites = (state.builtFarms || []).concat((state.farmJobs || []).map((job) => job.site));
     for (const house of state.houses || []) rects.push(rectOf(house.house || house));
     for (const yard of state.yards || []) rects.push({ minX: yard.x - yard.w / 2, minZ: yard.z - yard.d / 2, w: yard.w, d: yard.d });
@@ -2794,8 +2855,8 @@ function doorOf(house) {
     };
 }
 
-// The farm and the five-house template factions build, converted from Roblox models by tools/roblox-farm.js and tools/roblox-houses.js.
-// Without the files, farms and houses use the plain layouts.
+// The farm, five-house template and mine factions build, converted from Roblox models by tools/roblox-farm.js and tools/roblox-model.js.
+// Without the files, farms and houses use the plain layouts and no mines are built.
 function robloxModel(name) {
     try {
         return JSON.parse(fs.readFileSync(path.join(__dirname, "..", "models", "roblox", name + ".json"), "utf8"));
@@ -2805,6 +2866,7 @@ function robloxModel(name) {
 }
 const farmModel = robloxModel("farm");
 const housesModel = robloxModel("houses");
+const mineModel = robloxModel("mine");
 
 // How far up a new building's ground may be filled to make it level.
 const PAD_RISE = 6;
@@ -2846,7 +2908,10 @@ function syncPads(state) {
     (state.houses || []).forEach(add);
     (state.siteJobs || []).forEach(add);
     (state.yards || []).forEach(add);
+    (state.mines || []).forEach(add);
     add(shownFarm());
+    add(shownHouses());
+    add(shownMine());
     World.setPads(pads);
     return pads;
 }
@@ -2859,12 +2924,15 @@ function quarterTurn(village, cx, cz) {
     return Math.atan2(-toward.z, toward.x);
 }
 
-function layoutModelHouses(state, village, cx, cz, blocked) {
+// A Roblox building site (the five houses or a mine) on a level pad outside the walls, turned to face the village.
+function layoutModelSite(state, village, cx, cz, blocked, kind) {
+    const name = kind === "mine" ? "mine" : "houses";
+    const model = kind === "mine" ? mineModel : housesModel;
     const place = places[village];
     const dist = Math.hypot(place.x - cx, place.z - cz);
     if (dist < 60 || dist > 150) return null;
     const at = { x: cx, z: cz, theta: quarterTurn(village, cx, cz) };
-    const whole = placeRect({ x: 0, z: 0, w: housesModel.w, d: housesModel.d }, at);
+    const whole = placeRect({ x: 0, z: 0, w: model.w, d: model.d }, at);
     const rect = { minX: whole.minX, minZ: whole.minZ, w: whole.w, d: whole.d };
     if (!outsideWalls(village, rect)) return null;
     for (const other of blocked) {
@@ -2876,7 +2944,7 @@ function layoutModelHouses(state, village, cx, cz, blocked) {
     const yaw = snapYaw(place.x - cx, place.z - cz);
     return {
         village: village,
-        kind: "house",
+        kind: kind,
         x: cx,
         z: cz,
         y: pad.y,
@@ -2885,25 +2953,21 @@ function layoutModelHouses(state, village, cx, cz, blocked) {
         d: whole.d,
         rect: rect,
         score: pad.slope,
-        model: "houses",
+        model: name,
         at: at,
         pad: pad,
-        solids: housesModel.houses.map((r) => {
-            const b = placeRect(r, at);
-            return { x: b.minX, z: b.minZ, w: b.w, d: b.d };
-        }),
-        house: { x: cx, z: cz, y: pad.y, yaw: yaw, w: whole.w, d: whole.d, minX: rect.minX, minZ: rect.minZ, mesh: "house", role: "house", doorSide: 1, village: village }
+        house: { x: cx, z: cz, y: pad.y, yaw: yaw, w: whole.w, d: whole.d, minX: rect.minX, minZ: rect.minZ, mesh: "house", role: kind, doorSide: 1, village: village }
     };
 }
 
-function pickHouses(state, village) {
+function pickModelSite(state, village, kind) {
     const blocked = takenRects(state);
     const place = places[village];
     for (const dist of [72, 90, 108, 126, 144]) {
         let pick = null;
         for (let i = 0; i < 16; i++) {
             const ang = (i / 16) * Math.PI * 2 + dist * 0.01;
-            const site = layoutModelHouses(state, village, place.x + Math.cos(ang) * dist, place.z + Math.sin(ang) * dist, blocked);
+            const site = layoutModelSite(state, village, place.x + Math.cos(ang) * dist, place.z + Math.sin(ang) * dist, blocked, kind);
             if (!site) continue;
             if (!pick || site.score < pick.score) pick = site;
         }
@@ -2978,11 +3042,7 @@ function layoutModelFarm(state, village, cx, cz, wood, blocked) {
         model: "farm",
         at: at,
         rect: wholeRect,
-        pad: pad,
-        solids: farmModel.solids.map((r) => {
-            const b = placeRect(r, at);
-            return { x: b.minX, z: b.minZ, w: b.w, d: b.d };
-        })
+        pad: pad
     };
     const path = pathToStore(site);
     if (!path || path.length < 2 || pathWet(path) || pathLength(path) > 220) return null;
@@ -3266,7 +3326,8 @@ function pickYard(state, village) {
 
 function pickBuilding(state, village, kind) {
     if (kind === "yard") return pickYard(state, village);
-    if (housesModel) return pickHouses(state, village);
+    if (kind === "mine") return pickModelSite(state, village, "mine");
+    if (housesModel) return pickModelSite(state, village, "house");
     const blocked = takenRects(state);
     const place = places[village];
     const rings = [46, 62, 80, 98];
@@ -3299,11 +3360,12 @@ function considerSites(state, now) {
     let dirty = false;
     if (!Array.isArray(state.houses)) state.houses = [];
     if (!Array.isArray(state.yards)) state.yards = [];
+    if (!Array.isArray(state.mines)) state.mines = [];
     if (!Array.isArray(state.siteJobs)) state.siteJobs = [];
     const keep = [];
     for (const job of state.siteJobs) {
         if (state.owners[job.village] !== job.payer) {
-            state.wood[job.payer] = (state.wood[job.payer] || 0) + BUILD_WOOD;
+            state.wood[job.payer] = (state.wood[job.payer] || 0) + (job.cost || BUILD_WOOD);
             note(state, factions[job.payer].name + " stops the " + job.kind + ".");
             dirty = true;
             continue;
@@ -3321,10 +3383,21 @@ function considerSites(state, now) {
                 model: job.model,
                 at: job.at,
                 rect: job.rect,
-                pad: job.pad,
-                solids: job.solids
+                pad: job.pad
             });
             note(state, factions[job.payer].name + (job.model === "houses" ? " finishes five houses." : " finishes a house."));
+        } else if (job.kind === "mine") {
+            state.mines.push({
+                id: job.id,
+                village: job.village,
+                owner: job.payer,
+                yaw: job.yaw,
+                model: job.model,
+                at: job.at,
+                rect: job.rect,
+                pad: job.pad
+            });
+            note(state, factions[job.payer].name + " finishes a mine.");
         } else {
             state.yards.push({
                 id: job.id,
@@ -3351,23 +3424,27 @@ function considerSites(state, now) {
     state.siteJobs = keep;
     for (let faction = 0; faction < 4; faction++) {
         if (buildingBusy(state, faction)) continue;
-        if ((state.wood[faction] || 0) < BUILD_WOOD) continue;
         const village = homeVillage(state, faction);
         if (village < 0) continue;
         const tight = popLimit(state, faction) - factionPop(state, faction) <= 2;
-        const kind = tight ? "house" : (yardsOf(state, faction).length ? "" : "yard");
+        const hasYard = yardsOf(state, faction).length > 0;
+        const hasMine = state.mines.some((mine) => state.owners[mine.village] === faction);
+        const kind = tight ? "house" : !hasYard ? "yard" : mineModel && !hasMine ? "mine" : "";
         if (!kind) continue;
+        const cost = kind === "mine" ? MINE_WOOD : BUILD_WOOD;
+        if ((state.wood[faction] || 0) < cost) continue;
         const site = pickBuilding(state, village, kind);
         if (!site) continue;
         const readyPlay = buildReady(state);
         if (readyPlay == null) continue;
         state.buildSerial = (state.buildSerial || 0) + 1;
-        state.wood[faction] -= BUILD_WOOD;
+        state.wood[faction] -= cost;
         state.siteJobs.push({
             id: kind + "-" + village + "-" + state.buildSerial,
             village: village,
             payer: faction,
             kind: kind,
+            cost: cost,
             readyPlay: readyPlay,
             x: site.x,
             z: site.z,
@@ -3379,10 +3456,10 @@ function considerSites(state, now) {
             house: site.house,
             model: site.model,
             at: site.at,
-            pad: site.pad,
-            solids: site.solids
+            pad: site.pad
         });
-        note(state, factions[faction].name + " starts " + (kind === "yard" ? "a lumberyard" : site.model === "houses" ? "five houses" : "a house") + ".");
+        const what = kind === "yard" ? "a lumberyard" : kind === "mine" ? "a mine" : site.model === "houses" ? "five houses" : "a house";
+        note(state, factions[faction].name + " starts " + what + ".");
         dirty = true;
     }
     return dirty;
@@ -3551,9 +3628,16 @@ function walkHome(farm, site) {
 function ensureFarms(state) {
     if (!Array.isArray(state.farms)) state.farms = [];
     let dirty = false;
-    const sites = farmSiteList.concat(state.builtFarms || [], hamlets.map((hamlet) => hamlet.farm));
+    const sites = farmSiteList.concat(state.builtFarms || [], hamlets.map((hamlet) => hamlet.farm), shownFarm() || []);
     for (const site of sites) {
-        if (state.farms.some((farm) => farm.id === site.id)) continue;
+        const had = state.farms.find((farm) => farm.id === site.id);
+        if (had) {
+            if (had.crew !== 2) {
+                had.crew = 2;
+                dirty = true;
+            }
+            continue;
+        }
         state.farms.push({
             id: site.id,
             village: site.village,
@@ -3568,7 +3652,7 @@ function ensureFarms(state) {
             sentDay: -1,
             sentSlot: -1,
             retryAt: 0,
-            crew: farmSiteList.some((fixed) => fixed.id === site.id) || site.village >= MINOR_BASE ? 2 : 1
+            crew: 2
         });
         dirty = true;
     }

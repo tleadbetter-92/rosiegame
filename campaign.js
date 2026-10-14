@@ -341,9 +341,12 @@ function paintFactions(list) {
             f.houses,
             f.farms,
             f.yards,
+            f.mines || 0,
             f.food,
             f.upkeep,
             f.wood,
+            f.stone || 0,
+            f.gold || 0,
             work.length ? work.join(", ") : "—"
         ];
     }));

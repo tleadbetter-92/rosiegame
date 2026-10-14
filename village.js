@@ -3239,7 +3239,7 @@ function horseGround(x, z) {
     if (inside) return ground;
     let height = ground;
     const cap = horse.stand + 0.55;
-    for (const floor of floors) {
+    for (const floor of floorsNear(x, z)) {
         if (floor.y > cap) continue;
         if (x > floor.x && x < floor.x + floor.w && z > floor.z && z < floor.z + floor.d) {
             height = Math.max(height, floor.y);
@@ -6027,7 +6027,7 @@ function marchDistance(attack, plain) {
 }
 
 function onTower(x, z) {
-    for (const floor of floors) {
+    for (const floor of floorsNear(x, z)) {
         if (!floor.tower || floor.y <= 2) continue;
         if (x > floor.x && x < floor.x + floor.w && z > floor.z && z < floor.z + floor.d) return true;
     }
@@ -6193,6 +6193,39 @@ function addGateDoors(list, village, side, open) {
 
 const floors = [];
 const solids = [];
+let solidGrid = null;
+let floorGrid = null;
+
+// Floors and solids by 16 m cell, rebuilt when either list changes, so a building of many pieces stays cheap to walk past.
+function boxGrid(list) {
+    const grid = new Map();
+    grid.count = list.length;
+    for (const item of list) {
+        const c0 = Math.floor((item.x - 0.5) / 16);
+        const c1 = Math.floor((item.x + item.w + 0.5) / 16);
+        const r0 = Math.floor((item.z - 0.5) / 16);
+        const r1 = Math.floor((item.z + item.d + 0.5) / 16);
+        for (let c = c0; c <= c1; c++) {
+            for (let r = r0; r <= r1; r++) {
+                const key = c + "," + r;
+                let cell = grid.get(key);
+                if (!cell) grid.set(key, cell = []);
+                cell.push(item);
+            }
+        }
+    }
+    return grid;
+}
+
+function solidsNear(x, z) {
+    if (!solidGrid || solidGrid.count !== solids.length) solidGrid = boxGrid(solids);
+    return solidGrid.get(Math.floor(x / 16) + "," + Math.floor(z / 16)) || noScenery;
+}
+
+function floorsNear(x, z) {
+    if (!floorGrid || floorGrid.count !== floors.length) floorGrid = boxGrid(floors);
+    return floorGrid.get(Math.floor(x / 16) + "," + Math.floor(z / 16)) || noScenery;
+}
 const TOWER_RISE = 0.46;
 const TOWER_RUN = 0.34;
 const TOWER_STEPS = 6;
@@ -6386,7 +6419,7 @@ function floorAt(x, z, feet) {
     const cap = feet == null ? ground + 0.6 : feet + 0.55;
     const deck = World.bridgeDeck(x, z);
     if (deck != null && deck <= cap) height = Math.max(height, deck);
-    for (const floor of floors) {
+    for (const floor of floorsNear(x, z)) {
         if (floor.y > cap) continue;
         if (x > floor.x && x < floor.x + floor.w && z > floor.z && z < floor.z + floor.d) {
             height = Math.max(height, floor.y);
@@ -6399,8 +6432,11 @@ function hitsSolid(x, z, feet) {
     const body = feet + 1.6;
     const parapet = World.bridgeWall(x, z);
     if (parapet != null && body > parapet && feet < parapet + 0.93) return true;
-    for (const solid of solids) {
-        if (x <= solid.x || x >= solid.x + solid.w || z <= solid.z || z >= solid.z + solid.d) continue;
+    for (const solid of solidsNear(x, z)) {
+        // Roblox stairs are blocks down to the ground: a top within a step of the feet is climbed, not bumped.
+        if (solid.raised && solid.y1 <= feet + 0.55) continue;
+        const r = solid.raised ? 0.25 : 0;
+        if (x <= solid.x - r || x >= solid.x + solid.w + r || z <= solid.z - r || z >= solid.z + solid.d + r) continue;
         if (body > solid.y0 + 0.02 && feet < solid.y1 - 0.02) return true;
     }
     return false;
@@ -6492,7 +6528,7 @@ function blockedOutside(x, z, faction, feet) {
     }
     if (World.tooSteep(x, z)) return true;
     if (World.wet(x, z)) return true;
-    if (hitsSolid(x, z, stand)) return true;
+    if (hitsSolid(x, z, feet == null ? floorAt(x, z) : stand)) return true;
     return wallBlocks(x, z, who);
 }
 
@@ -7378,10 +7414,15 @@ function clearRaised() {
     for (let i = floors.length - 1; i >= 0; i--) {
         if (floors[i].raised) floors.splice(i, 1);
     }
+    for (let i = solids.length - 1; i >= 0; i--) {
+        if (solids[i].raised) solids.splice(i, 1);
+    }
     for (let i = scenery.length - 1; i >= 0; i--) {
         if (scenery[i].raised) scenery.splice(i, 1);
     }
     sceneryGrid = null;
+    solidGrid = null;
+    floorGrid = null;
     routeCache.clear();
     textures.raisedfield = textures.dirt;
     textures.raisedleaf = textures.leaf;
@@ -7458,8 +7499,8 @@ function addRaisedDoor(b, id, floorsGeom) {
     addBox(floorsGeom, b.minX + inset, floorY - 0.04, b.minZ + inset, fw, 0.06, fd);
 }
 
-// Roblox models (models/roblox/farm.json and houses.json, made by tools/roblox-farm.js and roblox-houses.js):
-// plain parts in metres, coloured from a palette texture, drawn as the robloxfarm and robloxhouses meshes.
+// Roblox models (models/roblox/farm.json, houses.json and mine.json, made by tools/roblox-farm.js and roblox-model.js):
+// plain parts in metres, coloured from a palette texture, drawn as the robloxfarm, robloxhouses and robloxmine meshes.
 const roblox = {};
 
 function robloxModel(name) {
@@ -7533,6 +7574,8 @@ const robloxShapes = (() => {
     return { box, wedge, cyl, ball: { verts: ballVerts, faces: ballFaces } };
 })();
 
+// Square-set pieces become walls you bump into, and every top is a floor you can step onto, so doorways and stairs work.
+// Slanted pieces (roofs), balls, doors and pieces Roblox lets you walk through are only drawn.
 function stampRoblox(list, model, at) {
     const c = Math.cos(at.theta);
     const s = Math.sin(at.theta);
@@ -7557,6 +7600,20 @@ function stampRoblox(list, model, at) {
             const z = r[6] * lx + r[7] * ly + r[8] * lz + part[6];
             return [x * c + z * s + at.x, y + at.y, -x * s + z * c + at.z];
         });
+        const square = r.every((v) => Math.abs(v) < 0.05 || Math.abs(v) > 0.95);
+        if (part[18] !== 0 && part[0] !== "ball" && part[0] !== "wedge" && (square || Math.abs(r[4]) > 0.95)) {
+            const minX = Math.min(...pts.map((p) => p[0]));
+            const minY = Math.min(...pts.map((p) => p[1]));
+            const minZ = Math.min(...pts.map((p) => p[2]));
+            const w = Math.max(...pts.map((p) => p[0])) - minX;
+            const top = Math.max(...pts.map((p) => p[1]));
+            const d = Math.max(...pts.map((p) => p[2])) - minZ;
+            const tall = Math.abs(r[3]) * part[1] + Math.abs(r[4]) * part[2] + Math.abs(r[5]) * part[3];
+            if (w > 0.05 && d > 0.05) {
+                if (tall > 0.6) solids.push({ x: minX, z: minZ, w: w, d: d, y0: minY, y1: top, raised: true });
+                if (w * d >= 0.1) floors.push({ x: minX, z: minZ, w: w, d: d, y: top, raised: true });
+            }
+        }
         const mid = [0, 1, 2].map((k) => pts.reduce((sum, p) => sum + p[k], 0) / pts.length);
         const i = part[16];
         const u = ((i % 8) * 8 + 4) / 64;
@@ -7594,8 +7651,7 @@ function stampRaisedPlots() {
     const leaf = [];
     const trunk = [];
     const floorGeom = [];
-    const farmParts = [];
-    const houseParts = [];
+    const modelParts = { farm: [], houses: [], mine: [] };
     const padGeom = [];
     const buckets = {};
     World.setPads(raisedData.pads || []);
@@ -7634,12 +7690,9 @@ function stampRaisedPlots() {
             scenery.push({ x: x, z: z, w: plot.w, d: plot.d, raised: true });
             continue;
         }
-        if ((plot.model === "farm" || plot.model === "houses") && plot.at) {
+        if (modelParts[plot.model] && plot.at) {
             const model = robloxModel(plot.model);
-            if (model) {
-                stampRoblox(plot.model === "farm" ? farmParts : houseParts, model, plot.at);
-                for (const solid of plot.solids || []) scenery.push({ x: solid.x, z: solid.z, w: solid.w, d: solid.d, raised: true });
-            }
+            if (model) stampRoblox(modelParts[plot.model], model, plot.at);
             continue;
         }
         const house = plot.house;
@@ -7686,11 +7739,11 @@ function stampRaisedPlots() {
     uploadMesh("raisedleaf", leaf);
     uploadMesh("raisedtrunk", trunk);
     uploadMesh("raisedfloor", floorGeom);
-    uploadMesh("robloxfarm", farmParts);
-    uploadMesh("robloxhouses", houseParts);
+    for (const name of Object.keys(modelParts)) {
+        uploadMesh("roblox" + name, modelParts[name]);
+        mesh["roblox" + name].cull = false;
+    }
     uploadMesh("raisedpad", padGeom);
-    mesh.robloxfarm.cull = false;
-    mesh.robloxhouses.cull = false;
     mesh.raisedpad.cull = false;
     textures.raisedpad = textures.grass;
     if (mesh.raisedfield) mesh.raisedfield.cull = false;
