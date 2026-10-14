@@ -19,7 +19,26 @@
         <p id="clock">Recruiting takes five minutes</p>
         <button id="restart" type="button">Restart</button>
     </header>
-    <p class="lead">A settlement holds 20. Soldiers and workers each take 1. A new house adds 2. A house, a lumberyard, or a farm costs 100 wood and takes two days. A villager costs 50 food and a soldier costs 100. Training takes five minutes. Every soldier and worker eats 1 food a day. Fishermen bring food from the sea, and woodcutters bring wood from the trees. The houses choose when to build, train, and march, and only march on those they are at war with. Rural communities keep no soldiers and ask the nearest friendly house for protection.</p>
+    <p class="lead">The houses choose when to build, train, and march, and only march on those they are at war with. Rural communities keep no soldiers and ask the nearest friendly house for protection.</p>
+    <section class="sheet">
+        <h2>Factions</h2>
+        <div class="scroll">
+            <table id="factions">
+                <thead><tr><th>Faction</th><th>Holds</th><th>Pop</th><th>Soldiers</th><th>Houses</th><th>Farms</th><th>Yards</th><th>Food</th><th>Upkeep a day</th><th>Wood</th><th>Working on</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </section>
+    <details class="sheet guide">
+        <summary>How it works</summary>
+        <p id="guide-basics"></p>
+        <h3>Buildings that can be built</h3>
+        <div class="scroll"><table id="guide-buildings"><thead><tr><th>Building</th><th>Cost</th><th>Build time</th><th>Gives</th><th>When</th></tr></thead><tbody></tbody></table></div>
+        <h3>Starting buildings (cannot be built yet)</h3>
+        <div class="scroll"><table id="guide-fixed"><thead><tr><th>Building</th><th>What it is</th></tr></thead><tbody></tbody></table></div>
+        <h3>Units that can be trained</h3>
+        <div class="scroll"><table id="guide-units"><thead><tr><th>Unit</th><th>Cost</th><th>Training time</th><th>Does</th></tr></thead><tbody></tbody></table></div>
+    </details>
     <figure class="island">
         <canvas id="land" width="680" height="640" aria-label="The whole island from above"></canvas>
     </figure>
@@ -55,13 +74,6 @@
             <label class="stance"><span data-stance-name>Southwest and Southeast:</span> <select data-stance="3" aria-label="Southwest and Southeast"><option value="war">War</option><option value="peace">Peace</option><option value="ally">Allied</option></select></label>
             <p class="status" data-status></p>
             <div class="men" data-men></div>
-        </article>
-        <article class="hold minor" data-i="4">
-            <h2>Ashby</h2>
-            <p class="owner" data-owner>Rural community</p>
-            <p class="count">pop <span data-pop>0</span> · <span data-houses>0 houses</span> · <span data-farm>0 farmers</span> · <label class="food">food <input data-food type="number" min="0" max="99999" step="1" value="0" aria-label="Ashby food"></label></p>
-            <label class="stance"><span data-stance-name>Southwest and Ashby:</span> <select data-stance="4" aria-label="Southwest and Ashby"><option value="war">War</option><option value="peace">Peace</option><option value="ally">Allied</option></select></label>
-            <p class="status" data-status></p>
         </article>
     </div>
     <section class="log">

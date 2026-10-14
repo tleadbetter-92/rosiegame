@@ -3,4 +3,5 @@ node_modules/
 .vercel
 data/
 art/
+models/roblox/
 godot/.godot/

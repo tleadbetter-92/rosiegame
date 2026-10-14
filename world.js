@@ -17,7 +17,13 @@
     ];
     const links = [[1, 2], [0, 3], [0, 3], [1, 2]];
     const hamlets = [
-        { id: "ashby", x: -2000, z: 940 }
+        { id: "ashby", x: -2000, z: 940 },
+        { id: "fernlow", x: -2672, z: -64 },
+        { id: "brackwick", x: -2512, z: -384 },
+        { id: "stoneacre", x: -2740, z: -699 },
+        { id: "hollins", x: -2540, z: -913 },
+        { id: "redmere", x: -2272, z: -160 },
+        { id: "westerby", x: -3245, z: -60 }
     ];
 
     function hash(ix, iz) {
@@ -673,7 +679,30 @@
         return 0.74 + broad * 0.22 + mid * 0.1;
     }
 
+    // Level earth pads under buildings: the top at y over the rect, then a bank falling at PAD_BANK per metre to the land.
+    // Pads only ever fill ground up, never cut it down.
+    const PAD_LIP = 1.5;
+    const PAD_BANK = 0.7;
+    let pads = [];
+
+    function setPads(list) {
+        pads = list || [];
+    }
+
     function heightAt(x, z) {
+        let h = bareHeight(x, z);
+        for (let i = 0; i < pads.length; i++) {
+            const p = pads[i];
+            const dx = Math.max(p.minX - x, 0, x - p.minX - p.w);
+            const dz = Math.max(p.minZ - z, 0, z - p.minZ - p.d);
+            if (dx > 40 || dz > 40) continue;
+            const top = p.y - Math.max(0, Math.hypot(dx, dz) - PAD_LIP) * PAD_BANK;
+            if (top > h) h = top;
+        }
+        return h;
+    }
+
+    function bareHeight(x, z) {
         const field = coastField(x, z);
         if (field < -0.2) return -8 + field * 10;
         const shore = smooth(-0.04, 0.16, field);
@@ -1111,20 +1140,30 @@
             made.push({ x, z, kind, edit: true });
         };
         const step = 9;
-        const seen = new Set();
+        // Forest pieces painted over each other thicken the wood: each one covering a cell adds a tree, up to three.
+        const cover = new Map();
         for (const [fx, fz, r] of edit.forests || []) {
             for (let ix = Math.floor((fx - r) / step); ix <= Math.ceil((fx + r) / step); ix++) {
                 for (let iz = Math.floor((fz - r) / step); iz <= Math.ceil((fz + r) / step); iz++) {
-                    const key = ix + "," + iz;
-                    if (seen.has(key)) continue;
                     const x = ix * step + (hash(ix + 71, iz + 3) - 0.5) * step * 0.8;
                     const z = iz * step + (hash(ix + 5, iz + 83) - 0.5) * step * 0.8;
                     const d = Math.hypot(x - fx, z - fz);
                     if (d > r) continue;
-                    seen.add(key);
-                    if (hash(ix + 19, iz + 61) > (d > r * 0.75 ? 0.5 : 0.88)) continue;
-                    if (woodRoom(x, z)) add(x, z);
+                    const key = ix + "," + iz;
+                    const cell = cover.get(key) || { ix, iz, x, z, n: 0, edge: true };
+                    cell.n += 1;
+                    if (d <= r * 0.75) cell.edge = false;
+                    cover.set(key, cell);
                 }
+            }
+        }
+        const layers = [[0, 0], [0.5, 0.5], [0.5, 0]];
+        for (const { ix, iz, x, z, n, edge } of cover.values()) {
+            for (let k = 0; k < Math.min(3, n); k++) {
+                if (hash(ix + 19 + k * 37, iz + 61) > (edge ? 0.5 : 0.88)) continue;
+                const tx = k ? ix * step + (layers[k][0] + (hash(ix + 7 * k, iz + 29) - 0.5) * 0.4) * step : x;
+                const tz = k ? iz * step + (layers[k][1] + (hash(ix + 41, iz + 13 * k) - 0.5) * 0.4) * step : z;
+                if (woodRoom(tx, tz)) add(tx, tz);
             }
         }
         for (const [x, z] of edit.trees || []) {
@@ -1366,6 +1405,8 @@
         bridgeWall,
         deckY,
         heightAt,
+        bareHeight,
+        setPads,
         waterLevel,
         wet,
         nearRiver,

@@ -766,7 +766,38 @@
             }
         });
 
+        const panKeys = new Set();
+        const PAN_CODES = ['KeyW', 'KeyA', 'KeyS', 'KeyD'];
+        window.addEventListener('keydown', (e) => {
+            if (!PAN_CODES.includes(e.code) || e.ctrlKey || e.metaKey || e.altKey) return;
+            if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return;
+            panKeys.add(e.code);
+        });
+        window.addEventListener('blur', () => panKeys.clear());
+
+        function panWithKeys(delta) {
+            if (!panKeys.size) return;
+            const forward = new THREE.Vector3();
+            camera.getWorldDirection(forward);
+            forward.y = 0;
+            if (forward.lengthSq() < 1e-6) forward.set(0, 0, -1);
+            forward.normalize();
+            const right = new THREE.Vector3(-forward.z, 0, forward.x);
+            const move = new THREE.Vector3();
+            if (panKeys.has('KeyW')) move.add(forward);
+            if (panKeys.has('KeyS')) move.sub(forward);
+            if (panKeys.has('KeyD')) move.add(right);
+            if (panKeys.has('KeyA')) move.sub(right);
+            if (!move.lengthSq()) return;
+            // Faster when zoomed out, so crossing the whole map and nudging up close both feel right.
+            const speed = Math.max(10, camera.position.distanceTo(controls.target)) * 1.2;
+            move.normalize().multiplyScalar(speed * Math.min(delta, 0.1));
+            camera.position.add(move);
+            controls.target.add(move);
+        }
+
         window.addEventListener('keyup', (e) => {
+            panKeys.delete(e.code);
             if (e.key === 'Shift') {
                 isShiftDown = false;
                 isDrawing = false;
@@ -1488,6 +1519,7 @@
                 sim.update(elapsed);
             }
 
+            panWithKeys(delta);
             controls.update();
             renderer.render(scene, camera);
         }

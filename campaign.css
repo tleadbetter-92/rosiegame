@@ -139,9 +139,64 @@ h1 {
 }
 
 .hold.minor {
-    grid-column: 1 / -1;
     min-height: 0;
     background: #6f7a44;
+}
+
+.sheet {
+    max-width: 880px;
+    margin: 18px auto 0;
+    padding: 0 24px;
+}
+
+.sheet h2 {
+    margin: 0 0 8px;
+    font-size: 1rem;
+}
+
+.sheet h3 {
+    margin: 16px 0 6px;
+    font-size: 0.95rem;
+}
+
+.guide summary {
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.guide p { color: #5c5852; }
+
+.scroll { overflow-x: auto; }
+
+.sheet table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.sheet th,
+.sheet td {
+    padding: 5px 8px;
+    border-bottom: 1px solid #d8d4cb;
+    text-align: left;
+    vertical-align: top;
+}
+
+.sheet th {
+    color: #5c5852;
+    font-weight: 650;
+    white-space: nowrap;
+}
+
+.sheet td:first-child { white-space: nowrap; }
+
+.swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 6px;
+    border-radius: 2px;
 }
 
 .stance {

@@ -1,4 +1,5 @@
 const holds = [...document.querySelectorAll(".hold")];
+const mapBox = document.querySelector(".map");
 const log = document.getElementById("log");
 const clock = document.getElementById("clock");
 const land = document.getElementById("land");
@@ -279,8 +280,7 @@ function paint(data) {
         }
     });
     (data.minors || []).forEach((minor) => {
-        const hold = holds[minor.index];
-        if (!hold) return;
+        const hold = holds[minor.index] || minorCard(minor);
         hold.style.borderTop = "6px solid " + minor.ownerColor;
         let owner = "Rural community";
         if (minor.owner !== minor.index) owner = "Held by " + minor.ownerName;
@@ -299,12 +299,96 @@ function paint(data) {
     }
     shownMinors = data.minors || shownMinors;
     showVillages(villages);
+    paintFactions(data.factions || []);
+    paintGuide(data.rules);
     const lines = data.log || [];
     if (!lines.length) {
         log.innerHTML = "<li>The houses are choosing who to recruit.</li>";
     } else {
         log.innerHTML = lines.map((line) => "<li>" + line + "</li>").join("");
     }
+}
+
+const unitNames = { soldier: "soldier", fisher: "fisherman", wood: "woodcutter", jack: "lumberjack" };
+const buildNames = { house: "house", yard: "lumberyard", farm: "farm" };
+
+function escapeHtml(text) {
+    return String(text).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+}
+
+function rows(table, list) {
+    table.querySelector("tbody").innerHTML = list.map((cells) => "<tr>" + cells.map((cell) => "<td>" + cell + "</td>").join("") + "</tr>").join("");
+}
+
+function duration(ms, dayMs) {
+    if (dayMs && ms >= dayMs) {
+        const days = Math.round(ms / dayMs * 10) / 10;
+        return days + (days === 1 ? " day" : " days") + " (" + Math.round(ms / 60000) + " min)";
+    }
+    if (ms >= 60000) return Math.round(ms / 60000) + " min";
+    return Math.round(ms / 1000) + " s";
+}
+
+function paintFactions(list) {
+    rows(document.getElementById("factions"), list.map((f) => {
+        const work = f.building.map((kind) => "building a " + (buildNames[kind] || kind))
+            .concat(f.training.map((kind) => "training a " + (unitNames[kind] || kind)));
+        return [
+            '<span class="swatch" style="background:' + f.color + '"></span>' + escapeHtml(f.name),
+            f.holds.length ? escapeHtml(f.holds.join(", ")) : "nothing",
+            f.pop + "/" + f.limit,
+            f.alive,
+            f.houses,
+            f.farms,
+            f.yards,
+            f.food,
+            f.upkeep,
+            f.wood,
+            work.length ? work.join(", ") : "—"
+        ];
+    }));
+}
+
+let guideShown = "";
+
+function paintGuide(rules) {
+    if (!rules) return;
+    const key = JSON.stringify(rules);
+    if (key === guideShown) return;
+    guideShown = key;
+    const dayMin = Math.round(rules.dayMs / 60000);
+    const raid = rules.goblins;
+    document.getElementById("guide-basics").textContent =
+        "A game day lasts " + dayMin + " minutes. A faction holds " + rules.popBase + " people, plus " + rules.housePop +
+        " for every house it builds. Soldiers and workers each take 1 place and eat " + rules.upkeep +
+        " food a day. Gate repairs cost " + rules.repair.wood + " wood a time (gates have " + rules.repair.gateHp +
+        " hit points). Goblins raid " + raid.target + " about every " + duration(raid.every, rules.dayMs) +
+        ", " + raid.min + " to " + raid.max + " at a time.";
+    rows(document.getElementById("guide-buildings"), rules.buildings.map((b) =>
+        [b.name, b.wood + " wood", duration(b.ms, rules.dayMs), escapeHtml(b.gives), escapeHtml(b.when)]));
+    rows(document.getElementById("guide-fixed"), rules.fixed.map((b) => [b.name, escapeHtml(b.gives)]));
+    rows(document.getElementById("guide-units"), rules.units.map((u) =>
+        [u.name, u.food + " food", duration(u.ms, rules.dayMs), escapeHtml(u.does)]));
+}
+
+function minorCard(minor) {
+    const hold = document.createElement("article");
+    hold.className = "hold minor";
+    hold.dataset.i = String(minor.index);
+    const name = escapeHtml(minor.name);
+    hold.innerHTML =
+        "<h2>" + name + "</h2>" +
+        '<p class="owner" data-owner>Rural community</p>' +
+        '<p class="count">pop <span data-pop>0</span> · <span data-houses>0 houses</span> · <span data-farm>0 farmers</span> · ' +
+        '<label class="food">food <input data-food type="number" min="0" max="99999" step="1" value="0" aria-label="' + name + ' food"></label></p>' +
+        '<label class="stance"><span data-stance-name>Southwest and ' + name + ':</span> <select data-stance="' + minor.index + '" aria-label="Southwest and ' + name + '">' +
+        '<option value="war">War</option><option value="peace">Peace</option><option value="ally">Allied</option></select></label>' +
+        '<p class="status" data-status></p>';
+    mapBox.appendChild(hold);
+    holds[minor.index] = hold;
+    bindFood(hold);
+    bindStance(hold.querySelector("[data-stance]"));
+    return hold;
 }
 
 function paintClock() {
@@ -329,7 +413,7 @@ async function refresh() {
     take(await res.json());
 }
 
-holds.forEach((hold) => {
+function bindFood(hold) {
     const input = hold.querySelector("[data-food]");
     input.addEventListener("change", async () => {
         const amount = Math.max(0, Math.min(99999, Math.floor(Number(input.value) || 0)));
@@ -343,9 +427,9 @@ holds.forEach((hold) => {
         if (!res.ok) return;
         take(await res.json());
     });
-});
+}
 
-for (const select of document.querySelectorAll("[data-stance]")) {
+function bindStance(select) {
     select.addEventListener("change", async () => {
         const res = await fetch("/api/campaign", {
             method: "POST",
@@ -357,6 +441,9 @@ for (const select of document.querySelectorAll("[data-stance]")) {
         take(await res.json());
     });
 }
+
+holds.forEach(bindFood);
+document.querySelectorAll("[data-stance]").forEach(bindStance);
 
 document.getElementById("restart").addEventListener("click", async () => {
     if (!window.confirm("Start again? Every village goes back to ten soldiers, two farmers, and 100 food.")) return;

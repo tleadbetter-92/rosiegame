@@ -3,7 +3,7 @@ extends CharacterBody3D
 const WALK := 5.0
 const RUN := 11.0
 const FLY := 60.0
-const JUMP := 5.0
+const JUMP := 9.0
 
 var flying := false
 

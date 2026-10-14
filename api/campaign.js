@@ -9,6 +9,7 @@ const Hero = require("../hero");
 const TURN_MS = 10 * 60 * 1000;
 const BATTLE_MS = 2000;
 const MARCH_SPEED = 4.5;
+// Soldiers each faction starts with; after that only houses (popLimit) limit growth.
 const CAP = 10;
 const FIELD = CAP;
 const file = path.join(__dirname, "..", "data", "campaign.json");
@@ -22,7 +23,13 @@ const factions = [
 
 // Rural communities: minor factions numbered from MINOR_BASE. They farm, keep no soldiers, and seek a protector.
 const minors = [
-    { name: "Ashby", color: "#b0883a" }
+    { name: "Ashby", color: "#b0883a" },
+    { name: "Fernlow", color: "#7a9a4a", ally: 2 },
+    { name: "Brackwick", color: "#9a7a4a", ally: 2 },
+    { name: "Stoneacre", color: "#8a8a7a", ally: 2 },
+    { name: "Hollins", color: "#6a8a6a", ally: 2 },
+    { name: "Redmere", color: "#a0624a", ally: 2 },
+    { name: "Westerby", color: "#7a6a9a", ally: 2 }
 ].map((minor, index) => Object.assign({}, World.hamlets[index], minor));
 const MINOR_BASE = factions.length;
 const FOLK_PER_HOUSE = 2;
@@ -34,11 +41,14 @@ const MAX_HP = 3;
 const FISHER_HP = 1;
 const POP_BASE = 20;
 const HOUSE_POP = 2;
+// A house build with the Roblox template puts up five houses at once.
+const HOUSES_POP = 10;
 const RECRUIT_MS = 5 * 60 * 1000;
 const FISHER_COST = 50;
 const SOLDIER_COST = 100;
 const BUILD_WOOD = 100;
-const BUILD_DAYS = 2;
+// Two minutes for now so building can be watched in play; was 2 * Clock.DAY_MS.
+const BUILD_MS = 2 * 60 * 1000;
 const fisherAim = [2, 4, 3, 3];
 const FISH_MS = 30000;
 const FISH_WALK = 2.2;
@@ -66,13 +76,13 @@ const JACK_MS = 45000;
 const storePlan = { x: -12, z: -16, w: 8, d: 5.5 };
 const GATE_HP = 50;
 const PLAYER_FACTION = 2;
-// Goblin raids on Southwest from a den in the hills; move GOBLIN_DEN to change where they come from.
-const GOBLIN_DEN = { x: -2822, z: -320 };
+// Goblin raids on Southwest from the den marked by the sphere on the editor map; move GOBLIN_DEN to change where they come from.
+const GOBLIN_DEN = { x: -2861, z: 255 };
 const GOBLIN_VILLAGE = 2;
 const GOBLIN_SPEED = 6;
 const GOBLIN_MIN = 7;
 const GOBLIN_MAX = 14;
-const GOBLIN_EVERY = 1 * Clock.DAY_MS;
+const GOBLIN_EVERY = Clock.DAY_MS / 2;
 const GOBLIN_ROUNDS = 60;
 const WALL_HALF = 17;
 const WALL_CX = -0.5;
@@ -358,7 +368,7 @@ function restartCampaign(state, now) {
     state.siteJobs = [];
     state.fedDay = [-1, -1, -1, -1];
     state.hamlet = 1;
-    state.minors = freshMinors();
+    state.minors = [];
     state.relations = {};
     state.trails = [];
     state.goblins = { nextAt: nextGoblinRaid(now), raid: null };
@@ -450,7 +460,7 @@ function capArmies(state) {
 }
 
 function recruit(state, faction) {
-    if (livingCount(state, faction) >= CAP) return;
+    if (factionPop(state, faction) >= popLimit(state, faction)) return;
     const village = leastCrowded(state, faction);
     if (village < 0) return;
     const index = state.nextIndex[faction]++;
@@ -819,11 +829,11 @@ function villageCounts(state, village) {
 }
 
 function popLimit(state, faction) {
-    let houses = 0;
+    let room = 0;
     for (const house of state.houses || []) {
-        if (state.owners[house.village] === faction) houses += 1;
+        if (state.owners[house.village] === faction) room += house.model === "houses" ? HOUSES_POP : HOUSE_POP;
     }
-    return POP_BASE + houses * HOUSE_POP;
+    return POP_BASE + room;
 }
 
 function factionPop(state, faction) {
@@ -1225,7 +1235,7 @@ function orderTraining(state, now) {
             kind = "jack";
             at = yards[0].village;
         } else if (!has("fisher") && workerCount(state, faction, state.fishermen) < 1 && producingFarms(state, faction) * FARM_PER_DAY < dailyFood(state, faction)) kind = "fisher";
-        else if (!has("soldier") && livingCount(state, faction) < CAP) kind = "soldier";
+        else if (!has("soldier")) kind = "soldier";
         if (!kind) continue;
         const cost = kind === "soldier" ? SOLDIER_COST : FISHER_COST;
         if (!pay(cost)) continue;
@@ -1258,11 +1268,12 @@ function playClock(state) {
 function buildReady(state) {
     const play = playClock(state);
     if (play == null) return null;
-    return play + BUILD_DAYS * Clock.DAY_MS;
+    return play + BUILD_MS;
 }
 
 function buildDue(state, job, now) {
     const play = playClock(state);
+    if (Number.isFinite(job.readyPlay) && play != null && job.readyPlay > play + BUILD_MS) job.readyPlay = play + BUILD_MS;
     if (Number.isFinite(job.readyPlay)) return play != null && play >= job.readyPlay;
     return Number.isFinite(job.readyAt) && now >= job.readyAt;
 }
@@ -1885,6 +1896,7 @@ function goblinRaids(state, now) {
     const raid = state.goblins.raid;
     const place = factions[GOBLIN_VILLAGE].name;
     if (!raid) {
+        if (state.goblins.nextAt > now + GOBLIN_EVERY * 1.4) state.goblins.nextAt = nextGoblinRaid(now);
         if (Number.isFinite(state.pausedAt) || now < state.goblins.nextAt) return false;
         const count = GOBLIN_MIN + Math.floor(Math.random() * (GOBLIN_MAX - GOBLIN_MIN + 1));
         const path = [{ x: GOBLIN_DEN.x, z: GOBLIN_DEN.z }, gateSpot(GOBLIN_VILLAGE, sideFacing(GOBLIN_VILLAGE, GOBLIN_DEN), 8)];
@@ -2121,13 +2133,19 @@ function present(state, now, turn, paused) {
             house: site.house,
             field: site.fields[0],
             hay: site.hay,
-            door: site.door
+            door: site.door,
+            model: site.model || null,
+            at: site.at || null,
+            solids: site.solids || null
         })).concat((state.houses || []).map((house) => ({
             id: house.id,
             village: house.village,
             kind: "house",
             yaw: house.yaw,
-            house: house.house
+            house: house.house,
+            model: house.model || null,
+            at: house.at || null,
+            solids: house.solids || null
         }))).concat((state.yards || []).map((yard) => ({
             id: yard.id,
             village: yard.village,
@@ -2154,6 +2172,7 @@ function present(state, now, turn, paused) {
             z: job.z,
             y: job.y
         }))),
+        pads: syncPads(state),
         lodges: (state.lodges || []).map((lodge) => ({
             id: lodge.id,
             village: lodge.village,
@@ -2300,6 +2319,7 @@ function present(state, now, turn, paused) {
         factions: factions.map((faction, index) => {
             let alive = 0;
             eachLiving(state, index, () => { alive += 1; });
+            const held = ownedBy(state, index);
             return {
                 id: faction.id,
                 name: faction.name,
@@ -2308,9 +2328,51 @@ function present(state, now, turn, paused) {
                 soldiers: state.nextIndex[index],
                 alive,
                 food: state.food[index] || 0,
-                units: shown[index].units
+                units: shown[index].units,
+                holds: held.map((village) => factions[village].name),
+                pop: factionPop(state, index),
+                limit: popLimit(state, index),
+                upkeep: dailyFood(state, index),
+                wood: state.wood[index] || 0,
+                houses: (state.houses || []).filter((house) => state.owners[house.village] === index).reduce((n, house) => n + (house.model === "houses" ? 5 : 1), 0),
+                farms: producingFarms(state, index),
+                yards: yardsOf(state, index).length,
+                building: (state.siteJobs || []).filter((job) => job.payer === index).map((job) => job.kind)
+                    .concat((state.farmJobs || []).filter((job) => job.payer === index).map(() => "farm")),
+                training: (state.training || []).filter((job) => state.owners[job.village] === index).map((job) => job.kind)
             };
-        })
+        }),
+        rules: campaignRules()
+    };
+}
+
+// The numbers the campaign actually runs on, for the guide on the campaign page.
+function campaignRules() {
+    return {
+        dayMs: Clock.DAY_MS,
+        popBase: POP_BASE,
+        housePop: HOUSE_POP,
+        upkeep: 1,
+        buildings: [
+            housesModel
+                ? { name: "Houses (five)", wood: BUILD_WOOD, ms: BUILD_MS, gives: "Room for " + HOUSES_POP + " more people", when: "Built when a faction is within 2 of its population limit" }
+                : { name: "House", wood: BUILD_WOOD, ms: BUILD_MS, gives: "Room for " + HOUSE_POP + " more people", when: "Built when a faction is within 2 of its population limit" },
+            { name: "Farm", wood: FARM_WOOD, ms: BUILD_MS, gives: FARM_PER_DAY + " food a day, worked by 1 farmer", when: "Built when food runs short; up to " + FARM_EXTRA + " extra per faction" },
+            { name: "Lumberyard", wood: BUILD_WOOD, ms: BUILD_MS, gives: "Lumberjacks bring " + WOOD_YIELD + " wood every " + Math.round(JACK_MS / 1000) + " s", when: "Built once, when a faction has none" }
+        ],
+        fixed: [
+            { name: "Village", gives: "Palisade, gates and a garrison post; holds " + POP_BASE + " people before houses" },
+            { name: "Fishing cottage", gives: "One per village; fishermen land " + FISH_FOOD + " food a trip and carts carry it home" },
+            { name: "Hamlet", gives: "Rural community: " + FOLK_PER_HOUSE + " people a house, its own farm, no soldiers" }
+        ],
+        units: [
+            { name: "Soldier", food: SOLDIER_COST, ms: RECRUIT_MS, does: "Guards and marches; " + MAX_HP + " hit points" },
+            { name: "Fisherman", food: FISHER_COST, ms: RECRUIT_MS, does: FISH_FOOD + " food a catch, about every " + Math.round(FISH_MS / 1000) + " s" },
+            { name: "Woodcutter", food: FISHER_COST, ms: RECRUIT_MS, does: WOOD_YIELD + " wood a trip, about every " + Math.round(WOOD_MS / 1000) + " s" },
+            { name: "Lumberjack", food: FISHER_COST, ms: RECRUIT_MS, does: "Works a lumberyard: " + WOOD_YIELD + " wood every " + Math.round(JACK_MS / 1000) + " s" }
+        ],
+        repair: { wood: REPAIR_CHUNK, ms: REPAIR_MS, gateHp: GATE_HP },
+        goblins: { every: GOBLIN_EVERY, min: GOBLIN_MIN, max: GOBLIN_MAX, target: factions[GOBLIN_VILLAGE].name }
     };
 }
 
@@ -2382,17 +2444,42 @@ function hamletPlots() {
         const o = hamlet.outhouse;
         plots.push({ id: id + "-outhouse", village: hamlet.village, kind: "outhouse", x: o.x, z: o.z, y: o.y, w: o.w, d: o.d });
     });
+    const shown = shownFarm();
+    if (shown) {
+        plots.push({ id: shown.id, village: 2, kind: "farm", yaw: shown.yaw, house: shown.house, field: shown.fields[0], hay: shown.hay, door: shown.door, model: shown.model, at: shown.at, solids: shown.solids });
+    }
     return plots;
+}
+
+// The Roblox farm stood outside Southwest to look at. It is not part of the campaign save.
+let showFarm;
+function shownFarm() {
+    if (showFarm !== undefined) return showFarm;
+    showFarm = null;
+    if (farmModel) showFarm = layoutModelFarm({}, 2, -2407.2, 540.2, nearbyWood(2), []);
+    if (showFarm) showFarm.id = "show-farm-2";
+    return showFarm;
 }
 
 function ensureMinors(state) {
     let dirty = false;
-    if (!Array.isArray(state.minors) || state.minors.length !== minors.length) {
-        state.minors = freshMinors();
-        dirty = true;
-    }
+    if (!Array.isArray(state.minors)) state.minors = [];
     if (!state.relations || typeof state.relations !== "object") {
         state.relations = {};
+        dirty = true;
+    }
+    if (state.minors.length > minors.length) {
+        state.minors.length = minors.length;
+        dirty = true;
+    }
+    const fresh = freshMinors();
+    for (let index = state.minors.length; index < minors.length; index++) {
+        state.minors.push(fresh[index]);
+        const friend = Number.isInteger(minors[index].ally) ? state.owners[minors[index].ally] : -1;
+        if (friend >= 0 && friend < MINOR_BASE && homeVillage(state, friend) >= 0) {
+            setRelation(state, friend, MINOR_BASE + index, "ally");
+            state.minors[index].protector = friend;
+        }
         dirty = true;
     }
     return dirty;
@@ -2613,7 +2700,7 @@ function farmVillage(state, faction) {
 function landScore(x, z, wood) {
     if (World.wet(x, z) || World.inField(x, z) || Town.street(x, z)) return -1;
     const h = World.heightAt(x, z);
-    if (h < 0.45 || h > 7 || World.tooSteep(x, z)) return -1;
+    if (h < 0.45 || h > 30 || World.tooSteep(x, z)) return -1;
     if (World.roadDist(x, z) < 18 || World.forestAt(x, z) > 0.4) return -1;
     const box = World.peakBox;
     if (x >= box.minX && x <= box.maxX && z >= box.minZ && z <= box.maxZ) return -1;
@@ -2633,7 +2720,7 @@ function landScore(x, z, wood) {
         Math.abs(World.heightAt(x, z + s) - h),
         Math.abs(World.heightAt(x, z - s) - h)
     );
-    if (dh > 1.25) return -1;
+    if (dh > 3) return -1;
     return dh;
 }
 
@@ -2665,6 +2752,7 @@ function takenRects(state) {
     for (const plot of hamletPlots()) {
         if (plot.kind === "outhouse") rects.push({ minX: plot.x - plot.w / 2, minZ: plot.z - plot.d / 2, w: plot.w, d: plot.d });
     }
+    if (shownFarm()) rects.push(shownFarm().rect);
     const sites = (state.builtFarms || []).concat((state.farmJobs || []).map((job) => job.site));
     for (const house of state.houses || []) rects.push(rectOf(house.house || house));
     for (const yard of state.yards || []) rects.push({ minX: yard.x - yard.w / 2, minZ: yard.z - yard.d / 2, w: yard.w, d: yard.d });
@@ -2675,6 +2763,7 @@ function takenRects(state) {
         rects.push({ minX: field.x, minZ: field.z, w: field.w, d: field.d });
     }
     for (const site of sites) {
+        if (site.rect) rects.push(site.rect);
         rects.push(rectOf(site.house));
         const field = site.fields[0];
         if (field) rects.push({ minX: field.x, minZ: field.z, w: field.w, d: field.d });
@@ -2705,7 +2794,203 @@ function doorOf(house) {
     };
 }
 
+// The farm and the five-house template factions build, converted from Roblox models by tools/roblox-farm.js and tools/roblox-houses.js.
+// Without the files, farms and houses use the plain layouts.
+function robloxModel(name) {
+    try {
+        return JSON.parse(fs.readFileSync(path.join(__dirname, "..", "models", "roblox", name + ".json"), "utf8"));
+    } catch (err) {
+        return null;
+    }
+}
+const farmModel = robloxModel("farm");
+const housesModel = robloxModel("houses");
+
+// How far up a new building's ground may be filled to make it level.
+const PAD_RISE = 6;
+
+// The level pad a model site stands on: the highest ground under it. Null when the land is unusable or too steep to fill.
+// Without wood, only the height is checked (lumberyards stand beside trees on purpose).
+function padFor(rect, wood) {
+    let slope = 0;
+    let low = Infinity;
+    let high = -Infinity;
+    const nx = Math.max(1, Math.ceil(rect.w / 6));
+    const nz = Math.max(1, Math.ceil(rect.d / 6));
+    for (let i = 0; i <= nx; i++) {
+        for (let j = 0; j <= nz; j++) {
+            const x = rect.minX + (rect.w * i) / nx;
+            const z = rect.minZ + (rect.d * j) / nz;
+            if (wood) {
+                const score = landScore(x, z, wood);
+                if (score < 0) return null;
+                slope = Math.max(slope, score);
+            }
+            const h = World.heightAt(x, z);
+            low = Math.min(low, h);
+            high = Math.max(high, h);
+        }
+    }
+    if (high - low > PAD_RISE) return null;
+    return { minX: rect.minX, minZ: rect.minZ, w: rect.w, d: rect.d, y: high, slope: slope + (high - low) * 0.1 };
+}
+
+// Pads of everything built or being built, shared with the world so walking, building and drawing all see level ground.
+function syncPads(state) {
+    const pads = [];
+    const add = (site) => {
+        if (site && site.pad) pads.push({ minX: site.pad.minX, minZ: site.pad.minZ, w: site.pad.w, d: site.pad.d, y: site.pad.y });
+    };
+    (state.builtFarms || []).forEach(add);
+    (state.farmJobs || []).forEach((job) => add(job.site));
+    (state.houses || []).forEach(add);
+    (state.siteJobs || []).forEach(add);
+    (state.yards || []).forEach(add);
+    add(shownFarm());
+    World.setPads(pads);
+    return pads;
+}
+
+function quarterTurn(village, cx, cz) {
+    const place = places[village];
+    const dx = place.x - cx;
+    const dz = place.z - cz;
+    const toward = Math.abs(dx) > Math.abs(dz) ? { x: Math.sign(dx), z: 0 } : { x: 0, z: Math.sign(dz) };
+    return Math.atan2(-toward.z, toward.x);
+}
+
+function layoutModelHouses(state, village, cx, cz, blocked) {
+    const place = places[village];
+    const dist = Math.hypot(place.x - cx, place.z - cz);
+    if (dist < 60 || dist > 150) return null;
+    const at = { x: cx, z: cz, theta: quarterTurn(village, cx, cz) };
+    const whole = placeRect({ x: 0, z: 0, w: housesModel.w, d: housesModel.d }, at);
+    const rect = { minX: whole.minX, minZ: whole.minZ, w: whole.w, d: whole.d };
+    if (!outsideWalls(village, rect)) return null;
+    for (const other of blocked) {
+        if (rectsHit(rect, other, 3)) return null;
+    }
+    const pad = padFor(rect, nearbyWood(village));
+    if (!pad) return null;
+    at.y = pad.y;
+    const yaw = snapYaw(place.x - cx, place.z - cz);
+    return {
+        village: village,
+        kind: "house",
+        x: cx,
+        z: cz,
+        y: pad.y,
+        yaw: yaw,
+        w: whole.w,
+        d: whole.d,
+        rect: rect,
+        score: pad.slope,
+        model: "houses",
+        at: at,
+        pad: pad,
+        solids: housesModel.houses.map((r) => {
+            const b = placeRect(r, at);
+            return { x: b.minX, z: b.minZ, w: b.w, d: b.d };
+        }),
+        house: { x: cx, z: cz, y: pad.y, yaw: yaw, w: whole.w, d: whole.d, minX: rect.minX, minZ: rect.minZ, mesh: "house", role: "house", doorSide: 1, village: village }
+    };
+}
+
+function pickHouses(state, village) {
+    const blocked = takenRects(state);
+    const place = places[village];
+    for (const dist of [72, 90, 108, 126, 144]) {
+        let pick = null;
+        for (let i = 0; i < 16; i++) {
+            const ang = (i / 16) * Math.PI * 2 + dist * 0.01;
+            const site = layoutModelHouses(state, village, place.x + Math.cos(ang) * dist, place.z + Math.sin(ang) * dist, blocked);
+            if (!site) continue;
+            if (!pick || site.score < pick.score) pick = site;
+        }
+        if (pick) return pick;
+    }
+    return null;
+}
+
+// Model rects are centred and quarter-turned about the farm centre, so width and depth swap on a side turn.
+function placeRect(r, at) {
+    const c = Math.round(Math.cos(at.theta));
+    const s = Math.round(Math.sin(at.theta));
+    const x = at.x + r.x * c + r.z * s;
+    const z = at.z - r.x * s + r.z * c;
+    const w = s ? r.d : r.w;
+    const d = s ? r.w : r.d;
+    return { x, z, w, d, minX: x - w / 2, minZ: z - d / 2 };
+}
+
+function layoutModelFarm(state, village, cx, cz, wood, blocked) {
+    const place = places[village];
+    const at = { x: cx, z: cz, theta: quarterTurn(village, cx, cz) };
+    const whole = placeRect({ x: 0, z: 0, w: farmModel.w, d: farmModel.d }, at);
+    const dist = Math.hypot(place.x - cx, place.z - cz);
+    if (dist < 60 || dist > 150) return null;
+    const wholeRect = { minX: whole.minX, minZ: whole.minZ, w: whole.w, d: whole.d };
+    if (!outsideWalls(village, wholeRect)) return null;
+    for (const other of blocked) {
+        if (rectsHit(wholeRect, other, 3)) return null;
+    }
+    const pad = padFor(wholeRect, wood);
+    if (!pad) return null;
+    const slope = pad.slope;
+    const high = pad.y;
+    at.y = high;
+    const box = placeRect(farmModel.house, at);
+    const c = Math.round(Math.cos(at.theta));
+    const s = Math.round(Math.sin(at.theta));
+    const house = {
+        x: box.x,
+        z: box.z,
+        y: high,
+        yaw: Math.atan2(c, -s),
+        w: box.w,
+        d: box.d,
+        minX: box.minX,
+        minZ: box.minZ,
+        mesh: "house",
+        role: "farmhouse",
+        doorSide: 0,
+        village: village
+    };
+    const fields = farmModel.fields.map((r) => {
+        const f = placeRect(r, at);
+        return { x: f.minX, z: f.minZ, w: f.w, d: f.d };
+    });
+    const door = doorOf(house);
+    const site = {
+        id: "raised-" + village + "-" + ((state.farmSerial || 0) + 1),
+        village: village,
+        yaw: house.yaw,
+        y: high,
+        house: house,
+        hay: [door.out.x, door.out.z],
+        out: door.out,
+        inn: door.inn,
+        door: door.door,
+        bed: { x: house.x, z: house.z, y: high },
+        exits: [{ x: door.out.x, z: door.out.z }].concat(fields.map((f) => ({ x: f.x + f.w / 2, z: f.z + f.d / 2 }))),
+        fields: fields,
+        slope: slope,
+        model: "farm",
+        at: at,
+        rect: wholeRect,
+        pad: pad,
+        solids: farmModel.solids.map((r) => {
+            const b = placeRect(r, at);
+            return { x: b.minX, z: b.minZ, w: b.w, d: b.d };
+        })
+    };
+    const path = pathToStore(site);
+    if (!path || path.length < 2 || pathWet(path) || pathLength(path) > 220) return null;
+    return site;
+}
+
 function layoutFarm(state, village, cx, cz, wood, blocked) {
+    if (farmModel) return layoutModelFarm(state, village, cx, cz, wood, blocked);
     const place = places[village];
     const dx = place.x - cx;
     const dz = place.z - cz;
@@ -2822,7 +3107,9 @@ function layoutBuilding(state, village, x, z, blocked) {
         if (rectsHit(rect, other, 2.5)) return null;
     }
     const yaw = snapYaw(place.x - x, place.z - z);
-    const y = Math.max(0, World.heightAt(x, z));
+    const pad = padFor(rect, wood);
+    if (!pad) return null;
+    const y = pad.y;
     return {
         village: village,
         kind: "house",
@@ -2833,6 +3120,7 @@ function layoutBuilding(state, village, x, z, blocked) {
         w: w,
         d: d,
         rect: rect,
+        pad: pad,
         score: score,
         house: {
             x: x,
@@ -2899,7 +3187,9 @@ function layoutYard(state, village, x, z, blocked, trees) {
     if (haul > 520) return null;
     const place = places[village];
     const yaw = snapYaw(place.x - x, place.z - z);
-    const y = Math.max(0, h);
+    const pad = padFor(rect, null);
+    if (!pad) return null;
+    const y = pad.y;
     const risk = haulRisk(state, village, x, z, path);
     const worth = Math.min(timber, 14) * 22 - haul - risk;
     return {
@@ -2912,6 +3202,7 @@ function layoutYard(state, village, x, z, blocked, trees) {
         w: w,
         d: d,
         rect: rect,
+        pad: pad,
         trees: timber,
         haul: haul,
         risk: risk,
@@ -2975,6 +3266,7 @@ function pickYard(state, village) {
 
 function pickBuilding(state, village, kind) {
     if (kind === "yard") return pickYard(state, village);
+    if (housesModel) return pickHouses(state, village);
     const blocked = takenRects(state);
     const place = places[village];
     const rings = [46, 62, 80, 98];
@@ -3003,6 +3295,7 @@ function buildingBusy(state, faction) {
 }
 
 function considerSites(state, now) {
+    syncPads(state);
     let dirty = false;
     if (!Array.isArray(state.houses)) state.houses = [];
     if (!Array.isArray(state.yards)) state.yards = [];
@@ -3024,9 +3317,14 @@ function considerSites(state, now) {
                 id: job.id,
                 village: job.village,
                 yaw: job.yaw,
-                house: job.house
+                house: job.house,
+                model: job.model,
+                at: job.at,
+                rect: job.rect,
+                pad: job.pad,
+                solids: job.solids
             });
-            note(state, factions[job.payer].name + " finishes a house.");
+            note(state, factions[job.payer].name + (job.model === "houses" ? " finishes five houses." : " finishes a house."));
         } else {
             state.yards.push({
                 id: job.id,
@@ -3038,6 +3336,7 @@ function considerSites(state, now) {
                 yaw: job.yaw,
                 w: job.w,
                 d: job.d,
+                pad: job.pad,
                 stock: 0,
                 jacks: [],
                 haul: null,
@@ -3077,9 +3376,13 @@ function considerSites(state, now) {
             w: site.w,
             d: site.d,
             rect: site.rect,
-            house: site.house
+            house: site.house,
+            model: site.model,
+            at: site.at,
+            pad: site.pad,
+            solids: site.solids
         });
-        note(state, factions[faction].name + " starts a " + (kind === "yard" ? "lumberyard" : "house") + ".");
+        note(state, factions[faction].name + " starts " + (kind === "yard" ? "a lumberyard" : site.model === "houses" ? "five houses" : "a house") + ".");
         dirty = true;
     }
     return dirty;
@@ -3088,6 +3391,7 @@ function considerSites(state, now) {
 const farmThink = [0, 0, 0, 0];
 
 function considerFarms(state, now) {
+    syncPads(state);
     let dirty = false;
     if (!Array.isArray(state.farmJobs)) {
         state.farmJobs = [];

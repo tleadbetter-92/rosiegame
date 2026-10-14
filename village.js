@@ -7458,6 +7458,130 @@ function addRaisedDoor(b, id, floorsGeom) {
     addBox(floorsGeom, b.minX + inset, floorY - 0.04, b.minZ + inset, fw, 0.06, fd);
 }
 
+// Roblox models (models/roblox/farm.json and houses.json, made by tools/roblox-farm.js and roblox-houses.js):
+// plain parts in metres, coloured from a palette texture, drawn as the robloxfarm and robloxhouses meshes.
+const roblox = {};
+
+function robloxModel(name) {
+    if (roblox[name] !== undefined) return roblox[name];
+    roblox[name] = null;
+    fetch("models/roblox/" + name + ".json", { cache: "no-store" }).then((res) => res.json()).then((data) => {
+        textures["roblox" + name] = makeTexture((g) => {
+            data.palette.forEach((rgb, i) => {
+                g.fillStyle = "rgb(" + rgb.join(",") + ")";
+                g.fillRect((i % 8) * 8, Math.floor(i / 8) * 8, 8, 8);
+            });
+        });
+        roblox[name] = data;
+        raisedKey = "";
+        stampRaisedPlots();
+    }).catch(() => {});
+    return null;
+}
+
+// Earth filled up under new buildings, drawn over the island ground wherever a pad lifts it.
+function stampPads(list, pads) {
+    const cell = 2;
+    const reach = 12;
+    for (const pad of pads) {
+        const x0 = Math.floor((pad.minX - reach) / cell) * cell;
+        const z0 = Math.floor((pad.minZ - reach) / cell) * cell;
+        const x1 = pad.minX + pad.w + reach;
+        const z1 = pad.minZ + pad.d + reach;
+        for (let x = x0; x < x1; x += cell) {
+            for (let z = z0; z < z1; z += cell) {
+                const corners = [[x, z], [x, z + cell], [x + cell, z + cell], [x + cell, z]];
+                const tops = corners.map((c) => World.heightAt(c[0], c[1]));
+                if (corners.every((c, i) => tops[i] - World.bareHeight(c[0], c[1]) < 0.02)) continue;
+                const v = corners.map((c, i) => [c[0], tops[i] + 0.03, c[1], c[0] / 4, c[1] / 4, World.turfShade(c[0], c[1])]);
+                pushQuad(list, v[0], v[1], v[2], v[3]);
+            }
+        }
+    }
+}
+
+const robloxShapes = (() => {
+    const ring = (n, at) => Array.from({ length: n }, (_, i) => at((i / n) * Math.PI * 2));
+    const box = {
+        verts: [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]],
+        faces: [[0, 1, 2, 3], [5, 4, 7, 6], [4, 0, 3, 7], [1, 5, 6, 2], [3, 2, 6, 7], [4, 5, 1, 0]]
+    };
+    const wedge = {
+        verts: [[-1, -1, -1], [1, -1, -1], [1, -1, 1], [-1, -1, 1], [-1, 1, 1], [1, 1, 1]],
+        faces: [[0, 1, 2, 3], [3, 2, 5, 4], [0, 3, 4], [1, 5, 2], [0, 4, 5, 1]]
+    };
+    const sides = 8;
+    const cyl = {
+        verts: ring(sides, (a) => [-1, Math.cos(a), Math.sin(a)]).concat(ring(sides, (a) => [1, Math.cos(a), Math.sin(a)])),
+        faces: ring(sides, (a) => a).map((_, i) => [i, (i + 1) % sides, sides + (i + 1) % sides, sides + i])
+            .concat([ring(sides, (a) => a).map((_, i) => i), ring(sides, (a) => a).map((_, i) => sides + i)])
+    };
+    const ballVerts = [[0, -1, 0]];
+    for (let k = 1; k < 4; k++) {
+        const lat = -Math.PI / 2 + (k / 4) * Math.PI;
+        ballVerts.push(...ring(sides, (a) => [Math.cos(lat) * Math.cos(a), Math.sin(lat), Math.cos(lat) * Math.sin(a)]));
+    }
+    ballVerts.push([0, 1, 0]);
+    const top = ballVerts.length - 1;
+    const ballFaces = [];
+    for (let i = 0; i < sides; i++) {
+        const j = (i + 1) % sides;
+        ballFaces.push([0, 1 + j, 1 + i]);
+        for (let k = 0; k < 2; k++) ballFaces.push([1 + k * sides + i, 1 + k * sides + j, 1 + (k + 1) * sides + j, 1 + (k + 1) * sides + i]);
+        ballFaces.push([1 + 2 * sides + i, 1 + 2 * sides + j, top]);
+    }
+    return { box, wedge, cyl, ball: { verts: ballVerts, faces: ballFaces } };
+})();
+
+function stampRoblox(list, model, at) {
+    const c = Math.cos(at.theta);
+    const s = Math.sin(at.theta);
+    const light = [0.25, 0.86, 0.28];
+    const lightLen = Math.hypot(light[0], light[1], light[2]);
+    for (const part of model.parts) {
+        const shape = robloxShapes[part[0]] || robloxShapes.box;
+        let sy = part[2];
+        let py = part[5];
+        if (part[17] && part[0] === "box" && Math.abs(part[11]) > 0.99) {
+            sy += 1.5;
+            py -= 0.75;
+        }
+        const half = [part[1] / 2, sy / 2, part[3] / 2];
+        const r = part.slice(7, 16);
+        const pts = shape.verts.map((v) => {
+            const lx = v[0] * half[0];
+            const ly = v[1] * half[1];
+            const lz = v[2] * half[2];
+            const x = r[0] * lx + r[1] * ly + r[2] * lz + part[4];
+            const y = r[3] * lx + r[4] * ly + r[5] * lz + py;
+            const z = r[6] * lx + r[7] * ly + r[8] * lz + part[6];
+            return [x * c + z * s + at.x, y + at.y, -x * s + z * c + at.z];
+        });
+        const mid = [0, 1, 2].map((k) => pts.reduce((sum, p) => sum + p[k], 0) / pts.length);
+        const i = part[16];
+        const u = ((i % 8) * 8 + 4) / 64;
+        const v = 1 - (Math.floor(i / 8) * 8 + 4) / 64;
+        for (const face of shape.faces) {
+            const a = pts[face[0]];
+            const b = pts[face[1]];
+            const d = pts[face[2]];
+            let nx = (b[1] - a[1]) * (d[2] - a[2]) - (b[2] - a[2]) * (d[1] - a[1]);
+            let ny = (b[2] - a[2]) * (d[0] - a[0]) - (b[0] - a[0]) * (d[2] - a[2]);
+            let nz = (b[0] - a[0]) * (d[1] - a[1]) - (b[1] - a[1]) * (d[0] - a[0]);
+            const len = Math.hypot(nx, ny, nz) || 1;
+            const out = (a[0] - mid[0]) * nx + (a[1] - mid[1]) * ny + (a[2] - mid[2]) * nz < 0 ? -1 : 1;
+            nx *= out / len;
+            ny *= out / len;
+            nz *= out / len;
+            const lit = Math.max(0, (nx * light[0] + ny * light[1] + nz * light[2]) / lightLen);
+            const shade = Math.min(1, 0.42 + 0.58 * lit);
+            for (let k = 1; k < face.length - 1; k++) {
+                for (const p of [a, pts[face[k]], pts[face[k + 1]]]) list.push(p[0], p[1], p[2], u, v, shade);
+            }
+        }
+    }
+}
+
 function stampRaisedPlots() {
     if (!townKit || !raisedData) return;
     const plots = raisedData.plots || [];
@@ -7470,7 +7594,12 @@ function stampRaisedPlots() {
     const leaf = [];
     const trunk = [];
     const floorGeom = [];
+    const farmParts = [];
+    const houseParts = [];
+    const padGeom = [];
     const buckets = {};
+    World.setPads(raisedData.pads || []);
+    stampPads(padGeom, raisedData.pads || []);
     const cell = (list, x, z, w, d) => {
         const y00 = Math.max(0, World.heightAt(x, z)) + 0.07;
         const y10 = Math.max(0, World.heightAt(x + w, z)) + 0.07;
@@ -7503,6 +7632,14 @@ function stampRaisedPlots() {
             addBox(trunk, x, y, z, plot.w, 2.1, plot.d);
             addBox(trunk, x - 0.15, y + 2.1, z - 0.15, plot.w + 0.3, 0.14, plot.d + 0.3);
             scenery.push({ x: x, z: z, w: plot.w, d: plot.d, raised: true });
+            continue;
+        }
+        if ((plot.model === "farm" || plot.model === "houses") && plot.at) {
+            const model = robloxModel(plot.model);
+            if (model) {
+                stampRoblox(plot.model === "farm" ? farmParts : houseParts, model, plot.at);
+                for (const solid of plot.solids || []) scenery.push({ x: solid.x, z: solid.z, w: solid.w, d: solid.d, raised: true });
+            }
             continue;
         }
         const house = plot.house;
@@ -7549,6 +7686,13 @@ function stampRaisedPlots() {
     uploadMesh("raisedleaf", leaf);
     uploadMesh("raisedtrunk", trunk);
     uploadMesh("raisedfloor", floorGeom);
+    uploadMesh("robloxfarm", farmParts);
+    uploadMesh("robloxhouses", houseParts);
+    uploadMesh("raisedpad", padGeom);
+    mesh.robloxfarm.cull = false;
+    mesh.robloxhouses.cull = false;
+    mesh.raisedpad.cull = false;
+    textures.raisedpad = textures.grass;
     if (mesh.raisedfield) mesh.raisedfield.cull = false;
     if (mesh.raisedleaf) mesh.raisedleaf.cull = false;
     for (const name of Object.keys(buckets)) {
