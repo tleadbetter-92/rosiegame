@@ -546,9 +546,26 @@ html, body {
 
     .help { display: none; }
 
-    .nav,
+    .back,
     #clock,
     #where { display: none; }
+
+    .nav {
+        top: calc(10px + env(safe-area-inset-top));
+        left: calc(104px + env(safe-area-inset-left));
+    }
+
+    .campaign-link {
+        display: flex;
+        align-items: center;
+        min-height: 32px;
+        padding: 3px 8px;
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        border-radius: 6px;
+        background: rgba(20, 16, 14, 0.28);
+        font-size: 0.72rem;
+        font-weight: 600;
+    }
 
     #minimap {
         top: calc(6px + env(safe-area-inset-top));

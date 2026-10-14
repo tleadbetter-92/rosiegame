@@ -1659,6 +1659,33 @@ function loadSky() {
 loadSky();
 
 const scenery = [];
+let passFence = null;
+let sceneryGrid = null;
+let sceneryCount = -1;
+const noScenery = [];
+
+// Scenery bucketed into 16 m squares (padded for body radius) so collision checks only look nearby.
+function sceneryNear(x, z) {
+    if (!sceneryGrid || sceneryCount !== scenery.length) {
+        sceneryGrid = new Map();
+        sceneryCount = scenery.length;
+        for (const item of scenery) {
+            const c0 = Math.floor((item.x - 0.5) / 16);
+            const c1 = Math.floor((item.x + item.w + 0.5) / 16);
+            const r0 = Math.floor((item.z - 0.5) / 16);
+            const r1 = Math.floor((item.z + item.d + 0.5) / 16);
+            for (let c = c0; c <= c1; c++) {
+                for (let r = r0; r <= r1; r++) {
+                    const key = c + "," + r;
+                    let list = sceneryGrid.get(key);
+                    if (!list) sceneryGrid.set(key, list = []);
+                    list.push(item);
+                }
+            }
+        }
+    }
+    return sceneryGrid.get(Math.floor(x / 16) + "," + Math.floor(z / 16)) || noScenery;
+}
 
 function growScenery() {
     const roll = (x, z, salt) => {
@@ -1766,7 +1793,7 @@ function dressSouthMeadow() {
     const post = (x, z) => {
         const y = yAt(x, z);
         addBox(batches.trunk, x - 0.07, y, z - 0.07, 0.14, 0.92, 0.14);
-        scenery.push({ x: x - 0.07, z: z - 0.07, w: 0.14, d: 0.14 });
+        scenery.push({ x: x - 0.07, z: z - 0.07, w: 0.14, d: 0.14, top: y + 0.92 });
     };
     const outZ = 90;
     const plant = (x, z, pine) => {
@@ -1837,7 +1864,7 @@ function dressSouthMeadow() {
             const y = yAt((x + x2) * 0.5, (z + z2) * 0.5);
             addBox(batches.trunk, rx, y + 0.36, rz, rw, 0.07, rd);
             addBox(batches.trunk, rx, y + 0.68, rz, rw, 0.07, rd);
-            scenery.push({ x: rx, z: rz, w: rw, d: rd });
+            scenery.push({ x: rx, z: rz, w: rw, d: rd, top: y + 0.75 });
         }
     };
     const fenceAt = (x0, z0, x1, z1, gap) => {
@@ -1994,7 +2021,7 @@ function dressFarms() {
     const post = (x, z) => {
         const y = yAt(x, z);
         addBox(batches.trunk, x - 0.07, y, z - 0.07, 0.14, 0.92, 0.14);
-        scenery.push({ x: x - 0.07, z: z - 0.07, w: 0.14, d: 0.14 });
+        scenery.push({ x: x - 0.07, z: z - 0.07, w: 0.14, d: 0.14, top: y + 0.92 });
     };
     const rail = (x0, z0, x1, z1) => {
         const len = Math.hypot(x1 - x0, z1 - z0) || 1;
@@ -2013,7 +2040,7 @@ function dressFarms() {
             const y = yAt((x + x2) * 0.5, (z + z2) * 0.5);
             addBox(batches.trunk, rx, y + 0.36, rz, rw, 0.07, rd);
             addBox(batches.trunk, rx, y + 0.68, rz, rw, 0.07, rd);
-            scenery.push({ x: rx, z: rz, w: rw, d: rd });
+            scenery.push({ x: rx, z: rz, w: rw, d: rd, top: y + 0.75 });
         }
     };
     const edge = (x0, z0, x1, z1, gap) => {
@@ -4807,7 +4834,8 @@ function stepFarmer(man, dt) {
     if ((man.phase === "haul" || man.phase === "back") && man.path && man.path.length > 1) {
         const extra = Math.max(0, (gameMs() - (man.playAt || 0)) / 1000) * 2.2;
         const dist = Math.min(man.length || 0, (man.along || 0) + extra);
-        const pose = pathPose(man.path, dist);
+        const route = routeAround(man.path, man.faction);
+        const pose = pathPose(route.points, dist / Math.max(1, man.length || 1) * route.length);
         man.x = pose.x + (man.hand ? 0.8 : 0);
         man.z = pose.z;
         man.yaw = pose.yaw;
@@ -5800,45 +5828,180 @@ function wallBlocks(x, z, faction) {
     return false;
 }
 
-function fisherSpot(man, along) {
-    const pts = man.path;
-    if (pts && pts.length > 1) {
-        const lens = [];
-        let total = 0;
-        for (let i = 1; i < pts.length; i++) {
-            const len = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z) || 0.001;
-            lens.push(len);
-            total += len;
+// Worker routes come from the server as straight legs between waypoints; any leg that runs through
+// a fence, building or wall is rerouted around it here, once per route.
+const routeCache = new Map();
+// Route ends sit in doorways, at tree trunks and on the shore, so ground this close to them is never counted as blocked.
+const ROUTE_END_FREE = 3;
+
+function legClear(p, q, faction, a, b) {
+    const len = Math.hypot(q.x - p.x, q.z - p.z);
+    const steps = Math.ceil(len / 0.5);
+    for (let i = 0; i <= steps; i++) {
+        const x = p.x + (q.x - p.x) * i / steps;
+        const z = p.z + (q.z - p.z) * i / steps;
+        if (Math.hypot(x - a.x, z - a.z) < ROUTE_END_FREE || Math.hypot(x - b.x, z - b.z) < ROUTE_END_FREE) continue;
+        if (blockedOutside(x, z, faction)) return false;
+    }
+    return true;
+}
+
+function legAround(a, b, faction) {
+    const pad = 60;
+    // Half-metre cells: palisade walls are 0.72 m thick and farm gates leave about 1.2 m clear.
+    const cell = 0.5;
+    const x0 = Math.min(a.x, b.x) - pad;
+    const z0 = Math.min(a.z, b.z) - pad;
+    const cols = Math.ceil((Math.max(a.x, b.x) + pad - x0) / cell) + 1;
+    const rows = Math.ceil((Math.max(a.z, b.z) + pad - z0) / cell) + 1;
+    if (cols * rows > 1200000) return null;
+    const state = new Int8Array(cols * rows);
+    const open = (c, r) => {
+        if (c < 0 || r < 0 || c >= cols || r >= rows) return false;
+        const i = r * cols + c;
+        if (!state[i]) {
+            const x = x0 + c * cell;
+            const z = z0 + r * cell;
+            const end = Math.hypot(x - a.x, z - a.z) < ROUTE_END_FREE || Math.hypot(x - b.x, z - b.z) < ROUTE_END_FREE;
+            state[i] = end || !blockedOutside(x, z, faction) ? 1 : 2;
         }
-        let dist = Math.max(0, Math.min(1, along)) * total;
-        for (let i = 0; i < lens.length; i++) {
-            if (dist <= lens[i] || i === lens.length - 1) {
-                const t = Math.min(1, dist / lens[i]);
-                const a = pts[i];
-                const b = pts[i + 1];
-                return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t, dx: b.x - a.x, dz: b.z - a.z };
+        return state[i] === 1;
+    };
+    const start = Math.round((a.z - z0) / cell) * cols + Math.round((a.x - x0) / cell);
+    const goal = Math.round((b.z - z0) / cell) * cols + Math.round((b.x - x0) / cell);
+    const gc = goal % cols;
+    const gr = Math.floor(goal / cols);
+    const cost = new Float64Array(cols * rows).fill(Infinity);
+    const done = new Uint8Array(cols * rows);
+    const from = new Int32Array(cols * rows).fill(-1);
+    const heap = [];
+    const push = (f, i) => {
+        heap.push([f, i]);
+        let k = heap.length - 1;
+        while (k > 0) {
+            const up = (k - 1) >> 1;
+            if (heap[up][0] <= heap[k][0]) break;
+            [heap[up], heap[k]] = [heap[k], heap[up]];
+            k = up;
+        }
+    };
+    const pop = () => {
+        const top = heap[0];
+        const last = heap.pop();
+        if (heap.length) {
+            heap[0] = last;
+            let k = 0;
+            for (;;) {
+                const l = k * 2 + 1;
+                const r = l + 1;
+                let m = k;
+                if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+                if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+                if (m === k) break;
+                [heap[m], heap[k]] = [heap[k], heap[m]];
+                k = m;
             }
-            dist -= lens[i];
+        }
+        return top;
+    };
+    cost[start] = 0;
+    push(0, start);
+    let budget = 150000;
+    while (heap.length && budget-- > 0) {
+        const [, i] = pop();
+        if (i === goal) break;
+        if (done[i]) continue;
+        done[i] = 1;
+        const c = i % cols;
+        const r = Math.floor(i / cols);
+        for (let dz = -1; dz <= 1; dz++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                if (!dx && !dz) continue;
+                if (!open(c + dx, r + dz)) continue;
+                if (dx && dz && (!open(c + dx, r) || !open(c, r + dz))) continue;
+                const j = (r + dz) * cols + c + dx;
+                const g = cost[i] + (dx && dz ? 1.414 : 1);
+                if (g >= cost[j]) continue;
+                cost[j] = g;
+                from[j] = i;
+                push(g + 2 * Math.hypot(gc - c - dx, gr - r - dz), j);
+            }
         }
     }
-    const ax = man.fromX;
-    const az = man.fromZ;
-    const cx = man.toX;
-    const cz = man.toZ;
-    if (!Number.isFinite(man.viaX)) {
-        return { x: ax + (cx - ax) * along, z: az + (cz - az) * along, dx: cx - ax, dz: cz - az };
+    if (from[goal] < 0) return null;
+    const cells = [];
+    for (let i = goal; i >= 0; i = from[i]) cells.push({ x: x0 + (i % cols) * cell, z: z0 + Math.floor(i / cols) * cell });
+    cells.reverse();
+    cells[0] = a;
+    cells[cells.length - 1] = b;
+    const sight = (p, q) => {
+        const steps = Math.ceil(Math.hypot(q.x - p.x, q.z - p.z) / (cell / 2));
+        for (let i = 0; i <= steps; i++) {
+            const c = Math.round((p.x + (q.x - p.x) * i / steps - x0) / cell);
+            const r = Math.round((p.z + (q.z - p.z) * i / steps - z0) / cell);
+            if (!open(c, r)) return false;
+        }
+        return true;
+    };
+    const pulled = [a];
+    let k = 0;
+    while (k < cells.length - 1) {
+        let j = k + 1;
+        while (j + 1 < cells.length && sight(cells[k], cells[j + 1])) j++;
+        while (j > k + 1 && !legClear(cells[k], cells[j], faction, a, b)) j--;
+        pulled.push(cells[j]);
+        k = j;
     }
-    const bx = man.viaX;
-    const bz = man.viaZ;
-    const len1 = Math.hypot(bx - ax, bz - az) || 0.001;
-    const len2 = Math.hypot(cx - bx, cz - bz) || 0.001;
-    const dist = along * (len1 + len2);
-    if (dist <= len1) {
-        const t = dist / len1;
-        return { x: ax + (bx - ax) * t, z: az + (bz - az) * t, dx: bx - ax, dz: bz - az };
+    return pulled;
+}
+
+function routeAround(points, faction) {
+    const key = faction + "|" + points.map((p) => p.x.toFixed(1) + "," + p.z.toFixed(1)).join(";");
+    let route = routeCache.get(key);
+    if (route) return route;
+    const out = [points[0]];
+    for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1];
+        const b = points[i];
+        const around = legClear(a, b, faction, a, b) ? null : legAround(a, b, faction);
+        if (around) out.push(...around.slice(1));
+        else out.push(b);
     }
-    const t = (dist - len1) / len2;
-    return { x: bx + (cx - bx) * t, z: bz + (cz - bz) * t, dx: cx - bx, dz: cz - bz };
+    let length = 0;
+    for (let i = 1; i < out.length; i++) length += Math.hypot(out[i].x - out[i - 1].x, out[i].z - out[i - 1].z);
+    route = { points: out, length };
+    routeCache.set(key, route);
+    return route;
+}
+
+function workerPoints(man) {
+    if (man.path && man.path.length > 1) return man.path;
+    const pts = [{ x: man.fromX, z: man.fromZ }];
+    if (Number.isFinite(man.viaX)) pts.push({ x: man.viaX, z: man.viaZ });
+    pts.push({ x: man.toX, z: man.toZ });
+    return pts;
+}
+
+function fisherSpot(man, along) {
+    const pts = routeAround(workerPoints(man), man.faction).points;
+    const lens = [];
+    let total = 0;
+    for (let i = 1; i < pts.length; i++) {
+        const len = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z) || 0.001;
+        lens.push(len);
+        total += len;
+    }
+    let dist = Math.max(0, Math.min(1, along)) * total;
+    for (let i = 0; i < lens.length; i++) {
+        if (dist <= lens[i] || i === lens.length - 1) {
+            const t = Math.min(1, dist / lens[i]);
+            const a = pts[i];
+            const b = pts[i + 1];
+            return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t, dx: b.x - a.x, dz: b.z - a.z };
+        }
+        dist -= lens[i];
+    }
+    return { x: pts[0].x, z: pts[0].z, dx: 0, dz: 1 };
 }
 
 function marchAttack(man) {
@@ -6299,6 +6462,10 @@ function blocked(x, z, faction, feet) {
         if (x < 0.35 || z < 0.4 || x > inside.w - 0.35 || z > inside.d - 0.35) return true;
         return false;
     }
+    return blockedOutside(x, z, faction, feet);
+}
+
+function blockedOutside(x, z, faction, feet) {
     const r = 0.4;
     const stand = feet == null ? 0 : feet;
     const who = faction == null ? homeVillage : faction;
@@ -6319,7 +6486,8 @@ function blocked(x, z, faction, feet) {
     for (const door of doors) {
         if (hitsDoor(door, x, z, r)) return true;
     }
-    for (const item of scenery) {
+    for (const item of sceneryNear(x, z)) {
+        if (item === passFence || (item.top != null && stand >= item.top)) continue;
         if (x > item.x - r && x < item.x + item.w + r && z > item.z - r && z < item.z + item.d + r) return true;
     }
     if (World.tooSteep(x, z)) return true;
@@ -6575,12 +6743,16 @@ function movePlayer(dt) {
             if (next < feet - 0.52 && World.tooSteep(nx, nz)) return false;
             return true;
         };
+        // Landing a jump on a fence leaves the player inside it; let them walk back out.
+        passFence = inside ? null : sceneryNear(body.x, body.z).find((item) => item.top != null && feet < item.top &&
+            body.x > item.x - 0.4 && body.x < item.x + item.w + 0.4 && body.z > item.z - 0.4 && body.z < item.z + item.d + 0.4) || null;
         if (!blocked(body.x + mx, body.z, null, feet) && stepUp(body.x + mx, body.z)) body.x += mx;
         if (!blocked(body.x, body.z + mz, null, feet) && stepUp(body.x, body.z + mz)) body.z += mz;
+        passFence = null;
     }
     const ground = groundUnder(body.x, body.z, feet);
     const grounded = hop <= 0 && feet <= ground + 0.12;
-    if (grounded && (keys.Space || jumpHeld)) hop = 6.4;
+    if (grounded && (keys.Space || jumpHeld)) hop = 7.2;
     if (hop > 0 || feet > ground + 0.12) {
         hop -= 18 * dt;
         let nextY = body.y + hop * dt;
@@ -7209,6 +7381,8 @@ function clearRaised() {
     for (let i = scenery.length - 1; i >= 0; i--) {
         if (scenery[i].raised) scenery.splice(i, 1);
     }
+    sceneryGrid = null;
+    routeCache.clear();
     textures.raisedfield = textures.dirt;
     textures.raisedleaf = textures.leaf;
     textures.raisedtrunk = textures.trunk;
