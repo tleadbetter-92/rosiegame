@@ -42,16 +42,17 @@ const STORES = ["food", "wood", "stone", "gold"];
 
 // The farm, five-house template and mine factions build, converted from Roblox models by tools/roblox-farm.js and tools/roblox-model.js.
 // Without the files, farms and houses use the plain layouts and no mines are built.
-function robloxModel(name) {
+// Each is required by its literal path so the hosted build bundles the file.
+function robloxModel(load) {
     try {
-        return JSON.parse(fs.readFileSync(path.join(__dirname, "..", "models", "roblox", name + ".json"), "utf8"));
+        return load();
     } catch (err) {
         return null;
     }
 }
-const farmModel = robloxModel("farm");
-const housesModel = robloxModel("houses");
-const mineModel = robloxModel("mine");
+const farmModel = robloxModel(() => require("../models/roblox/farm.json"));
+const housesModel = robloxModel(() => require("../models/roblox/houses.json"));
+const mineModel = robloxModel(() => require("../models/roblox/mine.json"));
 
 // How far up a new building's ground may be filled to make it level.
 const PAD_RISE = 6;
