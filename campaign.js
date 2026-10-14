@@ -292,6 +292,12 @@ function paint(data) {
         const food = hold.querySelector("[data-food]");
         food.disabled = minor.owner !== minor.index;
         if (document.activeElement !== food) food.value = String(minor.food || 0);
+        hold.querySelector("[data-stores]").textContent = "wood " + (minor.wood || 0) + " · stone " + (minor.stone || 0) + " · gold " + (minor.gold || 0);
+        const doing = (minor.building || []).map((kind) => "building " + (kind === "house" ? "five houses" : "a " + (buildNames[kind] || kind)));
+        if (minor.cutting) doing.push("a worker cutting wood for " + (minor.wants === "house" ? "five houses" : "a " + (buildNames[minor.wants] || minor.wants)));
+        hold.querySelector("[data-status]").textContent = (minor.taking || []).map((take) =>
+            take.name + " soldiers in the farmhouse: " + Math.floor(take.heldMs / 60000) + " of " + Math.round(take.needMs / 60000) + " min"
+        ).concat(doing).join(" · ");
     });
     for (const select of document.querySelectorAll("[data-stance]")) {
         const kind = (data.stance || [])[Number(select.dataset.stance)];
@@ -310,7 +316,7 @@ function paint(data) {
 }
 
 const unitNames = { soldier: "soldier", fisher: "fisherman", wood: "woodcutter", jack: "lumberjack" };
-const buildNames = { house: "house", yard: "lumberyard", farm: "farm" };
+const buildNames = { house: "house", yard: "lumberyard", farm: "farm", mine: "mine" };
 
 function escapeHtml(text) {
     return String(text).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -384,6 +390,7 @@ function minorCard(minor) {
         '<p class="owner" data-owner>Rural community</p>' +
         '<p class="count">pop <span data-pop>0</span> · <span data-houses>0 houses</span> · <span data-farm>0 farmers</span> · ' +
         '<label class="food">food <input data-food type="number" min="0" max="99999" step="1" value="0" aria-label="' + name + ' food"></label></p>' +
+        '<p class="count" data-stores></p>' +
         '<label class="stance"><span data-stance-name>Southwest and ' + name + ':</span> <select data-stance="' + minor.index + '" aria-label="Southwest and ' + name + '">' +
         '<option value="war">War</option><option value="peace">Peace</option><option value="ally">Allied</option></select></label>' +
         '<p class="status" data-status></p>';

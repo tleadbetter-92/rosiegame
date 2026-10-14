@@ -33,7 +33,28 @@ const minors = [
 ].map((minor, index) => Object.assign({}, World.hamlets[index], minor));
 const MINOR_BASE = factions.length;
 const FOLK_PER_HOUSE = 2;
-const SEIZE_COMPANY = 6;
+// A hamlet's lord yields once enemy soldiers have stood in its farmhouse this long (real time, not game time).
+const HOLD_MS = 10 * 60 * 1000;
+const HOLD_PARTY = 2;
+const HOLD_SPARE = 4;
+const TRIBUTE_SHARE = 0.1;
+const STORES = ["food", "wood", "stone", "gold"];
+
+// The farm, five-house template and mine factions build, converted from Roblox models by tools/roblox-farm.js and tools/roblox-model.js.
+// Without the files, farms and houses use the plain layouts and no mines are built.
+function robloxModel(name) {
+    try {
+        return JSON.parse(fs.readFileSync(path.join(__dirname, "..", "models", "roblox", name + ".json"), "utf8"));
+    } catch (err) {
+        return null;
+    }
+}
+const farmModel = robloxModel("farm");
+const housesModel = robloxModel("houses");
+const mineModel = robloxModel("mine");
+
+// How far up a new building's ground may be filled to make it level.
+const PAD_RISE = 6;
 
 const places = World.places;
 
@@ -313,6 +334,9 @@ function busyIndexes(state, faction) {
         if (attack.resolved || attack.faction !== faction) continue;
         attack.indexes.forEach((index) => busy.add(index));
     }
+    for (const hold of state.holds || []) {
+        if (hold.faction === faction) hold.indexes.forEach((index) => busy.add(index));
+    }
     return busy;
 }
 
@@ -375,11 +399,13 @@ function restartCampaign(state, now) {
     state.minors = [];
     state.relations = {};
     state.trails = [];
+    state.holds = [];
+    state.tributes = [];
     state.goblins = { nextAt: nextGoblinRaid(now), raid: null };
 }
 
 function freshMinors() {
-    return minors.map(() => ({ food: 100, owner: -1, protector: -1, declined: [], fedDay: -1, calmUntil: 0 }));
+    return minors.map(() => ({ food: 100, wood: 0, stone: 0, gold: 0, owner: -1, protector: -1, declined: [], fedDay: -1, tributeDay: -1 }));
 }
 
 function ensureHamlet(state, now) {
@@ -836,6 +862,9 @@ function popLimit(state, faction) {
     let room = 0;
     for (const house of state.houses || []) {
         if (state.owners[house.village] === faction) room += house.model === "houses" ? HOUSES_POP : HOUSE_POP;
+    }
+    for (const homes of starts ? starts.houses : []) {
+        if (homes && state.owners[homes.village] === faction) room += HOUSES_POP;
     }
     return POP_BASE + room;
 }
@@ -1317,7 +1346,7 @@ function consumeFood(state) {
             dirty = true;
             return;
         }
-        const need = hamletPop(index);
+        const need = hamletPop(index, state);
         const meal = Math.min(need, minor.food || 0);
         minor.food = (minor.food || 0) - meal;
         minor.fedDay = today;
@@ -1875,6 +1904,7 @@ function fight(state, now) {
 }
 
 function modeOf(state, faction, index, post, now) {
+    if ((state.holds || []).some((hold) => hold.faction === faction && hold.indexes.includes(index))) return "march";
     for (const attack of state.attacks) {
         if (attack.faction === faction && attack.indexes.includes(index)) {
             return now >= attack.arriveAt ? "battle" : "march";
@@ -2021,6 +2051,9 @@ function wearTrails(state) {
         const site = farmSite(state, farm.id);
         if (site && wearTrail(state, pathToStore(site), worn)) dirty = true;
     }
+    for (const cart of state.tributes || []) {
+        if (wearTrail(state, cart.phase === "out" ? cart.path : cart.path.slice().reverse(), worn)) dirty = true;
+    }
     return dirty;
 }
 
@@ -2062,15 +2095,17 @@ function present(state, now, turn, paused) {
             ));
             const field = fielded(state, faction, post).some((unit) => unit.index === index);
             const defending = state.attacks.some((item) => item.defenders.includes(index) && item.defender === faction);
-            if (!attack && !defending && !field) return;
-            const slot = slots[post]++;
+            const hold = (state.holds || []).find((item) => item.faction === faction && item.indexes.includes(index));
+            if (!attack && !defending && !field && !hold) return;
+            const slot = hold ? hold.indexes.indexOf(index) : slots[post]++;
             shown[faction].units.push({
                 index,
                 health,
                 post,
                 mode,
                 slot,
-                attack: attack ? attack.id : null
+                attack: attack ? attack.id : null,
+                hold: hold ? hold.id : null
             });
         });
     }
@@ -2226,6 +2261,28 @@ function present(state, now, turn, paused) {
             breachedAt: attack.breachedAt || 0,
             heldForGate: !!attack.heldForGate
         })),
+        holds: (state.holds || []).map((hold) => ({
+            id: hold.id,
+            faction: hold.faction,
+            minor: MINOR_BASE + hold.minor,
+            phase: hold.phase,
+            path: hold.path,
+            length: hold.length,
+            startedAt: hold.startedAt,
+            arriveAt: hold.arriveAt,
+            heldMs: hold.heldMs || 0
+        })),
+        tributes: (state.tributes || []).map((cart) => ({
+            id: cart.id,
+            minor: MINOR_BASE + cart.minor,
+            faction: cart.faction,
+            phase: cart.phase,
+            cargo: cart.cargo,
+            path: cart.path,
+            length: cart.length,
+            startedAt: cart.startedAt,
+            arriveAt: cart.arriveAt
+        })),
         goblins: state.goblins && state.goblins.raid ? {
             id: state.goblins.raid.id,
             to: GOBLIN_VILLAGE,
@@ -2318,7 +2375,6 @@ function present(state, now, turn, paused) {
         minors: minors.map((minor, index) => {
             const own = state.minors[index];
             const owner = hamletOwner(state, index);
-            const farm = (state.farms || []).find((item) => item.id === hamlets[index].farm.id);
             return {
                 index: MINOR_BASE + index,
                 name: minor.name,
@@ -2329,9 +2385,21 @@ function present(state, now, turn, paused) {
                 protector: own.protector,
                 protectorName: own.protector >= 0 ? nameOf(own.protector) : "",
                 food: own.food || 0,
-                pop: hamletPop(index),
-                houses: 1 + hamlets[index].cottages.length,
-                farmers: farm && farm.health > 0 ? farmCrew(farm) : 0
+                wood: own.wood || 0,
+                stone: own.stone || 0,
+                gold: own.gold || 0,
+                taking: (state.holds || []).filter((hold) => hold.minor === index && hold.phase === "hold").map((hold) => ({
+                    name: nameOf(hold.faction),
+                    heldMs: hold.heldMs || 0,
+                    needMs: HOLD_MS
+                })),
+                pop: hamletPop(index, state),
+                houses: hamletHouses(index, state),
+                farmers: (state.farms || []).filter((item) => item.village === MINOR_BASE + index && item.health > 0).reduce((sum, item) => sum + farmCrew(item), 0),
+                cutting: !!own.cutting,
+                wants: hamletWants(state, index),
+                building: (state.siteJobs || []).filter((job) => job.payer === MINOR_BASE + index).map((job) => job.kind)
+                    .concat((state.farmJobs || []).filter((job) => job.payer === MINOR_BASE + index).map(() => "farm"))
             };
         }),
         factions: factions.map((faction, index) => {
@@ -2355,7 +2423,8 @@ function present(state, now, turn, paused) {
                 stone: (state.stone || [])[index] || 0,
                 gold: (state.gold || [])[index] || 0,
                 mines: (state.mines || []).filter((mine) => state.owners[mine.village] === index).length,
-                houses: (state.houses || []).filter((house) => state.owners[house.village] === index).reduce((n, house) => n + (house.model === "houses" ? 5 : 1), 0),
+                houses: (state.houses || []).filter((house) => state.owners[house.village] === index).reduce((n, house) => n + (house.model === "houses" ? 5 : 1), 0)
+                    + (starts ? starts.houses : []).filter((homes) => homes && state.owners[homes.village] === index).length * 5,
                 farms: producingFarms(state, index),
                 yards: yardsOf(state, index).length,
                 building: (state.siteJobs || []).filter((job) => job.payer === index).map((job) => job.kind)
@@ -2384,9 +2453,9 @@ function campaignRules() {
             { name: "Mine", wood: MINE_WOOD, ms: BUILD_MS, gives: "Stone and gold, once there is ore on the map to dig", when: "Built once a faction has a lumberyard and no mine" }
         ] : []),
         fixed: [
-            { name: "Village", gives: "Palisade, gates and a garrison post; holds " + POP_BASE + " people before houses" },
+            { name: "Village", gives: "Palisade, gates and a garrison post; holds " + POP_BASE + " people before houses. Starts with two farms (the old one and a Roblox one) and five Roblox houses" },
             { name: "Fishing cottage", gives: "One per village; fishermen land " + FISH_FOOD + " food a trip and carts carry it home" },
-            { name: "Hamlet", gives: "Rural community: " + FOLK_PER_HOUSE + " people a house, its own farm, no soldiers" }
+            { name: "Hamlet", gives: "Rural community: " + FOLK_PER_HOUSE + " people a house, its own farm, no soldiers. Keeps food, wood, stone and gold in its farmhouse and never declares war. Enemies of its protector take it by standing soldiers in the farmhouse for " + Math.round(HOLD_MS / 60000) + " minutes. It sends its protector " + Math.round(TRIBUTE_SHARE * 100) + "% of every store a day by cart. It builds one more farm, then five houses, then a mine, sending one of its workers to cut wood while it saves" }
         ],
         units: [
             { name: "Soldier", food: SOLDIER_COST, ms: RECRUIT_MS, does: "Guards and marches; " + MAX_HP + " hit points" },
@@ -2446,13 +2515,32 @@ function hamletLayout(minor, index) {
     ];
     const outY = Math.max(0, World.heightAt(minor.x + 14, minor.z + 8));
     const outhouse = { x: minor.x + 14, z: minor.z + 8, y: outY, w: 1.3, d: 1.3 };
-    return { village, farm, cottages, outhouse };
+    const model = hamletModelFarm(minor, village, cottages, outhouse);
+    if (model) model.id = farm.id;
+    return { village, farm: model || farm, cottages, outhouse };
+}
+
+// The Roblox farm beside a hamlet's cottages, where there is level dry ground for it.
+function hamletModelFarm(minor, village, cottages, outhouse) {
+    if (!farmModel) return null;
+    const blocked = cottages.map(rectOf).concat([{ minX: outhouse.x - 2, minZ: outhouse.z - 2, w: 4, d: 4 }]);
+    const spots = [[-22, 0], [-22, -18], [-22, 18], [4, 30], [4, -38], [50, 0], [-50, 0], [20, 40], [20, -45]];
+    for (const [dx, dz] of spots) {
+        const site = layoutModelFarm({}, village, minor.x + dx, minor.z + dz, null, blocked, true);
+        if (site) return site;
+    }
+    return null;
 }
 
 const hamlets = minors.map(hamletLayout);
 
-function hamletPop(index) {
-    return (1 + hamlets[index].cottages.length) * FOLK_PER_HOUSE;
+function hamletHouses(index, state) {
+    const built = state ? (state.houses || []).filter((house) => house.village === MINOR_BASE + index).length : 0;
+    return 1 + hamlets[index].cottages.length + built * 5;
+}
+
+function hamletPop(index, state) {
+    return hamletHouses(index, state) * FOLK_PER_HOUSE;
 }
 
 function hamletPlots() {
@@ -2460,55 +2548,70 @@ function hamletPlots() {
     hamlets.forEach((hamlet, index) => {
         const id = minors[index].id;
         const farm = hamlet.farm;
-        plots.push({ id: farm.id, village: hamlet.village, kind: "farm", yaw: farm.yaw, house: farm.house, field: farm.fields[0], hay: farm.hay, door: farm.door });
+        plots.push({ id: farm.id, village: hamlet.village, kind: "farm", yaw: farm.yaw, house: farm.house, field: farm.fields[0], hay: farm.hay, door: farm.door, model: farm.model || null, at: farm.at || null });
         hamlet.cottages.forEach((house, n) => {
             plots.push({ id: id + "-house-" + n, village: hamlet.village, kind: "house", yaw: house.yaw, house: house });
         });
         const o = hamlet.outhouse;
         plots.push({ id: id + "-outhouse", village: hamlet.village, kind: "outhouse", x: o.x, z: o.z, y: o.y, w: o.w, d: o.d });
     });
-    const shown = shownFarm();
-    if (shown) {
-        plots.push({ id: shown.id, village: 2, kind: "farm", yaw: shown.yaw, house: shown.house, field: shown.fields[0], hay: shown.hay, door: shown.door, model: shown.model, at: shown.at });
+    for (const farm of starts ? starts.farms : []) {
+        if (farm) plots.push({ id: farm.id, village: farm.village, kind: "farm", yaw: farm.yaw, house: farm.house, field: farm.fields[0], hay: farm.hay, door: farm.door, model: farm.model, at: farm.at });
     }
-    for (const site of [shownHouses(), shownMine()]) {
-        if (site) plots.push({ id: site.id, village: 2, kind: site.kind, yaw: site.yaw, house: site.house, model: site.model, at: site.at });
+    for (const site of (starts ? starts.houses : []).concat(shownMine())) {
+        if (site) plots.push({ id: site.id, village: site.village, kind: site.kind, yaw: site.yaw, house: site.house, model: site.model, at: site.at });
     }
     return plots;
 }
 
-// The Roblox farm, five houses and mine stood outside Southwest to look at. They are not part of the campaign save,
-// but the farm is worked for Southwest like any other farm.
-let showFarm;
-function shownFarm() {
-    if (showFarm !== undefined) return showFarm;
-    showFarm = null;
-    if (farmModel) showFarm = layoutModelFarm({}, 2, -2407.2, 540.2, nearbyWood(2), []);
-    if (showFarm) showFarm.id = "show-farm-2";
-    return showFarm;
+// Each village starts with a Roblox farm and five Roblox houses beside its original farm. They belong to whoever holds
+// the village. They are placed once and kept in the save so they never move; Southwest's stand where the first test ones stood.
+let starts = null;
+
+function startSites() {
+    return starts ? starts.farms.concat(starts.houses).filter(Boolean) : [];
 }
 
-let showHouses;
-function shownHouses() {
-    if (showHouses !== undefined) return showHouses;
-    showHouses = null;
-    const farm = shownFarm();
-    if (!housesModel || !farm) return null;
-    for (const spot of [[-2365, 540], [-2365, 505], [-2405, 495], [-2365, 575]]) {
-        showHouses = layoutModelSite({}, 2, spot[0], spot[1], [farm.rect], "house");
-        if (showHouses) break;
+function startFarm(id) {
+    return starts ? starts.farms.find((farm) => farm && farm.id === id) || null : null;
+}
+
+function ensureStarts(state) {
+    if (starts) return false;
+    if (state.starts && Array.isArray(state.starts.farms) && Array.isArray(state.starts.houses)) {
+        starts = state.starts;
+        return false;
     }
-    if (showHouses) showHouses.id = "show-houses-2";
-    return showHouses;
+    starts = { farms: [null, null, null, null], houses: [null, null, null, null] };
+    for (let village = 0; village < 4; village++) {
+        let farm = null;
+        if (farmModel) farm = village === 2 ? layoutModelFarm({}, 2, -2407.2, 540.2, nearbyWood(2), []) : pickFarmSite(state, village);
+        if (farm) farm.id = "show-farm-" + village;
+        starts.farms[village] = farm;
+        let homes = null;
+        if (housesModel && village === 2 && farm) {
+            for (const spot of [[-2365, 540], [-2365, 505], [-2405, 495], [-2365, 575]]) {
+                homes = layoutModelSite({}, 2, spot[0], spot[1], [farm.rect], "house");
+                if (homes) break;
+            }
+        } else if (housesModel) {
+            homes = pickModelSite(state, village, "house");
+        }
+        if (homes) homes.id = "show-houses-" + village;
+        starts.houses[village] = homes;
+    }
+    state.starts = starts;
+    return true;
 }
 
+// The Roblox mine stood outside Southwest to look at; it is not part of the campaign.
 let showMine;
 function shownMine() {
     if (showMine !== undefined) return showMine;
-    showMine = null;
-    const farm = shownFarm();
-    const homes = shownHouses();
+    const farm = starts && starts.farms[2];
+    const homes = starts && starts.houses[2];
     if (!mineModel || !farm || !homes) return null;
+    showMine = null;
     for (const spot of [[-2440, 530], [-2405, 505], [-2365, 535], [-2340, 600], [-2400, 590]]) {
         showMine = layoutModelSite({}, 2, spot[0], spot[1], [farm.rect, homes.rect], "mine");
         if (showMine) break;
@@ -2538,12 +2641,29 @@ function ensureMinors(state) {
         }
         dirty = true;
     }
+    state.minors.forEach((minor, index) => {
+        for (const key of STORES.concat("tributeDay")) {
+            if (Number.isFinite(minor[key])) continue;
+            minor[key] = key === "tributeDay" ? -1 : 0;
+            dirty = true;
+        }
+        if (minor.owner >= 0) {
+            const holder = minor.owner;
+            minor.owner = -1;
+            minor.protector = holder;
+            setRelation(state, holder, MINOR_BASE + index, "ally");
+            dirty = true;
+        }
+    });
+    if (!Array.isArray(state.holds)) {
+        state.holds = [];
+        dirty = true;
+    }
+    if (!Array.isArray(state.tributes)) {
+        state.tributes = [];
+        dirty = true;
+    }
     return dirty;
-}
-
-function companyAt(state, faction) {
-    const from = strongest(state, faction);
-    return from < 0 ? 0 : fielded(state, faction, from).length;
 }
 
 function nearestMajor(state, minorIndex, accept) {
@@ -2568,18 +2688,6 @@ function considerMinors(state, now) {
     state.minors.forEach((minor, index) => {
         const self = MINOR_BASE + index;
         const name = minors[index].name;
-        if (now < (minor.calmUntil || 0)) return;
-        if (minor.owner >= 0) {
-            const holder = minor.owner;
-            const p = minor.protector;
-            if (p >= 0 && p !== holder && atWar(state, p, holder) && companyAt(state, p) >= Math.max(SEIZE_COMPANY, companyAt(state, holder))) {
-                minor.owner = -1;
-                minor.calmUntil = now + TURN_MS;
-                note(state, nameOf(p) + " frees " + name + ".");
-                dirty = true;
-            }
-            return;
-        }
         const p = minor.protector;
         if (p >= 0 && (relation(state, p, self) !== "ally" || homeVillage(state, p) < 0)) {
             minor.protector = -1;
@@ -2595,28 +2703,325 @@ function considerMinors(state, now) {
                 dirty = true;
             }
         }
-        const guard = minor.protector >= 0 ? companyAt(state, minor.protector) : 0;
-        for (let f = 0; f < MINOR_BASE; f++) {
-            if (f === PLAYER_FACTION || f === minor.protector) continue;
-            if (relation(state, f, self) !== "peace" || (state.food[f] || 0) >= URGENT_FOOD) continue;
-            if (companyAt(state, f) <= guard) continue;
-            if (setRelation(state, f, self, "war")) dirty = true;
+    });
+    if (stepHolds(state, now)) dirty = true;
+    if (sendHolds(state, now)) dirty = true;
+    if (payTribute(state, now)) dirty = true;
+    if (moveTribute(state, now)) dirty = true;
+    return dirty;
+}
+
+// Hamlets never declare war. Only enemies of a hamlet's protector may move on it.
+function canTake(state, faction, index) {
+    const p = state.minors[index].protector;
+    return faction !== p && (p < 0 || atWar(state, faction, p));
+}
+
+// Overland route between two points that keeps out of water, preferring roads (and so their bridges).
+const ROUTE_CELL = 12;
+const routeCells = new Map();
+const routeCache = new Map();
+
+function routeCell(i, j) {
+    const key = i * 100000 + j;
+    let cell = routeCells.get(key);
+    if (cell === undefined) {
+        const x = i * ROUTE_CELL;
+        const z = j * ROUTE_CELL;
+        cell = World.wet(x, z) ? 0 : World.roadDist(x, z) < 10 ? 0.5 : 1;
+        routeCells.set(key, cell);
+    }
+    return cell;
+}
+
+function landRoute(a, b) {
+    const cacheKey = Math.round(a.x) + "," + Math.round(a.z) + ">" + Math.round(b.x) + "," + Math.round(b.z);
+    if (routeCache.has(cacheKey)) return routeCache.get(cacheKey);
+    const si = Math.round(a.x / ROUTE_CELL);
+    const sj = Math.round(a.z / ROUTE_CELL);
+    const gi = Math.round(b.x / ROUTE_CELL);
+    const gj = Math.round(b.z / ROUTE_CELL);
+    const keyOfCell = (i, j) => i * 100000 + j;
+    const guess = (i, j) => Math.hypot(i - gi, j - gj) * 0.5;
+    const cost = new Map([[keyOfCell(si, sj), 0]]);
+    const came = new Map();
+    const heap = [[guess(si, sj), si, sj]];
+    const push = (item) => {
+        heap.push(item);
+        let n = heap.length - 1;
+        while (n > 0) {
+            const up = (n - 1) >> 1;
+            if (heap[up][0] <= heap[n][0]) break;
+            [heap[up], heap[n]] = [heap[n], heap[up]];
+            n = up;
         }
-        if (now < (state.marchAfter || 0)) return;
-        for (let f = 0; f < MINOR_BASE; f++) {
-            if (!atWar(state, f, self)) continue;
-            const company = companyAt(state, f);
-            if (company < SEIZE_COMPANY || (f !== PLAYER_FACTION && company <= guard)) continue;
-            minor.owner = f;
-            minor.calmUntil = now + TURN_MS;
-            state.food[f] = (state.food[f] || 0) + (minor.food || 0);
-            minor.food = 0;
-            note(state, nameOf(f) + " occupies " + name + ".");
-            if (minor.protector >= 0 && minor.protector !== f) setRelation(state, minor.protector, f, "war");
-            dirty = true;
+    };
+    const pop = () => {
+        const top = heap[0];
+        const last = heap.pop();
+        if (heap.length) {
+            heap[0] = last;
+            let n = 0;
+            for (;;) {
+                const l = n * 2 + 1;
+                const r = l + 1;
+                let m = n;
+                if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+                if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+                if (m === n) break;
+                [heap[m], heap[n]] = [heap[n], heap[m]];
+                n = m;
+            }
+        }
+        return top;
+    };
+    let found = false;
+    let spent = 0;
+    while (heap.length && spent < 300000) {
+        const [, i, j] = pop();
+        const here = keyOfCell(i, j);
+        if (i === gi && j === gj) {
+            found = true;
             break;
         }
+        spent += 1;
+        const base = cost.get(here);
+        for (let di = -1; di <= 1; di++) {
+            for (let dj = -1; dj <= 1; dj++) {
+                if (!di && !dj) continue;
+                const ni = i + di;
+                const nj = j + dj;
+                const goal = ni === gi && nj === gj;
+                const step = goal ? 1 : routeCell(ni, nj);
+                if (!step) continue;
+                const next = base + Math.hypot(di, dj) * step;
+                const key = keyOfCell(ni, nj);
+                if (cost.has(key) && cost.get(key) <= next) continue;
+                cost.set(key, next);
+                came.set(key, here);
+                push([next + guess(ni, nj), ni, nj]);
+            }
+        }
+    }
+    let points = [a, b];
+    if (found) {
+        const cells = [];
+        for (let key = keyOfCell(gi, gj); key !== undefined; key = came.get(key)) {
+            const i = Math.round(key / 100000);
+            cells.push({ x: i * ROUTE_CELL, z: (key - i * 100000) * ROUTE_CELL });
+        }
+        cells.reverse();
+        cells[0] = a;
+        cells[cells.length - 1] = b;
+        points = [a];
+        let at = 0;
+        while (at < cells.length - 1) {
+            let reach = at + 1;
+            for (let k = Math.min(cells.length - 1, at + 40); k > at + 1; k--) {
+                if (!pathWet([cells[at], cells[k]])) {
+                    reach = k;
+                    break;
+                }
+            }
+            points.push(cells[reach]);
+            at = reach;
+        }
+    }
+    routeCache.set(cacheKey, points);
+    return points;
+}
+
+// From a village storehouse out through the gate and overland to a hamlet's farmhouse door.
+function hamletRoute(village, index) {
+    const farm = hamlets[index].farm;
+    const lane = villagerPath(village, farm.out);
+    return lane.slice(0, -1).concat(landRoute(lane[lane.length - 2], farm.out).slice(1));
+}
+
+function holdPath(village, index) {
+    const farm = hamlets[index].farm;
+    return hamletRoute(village, index).concat([farm.door, farm.inn, { x: farm.bed.x, z: farm.bed.z }]);
+}
+
+function marchHome(hold, now) {
+    hold.phase = "home";
+    hold.path = hold.path.slice().reverse();
+    hold.startedAt = now;
+    hold.arriveAt = now + Math.round(hold.length / MARCH_SPEED * 1000);
+}
+
+function stepHolds(state, now) {
+    let dirty = false;
+    const keep = [];
+    for (const hold of state.holds) {
+        const name = minors[hold.minor].name;
+        const living = hold.indexes.filter((index) => healthOf(state, hold.faction, index) > 0);
+        if (living.length !== hold.indexes.length) {
+            hold.indexes = living;
+            dirty = true;
+        }
+        if (!living.length) {
+            note(state, nameOf(hold.faction) + " loses its men at " + name + ".");
+            dirty = true;
+            continue;
+        }
+        if (hold.phase === "home") {
+            if (now < hold.arriveAt) keep.push(hold);
+            else dirty = true;
+            continue;
+        }
+        if (!canTake(state, hold.faction, hold.minor)) {
+            marchHome(hold, now);
+            keep.push(hold);
+            dirty = true;
+            continue;
+        }
+        if (hold.phase === "march") {
+            if (now >= hold.arriveAt) {
+                hold.phase = "hold";
+                hold.heldMs = 0;
+                hold.seen = now;
+                note(state, nameOf(hold.faction) + " soldiers stand in " + name + "'s farmhouse.");
+                dirty = true;
+            }
+            keep.push(hold);
+            continue;
+        }
+        const contested = state.holds.some((other) => other !== hold && other.minor === hold.minor && other.phase === "hold" && atWar(state, other.faction, hold.faction));
+        if (!contested) hold.heldMs = (hold.heldMs || 0) + Math.max(0, now - (hold.seen || now));
+        hold.seen = now;
+        dirty = true;
+        if (hold.heldMs >= HOLD_MS) {
+            const minor = state.minors[hold.minor];
+            const self = MINOR_BASE + hold.minor;
+            const old = minor.protector;
+            minor.protector = hold.faction;
+            minor.declined = (minor.declined || []).filter((f) => f !== hold.faction);
+            if (old >= 0) setRelation(state, old, self, "peace");
+            setRelation(state, hold.faction, self, "ally");
+            note(state, "The lord of " + name + " yields to " + nameOf(hold.faction) + ".");
+            marchHome(hold, now);
+        }
+        keep.push(hold);
+    }
+    state.holds = keep;
+    return dirty;
+}
+
+const holdThink = [0, 0, 0, 0];
+
+function sendHolds(state, now) {
+    if (now < (state.marchAfter || 0)) return false;
+    let dirty = false;
+    for (let faction = 0; faction < MINOR_BASE; faction++) {
+        if (now < holdThink[faction]) continue;
+        holdThink[faction] = now + 60000;
+        if (state.holds.some((hold) => hold.faction === faction)) continue;
+        const from = strongest(state, faction);
+        if (from < 0) continue;
+        const company = fielded(state, faction, from);
+        const party = company.slice(0, Math.min(HOLD_PARTY, company.length - HOLD_SPARE));
+        if (!party.length) continue;
+        let best = -1;
+        let bestD = Infinity;
+        state.minors.forEach((minor, index) => {
+            if (!canTake(state, faction, index)) return;
+            const d = Math.hypot(minors[index].x - places[from].x, minors[index].z - places[from].z);
+            if (d < bestD) {
+                bestD = d;
+                best = index;
+            }
+        });
+        if (best < 0) continue;
+        const path = holdPath(from, best);
+        const length = pathLength(path);
+        state.holds.push({
+            id: "hold-" + faction + "-" + now,
+            faction,
+            minor: best,
+            from,
+            indexes: party.map((unit) => unit.index),
+            phase: "march",
+            path,
+            length,
+            startedAt: now,
+            arriveAt: now + Math.round(length / MARCH_SPEED * 1000),
+            heldMs: 0
+        });
+        note(state, nameOf(faction) + " sends soldiers to " + minors[best].name + ".");
+        dirty = true;
+    }
+    return dirty;
+}
+
+// Once a game day an allied hamlet carts a tenth of each store to its protector's storehouse; the cart goes home and is gone.
+function payTribute(state, now) {
+    const play = playClock(state);
+    if (play == null) return false;
+    const today = Clock.day(play);
+    let dirty = false;
+    state.minors.forEach((minor, index) => {
+        if (minor.tributeDay === today) return;
+        const first = minor.tributeDay < 0;
+        minor.tributeDay = today;
+        dirty = true;
+        const p = minor.protector;
+        if (first || p < 0 || p >= MINOR_BASE) return;
+        const home = homeVillage(state, p);
+        if (home < 0) return;
+        const cargo = {};
+        let total = 0;
+        for (const key of STORES) {
+            const share = Math.floor((minor[key] || 0) * TRIBUTE_SHARE);
+            minor[key] = (minor[key] || 0) - share;
+            cargo[key] = share;
+            total += share;
+        }
+        if (!total) return;
+        const path = hamletRoute(home, index).slice().reverse();
+        const length = pathLength(path);
+        state.tributes.push({
+            id: "tribute-" + index + "-" + today,
+            minor: index,
+            faction: p,
+            cargo,
+            phase: "out",
+            path,
+            length,
+            startedAt: now,
+            arriveAt: now + Math.round(length / FISH_WALK * 1000)
+        });
+        note(state, minors[index].name + " sends tribute to " + nameOf(p) + ".");
     });
+    return dirty;
+}
+
+function moveTribute(state, now) {
+    let dirty = false;
+    const keep = [];
+    for (const cart of state.tributes) {
+        if (now < cart.arriveAt) {
+            keep.push(cart);
+            continue;
+        }
+        dirty = true;
+        if (cart.phase !== "out") continue;
+        const got = [];
+        for (const key of STORES) {
+            const amount = cart.cargo[key] || 0;
+            if (!amount) continue;
+            if (!Array.isArray(state[key])) state[key] = [0, 0, 0, 0];
+            state[key][cart.faction] = (state[key][cart.faction] || 0) + amount;
+            got.push(amount + " " + key);
+        }
+        note(state, minors[cart.minor].name + "'s tribute reaches " + nameOf(cart.faction) + ": " + got.join(", ") + ".");
+        cart.phase = "back";
+        cart.path = cart.path.slice().reverse();
+        cart.startedAt = now;
+        cart.arriveAt = now + Math.round(cart.length / FISH_WALK * 1000);
+        keep.push(cart);
+    }
+    state.tributes = keep;
     return dirty;
 }
 
@@ -2625,6 +3030,7 @@ function setStance(state, other, kind) {
     if (!Number.isInteger(other) || other < 0 || other >= MINOR_BASE + minors.length || other === self) return;
     if (!["war", "peace", "ally"].includes(kind)) return;
     if (other < MINOR_BASE && homeVillage(state, other) < 0) return;
+    if (other >= MINOR_BASE && kind === "war" && !canTake(state, self, other - MINOR_BASE)) return;
     setRelation(state, self, other, kind);
     if (other < MINOR_BASE) return;
     const minor = state.minors[other - MINOR_BASE];
@@ -2649,8 +3055,8 @@ function farmSite(state, id) {
     if (fixed) return fixed;
     const hamlet = hamlets.find((item) => item.farm.id === id);
     if (hamlet) return hamlet.farm;
-    const shown = shownFarm();
-    if (shown && shown.id === id) return shown;
+    const start = startFarm(id);
+    if (start) return start;
     return (state.builtFarms || []).find((site) => site.id === id) || null;
 }
 
@@ -2782,8 +3188,18 @@ function landScore(x, z, wood) {
     return dh;
 }
 
+// Where a village or hamlet's buildings gather round.
+function centreOf(village) {
+    return village < MINOR_BASE ? places[village] : minors[village - MINOR_BASE];
+}
+
+// Hamlets have no palisade; their own houses are kept clear as blocked rects instead.
+function clearOfWalls(village, rect) {
+    return village >= MINOR_BASE || outsideWalls(village, rect);
+}
+
 function nearbyWood(village) {
-    const place = places[village];
+    const place = centreOf(village);
     const reach = 240;
     const wood = [];
     const lists = [World.trees, World.groves];
@@ -2810,8 +3226,7 @@ function takenRects(state) {
     for (const plot of hamletPlots()) {
         if (plot.kind === "outhouse") rects.push({ minX: plot.x - plot.w / 2, minZ: plot.z - plot.d / 2, w: plot.w, d: plot.d });
     }
-    if (shownFarm()) rects.push(shownFarm().rect);
-    if (shownHouses()) rects.push(shownHouses().rect);
+    for (const site of startSites()) rects.push(site.rect);
     if (shownMine()) rects.push(shownMine().rect);
     for (const mine of state.mines || []) rects.push(mine.rect);
     const sites = (state.builtFarms || []).concat((state.farmJobs || []).map((job) => job.site));
@@ -2819,6 +3234,7 @@ function takenRects(state) {
     for (const yard of state.yards || []) rects.push({ minX: yard.x - yard.w / 2, minZ: yard.z - yard.d / 2, w: yard.w, d: yard.d });
     for (const job of state.siteJobs || []) if (job.rect) rects.push(job.rect);
     for (const hamlet of hamlets) {
+        if (hamlet.farm.rect) rects.push(hamlet.farm.rect);
         for (const house of [hamlet.farm.house].concat(hamlet.cottages)) rects.push(rectOf(house));
         const field = hamlet.farm.fields[0];
         rects.push({ minX: field.x, minZ: field.z, w: field.w, d: field.d });
@@ -2854,22 +3270,6 @@ function doorOf(house) {
         fz: fz
     };
 }
-
-// The farm, five-house template and mine factions build, converted from Roblox models by tools/roblox-farm.js and tools/roblox-model.js.
-// Without the files, farms and houses use the plain layouts and no mines are built.
-function robloxModel(name) {
-    try {
-        return JSON.parse(fs.readFileSync(path.join(__dirname, "..", "models", "roblox", name + ".json"), "utf8"));
-    } catch (err) {
-        return null;
-    }
-}
-const farmModel = robloxModel("farm");
-const housesModel = robloxModel("houses");
-const mineModel = robloxModel("mine");
-
-// How far up a new building's ground may be filled to make it level.
-const PAD_RISE = 6;
 
 // The level pad a model site stands on: the highest ground under it. Null when the land is unusable or too steep to fill.
 // Without wood, only the height is checked (lumberyards stand beside trees on purpose).
@@ -2909,15 +3309,15 @@ function syncPads(state) {
     (state.siteJobs || []).forEach(add);
     (state.yards || []).forEach(add);
     (state.mines || []).forEach(add);
-    add(shownFarm());
-    add(shownHouses());
+    hamlets.forEach((hamlet) => add(hamlet.farm));
+    startSites().forEach(add);
     add(shownMine());
     World.setPads(pads);
     return pads;
 }
 
 function quarterTurn(village, cx, cz) {
-    const place = places[village];
+    const place = centreOf(village);
     const dx = place.x - cx;
     const dz = place.z - cz;
     const toward = Math.abs(dx) > Math.abs(dz) ? { x: Math.sign(dx), z: 0 } : { x: 0, z: Math.sign(dz) };
@@ -2928,13 +3328,13 @@ function quarterTurn(village, cx, cz) {
 function layoutModelSite(state, village, cx, cz, blocked, kind) {
     const name = kind === "mine" ? "mine" : "houses";
     const model = kind === "mine" ? mineModel : housesModel;
-    const place = places[village];
+    const place = centreOf(village);
     const dist = Math.hypot(place.x - cx, place.z - cz);
-    if (dist < 60 || dist > 150) return null;
+    if (dist < (village >= MINOR_BASE ? 35 : 60) || dist > 150) return null;
     const at = { x: cx, z: cz, theta: quarterTurn(village, cx, cz) };
     const whole = placeRect({ x: 0, z: 0, w: model.w, d: model.d }, at);
     const rect = { minX: whole.minX, minZ: whole.minZ, w: whole.w, d: whole.d };
-    if (!outsideWalls(village, rect)) return null;
+    if (!clearOfWalls(village, rect)) return null;
     for (const other of blocked) {
         if (rectsHit(rect, other, 3)) return null;
     }
@@ -2962,8 +3362,9 @@ function layoutModelSite(state, village, cx, cz, blocked, kind) {
 
 function pickModelSite(state, village, kind) {
     const blocked = takenRects(state);
-    const place = places[village];
-    for (const dist of [72, 90, 108, 126, 144]) {
+    const place = centreOf(village);
+    const rings = village >= MINOR_BASE ? [45, 60, 75, 90, 108] : [72, 90, 108, 126, 144];
+    for (const dist of rings) {
         let pick = null;
         for (let i = 0; i < 16; i++) {
             const ang = (i / 16) * Math.PI * 2 + dist * 0.01;
@@ -2987,16 +3388,23 @@ function placeRect(r, at) {
     return { x, z, w, d, minX: x - w / 2, minZ: z - d / 2 };
 }
 
-function layoutModelFarm(state, village, cx, cz, wood, blocked) {
-    const place = places[village];
+// `home` is a hamlet's own starting farm: it stands right by the hamlet and its farmhouse is the hamlet's store.
+function layoutModelFarm(state, village, cx, cz, wood, blocked, home) {
+    const place = centreOf(village);
+    const hamlet = village >= MINOR_BASE;
     const at = { x: cx, z: cz, theta: quarterTurn(village, cx, cz) };
     const whole = placeRect({ x: 0, z: 0, w: farmModel.w, d: farmModel.d }, at);
     const dist = Math.hypot(place.x - cx, place.z - cz);
-    if (dist < 60 || dist > 150) return null;
+    if (dist < (home ? 0 : hamlet ? 35 : 60) || dist > (home ? 80 : 150)) return null;
     const wholeRect = { minX: whole.minX, minZ: whole.minZ, w: whole.w, d: whole.d };
-    if (!outsideWalls(village, wholeRect)) return null;
+    if (!clearOfWalls(village, wholeRect)) return null;
     for (const other of blocked) {
         if (rectsHit(wholeRect, other, 3)) return null;
+    }
+    if (home) {
+        const r = wholeRect;
+        const ring = [{ x: r.minX, z: r.minZ }, { x: r.minX + r.w, z: r.minZ }, { x: r.minX + r.w, z: r.minZ + r.d }, { x: r.minX, z: r.minZ + r.d }, { x: r.minX, z: r.minZ }];
+        if (pathWet(ring) || pathWet([ring[0], ring[2]]) || pathWet([ring[1], ring[3]])) return null;
     }
     const pad = padFor(wholeRect, wood);
     if (!pad) return null;
@@ -3044,6 +3452,8 @@ function layoutModelFarm(state, village, cx, cz, wood, blocked) {
         rect: wholeRect,
         pad: pad
     };
+    if (home) site.haul = [site.exits[1] || site.out, { x: door.out.x, z: door.out.z }];
+    else if (hamlet) site.haul = [{ x: door.out.x, z: door.out.z }, hamlets[village - MINOR_BASE].farm.out];
     const path = pathToStore(site);
     if (!path || path.length < 2 || pathWet(path) || pathLength(path) > 220) return null;
     return site;
@@ -3131,8 +3541,8 @@ function layoutFarm(state, village, cx, cz, wood, blocked) {
 function pickFarmSite(state, village) {
     const wood = nearbyWood(village);
     const blocked = takenRects(state);
-    const place = places[village];
-    for (const dist of [72, 90, 108, 126]) {
+    const place = centreOf(village);
+    for (const dist of village >= MINOR_BASE ? [45, 60, 75, 90] : [72, 90, 108, 126]) {
         let pick = null;
         for (let i = 0; i < 12; i++) {
             const ang = (i / 12) * Math.PI * 2 + dist * 0.002;
@@ -3364,9 +3774,9 @@ function considerSites(state, now) {
     if (!Array.isArray(state.siteJobs)) state.siteJobs = [];
     const keep = [];
     for (const job of state.siteJobs) {
-        if (state.owners[job.village] !== job.payer) {
-            state.wood[job.payer] = (state.wood[job.payer] || 0) + (job.cost || BUILD_WOOD);
-            note(state, factions[job.payer].name + " stops the " + job.kind + ".");
+        if (farmOwner(state, job.village) !== job.payer) {
+            addStore(state, job.payer, "wood", job.cost || BUILD_WOOD);
+            note(state, nameOf(job.payer) + " stops the " + job.kind + ".");
             dirty = true;
             continue;
         }
@@ -3385,7 +3795,7 @@ function considerSites(state, now) {
                 rect: job.rect,
                 pad: job.pad
             });
-            note(state, factions[job.payer].name + (job.model === "houses" ? " finishes five houses." : " finishes a house."));
+            note(state, nameOf(job.payer) + (job.model === "houses" ? " finishes five houses." : " finishes a house."));
         } else if (job.kind === "mine") {
             state.mines.push({
                 id: job.id,
@@ -3397,7 +3807,7 @@ function considerSites(state, now) {
                 rect: job.rect,
                 pad: job.pad
             });
-            note(state, factions[job.payer].name + " finishes a mine.");
+            note(state, nameOf(job.payer) + " finishes a mine.");
         } else {
             state.yards.push({
                 id: job.id,
@@ -3480,9 +3890,9 @@ function considerFarms(state, now) {
     }
     const keep = [];
     for (const job of state.farmJobs) {
-        if (state.owners[job.village] !== job.payer) {
-            state.wood[job.payer] = (state.wood[job.payer] || 0) + FARM_WOOD;
-            note(state, factions[job.payer].name + " stops the farm.");
+        if (farmOwner(state, job.village) !== job.payer) {
+            addStore(state, job.payer, "wood", FARM_WOOD);
+            note(state, nameOf(job.payer) + " stops the farm.");
             dirty = true;
             continue;
         }
@@ -3491,7 +3901,7 @@ function considerFarms(state, now) {
             continue;
         }
         state.builtFarms.push(job.site);
-        note(state, factions[job.payer].name + " finishes a farm.");
+        note(state, nameOf(job.payer) + " finishes a farm.");
         dirty = true;
     }
     state.farmJobs = keep;
@@ -3527,6 +3937,98 @@ function considerFarms(state, now) {
         farmThink[faction] = now + 20000;
         dirty = true;
     }
+    return dirty;
+}
+
+function addStore(state, who, key, amount) {
+    if (who >= MINOR_BASE) {
+        const minor = state.minors[who - MINOR_BASE];
+        minor[key] = (minor[key] || 0) + amount;
+        return;
+    }
+    if (!Array.isArray(state[key])) state[key] = [0, 0, 0, 0];
+    state[key][who] = (state[key][who] || 0) + amount;
+}
+
+// What a hamlet builds next: one more farm, then five houses, then a mine. Each costs 100 wood.
+function hamletWants(state, index) {
+    const village = MINOR_BASE + index;
+    const here = (item) => item.village === village;
+    if (farmModel && !(state.builtFarms || []).some(here) && !(state.farmJobs || []).some(here)) return "farm";
+    if (housesModel && !(state.houses || []).some(here) && !(state.siteJobs || []).some((job) => here(job) && job.kind === "house")) return "house";
+    if (mineModel && !(state.mines || []).some(here) && !(state.siteJobs || []).some((job) => here(job) && job.kind === "mine")) return "mine";
+    return "";
+}
+
+const hamletThink = minors.map(() => 0);
+
+// While a hamlet saves for a building, one of its two workers leaves the fields to cut wood.
+function considerHamlets(state, now) {
+    const play = playClock(state);
+    if (play == null) return false;
+    let dirty = false;
+    state.minors.forEach((minor, index) => {
+        const self = MINOR_BASE + index;
+        const want = hamletWants(state, index);
+        const busy = (state.farmJobs || []).some((job) => job.payer === self) || (state.siteJobs || []).some((job) => job.payer === self);
+        const cost = want === "farm" ? FARM_WOOD : want === "mine" ? MINE_WOOD : BUILD_WOOD;
+        const cutting = !!want && !busy && (minor.wood || 0) < cost;
+        if (cutting !== !!minor.cutting) {
+            minor.cutting = cutting;
+            minor.cutPlay = play;
+            dirty = true;
+        }
+        if (cutting) {
+            const trips = Math.floor((play - (minor.cutPlay || play)) / WOOD_MS);
+            if (trips > 0) {
+                minor.wood = (minor.wood || 0) + trips * WOOD_YIELD;
+                minor.cutPlay += trips * WOOD_MS;
+                dirty = true;
+            }
+            return;
+        }
+        if (!want || busy || now < hamletThink[index]) return;
+        hamletThink[index] = now + 60000;
+        const readyPlay = buildReady(state);
+        if (readyPlay == null) return;
+        const name = minors[index].name;
+        if (want === "farm") {
+            const site = pickFarmSite(state, self);
+            if (!site) return;
+            state.farmSerial = (state.farmSerial || 0) + 1;
+            site.id = "raised-" + self + "-" + state.farmSerial;
+            minor.wood -= cost;
+            state.farmJobs.push({ id: site.id, village: self, payer: self, readyPlay: readyPlay, site: site });
+            note(state, name + " starts a farm.");
+            dirty = true;
+            return;
+        }
+        const site = pickModelSite(state, self, want);
+        if (!site) return;
+        state.buildSerial = (state.buildSerial || 0) + 1;
+        minor.wood -= cost;
+        state.siteJobs.push({
+            id: want + "-" + self + "-" + state.buildSerial,
+            village: self,
+            payer: self,
+            kind: want,
+            cost: cost,
+            readyPlay: readyPlay,
+            x: site.x,
+            z: site.z,
+            y: site.y,
+            yaw: site.yaw,
+            w: site.w,
+            d: site.d,
+            rect: site.rect,
+            house: site.house,
+            model: site.model,
+            at: site.at,
+            pad: site.pad
+        });
+        note(state, name + " starts " + (want === "mine" ? "a mine." : "five houses."));
+        dirty = true;
+    });
     return dirty;
 }
 
@@ -3628,7 +4130,7 @@ function walkHome(farm, site) {
 function ensureFarms(state) {
     if (!Array.isArray(state.farms)) state.farms = [];
     let dirty = false;
-    const sites = farmSiteList.concat(state.builtFarms || [], hamlets.map((hamlet) => hamlet.farm), shownFarm() || []);
+    const sites = farmSiteList.concat(state.builtFarms || [], hamlets.map((hamlet) => hamlet.farm), starts ? starts.farms.filter(Boolean) : []);
     for (const site of sites) {
         const had = state.farms.find((farm) => farm.id === site.id);
         if (had) {
@@ -3728,7 +4230,9 @@ function stepFarms(state, now) {
             continue;
         }
         if (farm.phase !== "work") continue;
-        farm.grown = (farm.grown || 0) + rate * step;
+        const hamlet = farm.village >= MINOR_BASE ? farm.village - MINOR_BASE : -1;
+        const cutting = hamlet >= 0 && hamlets[hamlet].farm.id === farm.id && state.minors[hamlet] && state.minors[hamlet].cutting;
+        farm.grown = (farm.grown || 0) + rate * step * (cutting ? 0.5 : 1);
         const whole = Math.floor(farm.grown);
         if (whole > 0) {
             farm.stock += whole;
@@ -3806,6 +4310,7 @@ function syncWorld(state, now) {
     if (ensureEconomy(state, now)) dirty = true;
     if (ensureLodges(state)) dirty = true;
     if (ensureMinors(state)) dirty = true;
+    if (ensureStarts(state)) dirty = true;
     if (ensureFarms(state)) dirty = true;
     if (finishTraining(state, now)) dirty = true;
     if (orderTraining(state, now)) dirty = true;
@@ -3820,6 +4325,7 @@ function syncWorld(state, now) {
     if (considerRepairs(state, now)) dirty = true;
     if (considerSites(state, now)) dirty = true;
     if (considerFarms(state, now)) dirty = true;
+    if (considerHamlets(state, now)) dirty = true;
     if (ensureFarms(state)) dirty = true;
     if (stepFarms(state, now)) dirty = true;
     if (wearTrails(state)) dirty = true;

@@ -3405,14 +3405,14 @@ function rebuildMesh() {
 }
 
 function mergeMen(data) {
-    const attacks = new Map((data.attacks || []).map((attack) => [attack.id, attack]));
+    const attacks = new Map((data.attacks || []).concat(data.holds || []).map((attack) => [attack.id, attack]));
     const wanted = [];
     data.factions.forEach((faction, factionIndex) => {
         (faction.units || []).forEach((unit) => {
             if (unit.health <= 0) return;
             const place = places[unit.post];
             const home = homeOf(place, unit.slot || 0);
-            const attack = unit.attack ? attacks.get(unit.attack) : null;
+            const attack = unit.attack || unit.hold ? attacks.get(unit.attack || unit.hold) : null;
             wanted.push({
                 faction: factionIndex,
                 index: unit.index,
@@ -3529,7 +3529,7 @@ function applyCampaign(data) {
     const units = data.factions.map((faction) => (
         (faction.units || []).map((unit) => unit.index + ":" + unit.health + ":" + unit.mode + ":" + unit.post).join(".")
     )).join("|");
-    const attacks = (data.attacks || []).map((attack) => attack.id).join(",");
+    const attacks = (data.attacks || []).map((attack) => attack.id).concat((data.holds || []).map((hold) => hold.id + ":" + hold.phase)).join(",");
     const fish = (data.fishermen || []).map((man) => man.village + ":" + man.slot + ":" + man.health + ":" + man.cycleStart + ":" + man.walkMs + ":" + (man.bed || "") + ":" + (man.name || "")).join(",");
     const wood = (data.woodcutters || []).map((man) => man.id + ":" + man.village + ":" + man.health + ":" + man.cycleStart + ":" + man.to.x.toFixed(1) + ":" + (man.bed || "") + ":" + (man.name || "")).join(",");
     const jacks = (data.lumberjacks || []).map((man) => man.slot + ":" + man.health + ":" + (man.hauling ? "1" : "0")).join(",");
