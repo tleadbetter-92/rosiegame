@@ -98,9 +98,9 @@ const REPAIR_CHUNK = 10;
 const FARM_PER_DAY = 18;
 const FARM_RETRY_MS = Math.round(Clock.DAY_MS / 144);
 const FARM_WOOD = BUILD_WOOD;
-const HEALTHY_FOOD = 160;
-const FARM_CAP = 3;
-const FARM_EXTRA = 2;
+const FARM_CAP = 8;
+// One more woodcutter for every this many people, so wood keeps up with the building.
+const WOOD_PER_POP = 25;
 const YARD_AT = { x: -2000, z: 478 };
 const YARD_OWNER = 2;
 const YARD_VILLAGE = 2;
@@ -1280,13 +1280,14 @@ function orderTraining(state, now) {
         const jacks = yards.reduce((sum, yard) => sum + (yard.jacks || []).filter((man) => man.health > 0).length, 0);
         let kind = "";
         let at = village;
-        if (!has("wood") && workerCount(state, faction, state.woodcutters) < 1) kind = "wood";
+        // Soldiers are the point; workers only to keep the food and wood coming for more of them.
+        const woodAim = 1 + Math.floor(factionPop(state, faction) / WOOD_PER_POP);
+        if (!has("wood") && workerCount(state, faction, state.woodcutters) < woodAim) kind = "wood";
         else if (!has("jack") && yards.length && jacks < 1) {
             kind = "jack";
             at = yards[0].village;
         } else if (!has("fisher") && workerCount(state, faction, state.fishermen) < 1 && producingFarms(state, faction) * FARM_PER_DAY < dailyFood(state, faction)) kind = "fisher";
-        else if (state.training.filter((job) => state.owners[job.village] === faction && job.kind === "soldier").length < 2) kind = "soldier";
-        if (!kind) continue;
+        else kind = "soldier";
         const cost = kind === "soldier" ? SOLDIER_COST : FISHER_COST;
         if (!pay(cost)) continue;
         state.training.push({ village: at, kind: kind, readyAt: now + RECRUIT_MS });
@@ -2455,9 +2456,9 @@ function campaignRules() {
         upkeep: 1,
         buildings: [
             housesModel
-                ? { name: "Houses (five)", wood: BUILD_WOOD, ms: BUILD_MS, gives: "Room for " + HOUSES_POP + " more people", when: "Built when a faction is within 2 of its population limit" }
-                : { name: "House", wood: BUILD_WOOD, ms: BUILD_MS, gives: "Room for " + HOUSE_POP + " more people", when: "Built when a faction is within 2 of its population limit" },
-            { name: "Farm", wood: FARM_WOOD, ms: BUILD_MS, gives: FARM_PER_DAY + " food a day, worked by 2 farmers who live in the farmhouse", when: "Built when food runs short; up to " + FARM_EXTRA + " extra per faction" },
+                ? { name: "Houses (five)", wood: BUILD_WOOD, ms: BUILD_MS, gives: "Room for " + HOUSES_POP + " more people", when: "Built first when room runs short, and whenever there is nothing else to build" }
+                : { name: "House", wood: BUILD_WOOD, ms: BUILD_MS, gives: "Room for " + HOUSE_POP + " more people", when: "Built first when room runs short, and whenever there is nothing else to build" },
+            { name: "Farm", wood: FARM_WOOD, ms: BUILD_MS, gives: FARM_PER_DAY + " food a day, worked by 2 farmers who live in the farmhouse", when: "Built whenever there is wood and room, up to " + FARM_CAP + " farms a village" },
             { name: "Lumberyard", wood: BUILD_WOOD, ms: BUILD_MS, gives: "Lumberjacks bring " + WOOD_YIELD + " wood every " + Math.round(JACK_MS / 1000) + " s", when: "Built once, when a faction has none" }
         ].concat(mineModel ? [
             { name: "Mine", wood: MINE_WOOD, ms: BUILD_MS, gives: "Stone and gold, once there is ore on the map to dig", when: "Built once a faction has a lumberyard and no mine" }
@@ -2468,9 +2469,9 @@ function campaignRules() {
             { name: "Hamlet", gives: "Rural community: " + FOLK_PER_HOUSE + " people a house, its own farm, no soldiers. Keeps food, wood, stone and gold in its farmhouse and never declares war. Enemies of its protector take it by standing soldiers in the farmhouse for " + Math.round(HOLD_MS / 60000) + " minutes. It sends its protector " + Math.round(TRIBUTE_SHARE * 100) + "% of every store a day by cart. It builds one more farm, then five houses, then a mine, sending one of its workers to cut wood while it saves" }
         ],
         units: [
-            { name: "Soldier", food: SOLDIER_COST, ms: RECRUIT_MS, does: "Guards and marches; " + MAX_HP + " hit points" },
+            { name: "Soldier", food: SOLDIER_COST, ms: RECRUIT_MS, does: "Guards and marches; " + MAX_HP + " hit points. Houses train as many as food and room allow" },
             { name: "Fisherman", food: FISHER_COST, ms: RECRUIT_MS, does: FISH_FOOD + " food a catch, about every " + Math.round(FISH_MS / 1000) + " s" },
-            { name: "Woodcutter", food: FISHER_COST, ms: RECRUIT_MS, does: WOOD_YIELD + " wood a trip, about every " + Math.round(WOOD_MS / 1000) + " s" },
+            { name: "Woodcutter", food: FISHER_COST, ms: RECRUIT_MS, does: WOOD_YIELD + " wood a trip, about every " + Math.round(WOOD_MS / 1000) + " s. One more for every " + WOOD_PER_POP + " people" },
             { name: "Lumberjack", food: FISHER_COST, ms: RECRUIT_MS, does: "Works a lumberyard: " + WOOD_YIELD + " wood every " + Math.round(JACK_MS / 1000) + " s" }
         ],
         repair: { wood: REPAIR_CHUNK, ms: REPAIR_MS, gateHp: GATE_HP },
@@ -3115,17 +3116,6 @@ function standingFarms(state, village) {
     return n;
 }
 
-function extraFarms(state, faction) {
-    let n = 0;
-    for (const site of state.builtFarms || []) {
-        if (state.owners[site.village] === faction) n += 1;
-    }
-    for (const job of state.farmJobs || []) {
-        if (job.payer === faction) n += 1;
-    }
-    return n;
-}
-
 function producingFarms(state, faction) {
     let n = 0;
     for (let village = 0; village < 4; village++) {
@@ -3141,19 +3131,6 @@ function producingFarms(state, faction) {
         n += (state.farmJobs || []).filter((job) => job.village === village).length;
     }
     return n;
-}
-
-function wantsFarm(state, faction) {
-    const food = state.food[faction] || 0;
-    if (food >= HEALTHY_FOOD) return false;
-    let fishers = 0;
-    for (let village = 0; village < 4; village++) {
-        if (state.owners[village] !== faction) continue;
-        fishers += state.fishermen.filter((man) => man.village === village && man.health > 0).length;
-    }
-    const perDay = producingFarms(state, faction) * FARM_PER_DAY + fishers * FISH_FOOD;
-    if (food >= URGENT_FOOD && perDay >= SOLDIER_COST) return false;
-    return true;
 }
 
 function farmVillage(state, faction) {
@@ -3736,6 +3713,10 @@ function pickBuilding(state, village, kind) {
     return bestSite(spots, (x, z) => layoutBuilding(state, village, x, z, blocked), (site) => site.score);
 }
 
+function roomTight(state, faction) {
+    return popLimit(state, faction) - factionPop(state, faction) <= (housesModel ? HOUSES_POP : HOUSE_POP) * 2;
+}
+
 function buildingBusy(state, faction) {
     if ((state.farmJobs || []).some((job) => job.payer === faction)) return true;
     return (state.siteJobs || []).some((job) => job.payer === faction);
@@ -3812,11 +3793,11 @@ function considerSites(state, now) {
         if (buildingBusy(state, faction)) continue;
         const village = homeVillage(state, faction);
         if (village < 0) continue;
-        const tight = popLimit(state, faction) - factionPop(state, faction) <= (housesModel ? HOUSES_POP : HOUSE_POP) * 2;
+        // Room for more soldiers first, then a lumberyard and mine, then more room. Farms get their turn in considerFarms, which runs first.
+        const tight = roomTight(state, faction);
         const hasYard = yardsOf(state, faction).length > 0;
         const hasMine = state.mines.some((mine) => state.owners[mine.village] === faction);
-        const kind = tight ? "house" : !hasYard ? "yard" : mineModel && !hasMine ? "mine" : "";
-        if (!kind) continue;
+        const kind = tight ? "house" : !hasYard ? "yard" : mineModel && !hasMine ? "mine" : "house";
         const cost = kind === "mine" ? MINE_WOOD : BUILD_WOOD;
         if ((state.wood[faction] || 0) < cost) continue;
         const site = pickBuilding(state, village, kind);
@@ -3884,7 +3865,7 @@ function considerFarms(state, now) {
     for (let faction = 0; faction < 4; faction++) {
         if (buildingBusy(state, faction)) continue;
         if (now < farmThink[faction]) continue;
-        if (!wantsFarm(state, faction) || extraFarms(state, faction) >= FARM_EXTRA || (state.wood[faction] || 0) < FARM_WOOD) {
+        if ((state.wood[faction] || 0) < FARM_WOOD || roomTight(state, faction)) {
             farmThink[faction] = now + 20000;
             continue;
         }
@@ -4299,8 +4280,8 @@ function syncWorld(state, now) {
     if (stepYard(state, now)) dirty = true;
     if (creditRepair(state, now)) dirty = true;
     if (considerRepairs(state, now)) dirty = true;
-    if (considerSites(state, now)) dirty = true;
     if (considerFarms(state, now)) dirty = true;
+    if (considerSites(state, now)) dirty = true;
     if (considerHamlets(state, now)) dirty = true;
     if (ensureFarms(state)) dirty = true;
     if (stepFarms(state, now)) dirty = true;
