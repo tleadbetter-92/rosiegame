@@ -89,14 +89,32 @@ html, body {
     left: 18px;
     z-index: 5;
     display: flex;
+    flex-direction: column;
     gap: 8px;
-    padding: 8px;
+    width: min(320px, calc(100vw - 36px));
+    max-height: calc(100dvh - 120px);
+    overflow: auto;
+    padding: 12px;
     border: 2px solid rgba(255, 255, 255, 0.75);
     border-radius: 10px;
-    background: rgba(12, 14, 16, 0.78);
+    background: rgba(12, 14, 16, 0.88);
+    color: white;
 }
 
 #pack-panel[hidden] { display: none; }
+
+#pack-panel h2 {
+    margin: 8px 0 0;
+    font: 650 0.85rem "Segoe UI", system-ui, sans-serif;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #e7d7b2;
+}
+
+#pack-panel .pack-arms {
+    display: flex;
+    gap: 8px;
+}
 
 #pack-panel button {
     min-width: 92px;
@@ -113,10 +131,59 @@ html, body {
     border-color: #f0d2b4;
 }
 
+#pack-panel .pack-note {
+    margin: 0;
+    min-height: 1.2em;
+    font: 500 0.85rem "Segoe UI", system-ui, sans-serif;
+    color: #d8c8a8;
+}
+
+#pack-close {
+    align-self: flex-end;
+    min-width: 0;
+    padding: 4px 10px;
+    font-size: 0.8rem;
+}
+
+#self-level {
+    margin: 0;
+    font: 650 1rem "Segoe UI", system-ui, sans-serif;
+}
+
+#self-attributes,
+#self-skills {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+#self-attributes li,
+#self-skills li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0;
+    font: 500 0.9rem "Segoe UI", system-ui, sans-serif;
+}
+
+#self-attributes li span,
+#self-skills li span { flex: 1; }
+
+#self-attributes li b,
+#self-skills li b { font-variant-numeric: tabular-nums; }
+
+#self-skills li i {
+    display: block;
+    width: 0;
+    height: 4px;
+    border-radius: 2px;
+    background: #c6a15a;
+}
+
 #land {
     position: fixed;
     top: 52px;
-    left: 290px;
+    left: 210px;
     z-index: 4;
     padding: 6px 14px;
     border: 2px solid rgba(255, 255, 255, 0.85);
@@ -187,7 +254,7 @@ html, body {
 #gfx {
     position: fixed;
     top: 52px;
-    left: 186px;
+    left: 108px;
     z-index: 4;
     padding: 6px 14px;
     border: 2px solid rgba(255, 255, 255, 0.85);
@@ -566,7 +633,7 @@ html, body {
 
     .nav {
         top: calc(10px + env(safe-area-inset-top));
-        left: calc(168px + env(safe-area-inset-left));
+        left: calc(120px + env(safe-area-inset-left));
     }
 
     .campaign-link {
@@ -589,7 +656,6 @@ html, body {
     }
 
     #pack,
-    #self,
     #gfx {
         top: calc(10px + env(safe-area-inset-top));
         min-height: 32px;
@@ -604,12 +670,9 @@ html, body {
 
     #pack { left: calc(10px + env(safe-area-inset-left)); }
 
-    #self { left: calc(58px + env(safe-area-inset-left)); }
+    #gfx { left: calc(58px + env(safe-area-inset-left)); }
 
-    #gfx { left: calc(106px + env(safe-area-inset-left)); }
-
-    #pack-panel,
-    #self-panel { top: calc(48px + env(safe-area-inset-top)); }
+    #pack-panel { top: calc(48px + env(safe-area-inset-top)); }
 
     #vitals {
         left: calc(10px + env(safe-area-inset-left));

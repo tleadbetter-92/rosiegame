@@ -34,7 +34,6 @@ const player = { hp: 40, max: 40, guard: 0, dead: 0, shake: 0 };
 let hero = Hero.create();
 let heroReady = false;
 let heroSaveTimer = 0;
-let selfPanel = null;
 const keys = {};
 const housePlan = [
     { x: -10, z: 3, w: 6, d: 5, h: 3.1, rise: 1.5, door: "e" },
@@ -3637,6 +3636,7 @@ function applyCampaign(data) {
         ensureCottages(data);
         touchFarmers(data);
         raisePlots(data);
+        paintBuildStatus();
         return;
     }
     soldierKey = key;
@@ -4457,11 +4457,13 @@ function tickHero(dt) {
     hero.stamina = stamina;
     hero.magicka = magicka;
     paintHealth();
-    if (selfPanel && !selfPanel.hidden) paintSheet();
+    const pack = document.getElementById("pack-panel");
+    if (pack && !pack.hidden) paintSheet();
 }
 
 function paintSheet() {
-    if (!selfPanel || selfPanel.hidden) return;
+    const pack = document.getElementById("pack-panel");
+    if (!pack || pack.hidden) return;
     const level = document.getElementById("self-level");
     if (level) level.textContent = "Level " + hero.level;
     const attrs = document.getElementById("self-attributes");
@@ -4479,6 +4481,157 @@ function paintSheet() {
             return "<li><span>" + skill.name + "</span><b>" + value + "</b><i style=\"width:" + pct.toFixed(0) + "%\"></i></li>";
         }).join("");
     }
+    paintBuildStatus();
+}
+
+// Footprint of models/roblox/singlehouse.json (metres). The ghost square matches this.
+const HOUSE_PLACE_W = 9.72;
+const HOUSE_PLACE_D = 10.95;
+let placing = null;
+
+function paintBuildStatus() {
+    const status = document.getElementById("build-status");
+    const button = document.getElementById("build-house");
+    if (!status) return;
+    const job = campaign && campaign.playerBuild;
+    if (placing) {
+        status.textContent = "Aim at the ground, click to place · Esc to cancel";
+        if (button) button.disabled = true;
+    } else if (job && job.readyAt) {
+        const left = Math.max(0, Math.ceil((job.readyAt - Date.now()) / 1000));
+        status.textContent = left > 0 ? "House ready in " + left + "s" : "Finishing house…";
+        if (button) button.disabled = true;
+    } else {
+        status.textContent = "";
+        if (button) button.disabled = false;
+    }
+}
+
+function groundAim(maxDist) {
+    const reach = maxDist || 70;
+    const body = activeCam();
+    const cp = Math.cos(body.pitch);
+    const sp = Math.sin(body.pitch);
+    const sy = Math.sin(body.yaw);
+    const cy = Math.cos(body.yaw);
+    const fx = sy * cp;
+    const fy = sp;
+    const fz = -cy * cp;
+    let x = body.x;
+    let y = body.y;
+    let z = body.z;
+    for (let i = 0; i < 90; i++) {
+        x += fx;
+        y += fy;
+        z += fz;
+        const ground = Math.max(0, World.heightAt(x, z));
+        if (y <= ground + 0.35) return { x: x, z: z, y: ground };
+        if ((x - body.x) * (x - body.x) + (z - body.z) * (z - body.z) > reach * reach) break;
+    }
+    if (fy >= -0.02) return null;
+    const t = (body.y - Math.max(0, World.heightAt(body.x, body.z))) / -fy;
+    if (t < 2 || t > reach) return null;
+    const gx = body.x + fx * t;
+    const gz = body.z + fz * t;
+    return { x: gx, z: gz, y: Math.max(0, World.heightAt(gx, gz)) };
+}
+
+function placeYaw() {
+    return Math.round(cam.yaw / (Math.PI / 2)) * (Math.PI / 2);
+}
+
+function startPlaceHouse() {
+    if (player.dead || (campaign && campaign.playerBuild)) return;
+    placing = { kind: "house", x: cam.x, z: cam.z, y: 0, yaw: placeYaw(), ok: true };
+    packPanel.hidden = true;
+    paintBuildStatus();
+    paintArm();
+    showStrike("Aim at the ground, click to place");
+}
+
+function cancelPlaceHouse() {
+    if (!placing) return;
+    placing = null;
+    uploadMesh("placeGhost", []);
+    paintBuildStatus();
+    paintArm();
+    showStrike("Build cancelled");
+}
+
+function confirmPlaceHouse() {
+    if (!placing || player.dead) return;
+    const spot = groundAim();
+    if (!spot) {
+        showStrike("Aim at the ground");
+        return;
+    }
+    const yaw = placeYaw();
+    placing = null;
+    uploadMesh("placeGhost", []);
+    pendingHit += 1;
+    fetch("/api/campaign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ build: "house", x: spot.x, z: spot.z, yaw: yaw })
+    }).then((res) => res.json()).then((data) => {
+        pendingHit -= 1;
+        if (pendingHit === 0) applyCampaign(data);
+        paintBuildStatus();
+        paintArm();
+        const note = (data.log || []).slice(-1)[0] || "";
+        if (note) showStrike(note);
+    }).catch(() => { pendingHit -= 1; paintBuildStatus(); paintArm(); });
+}
+
+function paintPlaceGhost() {
+    if (!placing) {
+        if (mesh.placeGhost) uploadMesh("placeGhost", []);
+        return;
+    }
+    const spot = groundAim();
+    if (!spot) {
+        placing.ok = false;
+        uploadMesh("placeGhost", []);
+        return;
+    }
+    const yaw = placeYaw();
+    placing.x = spot.x;
+    placing.z = spot.z;
+    placing.y = spot.y;
+    placing.yaw = yaw;
+    placing.ok = true;
+    const list = [];
+    const y = spot.y + 0.12;
+    const c = Math.cos(yaw);
+    const s = Math.sin(yaw);
+    const hw = HOUSE_PLACE_W / 2;
+    const hd = HOUSE_PLACE_D / 2;
+    const xf = (lx, lz) => [spot.x + lx * c + lz * s, y, spot.z - lx * s + lz * c];
+    const corners = [xf(-hw, -hd), xf(hw, -hd), xf(hw, hd), xf(-hw, hd)];
+    const shade = 0.85;
+    const u = 0.5;
+    const v = 0.5;
+    const quad = (a, b, d) => {
+        list.push(a[0], a[1], a[2], u, v, shade, b[0], b[1], b[2], u, v, shade, d[0], d[1], d[2], u, v, shade);
+    };
+    quad(corners[0], corners[1], corners[2]);
+    quad(corners[0], corners[2], corners[3]);
+    // Raised rim so the square reads clearly.
+    const rim = 0.18;
+    for (let i = 0; i < 4; i++) {
+        const a = corners[i];
+        const b = corners[(i + 1) % 4];
+        addBox(list, Math.min(a[0], b[0]) - 0.04, y, Math.min(a[2], b[2]) - 0.04,
+            Math.abs(a[0] - b[0]) + 0.08, rim, Math.abs(a[2] - b[2]) + 0.08);
+    }
+    textures.placeGhost = textures.sand || textures.dirt || textures.grass;
+    uploadMesh("placeGhost", list);
+    if (mesh.placeGhost) mesh.placeGhost.cull = false;
+}
+
+function buildHouse() {
+    startPlaceHouse();
 }
 
 function flashHurt() {
@@ -7160,6 +7313,7 @@ function draw() {
     drawMesh("farLeaf", 0.6);
     drawMesh("nearTrunk", 1);
     drawMesh("nearLeaf", 1);
+    drawMesh("placeGhost", 1);
     gl.uniform1f(loc.band, 1);
     gl.uniform1f(loc.flow, 0);
     gl.uniformMatrix4fv(loc.proj, false, proj);
@@ -7713,7 +7867,7 @@ function addRaisedDoor(b, id, floorsGeom) {
     addBox(floorsGeom, b.minX + inset, floorY - 0.04, b.minZ + inset, fw, 0.06, fd);
 }
 
-// Roblox models (models/roblox/farm.json, houses.json, mine.json, lumberyard.json and ore.json, made by tools/roblox-farm.js and roblox-model.js):
+// Roblox models (models/roblox/farm.json, houses.json, mine.json, lumberyard.json, ore.json, horsecart.json, singlehouse.json):
 // plain parts in metres, coloured from a palette texture, drawn as the robloxfarm, robloxhouses and robloxmine meshes.
 const roblox = {};
 
@@ -7871,7 +8025,7 @@ function stampRaisedPlots() {
     const leaf = [];
     const trunk = [];
     const floorGeom = [];
-    const modelParts = { farm: [], houses: [], mine: [], lumberyard: [], ore: [] };
+    const modelParts = { farm: [], houses: [], mine: [], lumberyard: [], ore: [], singlehouse: [] };
     const padGeom = [];
     const buckets = {};
     World.setPads(raisedData.pads || []);
@@ -8413,6 +8567,7 @@ function frame(now) {
     stepHorse(dt);
     swingDoors(dt);
     refreshNearTrees();
+    paintPlaceGhost();
     updateFight(dt);
     updatePalisade(dt);
     syncArrowMesh();
@@ -8431,12 +8586,15 @@ window.addEventListener("keydown", (e) => {
     }
     if (e.code === "KeyF" && !e.repeat) shootArrow();
     if (e.code === "KeyE" && !e.repeat) useDoor();
-    if (e.code === "KeyP" && !e.repeat) {
-        packPanel.hidden = !packPanel.hidden;
+    if (e.code === "Escape" && placing) {
+        cancelPlaceHouse();
         e.preventDefault();
+        return;
     }
-    if (e.code === "KeyC" && !e.repeat) {
-        toggleSheet();
+    if ((e.code === "KeyP" || e.code === "KeyC") && !e.repeat) {
+        if (placing) cancelPlaceHouse();
+        packPanel.hidden = !packPanel.hidden;
+        if (!packPanel.hidden) paintSheet();
         e.preventDefault();
     }
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) e.preventDefault();
@@ -8464,6 +8622,10 @@ let dragging = false;
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 canvas.addEventListener("mousedown", (e) => {
     if (e.button === 2) {
+        if (placing) {
+            cancelPlaceHouse();
+            return;
+        }
         if (inside) {
             if (atExit()) leaveInterior();
         } else {
@@ -8472,6 +8634,10 @@ canvas.addEventListener("mousedown", (e) => {
         return;
     }
     if (e.button !== 0) return;
+    if (placing) {
+        confirmPlaceHouse();
+        return;
+    }
     dragging = true;
     if (arm === "bow") {
         shootArrow();
@@ -8550,7 +8716,9 @@ function paintArm() {
     if (land) land.hidden = !flying;
     const where = document.getElementById("where");
     if (where) where.hidden = !flying;
-    if (helpLine && flying) {
+    if (helpLine && placing) {
+        helpLine.textContent = "Aim at the ground · click to place · Esc or right-click to cancel";
+    } else if (helpLine && flying) {
         helpLine.textContent = fastOn
             ? "WASD to fly · mouse to look · Space up · Shift down · Alt toggles fast · fast on"
             : "WASD to fly · mouse to look · Space up · Shift down · Alt toggles fast";
@@ -8559,7 +8727,7 @@ function paintArm() {
             ? "WASD to walk · Space to jump · mouse to look · click to shoot · Alt toggles fast · Pack to switch"
             : "WASD to walk · Space to jump · mouse to look · drag to swing · Alt toggles fast · Pack to switch";
     }
-    packPanel.querySelectorAll("button").forEach((button) => {
+    packPanel.querySelectorAll("[data-arm]").forEach((button) => {
         button.setAttribute("aria-pressed", button.dataset.arm === arm ? "true" : "false");
     });
 }
@@ -8664,6 +8832,10 @@ if (jumpBtn) {
 attack.addEventListener("pointerdown", (e) => {
     e.preventDefault();
     attack.classList.add("down");
+    if (placing) {
+        confirmPlaceHouse();
+        return;
+    }
     if (arm === "bow") shootArrow();
     else startSwing("thrust");
 });
@@ -8680,26 +8852,19 @@ bowButton.addEventListener("pointerup", () => bowButton.classList.remove("down")
 bowButton.addEventListener("pointercancel", () => bowButton.classList.remove("down"));
 bowButton.addEventListener("contextmenu", (e) => e.preventDefault());
 
-const selfButton = document.getElementById("self");
-selfPanel = document.getElementById("self-panel");
-function toggleSheet() {
-    if (!selfPanel) return;
-    selfPanel.hidden = !selfPanel.hidden;
-    if (!selfPanel.hidden) paintSheet();
-}
-if (selfButton) selfButton.addEventListener("click", toggleSheet);
 const gfxButton = document.getElementById("gfx");
 if (gfxButton) {
     gfxButton.textContent = graphics === "low" ? "Gfx Low" : "Gfx High";
     gfxButton.addEventListener("click", () => setGraphics(graphics === "low" ? "high" : "low"));
 }
-const selfClose = document.getElementById("self-close");
-if (selfClose) selfClose.addEventListener("click", () => {
-    if (selfPanel) selfPanel.hidden = true;
-});
 packButton.addEventListener("click", () => {
     packPanel.hidden = !packPanel.hidden;
+    if (!packPanel.hidden) paintSheet();
 });
+const packClose = document.getElementById("pack-close");
+if (packClose) packClose.addEventListener("click", () => { packPanel.hidden = true; });
+const buildHouseBtn = document.getElementById("build-house");
+if (buildHouseBtn) buildHouseBtn.addEventListener("click", buildHouse);
 const enterButton = document.getElementById("enter");
 if (enterButton) {
     enterButton.addEventListener("click", (e) => {
@@ -8709,7 +8874,7 @@ if (enterButton) {
     });
 }
 packPanel.addEventListener("click", (e) => {
-    const button = e.target.closest("button");
+    const button = e.target.closest("[data-arm]");
     if (!button) return;
     chooseArm(button.dataset.arm);
 });
@@ -8745,7 +8910,10 @@ function endTouch(e) {
     for (const t of e.changedTouches) {
         if (t.identifier !== lookId) continue;
         const held = performance.now() - lookStarted;
-        if (phone.matches && lookMoved < 24 && held < 400) useDoor();
+        if (phone.matches && lookMoved < 24 && held < 400) {
+            if (placing) confirmPlaceHouse();
+            else useDoor();
+        }
         lookId = null;
     }
 }

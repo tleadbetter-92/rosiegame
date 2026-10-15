@@ -56,6 +56,9 @@ const farmModel = robloxModel(() => require("../models/roblox/farm.json"));
 const housesModel = robloxModel(() => require("../models/roblox/houses.json"));
 const mineModel = robloxModel(() => require("../models/roblox/mine.json"));
 const yardModel = robloxModel(() => require("../models/roblox/lumberyard.json"));
+const singleHouseModel = robloxModel(() => require("../models/roblox/singlehouse.json"));
+// Player houses finish on real wall-clock time, not the campaign day clock.
+const PLAYER_BUILD_MS = 60 * 1000;
 
 // How far up a hamlet's first farm's ground may be filled to make it level (kept so existing hamlets stay put).
 const PAD_RISE = 6;
@@ -429,6 +432,7 @@ function restartCampaign(state, now) {
     state.grudges = [];
     state.goblins = { nextAt: nextGoblinRaid(now), raid: null };
     state.wilds = null;
+    // Player houses stay; they are not faction buildings.
 }
 
 function freshMinors() {
@@ -2325,6 +2329,14 @@ function present(state, now, turn, paused) {
             d: yard.d,
             model: yard.model || null,
             at: yard.at || null
+        }))).concat((state.playerSites || []).map((site) => ({
+            id: site.id,
+            village: -1,
+            kind: "house",
+            yaw: site.yaw,
+            house: site.house,
+            model: site.model || "singlehouse",
+            at: site.at || null
         }))).concat(hamletPlots()),
         raising: (state.farmJobs || []).map((job) => ({
             id: job.id,
@@ -2340,7 +2352,19 @@ function present(state, now, turn, paused) {
             x: job.x,
             z: job.z,
             y: job.y
+        }))).concat((state.playerJobs || []).map((job) => ({
+            id: job.id,
+            village: -1,
+            kind: "house",
+            x: job.x,
+            z: job.z,
+            y: job.y,
+            readyAt: job.readyAt
         }))),
+        playerBuild: (state.playerJobs || [])[0] ? {
+            kind: "house",
+            readyAt: state.playerJobs[0].readyAt
+        } : null,
         pads: syncPads(state),
         lodges: (state.lodges || []).map((lodge) => ({
             id: lodge.id,
@@ -3380,6 +3404,8 @@ function takenRects(state) {
         const field = site.fields[0];
         if (field) rects.push({ minX: field.x, minZ: field.z, w: field.w, d: field.d });
     }
+    for (const site of state.playerSites || []) if (site.rect) rects.push(site.rect);
+    for (const job of state.playerJobs || []) if (job.rect) rects.push(job.rect);
     return rects;
 }
 
@@ -3439,6 +3465,8 @@ function syncPads(state) {
     (state.siteJobs || []).forEach(add);
     (state.yards || []).forEach(add);
     (state.mines || []).forEach(add);
+    (state.playerSites || []).forEach(add);
+    (state.playerJobs || []).forEach(add);
     hamlets.forEach((hamlet) => add(hamlet.farm));
     startSites().forEach(add);
     add(shownMine());
@@ -3452,6 +3480,137 @@ function quarterTurn(village, cx, cz) {
     const dz = place.z - cz;
     const toward = Math.abs(dx) > Math.abs(dz) ? { x: Math.sign(dx), z: 0 } : { x: 0, z: Math.sign(dz) };
     return Math.atan2(-toward.z, toward.x);
+}
+
+// The player's own house at the spot they aimed: facing the way they look, ground filled level like other builds.
+function layoutPlayerHouse(state, px, pz, yaw) {
+    if (!singleHouseModel || !Number.isFinite(px) || !Number.isFinite(pz)) return null;
+    const blocked = takenRects(state);
+    const facing = Number.isFinite(yaw) ? yaw : 0;
+    const theta = Math.round(facing / (Math.PI / 2)) * (Math.PI / 2);
+    const at = { x: px, z: pz, theta: theta };
+    const whole = placeRect({ x: 0, z: 0, w: singleHouseModel.w, d: singleHouseModel.d }, at);
+    const rect = { minX: whole.minX, minZ: whole.minZ, w: whole.w, d: whole.d };
+    for (const other of blocked) {
+        if (rectsHit(rect, other, 2)) return null;
+    }
+    const pad = padFor(rect, true);
+    if (!pad) return null;
+    at.y = pad.y;
+    return {
+        id: null,
+        village: -1,
+        kind: "house",
+        x: px,
+        z: pz,
+        y: pad.y,
+        yaw: theta,
+        w: whole.w,
+        d: whole.d,
+        rect: rect,
+        model: "singlehouse",
+        at: at,
+        pad: pad,
+        house: {
+            x: px,
+            z: pz,
+            y: pad.y,
+            yaw: theta,
+            w: whole.w,
+            d: whole.d,
+            minX: rect.minX,
+            minZ: rect.minZ,
+            mesh: "house",
+            role: "house",
+            doorSide: 1,
+            village: -1
+        }
+    };
+}
+
+function ensurePlayerBuilds(state) {
+    let dirty = false;
+    if (!Array.isArray(state.playerSites)) { state.playerSites = []; dirty = true; }
+    if (!Array.isArray(state.playerJobs)) { state.playerJobs = []; dirty = true; }
+    return dirty;
+}
+
+function finishPlayerJobs(state, now) {
+    if (ensurePlayerBuilds(state)) { /* arrays ready */ }
+    let dirty = false;
+    const keep = [];
+    for (const job of state.playerJobs) {
+        if (now < job.readyAt) {
+            keep.push(job);
+            continue;
+        }
+        state.playerSites.push({
+            id: job.id,
+            village: -1,
+            kind: "house",
+            x: job.x,
+            z: job.z,
+            y: job.y,
+            yaw: job.yaw,
+            w: job.w,
+            d: job.d,
+            rect: job.rect,
+            model: job.model,
+            at: job.at,
+            pad: job.pad,
+            house: job.house
+        });
+        note(state, "Your house is finished.");
+        dirty = true;
+    }
+    if (keep.length !== state.playerJobs.length) {
+        state.playerJobs = keep;
+        dirty = true;
+    }
+    return dirty;
+}
+
+async function startPlayerBuild(kind, x, z, yaw) {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    ensurePlayerBuilds(state);
+    if (kind !== "house" || !singleHouseModel) {
+        return present(state, now, turnOf(state, now), Number.isFinite(state.pausedAt));
+    }
+    if (state.playerJobs.length) {
+        note(state, "You already have a house under construction.");
+        await writeState(state);
+        return present(state, now, turnOf(state, now), Number.isFinite(state.pausedAt));
+    }
+    const site = layoutPlayerHouse(state, Number(x), Number(z), Number(yaw));
+    if (!site) {
+        note(state, "That spot will not take a house. Try flatter open ground.");
+        await writeState(state);
+        return present(state, now, turnOf(state, now), Number.isFinite(state.pausedAt));
+    }
+    state.playerSerial = (state.playerSerial || 0) + 1;
+    site.id = "player-house-" + state.playerSerial;
+    state.playerJobs.push({
+        id: site.id,
+        village: -1,
+        kind: "house",
+        readyAt: now + PLAYER_BUILD_MS,
+        x: site.x,
+        z: site.z,
+        y: site.y,
+        yaw: site.yaw,
+        w: site.w,
+        d: site.d,
+        rect: site.rect,
+        model: site.model,
+        at: site.at,
+        pad: site.pad,
+        house: site.house
+    });
+    note(state, "You start a house. It will be ready in one minute.");
+    await writeState(state);
+    return present(state, now, turnOf(state, now), Number.isFinite(state.pausedAt));
 }
 
 // A Roblox building site (the five houses or a mine) on a level pad outside the walls, turned to face the village.
@@ -4537,6 +4696,8 @@ function syncWorld(state, now) {
     if (fight(state, now)) dirty = true;
     if (goblinRaids(state, now)) dirty = true;
     if (stepWilds(state, now)) dirty = true;
+    if (ensurePlayerBuilds(state)) dirty = true;
+    if (finishPlayerJobs(state, now)) dirty = true;
     if (ensureHero(state)) dirty = true;
     return { dirty, turn, paused };
 }
@@ -4789,6 +4950,10 @@ module.exports = async function handler(req, res) {
                 restartCampaign(state, Date.now());
                 await writeState(state);
                 res.status(200).json(await campaignState(Date.now()));
+                return;
+            }
+            if (req.body && req.body.build === "house") {
+                res.status(200).json(await startPlayerBuild("house", req.body.x, req.body.z, req.body.yaw));
                 return;
             }
             if (req.body && req.body.hero && typeof req.body.hero === "object") {
