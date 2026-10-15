@@ -1473,16 +1473,19 @@ uniform float uBand;
 uniform float uTime;
 uniform float uFlow;
 uniform vec3 uTint;
+uniform float uFogNear;
+uniform float uFogSpan;
+uniform float uDrawFar;
 void main() {
     vec2 uv = vUv;
     if (uFlow > 0.5) uv.y += uTime * 0.035;
     if (uGlow > 1.5) uv.y -= uTime * 0.45;
     float dist = distance(vWorld, uEye);
     if (uBand > 0.5 && uBand < 0.8 && dist < 70.0) discard;
-    if (uBand > 0.5 && dist > 280.0) discard;
+    if (uBand > 0.5 && dist > uDrawFar) discard;
     vec3 color = texture2D(uTex, uv).rgb * vShade * uTint;
     if (uFlow > 0.5) color *= vec3(0.78, 0.9, 0.86);
-    float fog = clamp((dist - 52.0) / 190.0, 0.0, 1.0);
+    float fog = clamp((dist - uFogNear) / uFogSpan, 0.0, 1.0);
     vec3 fogCol = mix(vec3(0.80, 0.75, 0.64), vec3(0.07, 0.08, 0.13), uDark);
     if (uGlow > 0.5) {
         if (uGlow > 1.5) {
@@ -1597,7 +1600,10 @@ const loc = {
     band: gl.getUniformLocation(program, "uBand"),
     time: gl.getUniformLocation(program, "uTime"),
     flow: gl.getUniformLocation(program, "uFlow"),
-    tint: gl.getUniformLocation(program, "uTint")
+    tint: gl.getUniformLocation(program, "uTint"),
+    fogNear: gl.getUniformLocation(program, "uFogNear"),
+    fogSpan: gl.getUniformLocation(program, "uFogSpan"),
+    drawFar: gl.getUniformLocation(program, "uDrawFar")
 };
 const identity = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 const peopleModels = {};
@@ -2488,8 +2494,58 @@ let nearMarkZ = 1e9;
 const meadowSeen = new Set();
 const meadowProps = [];
 
+// Low graphics for phones: much lower resolution, shorter fog, fewer trees and people drawn.
+const phoneLike = window.matchMedia("(hover: none) and (pointer: coarse)");
+function defaultGraphics() {
+    try {
+        const saved = localStorage.getItem("village-graphics");
+        if (saved === "low" || saved === "high") return saved;
+    } catch (err) { /* keep the default */ }
+    return phoneLike.matches || window.innerWidth < 700 ? "low" : "high";
+}
+let graphics = defaultGraphics();
+
+function gfx() {
+    if (graphics === "low") {
+        return {
+            scale: 0.38,
+            far: 160,
+            fogNear: 28,
+            fogSpan: 90,
+            drawFar: 140,
+            treeNear: 90,
+            treeFar: 0,
+            treeCap: 45,
+            meadowReach: 110,
+            meadowStep: 44,
+            meadowProps: false,
+            personDraw: 90,
+            personStep: 120,
+            farEvery: 60,
+            miniEvery: 3
+        };
+    }
+    return {
+        scale: 0.65,
+        far: 420,
+        fogNear: 52,
+        fogSpan: 190,
+        drawFar: 280,
+        treeNear: 175,
+        treeFar: 300,
+        treeCap: 180,
+        meadowReach: 320,
+        meadowStep: 26,
+        meadowProps: true,
+        personDraw: 260,
+        personStep: 300,
+        farEvery: 30,
+        miniEvery: 1
+    };
+}
+
 function growMeadow(x, z, yaw) {
-    const ahead = 80;
+    const ahead = gfx().meadowReach * 0.25;
     const spots = [
         [x, z],
         [x + Math.sin(yaw) * ahead, z - Math.cos(yaw) * ahead]
@@ -2502,8 +2558,8 @@ function growMeadow(x, z, yaw) {
 }
 
 function fillMeadow(x, z) {
-    const reach = 320;
-    const step = 26;
+    const reach = gfx().meadowReach;
+    const step = gfx().meadowStep;
     const i0 = Math.floor((x - reach) / step);
     const i1 = Math.floor((x + reach) / step);
     const k0 = Math.floor((z - reach) / step);
@@ -2548,23 +2604,26 @@ function refreshNearTrees() {
     if (!grew && dx * dx + dz * dz < 40 * 40) return;
     nearMarkX = cam.x;
     nearMarkZ = cam.z;
+    const quality = gfx();
     const trunk = [];
     const leaf = [];
     const farTrunk = [];
     const farLeaf = [];
     const near = [];
+    const nearR2 = quality.treeNear * quality.treeNear;
+    const farR2 = quality.treeFar * quality.treeFar;
     for (const spot of treeSpots) {
         if (cleared(spot.x, spot.z, spot.y)) continue;
         const ox = spot.x - cam.x;
         const oz = spot.z - cam.z;
         const d2 = ox * ox + oz * oz;
-        if (d2 > 70 * 70 && d2 < 300 * 300) farTree(farTrunk, farLeaf, spot.x, spot.z, spot.y, spot.pine);
-        if (d2 > 175 * 175) continue;
+        if (quality.treeFar > 0 && d2 > 70 * 70 && d2 < farR2) farTree(farTrunk, farLeaf, spot.x, spot.z, spot.y, spot.pine);
+        if (d2 > nearR2) continue;
         near.push({ spot: spot, d2: d2 });
     }
-    if (near.length > 180) {
+    if (near.length > quality.treeCap) {
         near.sort((a, b) => a.d2 - b.d2);
-        near.length = 180;
+        near.length = quality.treeCap;
     }
     for (let i = 0; i < near.length; i++) {
         const spot = near[i].spot;
@@ -2580,22 +2639,24 @@ function refreshNearTrees() {
     uploadMesh("farLeaf", farLeaf);
     const bush = [];
     const rock = [];
-    for (let i = 0; i < meadowProps.length; i++) {
-        const prop = meadowProps[i];
-        const ox = prop.x - cam.x;
-        const oz = prop.z - cam.z;
-        if (ox * ox + oz * oz > 200 * 200 || cleared(prop.x, prop.z, prop.y)) continue;
-        if (prop.kind === "bush") {
-            const w = 1.5 + prop.roll * 0.8;
-            const d = 1.3 + prop.roll * 0.6;
-            addBox(bush, prop.x - w / 2, prop.y, prop.z - d / 2, w, 0.85, d);
-            addBox(bush, prop.x - w * 0.28, prop.y + 0.55, prop.z - d * 0.28, w * 0.55, 0.55, d * 0.55);
-        } else {
-            const w = 1.1 + prop.roll * 1.1;
-            const d = 0.85 + prop.roll * 0.7;
-            const h = 0.45 + prop.roll * 0.7;
-            addBox(rock, prop.x - w / 2, prop.y, prop.z - d / 2, w, h, d);
-            if (prop.roll > 0.4) addBox(rock, prop.x - w * 0.15, prop.y + h * 0.65, prop.z - d * 0.15, w * 0.45, h * 0.5, d * 0.4);
+    if (quality.meadowProps) {
+        for (let i = 0; i < meadowProps.length; i++) {
+            const prop = meadowProps[i];
+            const ox = prop.x - cam.x;
+            const oz = prop.z - cam.z;
+            if (ox * ox + oz * oz > 200 * 200 || cleared(prop.x, prop.z, prop.y)) continue;
+            if (prop.kind === "bush") {
+                const w = 1.5 + prop.roll * 0.8;
+                const d = 1.3 + prop.roll * 0.6;
+                addBox(bush, prop.x - w / 2, prop.y, prop.z - d / 2, w, 0.85, d);
+                addBox(bush, prop.x - w * 0.28, prop.y + 0.55, prop.z - d * 0.28, w * 0.55, 0.55, d * 0.55);
+            } else {
+                const w = 1.1 + prop.roll * 1.1;
+                const d = 0.85 + prop.roll * 0.7;
+                const h = 0.45 + prop.roll * 0.7;
+                addBox(rock, prop.x - w / 2, prop.y, prop.z - d / 2, w, h, d);
+                if (prop.roll > 0.4) addBox(rock, prop.x - w * 0.15, prop.y + h * 0.65, prop.z - d * 0.15, w * 0.45, h * 0.5, d * 0.4);
+            }
         }
     }
     textures.meadowBush = textures.leaf;
@@ -4024,13 +4085,31 @@ function ensureCottages(data) {
     stampCottageProps();
 }
 
+function stampHorseCart(list, pose) {
+    const model = robloxModel("horsecart");
+    if (!model) return false;
+    const y = Math.max(0, World.heightAt(pose.x, pose.z));
+    // Model is long on X with the horse toward +X; path yaw faces travel, so turn a quarter so the horse leads.
+    stampRoblox(list, model, {
+        x: pose.x,
+        z: pose.z,
+        y: y,
+        theta: (pose.yaw || 0) + Math.PI / 2,
+        scale: 0.5,
+        drawOnly: true
+    });
+    return true;
+}
+
 function paintCarts() {
     const list = [];
+    const model = robloxModel("horsecart");
     const lodges = campaign && campaign.lodges || [];
     for (const lodge of lodges) {
         const cart = lodge.cart;
         if (!cart || cart.hp <= 0) continue;
         const pose = clientCartPose(cart);
+        if (model && stampHorseCart(list, pose)) continue;
         const y = Math.max(0, World.heightAt(pose.x, pose.z));
         const c = Math.cos(pose.yaw);
         const s = Math.sin(pose.yaw);
@@ -4048,21 +4127,23 @@ function paintCarts() {
     const haul = campaign && campaign.yard && campaign.yard.haul;
     if (haul && (haul.phase === "out" || haul.phase === "back") && haul.path && haul.path.length > 1) {
         const pose = clientCartPose(haul);
-        const y = Math.max(0, World.heightAt(pose.x, pose.z));
-        const c = Math.cos(pose.yaw || 0);
-        const s = Math.sin(pose.yaw || 0);
-        const xf = (px, py, pz) => {
-            const lx = px - pose.x;
-            const lz = pz - pose.z;
-            return [pose.x + lx * c + lz * s, py, pose.z - lx * s + lz * c];
-        };
-        addBox(list, pose.x - 0.75, y + 0.34, pose.z - 0.38, 1.55, 0.12, 0.76, xf);
-        addBox(list, pose.x - 0.55, y + 0.46, pose.z - 0.3, 1.05, 0.32, 0.6, xf);
-        addBox(list, pose.x - 0.58, y + 0.02, pose.z - 0.26, 0.18, 0.32, 0.18, xf);
-        addBox(list, pose.x + 0.42, y + 0.02, pose.z + 0.08, 0.18, 0.32, 0.18, xf);
-        if ((haul.cargo || 0) > 0) addBox(list, pose.x - 0.4, y + 0.78, pose.z - 0.22, 0.72, 0.26, 0.44, xf);
+        if (!(model && stampHorseCart(list, pose))) {
+            const y = Math.max(0, World.heightAt(pose.x, pose.z));
+            const c = Math.cos(pose.yaw || 0);
+            const s = Math.sin(pose.yaw || 0);
+            const xf = (px, py, pz) => {
+                const lx = px - pose.x;
+                const lz = pz - pose.z;
+                return [pose.x + lx * c + lz * s, py, pose.z - lx * s + lz * c];
+            };
+            addBox(list, pose.x - 0.75, y + 0.34, pose.z - 0.38, 1.55, 0.12, 0.76, xf);
+            addBox(list, pose.x - 0.55, y + 0.46, pose.z - 0.3, 1.05, 0.32, 0.6, xf);
+            addBox(list, pose.x - 0.58, y + 0.02, pose.z - 0.26, 0.18, 0.32, 0.18, xf);
+            addBox(list, pose.x + 0.42, y + 0.02, pose.z + 0.08, 0.18, 0.32, 0.18, xf);
+            if ((haul.cargo || 0) > 0) addBox(list, pose.x - 0.4, y + 0.78, pose.z - 0.22, 0.72, 0.26, 0.44, xf);
+        }
     }
-    textures.cart = textures.trunk;
+    textures.cart = (model && textures.robloxhorsecart) || textures.trunk;
     uploadMesh("cart", list);
 }
 
@@ -4070,7 +4151,7 @@ function cartUnder(x, z, faction) {
     const lodges = campaign && campaign.lodges || [];
     const who = faction == null ? -1 : faction;
     let best = null;
-    let bestDist = 1.35;
+    let bestDist = roblox.horsecart ? 2.4 : 1.35;
     for (const lodge of lodges) {
         if (!lodge.cart || lodge.cart.hp <= 0 || lodge.owner === who) continue;
         const pose = clientCartPose(lodge.cart);
@@ -5760,7 +5841,6 @@ function separateMen(dt) {
     }
 }
 
-const FAR_EVERY = 30;
 let farTurn = 0;
 
 function updateFight(dt) {
@@ -5778,12 +5858,14 @@ function updateFight(dt) {
         }
         if (swing.age >= 0.36) swing = null;
     }
-    farTurn = (farTurn + 1) % FAR_EVERY;
+    const quality = gfx();
+    const farEvery = quality.farEvery;
+    farTurn = (farTurn + 1) % farEvery;
     for (let i = men.length - 1; i >= 0; i--) {
         const man = men[i];
-        // Far people take a turn every FAR_EVERY frames; workers, carts and marchers are placed by the clock so they
-        // still arrive where they should (people draw within 260).
-        const close = man.dying || i % FAR_EVERY === farTurn || nearPerson(man, 300);
+        // Far people take a turn every few frames; workers, carts and marchers are placed by the clock so they
+        // still arrive where they should.
+        const close = man.dying || i % farEvery === farTurn || nearPerson(man, quality.personStep);
         if (close ? stepMan(man, dt) : false) {
             men.splice(i, 1);
             actorsDirty = true;
@@ -5809,12 +5891,23 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
 
 let proj = new Float32Array(16);
 
+function setGraphics(kind) {
+    graphics = kind === "high" ? "high" : "low";
+    try { localStorage.setItem("village-graphics", graphics); } catch (err) { /* ignore */ }
+    const button = document.getElementById("gfx");
+    if (button) button.textContent = graphics === "low" ? "Gfx Low" : "Gfx High";
+    nearMarkX = Infinity;
+    nearMarkZ = Infinity;
+    resize();
+    refreshNearTrees();
+}
+
 function resize() {
-    const scale = window.innerWidth < 700 ? 1 : 0.65;
-    canvas.width = Math.max(320, Math.floor(window.innerWidth * scale));
-    canvas.height = Math.max(200, Math.floor(window.innerHeight * scale));
+    const scale = gfx().scale;
+    canvas.width = Math.max(240, Math.floor(window.innerWidth * scale));
+    canvas.height = Math.max(160, Math.floor(window.innerHeight * scale));
     gl.viewport(0, 0, canvas.width, canvas.height);
-    proj = perspective(0.12, 420);
+    proj = perspective(0.12, gfx().far);
 }
 
 function perspective(near, far) {
@@ -6968,6 +7061,10 @@ function draw() {
     gl.uniform2f(loc.eye, view.x, view.z);
     gl.uniform1f(loc.time, performance.now() * 0.001);
     gl.uniform1f(loc.flow, 0);
+    const quality = gfx();
+    gl.uniform1f(loc.fogNear, quality.fogNear);
+    gl.uniform1f(loc.fogSpan, quality.fogSpan);
+    gl.uniform1f(loc.drawFar, quality.drawFar);
     if (inside) {
         const rooms = ["roomplaster", "roomwood", "roomrock", "roomfurniture", "roompropmetal", "roompropcloth", "roomproppack"];
         const texOf = { roomplaster: "plaster", roomwood: "wood", roomrock: "rock", roomfurniture: "furniture", roompropmetal: "propmetal", roompropcloth: "propcloth", roomproppack: "proppack" };
@@ -7070,7 +7167,7 @@ function draw() {
         gl.enable(gl.CULL_FACE);
         gl.bindTexture(gl.TEXTURE_2D, textures.people);
         for (const man of men) {
-            if (man.hidden || !nearPerson(man, 260)) continue;
+            if (man.hidden || !nearPerson(man, gfx().personDraw)) continue;
             const kind = man.fisher || man.decor || man.driver || man.faction >= 4 ? "fisher" : "soldier";
             const look = man.goblin ? "fisher1" : kind + Math.min(man.faction, 4);
             const model = peopleModels[look];
@@ -7701,6 +7798,7 @@ const robloxShapes = (() => {
 function stampRoblox(list, model, at) {
     const c = Math.cos(at.theta);
     const s = Math.sin(at.theta);
+    const scale = at.scale || 1;
     const light = [0.25, 0.86, 0.28];
     const lightLen = Math.hypot(light[0], light[1], light[2]);
     for (const part of model.parts) {
@@ -7717,20 +7815,20 @@ function stampRoblox(list, model, at) {
             const lx = v[0] * half[0];
             const ly = v[1] * half[1];
             const lz = v[2] * half[2];
-            const x = r[0] * lx + r[1] * ly + r[2] * lz + part[4];
-            const y = r[3] * lx + r[4] * ly + r[5] * lz + py;
-            const z = r[6] * lx + r[7] * ly + r[8] * lz + part[6];
+            const x = (r[0] * lx + r[1] * ly + r[2] * lz + part[4]) * scale;
+            const y = (r[3] * lx + r[4] * ly + r[5] * lz + py) * scale;
+            const z = (r[6] * lx + r[7] * ly + r[8] * lz + part[6]) * scale;
             return [x * c + z * s + at.x, y + at.y, -x * s + z * c + at.z];
         });
         const square = r.every((v) => Math.abs(v) < 0.05 || Math.abs(v) > 0.95);
-        if (part[18] !== 0 && part[0] !== "ball" && part[0] !== "wedge" && (square || Math.abs(r[4]) > 0.95)) {
+        if (!at.drawOnly && part[18] !== 0 && part[0] !== "ball" && part[0] !== "wedge" && (square || Math.abs(r[4]) > 0.95)) {
             const minX = Math.min(...pts.map((p) => p[0]));
             const minY = Math.min(...pts.map((p) => p[1]));
             const minZ = Math.min(...pts.map((p) => p[2]));
             const w = Math.max(...pts.map((p) => p[0])) - minX;
             const top = Math.max(...pts.map((p) => p[1]));
             const d = Math.max(...pts.map((p) => p[2])) - minZ;
-            const tall = Math.abs(r[3]) * part[1] + Math.abs(r[4]) * part[2] + Math.abs(r[5]) * part[3];
+            const tall = (Math.abs(r[3]) * part[1] + Math.abs(r[4]) * part[2] + Math.abs(r[5]) * part[3]) * scale;
             if (w > 0.05 && d > 0.05) {
                 if (tall > 0.6) solids.push({ x: minX, z: minZ, w: w, d: d, y0: minY, y1: top, raised: true });
                 if (w * d >= 0.1) floors.push({ x: minX, z: minZ, w: w, d: d, y: top, raised: true });
@@ -7796,7 +7894,7 @@ function stampRaisedPlots() {
     if (World.ores.length) {
         const model = robloxModel("ore");
         if (model) {
-            for (const [x, z] of World.ores) stampRoblox(modelParts.ore, model, { x: x, z: z, y: Math.max(0, World.heightAt(x, z)) - 0.2, theta: 0 });
+            for (const [x, z] of World.ores) stampRoblox(modelParts.ore, model, { x: x, z: z, y: Math.max(0, World.heightAt(x, z)) - 1, theta: 0, scale: 5 });
         }
     }
     for (const plot of plots) {
@@ -8306,7 +8404,7 @@ function frame(now) {
         where.textContent = Math.round(cam.x) + ", " + Math.round(cam.z) + (flying ? " · " + Math.round(cam.y) : "");
         where.hidden = !flying;
     }
-    paintMini();
+    if ((Math.floor(now / 16) % gfx().miniEvery) === 0) paintMini();
     if (!spotSaved || Math.hypot(cam.x - spotSaved.x, cam.z - spotSaved.z) > 12) {
         spotSaved = { x: cam.x, z: cam.z };
         saveSpot();
@@ -8590,6 +8688,11 @@ function toggleSheet() {
     if (!selfPanel.hidden) paintSheet();
 }
 if (selfButton) selfButton.addEventListener("click", toggleSheet);
+const gfxButton = document.getElementById("gfx");
+if (gfxButton) {
+    gfxButton.textContent = graphics === "low" ? "Gfx Low" : "Gfx High";
+    gfxButton.addEventListener("click", () => setGraphics(graphics === "low" ? "high" : "low"));
+}
 const selfClose = document.getElementById("self-close");
 if (selfClose) selfClose.addEventListener("click", () => {
     if (selfPanel) selfPanel.hidden = true;

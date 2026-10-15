@@ -116,7 +116,7 @@ html, body {
 #land {
     position: fixed;
     top: 52px;
-    left: 186px;
+    left: 290px;
     z-index: 4;
     padding: 6px 14px;
     border: 2px solid rgba(255, 255, 255, 0.85);
@@ -174,6 +174,20 @@ html, body {
     position: fixed;
     top: 52px;
     left: 108px;
+    z-index: 4;
+    padding: 6px 14px;
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    border-radius: 8px;
+    background: rgba(20, 16, 14, 0.55);
+    color: white;
+    font: 650 0.95rem "Segoe UI", system-ui, sans-serif;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+#gfx {
+    position: fixed;
+    top: 52px;
+    left: 186px;
     z-index: 4;
     padding: 6px 14px;
     border: 2px solid rgba(255, 255, 255, 0.85);
@@ -552,7 +566,7 @@ html, body {
 
     .nav {
         top: calc(10px + env(safe-area-inset-top));
-        left: calc(104px + env(safe-area-inset-left));
+        left: calc(168px + env(safe-area-inset-left));
     }
 
     .campaign-link {
@@ -575,7 +589,8 @@ html, body {
     }
 
     #pack,
-    #self {
+    #self,
+    #gfx {
         top: calc(10px + env(safe-area-inset-top));
         min-height: 32px;
         padding: 3px 8px;
@@ -590,6 +605,8 @@ html, body {
     #pack { left: calc(10px + env(safe-area-inset-left)); }
 
     #self { left: calc(58px + env(safe-area-inset-left)); }
+
+    #gfx { left: calc(106px + env(safe-area-inset-left)); }
 
     #pack-panel,
     #self-panel { top: calc(48px + env(safe-area-inset-top)); }

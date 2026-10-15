@@ -180,10 +180,11 @@ function readRbxm(file) {
 function partsIn(group, blocks) {
     const list = [];
     const walk = (inst, door) => {
-        if (inst.children.some((c) => c.className === "Humanoid")) return;
+        // Characters (Humanoid) are skipped unless --blocks: then the horse stands in as boxes too.
+        if (!blocks && inst.children.some((c) => c.className === "Humanoid")) return;
         door = door || /door/i.test(inst.props.Name || "");
         const shell = blocks && (inst.className === "MeshPart" || inst.className === "UnionOperation");
-        const solid = shell || inst.className === "Part" || inst.className === "WedgePart" || inst.className === "Seat";
+        const solid = shell || inst.className === "Part" || inst.className === "WedgePart" || inst.className === "Seat" || inst.className === "VehicleSeat";
         if (solid && inst.props.CFrame && inst.props.size && (inst.props.Transparency || 0) < 0.5) {
             const special = inst.children.find((c) => c.className === "SpecialMesh");
             if (!(special && special.props.MeshType === 5)) {
