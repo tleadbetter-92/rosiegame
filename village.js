@@ -2493,14 +2493,14 @@ let nearMarkZ = 1e9;
 const meadowSeen = new Set();
 const meadowProps = [];
 
-// Low graphics for phones: much lower resolution, shorter fog, fewer trees and people drawn.
-const phoneLike = window.matchMedia("(hover: none) and (pointer: coarse)");
+// Low is the default on desktop and phones — Roblox towns are too heavy for High as a first load.
+// New key so an old saved "high" does not stick after this change; players can still toggle High.
 function defaultGraphics() {
     try {
-        const saved = localStorage.getItem("village-graphics");
+        const saved = localStorage.getItem("village-gfx");
         if (saved === "low" || saved === "high") return saved;
     } catch (err) { /* keep the default */ }
-    return phoneLike.matches || window.innerWidth < 700 ? "low" : "high";
+    return "low";
 }
 let graphics = defaultGraphics();
 
@@ -4101,18 +4101,36 @@ function stampHorseCart(list, pose) {
     return true;
 }
 
+let cartMeshKey = "";
+
 function paintCarts() {
-    const list = [];
     const model = robloxModel("horsecart");
+    const jobs = [];
     const lodges = campaign && campaign.lodges || [];
     for (const lodge of lodges) {
         const cart = lodge.cart;
         if (!cart || cart.hp <= 0) continue;
-        const pose = clientCartPose(cart);
+        jobs.push({ pose: clientCartPose(cart), cargo: cart.cargo || 0 });
+    }
+    const haul = campaign && campaign.yard && campaign.yard.haul;
+    if (haul && (haul.phase === "out" || haul.phase === "back") && haul.path && haul.path.length > 1) {
+        jobs.push({ pose: clientCartPose(haul), cargo: haul.cargo || 0 });
+    }
+    // Rebuild only when a cart moves a notch or cargo/model changes — not every frame.
+    let key = model ? "m" : "b";
+    for (const job of jobs) {
+        const pose = job.pose;
+        key += "|" + Math.round(pose.x * 6) + "," + Math.round(pose.z * 6) + "," + Math.round((pose.yaw || 0) * 16) + "," + (job.cargo > 0 ? 1 : 0);
+    }
+    if (key === cartMeshKey && mesh.cart) return;
+    cartMeshKey = key;
+    const list = [];
+    for (const job of jobs) {
+        const pose = job.pose;
         if (model && stampHorseCart(list, pose)) continue;
         const y = Math.max(0, World.heightAt(pose.x, pose.z));
-        const c = Math.cos(pose.yaw);
-        const s = Math.sin(pose.yaw);
+        const c = Math.cos(pose.yaw || 0);
+        const s = Math.sin(pose.yaw || 0);
         const xf = (px, py, pz) => {
             const lx = px - pose.x;
             const lz = pz - pose.z;
@@ -4122,26 +4140,7 @@ function paintCarts() {
         addBox(list, pose.x - 0.55, y + 0.46, pose.z - 0.3, 1.05, 0.32, 0.6, xf);
         addBox(list, pose.x - 0.58, y + 0.02, pose.z - 0.26, 0.18, 0.32, 0.18, xf);
         addBox(list, pose.x + 0.42, y + 0.02, pose.z + 0.08, 0.18, 0.32, 0.18, xf);
-        if ((cart.cargo || 0) > 0) addBox(list, pose.x - 0.4, y + 0.78, pose.z - 0.22, 0.72, 0.26, 0.44, xf);
-    }
-    const haul = campaign && campaign.yard && campaign.yard.haul;
-    if (haul && (haul.phase === "out" || haul.phase === "back") && haul.path && haul.path.length > 1) {
-        const pose = clientCartPose(haul);
-        if (!(model && stampHorseCart(list, pose))) {
-            const y = Math.max(0, World.heightAt(pose.x, pose.z));
-            const c = Math.cos(pose.yaw || 0);
-            const s = Math.sin(pose.yaw || 0);
-            const xf = (px, py, pz) => {
-                const lx = px - pose.x;
-                const lz = pz - pose.z;
-                return [pose.x + lx * c + lz * s, py, pose.z - lx * s + lz * c];
-            };
-            addBox(list, pose.x - 0.75, y + 0.34, pose.z - 0.38, 1.55, 0.12, 0.76, xf);
-            addBox(list, pose.x - 0.55, y + 0.46, pose.z - 0.3, 1.05, 0.32, 0.6, xf);
-            addBox(list, pose.x - 0.58, y + 0.02, pose.z - 0.26, 0.18, 0.32, 0.18, xf);
-            addBox(list, pose.x + 0.42, y + 0.02, pose.z + 0.08, 0.18, 0.32, 0.18, xf);
-            if ((haul.cargo || 0) > 0) addBox(list, pose.x - 0.4, y + 0.78, pose.z - 0.22, 0.72, 0.26, 0.44, xf);
-        }
+        if (job.cargo > 0) addBox(list, pose.x - 0.4, y + 0.78, pose.z - 0.22, 0.72, 0.26, 0.44, xf);
     }
     textures.cart = (model && textures.robloxhorsecart) || textures.trunk;
     uploadMesh("cart", list);
@@ -6046,13 +6045,16 @@ let proj = new Float32Array(16);
 
 function setGraphics(kind) {
     graphics = kind === "high" ? "high" : "low";
-    try { localStorage.setItem("village-graphics", graphics); } catch (err) { /* ignore */ }
+    try { localStorage.setItem("village-gfx", graphics); } catch (err) { /* ignore */ }
     const button = document.getElementById("gfx");
     if (button) button.textContent = graphics === "low" ? "Gfx Low" : "Gfx High";
     nearMarkX = Infinity;
     nearMarkZ = Infinity;
+    raisedKey = "";
+    cartMeshKey = "";
     resize();
     refreshNearTrees();
+    stampRaisedPlots();
 }
 
 function resize() {
@@ -7760,6 +7762,7 @@ function poseDoors() {
 
 let raisedData = null;
 let raisedKey = "";
+let raisedContentKey = "";
 
 function houseGroups() {
     const src = townKit && townKit.buildings && townKit.buildings.house;
@@ -7769,6 +7772,7 @@ function houseGroups() {
 
 function raisePlots(data) {
     raisedData = data || null;
+    raisedContentKey = "";
     stampRaisedPlots();
 }
 
@@ -7832,28 +7836,38 @@ function stampHouse(buckets, b) {
     }
 }
 
-function addRaisedDoor(b, id, floorsGeom) {
+function doorFront(b) {
     const s = Math.sin(b.yaw);
     const c = Math.cos(b.yaw);
     const fx = -s;
     const fz = -c;
     const half = (Math.abs(fx) > Math.abs(fz) ? b.w : b.d) * 0.5;
     const side = b.doorSide == null ? 1 : b.doorSide;
-    const x = b.x + fx * (half - 0.06) - c * side;
-    const z = b.z + fz * (half - 0.06) + s * side;
-    const door = {
-        id: b.village + ":farmhouse:" + id,
-        kind: "house",
-        role: "farmhouse",
-        x: x,
-        z: z,
+    return {
+        x: b.x + fx * (half - 0.06) - c * side,
+        z: b.z + fz * (half - 0.06) + s * side,
         y: b.y || 0,
         fx: fx,
         fz: fz,
+        half: half
+    };
+}
+
+function addRaisedDoor(b, id, floorsGeom, startClosed) {
+    const front = doorFront(b);
+    const door = {
+        id: b.village + ":farmhouse:" + id,
+        kind: "house",
+        role: b.role || "farmhouse",
+        x: front.x,
+        z: front.z,
+        y: front.y,
+        fx: front.fx,
+        fz: front.fz,
         yaw: b.yaw,
-        half: half,
-        swing: 1,
-        want: true,
+        half: front.half,
+        swing: startClosed ? 0 : 1,
+        want: !startClosed,
         raised: true
     };
     b.entry = door;
@@ -7865,6 +7879,7 @@ function addRaisedDoor(b, id, floorsGeom) {
     const fd = Math.max(0.4, b.d - inset * 2);
     floors.push({ x: b.minX + inset, z: b.minZ + inset, w: fw, d: fd, y: floorY, raised: true });
     addBox(floorsGeom, b.minX + inset, floorY - 0.04, b.minZ + inset, fw, 0.06, fd);
+    return door;
 }
 
 // Roblox models (models/roblox/farm.json, houses.json, mine.json, lumberyard.json, ore.json, horsecart.json, singlehouse.json):
@@ -7883,9 +7898,27 @@ function robloxModel(name) {
         });
         roblox[name] = data;
         raisedKey = "";
+        if (name === "horsecart") cartMeshKey = "";
         stampRaisedPlots();
     }).catch(() => {});
     return null;
+}
+
+// Only stamp full Roblox detail for buildings near the camera (other towns stay unloaded until you walk there).
+function raisedViewKey() {
+    const cell = 90;
+    return Math.round(cam.x / cell) + ":" + Math.round(cam.z / cell) + ":" + Math.round(gfx().drawFar);
+}
+
+function raisedDetailReach() {
+    return gfx().drawFar + 50;
+}
+
+function plotInView(plot, reach) {
+    const x = plot.at ? plot.at.x : plot.house ? plot.house.x : plot.x;
+    const z = plot.at ? plot.at.z : plot.house ? plot.house.z : plot.z;
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return true;
+    return Math.hypot(x - cam.x, z - cam.z) <= reach;
 }
 
 // Earth filled up under new buildings, drawn over the island ground wherever a pad lifts it.
@@ -7947,6 +7980,27 @@ const robloxShapes = (() => {
     return { box, wedge, cyl, ball: { verts: ballVerts, faces: ballFaces } };
 })();
 
+// A thin upright panel by the doorway is the Roblox door leaf: skip it so our swinging door can take its place.
+function robloxDoorLeaf(pts, hideDoor) {
+    if (!hideDoor) return false;
+    const minX = Math.min(...pts.map((p) => p[0]));
+    const maxX = Math.max(...pts.map((p) => p[0]));
+    const minY = Math.min(...pts.map((p) => p[1]));
+    const maxY = Math.max(...pts.map((p) => p[1]));
+    const minZ = Math.min(...pts.map((p) => p[2]));
+    const maxZ = Math.max(...pts.map((p) => p[2]));
+    const mx = (minX + maxX) / 2;
+    const mz = (minZ + maxZ) / 2;
+    if (Math.hypot(mx - hideDoor.x, mz - hideDoor.z) > 2.4) return false;
+    if (minY > hideDoor.y + 1.2 || maxY < hideDoor.y + 0.8) return false;
+    const w = maxX - minX;
+    const h = maxY - minY;
+    const d = maxZ - minZ;
+    const thin = Math.min(w, d);
+    const face = Math.max(w, d);
+    return thin < 0.5 && h > 1.05 && face > 0.55 && face < 2.8;
+}
+
 // Square-set pieces become walls you bump into, and every top is a floor you can step onto, so doorways and stairs work.
 // Slanted pieces (roofs), balls, doors and pieces Roblox lets you walk through are only drawn.
 function stampRoblox(list, model, at) {
@@ -7974,6 +8028,7 @@ function stampRoblox(list, model, at) {
             const z = (r[6] * lx + r[7] * ly + r[8] * lz + part[6]) * scale;
             return [x * c + z * s + at.x, y + at.y, -x * s + z * c + at.z];
         });
+        if (robloxDoorLeaf(pts, at.hideDoor)) continue;
         const square = r.every((v) => Math.abs(v) < 0.05 || Math.abs(v) > 0.95);
         if (!at.drawOnly && part[18] !== 0 && part[0] !== "ball" && part[0] !== "wedge" && (square || Math.abs(r[4]) > 0.95)) {
             const minX = Math.min(...pts.map((p) => p[0]));
@@ -8017,7 +8072,11 @@ function stampRaisedPlots() {
     if (!townKit || !raisedData) return;
     const plots = raisedData.plots || [];
     const raising = raisedData.raising || [];
-    const key = (raisedData.restartedAt || 0) + "|" + plots.map((plot) => plot.id).join(",") + "|" + raising.map((job) => job.id).join(",");
+    const reach = raisedDetailReach();
+    if (!raisedContentKey) {
+        raisedContentKey = (raisedData.restartedAt || 0) + "|" + plots.map((plot) => plot.id).join(",") + "|" + raising.map((job) => job.id).join(",");
+    }
+    const key = raisedContentKey + "|" + raisedViewKey();
     if (key === raisedKey) return;
     raisedKey = key;
     clearRaised();
@@ -8048,10 +8107,14 @@ function stampRaisedPlots() {
     if (World.ores.length) {
         const model = robloxModel("ore");
         if (model) {
-            for (const [x, z] of World.ores) stampRoblox(modelParts.ore, model, { x: x, z: z, y: Math.max(0, World.heightAt(x, z)) - 1, theta: 0, scale: 5 });
+            for (const [x, z] of World.ores) {
+                if (Math.hypot(x - cam.x, z - cam.z) > reach) continue;
+                stampRoblox(modelParts.ore, model, { x: x, z: z, y: Math.max(0, World.heightAt(x, z)) - 1, theta: 0, scale: 5 });
+            }
         }
     }
     for (const plot of plots) {
+        if (!plotInView(plot, reach)) continue;
         if (plot.kind === "yard" && !plot.model) {
             const x = plot.x;
             const z = plot.z;
@@ -8074,7 +8137,47 @@ function stampRaisedPlots() {
         }
         if (modelParts[plot.model] && plot.at) {
             const model = robloxModel(plot.model);
-            if (model) stampRoblox(modelParts[plot.model], model, plot.at);
+            const house = plot.house;
+            const enterable = house && (plot.kind === "house" || plot.kind === "farm");
+            let hideDoor = null;
+            if (enterable) {
+                // Centre the swinging door on the front; Roblox models rarely match the old off-centre farmhouse door.
+                const side = house.doorSide;
+                house.doorSide = 0;
+                hideDoor = doorFront(house);
+                house.doorSide = side;
+            }
+            if (model) stampRoblox(modelParts[plot.model], model, Object.assign({}, plot.at, { hideDoor: hideDoor }));
+            if (enterable) {
+                house.village = plot.village;
+                house.mesh = "house";
+                house.role = plot.kind === "house" ? "house" : "farmhouse";
+                house.raised = true;
+                const side = house.doorSide;
+                house.doorSide = 0;
+                addRaisedDoor(house, plot.id, floorGeom, true);
+                house.doorSide = side;
+            }
+            const f = plot.field;
+            if (f) {
+                for (let z = f.z; z < f.z + f.d - 0.1; z += 2) {
+                    for (let x = f.x; x < f.x + f.w - 0.1; x += 2) {
+                        cell(field, x, z, Math.min(2, f.x + f.w - x), Math.min(2, f.z + f.d - z));
+                    }
+                }
+                for (let row = f.z + 2; row < f.z + f.d - 1; row += 3) {
+                    const y = Math.max(0, World.heightAt(f.x + f.w / 2, row));
+                    addBox(leaf, f.x + 1.2, y, row, Math.max(2, f.w - 2.4), 0.28, 0.45);
+                }
+            }
+            if (plot.hay) {
+                const hx = plot.hay[0];
+                const hz = plot.hay[1];
+                const y = Math.max(0, World.heightAt(hx, hz));
+                addBox(field, hx, y, hz, 1.5, 0.7, 1.15);
+                addBox(field, hx + 0.25, y + 0.7, hz + 0.18, 1, 0.45, 0.75);
+                scenery.push({ x: hx, z: hz, w: 1.5, d: 1.15, raised: true });
+            }
             continue;
         }
         const house = plot.house;
@@ -8108,6 +8211,7 @@ function stampRaisedPlots() {
         }
     }
     for (const job of raising) {
+        if (Math.hypot(job.x - cam.x, job.z - cam.z) > reach) continue;
         const y = Math.max(0, job.y || World.heightAt(job.x, job.z));
         const posts = [[-1.7, -1.7], [1.5, -1.7], [-1.7, 1.5], [1.5, 1.5]];
         for (const post of posts) {
@@ -8566,6 +8670,7 @@ function frame(now) {
     movePlayer(dt);
     stepHorse(dt);
     swingDoors(dt);
+    stampRaisedPlots();
     refreshNearTrees();
     paintPlaceGhost();
     updateFight(dt);
