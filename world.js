@@ -689,6 +689,47 @@
         pads = list || [];
     }
 
+    // Where the goblins of the camp ringed by cones on the editor map stand: n dry spots spread evenly inside the ring,
+    // the same on the server and in the game. The centre comes first.
+    let wildCache = null;
+    function wildSpots(n) {
+        const ring = (edit.wilds || [])[0];
+        if (!ring) return { centre: null, spots: [] };
+        if (wildCache && wildCache.n === n) return wildCache;
+        const inside = (x, z) => {
+            let hit = false;
+            for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+                const [xi, zi] = ring[i];
+                const [xj, zj] = ring[j];
+                if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) hit = !hit;
+            }
+            return hit;
+        };
+        const xs = ring.map((p) => p[0]);
+        const zs = ring.map((p) => p[1]);
+        const box = { x0: Math.min(...xs), x1: Math.max(...xs), z0: Math.min(...zs), z1: Math.max(...zs) };
+        const centre = { x: (box.x0 + box.x1) / 2, z: (box.z0 + box.z1) / 2 };
+        const roll = (x, z) => {
+            const v = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
+            return v - Math.floor(v);
+        };
+        let spots = [];
+        for (let step = 90; step >= 10 && spots.length < n; step -= 5) {
+            spots = [];
+            for (let x = box.x0 + step / 2; x < box.x1; x += step) {
+                for (let z = box.z0 + step / 2; z < box.z1; z += step) {
+                    const px = x + (roll(x, z) - 0.5) * step * 0.6;
+                    const pz = z + (roll(z, x) - 0.5) * step * 0.6;
+                    if (!inside(px, pz) || wet(px, pz) || heightAt(px, pz) < 0.5) continue;
+                    spots.push({ x: px, z: pz, r: roll(px, pz) });
+                }
+            }
+        }
+        spots.sort((a, b) => a.r - b.r);
+        wildCache = { n, centre, spots: spots.slice(0, n).map((s) => ({ x: Math.round(s.x * 10) / 10, z: Math.round(s.z * 10) / 10 })) };
+        return wildCache;
+    }
+
     // Ground under a building pad is cleared of trees and bushes.
     function onPad(x, z, margin = 1) {
         for (let i = 0; i < pads.length; i++) {
@@ -1434,6 +1475,9 @@
         cliffDist,
         paintedNear,
         editRocks: edit.rocks,
+        // Ore placed on the editor map, [x, z]: where mine workers dig stone and gold.
+        ores: edit.ores || [],
+        wildSpots,
         cliffRocks,
         groundStones
     };

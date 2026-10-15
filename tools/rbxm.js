@@ -173,15 +173,17 @@ function readRbxm(file) {
     return { instances: [...byId.values()] };
 }
 
-// The plain parts under a model. Roblox meshes, unions and decals live on Roblox's servers, not in the file, so they are left out.
+// The plain parts under a model. Roblox meshes, unions and decals live on Roblox's servers, not in the file, so they are left out,
+// unless `blocks` is set: then each mesh and union stands in as a box of its size and colour.
 // Doors are opened by scripts in Roblox, so anything named door is left walk-through like parts with CanCollide off.
 // Roblox characters (models with a Humanoid) are left out.
-function partsIn(group) {
+function partsIn(group, blocks) {
     const list = [];
     const walk = (inst, door) => {
         if (inst.children.some((c) => c.className === "Humanoid")) return;
         door = door || /door/i.test(inst.props.Name || "");
-        const solid = inst.className === "Part" || inst.className === "WedgePart" || inst.className === "Seat";
+        const shell = blocks && (inst.className === "MeshPart" || inst.className === "UnionOperation");
+        const solid = shell || inst.className === "Part" || inst.className === "WedgePart" || inst.className === "Seat";
         if (solid && inst.props.CFrame && inst.props.size && (inst.props.Transparency || 0) < 0.5) {
             const special = inst.children.find((c) => c.className === "SpecialMesh");
             if (!(special && special.props.MeshType === 5)) {

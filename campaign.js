@@ -239,7 +239,8 @@ function paint(data) {
         const fishers = village.fishers || 0;
         hold.querySelector("[data-fish]").textContent = fishers + (fishers === 1 ? " fisherman" : " fishermen");
         const cutters = village.woodcutters || 0;
-        hold.querySelector("[data-woodcut]").textContent = cutters + (cutters === 1 ? " woodcutter" : " woodcutters");
+        const miners = village.miners || 0;
+        hold.querySelector("[data-woodcut]").textContent = cutters + (cutters === 1 ? " woodcutter" : " woodcutters") + (miners ? " · " + miners + (miners === 1 ? " miner" : " miners") : "");
         const jack = hold.querySelector("[data-jack]");
         if (jack) {
             const n = village.lumberjacks || 0;
@@ -315,7 +316,7 @@ function paint(data) {
     }
 }
 
-const unitNames = { soldier: "soldier", fisher: "fisherman", wood: "woodcutter", jack: "lumberjack" };
+const unitNames = { soldier: "soldier", fisher: "fisherman", wood: "woodcutter", jack: "lumberjack", ore: "miner" };
 const buildNames = { house: "house", yard: "lumberyard", farm: "farm", mine: "mine" };
 
 function escapeHtml(text) {
@@ -372,7 +373,9 @@ function paintGuide(rules) {
         " for every house it builds. Soldiers and workers each take 1 place and eat " + rules.upkeep +
         " food a day. Gate repairs cost " + rules.repair.wood + " wood a time (gates have " + rules.repair.gateHp +
         " hit points). Goblins raid " + raid.target + " about every " + duration(raid.every, rules.dayMs) +
-        ", " + raid.min + " to " + raid.max + " at a time.";
+        ", " + raid.min + " to " + raid.max + " at a time." +
+        (raid.camp ? " The goblin camp in the woods gains " + raid.camp.daily + " goblins a day; at " + raid.camp.max +
+            " they all run at " + raid.target + " and the camp starts again from " + raid.camp.after + "." : "");
     rows(document.getElementById("guide-buildings"), rules.buildings.map((b) =>
         [b.name, b.wood + " wood", duration(b.ms, rules.dayMs), escapeHtml(b.gives), escapeHtml(b.when)]));
     rows(document.getElementById("guide-fixed"), rules.fixed.map((b) => [b.name, escapeHtml(b.gives)]));

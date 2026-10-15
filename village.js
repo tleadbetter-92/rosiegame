@@ -3457,6 +3457,27 @@ function mergeMen(data) {
             });
         });
     }
+    const camp = (data.wilds || []).length ? World.wildSpots(data.wilds.length) : null;
+    (data.wilds || []).forEach((hp, i) => {
+        const spot = camp && camp.spots[i];
+        if (hp <= 0 || !spot) return;
+        wanted.push({
+            goblin: true,
+            wild: true,
+            faction: GOBLINS,
+            index: WILD_INDEX + i,
+            health: hp,
+            post: -1,
+            mode: "guard",
+            slot: i,
+            homeX: spot.x,
+            homeZ: spot.z,
+            path: null,
+            startedAt: 0,
+            arriveAt: 0,
+            length: 0
+        });
+    });
     const prev = new Map(men.filter((man) => !man.fisher && !man.farmer && !man.archer && !man.decor && !man.driver && !man.jack).map((man) => [man.faction + ":" + man.index, man]));
     const next = [];
     const keep = new Set();
@@ -3480,6 +3501,7 @@ function mergeMen(data) {
         } else {
             next.push({
                 goblin: !!item.goblin,
+                wild: !!item.wild,
                 faction: item.faction,
                 index: item.index,
                 health: item.health,
@@ -3521,6 +3543,8 @@ function mergeMen(data) {
 
 let soldierKey = "";
 const GOBLINS = 9;
+// Goblins of the camp in the woods are numbered from here, clear of raid goblins.
+const WILD_INDEX = 100;
 let pendingHit = 0;
 let seenRestart = 0;
 let campaign = null;
@@ -3546,7 +3570,7 @@ function applyCampaign(data) {
         ((data.owners || [])[village] || 0) + ":" + (row || []).join(".")
     )).join(",");
     const farmKey = (data.farms || []).map((farm) => farm.id + ":" + farm.health + ":" + farm.phase).join(",");
-    const goblins = data.goblins ? data.goblins.id + ":" + data.goblins.hp.join(".") : "";
+    const goblins = (data.goblins ? data.goblins.id + ":" + data.goblins.hp.join(".") : "") + ":" + (data.wilds || []).join("");
     const key = (data.owners || []).join(",") + "#" + attacks + "#" + units + "#" + fish + "#" + wood + "#" + arch + "#" + carts + "#" + farmKey + "#" + jacks + "#" + haul + "#" + goblins;
     if (key === soldierKey) {
         ensureCottages(data);
@@ -4496,7 +4520,7 @@ function wound(man, label, quiet, knockX, knockZ) {
             showStrike(word);
         }
         actorsDirty = true;
-        postHit({ goblin: man.index });
+        postHit(man.wild ? { wild: man.index - WILD_INDEX } : { goblin: man.index });
         return true;
     }
     if (man.archer) {
@@ -5466,8 +5490,65 @@ function stepPatrol(man, dt) {
     plant(man);
 }
 
+// A camp goblin keeps near its spot until the player or anyone else comes within WILD_SIGHT, then goes for them,
+// giving up once they are WILD_LEASH from its spot. Far from the player it just stands.
+const WILD_SIGHT = 14;
+const WILD_LEASH = 45;
+
+function wildTarget(man) {
+    const home = (x, z) => Math.hypot(x - man.homeX, z - man.homeZ) < WILD_LEASH;
+    if (!player.dead && !inside && !flying && home(cam.x, cam.z)) {
+        const d = Math.hypot(cam.x - man.x, cam.z - man.z);
+        if (d < WILD_SIGHT) return { x: cam.x, z: cam.z, d, player: true };
+    }
+    let best = null;
+    for (const other of men) {
+        if (other.goblin || other.dying || other.health <= 0 || other.archer || other.decor) continue;
+        const d = Math.hypot(other.x - man.x, other.z - man.z);
+        if (d < WILD_SIGHT && home(other.x, other.z) && (!best || d < best.d)) best = { x: other.x, z: other.z, d };
+    }
+    return best;
+}
+
+function stepWild(man, dt) {
+    man.mode = "guard";
+    if (Math.hypot(cam.x - man.x, cam.z - man.z) > 220) {
+        if (!man.planted) {
+            man.planted = true;
+            plant(man);
+        }
+        return false;
+    }
+    man.planted = false;
+    const target = wildTarget(man);
+    let moving = false;
+    if (target) {
+        moving = moveToward(man, target.x, target.z, dt, 3.1);
+        if (target.d < 1.8) {
+            const cycle = (performance.now() / 1000 + man.index * 0.29) % 0.9;
+            man.swing = cycle < 0.38 ? cycle / 0.38 : -1;
+            man.attackIn = (man.attackIn || 0) - dt;
+            if (man.attackIn <= 0) {
+                man.attackIn = 1.3 + Math.random() * 0.5;
+                if (target.player) hurtPlayer(4);
+            }
+        } else {
+            man.swing = -1;
+        }
+    } else {
+        man.swing = -1;
+        if (Math.hypot(man.x - man.homeX, man.z - man.homeZ) > 2) moving = moveToward(man, man.homeX, man.homeZ, dt, 1.6);
+    }
+    man.walking = Boolean(moving);
+    man.bob = moving ? Math.sin(performance.now() * 0.016 + man.index) * 0.05 : 0;
+    actorsDirty = true;
+    plant(man);
+    return false;
+}
+
 // Goblins run the path from their den in a loose pack, then fight the nearest soldier, or the player if close by.
 function stepGoblin(man, dt) {
+    if (man.wild) return stepWild(man, dt);
     const now = Date.now();
     const back = Math.floor(man.slot / 2) * 1.6;
     const side = man.slot % 2 === 0 ? -0.9 : 0.9;
@@ -7529,7 +7610,7 @@ function addRaisedDoor(b, id, floorsGeom) {
     addBox(floorsGeom, b.minX + inset, floorY - 0.04, b.minZ + inset, fw, 0.06, fd);
 }
 
-// Roblox models (models/roblox/farm.json, houses.json and mine.json, made by tools/roblox-farm.js and roblox-model.js):
+// Roblox models (models/roblox/farm.json, houses.json, mine.json, lumberyard.json and ore.json, made by tools/roblox-farm.js and roblox-model.js):
 // plain parts in metres, coloured from a palette texture, drawn as the robloxfarm, robloxhouses and robloxmine meshes.
 const roblox = {};
 
@@ -7686,7 +7767,7 @@ function stampRaisedPlots() {
     const leaf = [];
     const trunk = [];
     const floorGeom = [];
-    const modelParts = { farm: [], houses: [], mine: [] };
+    const modelParts = { farm: [], houses: [], mine: [], lumberyard: [], ore: [] };
     const padGeom = [];
     const buckets = {};
     World.setPads(raisedData.pads || []);
@@ -7706,8 +7787,14 @@ function stampRaisedPlots() {
             [x + w, y10, z, (x + w) / 4, z / 4, 0.9]
         );
     };
+    if (World.ores.length) {
+        const model = robloxModel("ore");
+        if (model) {
+            for (const [x, z] of World.ores) stampRoblox(modelParts.ore, model, { x: x, z: z, y: Math.max(0, World.heightAt(x, z)) - 0.2, theta: 0 });
+        }
+    }
     for (const plot of plots) {
-        if (plot.kind === "yard") {
+        if (plot.kind === "yard" && !plot.model) {
             const x = plot.x;
             const z = plot.z;
             const y = Math.max(0, plot.y || World.heightAt(x, z));

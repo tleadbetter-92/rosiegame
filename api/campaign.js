@@ -53,6 +53,7 @@ function robloxModel(load) {
 const farmModel = robloxModel(() => require("../models/roblox/farm.json"));
 const housesModel = robloxModel(() => require("../models/roblox/houses.json"));
 const mineModel = robloxModel(() => require("../models/roblox/mine.json"));
+const yardModel = robloxModel(() => require("../models/roblox/lumberyard.json"));
 
 // How far up a hamlet's first farm's ground may be filled to make it level (kept so existing hamlets stay put).
 const PAD_RISE = 6;
@@ -93,6 +94,11 @@ const DRIVER_HP = 3;
 const URGENT_FOOD = 50;
 const WOOD_MS = 30000;
 const WOOD_YIELD = 10;
+// Miners walk from the store to the nearest ore placed on the map and bring back stone and gold, like woodcutters with wood.
+const ORE_MS = 30000;
+const ORE_STONE = 10;
+const ORE_GOLD = 10;
+const MINERS_PER_MINE = 2;
 const REPAIR_MS = 30000;
 const REPAIR_CHUNK = 10;
 const FARM_PER_DAY = 18;
@@ -116,6 +122,13 @@ const GOBLIN_MIN = 7;
 const GOBLIN_MAX = 14;
 const GOBLIN_EVERY = Clock.DAY_MS / 2;
 const GOBLIN_ROUNDS = 60;
+// The goblin camp in the ring of cones on the editor map: WILD_START goblins when the campaign starts, WILD_DAILY more each day,
+// and once there are WILD_MAX they all run at Southwest together; the camp then starts again from WILD_AFTER.
+const WILD_MAX = 50;
+const WILD_START = 45;
+const WILD_DAILY = 5;
+const WILD_AFTER = 20;
+const START_WOOD = 200;
 const WALL_HALF = 17;
 const WALL_CX = -0.5;
 const WALL_CZ = -4;
@@ -381,7 +394,7 @@ function seedSoldiers(state) {
 function restartCampaign(state, now) {
     state.owners = [0, 1, 2, 3];
     state.food = [100, 100, 100, 100];
-    state.wood = [0, 0, 0, 0];
+    state.wood = [START_WOOD, START_WOOD, START_WOOD, START_WOOD];
     state.stone = [0, 0, 0, 0];
     state.gold = [0, 0, 0, 0];
     seedSoldiers(state);
@@ -413,10 +426,11 @@ function restartCampaign(state, now) {
     state.tributes = [];
     state.grudges = [];
     state.goblins = { nextAt: nextGoblinRaid(now), raid: null };
+    state.wilds = null;
 }
 
 function freshMinors() {
-    return minors.map(() => ({ food: 100, wood: 0, stone: 0, gold: 0, owner: -1, protector: -1, declined: [], fedDay: -1, tributeDay: -1 }));
+    return minors.map(() => ({ food: 100, wood: START_WOOD, stone: 0, gold: 0, owner: -1, protector: -1, declined: [], fedDay: -1, tributeDay: -1 }));
 }
 
 function ensureHamlet(state, now) {
@@ -819,16 +833,42 @@ function nearestTree(from, slot) {
     };
 }
 
-function woodRoute(village, slot) {
+function nearestOre(from, slot) {
+    let best = null;
+    let bestDist = Infinity;
+    for (const [x, z] of World.ores) {
+        const dist = Math.hypot(x - from.x, z - from.z);
+        if (dist < bestDist) {
+            best = { x, z };
+            bestDist = dist;
+        }
+    }
+    if (!best) return null;
+    const dx = from.x - best.x;
+    const dz = from.z - best.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const side = ((slot || 0) % 3 - 1) * 1.2;
+    return {
+        x: best.x + (dx / len) * 3 + (-dz / len) * side,
+        z: best.z + (dz / len) * 3 + (dx / len) * side
+    };
+}
+
+// Mines and lumberyards go wherever their ore or wood is, however far from the village.
+function oreNear(village) {
+    return !!nearestOre(places[village], 0);
+}
+
+function woodRoute(village, slot, ore) {
     const from = storeExit(village);
-    const to = nearestTree(from, slot);
+    const to = (ore && nearestOre(from, slot)) || nearestTree(from, slot);
     const path = villagerPath(village, to);
     const length = pathLength(path);
     return { from: path[0], via: path[Math.min(1, path.length - 1)], to, path, length, walkMs: Math.round((length / FISH_WALK) * 1000) };
 }
 
-function woodPeriod(village, slot) {
-    return woodRoute(village, slot).walkMs * 2 + WOOD_MS;
+function woodPeriod(village, slot, ore) {
+    return woodRoute(village, slot, ore).walkMs * 2 + (ore ? ORE_MS : WOOD_MS);
 }
 
 function livingFisher(state, village) {
@@ -843,13 +883,16 @@ function addFisher(state, village, now) {
     note(state, owner === village ? who + " recruits a fisherman." : who + " recruits a fisherman in " + place + ".");
 }
 
-function addWoodcutter(state, village, now) {
+function addWoodcutter(state, village, now, ore) {
     const slot = state.woodcutters.filter((man) => man.village === village).length;
-    state.woodcutters.push({ village, slot, health: FISHER_HP, cycleStart: now, delivered: 0 });
+    const man = { village, slot, health: FISHER_HP, cycleStart: now, delivered: 0 };
+    if (ore) man.ore = true;
+    state.woodcutters.push(man);
     const owner = state.owners[village];
     const who = factions[owner].name;
     const place = factions[village].name;
-    note(state, owner === village ? who + " recruits a woodcutter." : who + " recruits a woodcutter in " + place + ".");
+    const what = ore ? "a miner" : "a woodcutter";
+    note(state, owner === village ? who + " recruits " + what + "." : who + " recruits " + what + " in " + place + ".");
 }
 
 function jobWeight() {
@@ -919,7 +962,7 @@ function ensureEconomy(state, now) {
         state.wood = [0, 0, 0, 0];
         dirty = true;
     }
-    // Stone and gold will come from mines once there is ore on the map to dig.
+    // Stone and gold come from miners digging ore placed on the map.
     for (const key of ["stone", "gold"]) {
         if (!Array.isArray(state[key]) || state[key].length !== 4) {
             state[key] = [0, 0, 0, 0];
@@ -1234,6 +1277,7 @@ function finishTraining(state, now) {
         }
         if (job.kind === "fisher") addFisher(state, job.village, now);
         else if (job.kind === "wood") addWoodcutter(state, job.village, now);
+        else if (job.kind === "ore") addWoodcutter(state, job.village, now, true);
         else if (job.kind === "jack") addJack(state, now, job.village);
         else {
             const owner = state.owners[job.village];
@@ -1282,10 +1326,16 @@ function orderTraining(state, now) {
         let at = village;
         // Soldiers are the point; workers only to keep the food and wood coming for more of them.
         const woodAim = 1 + Math.floor(factionPop(state, faction) / WOOD_PER_POP);
-        if (!has("wood") && workerCount(state, faction, state.woodcutters) < woodAim) kind = "wood";
+        const cutters = (state.woodcutters || []).filter((man) => !man.ore);
+        const miners = (state.woodcutters || []).filter((man) => man.ore);
+        const digs = (state.mines || []).filter((mine) => state.owners[mine.village] === faction && mine.village < MINOR_BASE && oreNear(mine.village));
+        if (!has("wood") && workerCount(state, faction, cutters) < woodAim) kind = "wood";
         else if (!has("jack") && yards.length && jacks < 1) {
             kind = "jack";
             at = yards[0].village;
+        } else if (!has("ore") && digs.length && workerCount(state, faction, miners) < digs.length * MINERS_PER_MINE) {
+            kind = "ore";
+            at = digs[0].village;
         } else if (!has("fisher") && workerCount(state, faction, state.fishermen) < 1 && producingFarms(state, faction) * FARM_PER_DAY < dailyFood(state, faction)) kind = "fisher";
         else kind = "soldier";
         const cost = kind === "soldier" ? SOLDIER_COST : FISHER_COST;
@@ -1818,15 +1868,21 @@ function creditWood(state, now) {
         const held = workerHeld(state, man);
         if (settleHold(man, now, held)) dirty = true;
         if (held) continue;
-        const done = Math.floor(Math.max(0, now - man.cycleStart) / woodPeriod(man.village, man.slot || 0));
+        const done = Math.floor(Math.max(0, now - man.cycleStart) / woodPeriod(man.village, man.slot || 0, man.ore));
         const paid = man.delivered || 0;
         if (done <= paid) continue;
         const trips = done - paid;
         const owner = state.owners[man.village];
-        state.wood[owner] += trips * WOOD_YIELD;
         man.delivered = done;
-        note(state, factions[owner].name + " stores " + (trips * WOOD_YIELD) + " wood.");
         dirty = true;
+        if (man.ore) {
+            addStore(state, owner, "stone", trips * ORE_STONE);
+            addStore(state, owner, "gold", trips * ORE_GOLD);
+            note(state, factions[owner].name + " stores " + (trips * ORE_STONE) + " stone and " + (trips * ORE_GOLD) + " gold.");
+            continue;
+        }
+        state.wood[owner] += trips * WOOD_YIELD;
+        note(state, factions[owner].name + " stores " + (trips * WOOD_YIELD) + " wood.");
     }
     return dirty;
 }
@@ -1992,6 +2048,49 @@ function goblinRaids(state, now) {
     return dirty;
 }
 
+// The goblin camp: each slot is a spot in the ring, 1 while a goblin stands there. A day brings WILD_DAILY more into empty spots;
+// a full camp runs at Southwest as one raid, once no other raid is on.
+function stepWilds(state, now) {
+    const camp = World.wildSpots(WILD_MAX);
+    if (!camp.centre) return false;
+    const play = playClock(state);
+    if (play == null) return false;
+    const day = Clock.day(play);
+    if (!state.wilds || !Array.isArray(state.wilds.hp) || state.wilds.hp.length !== WILD_MAX) {
+        state.wilds = { hp: new Array(WILD_MAX).fill(0).map((_, i) => (i < WILD_START ? 1 : 0)), day };
+        return true;
+    }
+    const wilds = state.wilds;
+    let dirty = false;
+    if (day > wilds.day) {
+        let add = (day - wilds.day) * WILD_DAILY;
+        for (let i = 0; i < WILD_MAX && add > 0; i++) {
+            if (wilds.hp[i] > 0) continue;
+            wilds.hp[i] = 1;
+            add -= 1;
+        }
+        wilds.day = day;
+        dirty = true;
+    }
+    const alive = wilds.hp.filter((hp) => hp > 0).length;
+    if (alive < WILD_MAX || state.goblins.raid || Number.isFinite(state.pausedAt)) return dirty;
+    const gate = gateSpot(GOBLIN_VILLAGE, sideFacing(GOBLIN_VILLAGE, camp.centre), 8);
+    const path = [camp.centre].concat(landRoute(camp.centre, gate).slice(1, -1), [gate]);
+    const length = pathLength(path);
+    state.goblins.raid = {
+        id: "goblins-" + now,
+        startedAt: now,
+        arriveAt: now + Math.round(length / GOBLIN_SPEED * 1000),
+        path,
+        length,
+        hp: new Array(alive).fill(1),
+        rounds: 0
+    };
+    wilds.hp = wilds.hp.map((_, i) => (i < WILD_AFTER ? 1 : 0));
+    note(state, "The goblin camp empties: " + alive + " goblins run at " + factions[GOBLIN_VILLAGE].name + ".");
+    return true;
+}
+
 function shoreRoute(village) {
     const layout = World.cottageLayout(village);
     const shore = World.fishTrail[village][World.fishTrail[village].length - 1];
@@ -2022,7 +2121,7 @@ function routeOf(state, man, cutting) {
     }
     let route;
     if (!cutting && fishLodge(state, man.village)) route = shoreRoute(man.village);
-    else route = cutting ? woodRoute(man.village, man.slot || 0) : fishRoute(man.village);
+    else route = cutting ? woodRoute(man.village, man.slot || 0, man.ore) : fishRoute(man.village);
     return {
         cycleStart: man.cycleStart,
         walkMs: route.walkMs,
@@ -2167,6 +2266,7 @@ function present(state, now, turn, paused) {
                 id: state.woodcutters.indexOf(man),
                 village: man.village,
                 slot: man.slot || 0,
+                ore: !!man.ore,
                 owner: state.owners[man.village],
                 health: man.health,
                 cycleStart: route.cycleStart,
@@ -2219,7 +2319,9 @@ function present(state, now, turn, paused) {
             y: yard.y,
             yaw: yard.yaw,
             w: yard.w,
-            d: yard.d
+            d: yard.d,
+            model: yard.model || null,
+            at: yard.at || null
         }))).concat(hamletPlots()),
         raising: (state.farmJobs || []).map((job) => ({
             id: job.id,
@@ -2304,6 +2406,7 @@ function present(state, now, turn, paused) {
             hp: state.goblins.raid.hp.slice()
         } : null,
         nextGoblinsAt: state.goblins ? state.goblins.nextAt : null,
+        wilds: state.wilds ? state.wilds.hp.slice() : [],
         gates: (state.gates || freshGates()).map((row) => row.slice()),
         archers: (state.archers || freshArchers()).map((row) => row.slice()),
         villages: factions.map((place, index) => {
@@ -2326,8 +2429,9 @@ function present(state, now, turn, paused) {
                 fishing: state.fishermen.some((man) => man.village === index && man.health > 0),
                 fishers: state.fishermen.filter((man) => man.village === index && man.health > 0).length,
                 farmers: (state.farms || []).filter((farm) => farm.village === index && farm.health > 0).reduce((sum, farm) => sum + farmCrew(farm), 0),
-                chopping: state.woodcutters.some((man) => man.village === index && man.health > 0),
-                woodcutters: state.woodcutters.filter((man) => man.village === index && man.health > 0).length,
+                chopping: state.woodcutters.some((man) => man.village === index && man.health > 0 && !man.ore),
+                woodcutters: state.woodcutters.filter((man) => man.village === index && man.health > 0 && !man.ore).length,
+                miners: state.woodcutters.filter((man) => man.village === index && man.health > 0 && man.ore).length,
                 lumberjacks: allYards(state).filter((yard) => yard.village === index).reduce((sum, yard) => sum + (yard.jacks || []).filter((man) => man.health > 0).length, 0),
                 yardWood: allYards(state).filter((yard) => yard.village === index).reduce((sum, yard) => sum + (yard.stock || 0), 0),
                 hasYard: allYards(state).some((yard) => yard.village === index),
@@ -2461,7 +2565,7 @@ function campaignRules() {
             { name: "Farm", wood: FARM_WOOD, ms: BUILD_MS, gives: FARM_PER_DAY + " food a day, worked by 2 farmers who live in the farmhouse", when: "Built whenever there is wood and room, up to " + FARM_CAP + " farms a village" },
             { name: "Lumberyard", wood: BUILD_WOOD, ms: BUILD_MS, gives: "Lumberjacks bring " + WOOD_YIELD + " wood every " + Math.round(JACK_MS / 1000) + " s", when: "Built once, when a faction has none" }
         ].concat(mineModel ? [
-            { name: "Mine", wood: MINE_WOOD, ms: BUILD_MS, gives: "Stone and gold, once there is ore on the map to dig", when: "Built once a faction has a lumberyard and no mine" }
+            { name: "Mine", wood: MINE_WOOD, ms: BUILD_MS, gives: "Lets a faction train " + MINERS_PER_MINE + " miners to dig the ore placed on the map", when: "Built once a faction has a lumberyard and no mine, if there is ore on the map; it goes up beside the nearest ore, however far away" }
         ] : []),
         fixed: [
             { name: "Village", gives: "Palisade, gates and a garrison post; holds " + POP_BASE + " people, counting its starting five Roblox houses. Starts with two farms (the old one and a Roblox one)" },
@@ -2472,10 +2576,17 @@ function campaignRules() {
             { name: "Soldier", food: SOLDIER_COST, ms: RECRUIT_MS, does: "Guards and marches; " + MAX_HP + " hit points. Houses train as many as food and room allow" },
             { name: "Fisherman", food: FISHER_COST, ms: RECRUIT_MS, does: FISH_FOOD + " food a catch, about every " + Math.round(FISH_MS / 1000) + " s" },
             { name: "Woodcutter", food: FISHER_COST, ms: RECRUIT_MS, does: WOOD_YIELD + " wood a trip, about every " + Math.round(WOOD_MS / 1000) + " s. One more for every " + WOOD_PER_POP + " people" },
+            { name: "Miner", food: FISHER_COST, ms: RECRUIT_MS, does: ORE_STONE + " stone and " + ORE_GOLD + " gold a trip to the nearest ore, digging about " + Math.round(ORE_MS / 1000) + " s" },
             { name: "Lumberjack", food: FISHER_COST, ms: RECRUIT_MS, does: "Works a lumberyard: " + WOOD_YIELD + " wood every " + Math.round(JACK_MS / 1000) + " s" }
         ],
         repair: { wood: REPAIR_CHUNK, ms: REPAIR_MS, gateHp: GATE_HP },
-        goblins: { every: GOBLIN_EVERY, min: GOBLIN_MIN, max: GOBLIN_MAX, target: factions[GOBLIN_VILLAGE].name }
+        goblins: {
+            every: GOBLIN_EVERY,
+            min: GOBLIN_MIN,
+            max: GOBLIN_MAX,
+            target: factions[GOBLIN_VILLAGE].name,
+            camp: World.wildSpots(WILD_MAX).centre ? { daily: WILD_DAILY, max: WILD_MAX, after: WILD_AFTER } : null
+        }
     };
 }
 
@@ -3335,7 +3446,7 @@ function layoutModelSite(state, village, cx, cz, blocked, kind) {
     const model = kind === "mine" ? mineModel : housesModel;
     const place = centreOf(village);
     const dist = Math.hypot(place.x - cx, place.z - cz);
-    if (dist < (village >= MINOR_BASE ? 35 : 60) || dist > BUILD_REACH) return null;
+    if (dist < (village >= MINOR_BASE ? 35 : 60) || (kind !== "mine" && dist > BUILD_REACH)) return null;
     const at = { x: cx, z: cz, theta: quarterTurn(village, cx, cz) };
     const whole = placeRect({ x: 0, z: 0, w: model.w, d: model.d }, at);
     const rect = { minX: whole.minX, minZ: whole.minZ, w: whole.w, d: whole.d };
@@ -3367,6 +3478,18 @@ function layoutModelSite(state, village, cx, cz, blocked, kind) {
 
 function pickModelSite(state, village, kind) {
     const blocked = takenRects(state);
+    // A mine goes up beside its ore, wherever that is.
+    const ore = kind === "mine" ? nearestOre(centreOf(village), 0) : null;
+    if (ore) {
+        const spots = [];
+        for (const dist of [18, 26, 36, 48, 62]) {
+            for (let i = 0; i < 12; i++) {
+                const ang = (i / 12) * Math.PI * 2 + dist * 0.01;
+                spots.push({ x: ore.x + Math.cos(ang) * dist, z: ore.z + Math.sin(ang) * dist });
+            }
+        }
+        return bestSite(spots, (x, z) => layoutModelSite(state, village, x, z, blocked, kind), (site) => site.score + Math.hypot(site.x - ore.x, site.z - ore.z) / 10);
+    }
     const spots = buildSpots(state, village, [45, 75, 110, 150, 195]);
     return bestSite(spots, (x, z) => layoutModelSite(state, village, x, z, blocked, kind), (site) => site.score);
 }
@@ -3613,8 +3736,10 @@ function layoutYard(state, village, x, z, blocked, trees) {
     if (World.heightAt(x, z) < 0.4) return null;
     const timber = treesAround(x, z, trees, 34);
     if (timber < 3) return null;
-    const w = 9;
-    const d = 5.6;
+    const at = yardModel ? { x: x, z: z, theta: quarterTurn(village, x, z) } : null;
+    const whole = at ? placeRect({ x: 0, z: 0, w: yardModel.w, d: yardModel.d }, at) : null;
+    const w = whole ? whole.w : 9;
+    const d = whole ? whole.d : 5.6;
     const rect = { minX: x - w / 2, minZ: z - d / 2, w: w, d: d };
     if (!outsideWalls(village, rect)) return null;
     for (const other of blocked) {
@@ -3623,12 +3748,12 @@ function layoutYard(state, village, x, z, blocked, trees) {
     const path = villagerPath(village, { x: x, z: z });
     if (!path || path.length < 2 || pathWet(path)) return null;
     const haul = pathLength(path);
-    if (haul > 520) return null;
     const place = places[village];
     const yaw = snapYaw(place.x - x, place.z - z);
     const pad = padFor(rect, null);
     if (!pad) return null;
     const y = pad.y;
+    if (at) at.y = y;
     const risk = haulRisk(state, village, x, z, path);
     const worth = Math.min(timber, 14) * 22 - haul - risk;
     return {
@@ -3642,6 +3767,8 @@ function layoutYard(state, village, x, z, blocked, trees) {
         d: d,
         rect: rect,
         pad: pad,
+        model: at ? "lumberyard" : null,
+        at: at,
         trees: timber,
         haul: haul,
         risk: risk,
@@ -3677,7 +3804,6 @@ function pickYard(state, village) {
         }
     }
     const blocked = takenRects(state);
-    const anchors = buildAnchors(state, village);
     const seen = new Set();
     const found = [];
     for (let i = 0; i < trees.length; i++) {
@@ -3688,7 +3814,7 @@ function pickYard(state, village) {
         const x = tree.x + (dx / len) * 16;
         const z = tree.z + (dz / len) * 16;
         const key = Math.round(x / 18) + ":" + Math.round(z / 18);
-        if (seen.has(key) || !inReach(anchors, x, z)) continue;
+        if (seen.has(key)) continue;
         seen.add(key);
         const site = layoutYard(state, village, x, z, blocked, trees);
         if (site) found.push(site);
@@ -3777,6 +3903,8 @@ function considerSites(state, now) {
                 w: job.w,
                 d: job.d,
                 pad: job.pad,
+                model: job.model || null,
+                at: job.at || null,
                 stock: 0,
                 jacks: [],
                 haul: null,
@@ -3797,7 +3925,7 @@ function considerSites(state, now) {
         const tight = roomTight(state, faction);
         const hasYard = yardsOf(state, faction).length > 0;
         const hasMine = state.mines.some((mine) => state.owners[mine.village] === faction);
-        const kind = tight ? "house" : !hasYard ? "yard" : mineModel && !hasMine ? "mine" : "house";
+        const kind = tight ? "house" : !hasYard ? "yard" : mineModel && !hasMine && oreNear(village) ? "mine" : "house";
         const cost = kind === "mine" ? MINE_WOOD : BUILD_WOOD;
         if ((state.wood[faction] || 0) < cost) continue;
         const site = pickBuilding(state, village, kind);
@@ -4289,6 +4417,7 @@ function syncWorld(state, now) {
     if (besiege(state, now)) dirty = true;
     if (fight(state, now)) dirty = true;
     if (goblinRaids(state, now)) dirty = true;
+    if (stepWilds(state, now)) dirty = true;
     if (ensureHero(state)) dirty = true;
     return { dirty, turn, paused };
 }
@@ -4470,6 +4599,16 @@ async function hitGoblin(index) {
     return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
 }
 
+async function hitWild(index) {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    if (state.wilds && state.wilds.hp[index] > 0) state.wilds.hp[index] -= 1;
+    await writeState(state);
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+}
+
 async function setFood(village, amount) {
     const state = await readState();
     const now = Date.now();
@@ -4563,6 +4702,10 @@ module.exports = async function handler(req, res) {
             }
             if (req.body && Number.isInteger(req.body.gate) && Number.isInteger(req.body.side)) {
                 res.status(200).json(await hitGate(req.body.gate, req.body.side));
+                return;
+            }
+            if (req.body && Number.isInteger(req.body.wild)) {
+                res.status(200).json(await hitWild(req.body.wild));
                 return;
             }
             if (req.body && Number.isInteger(req.body.goblin)) {
