@@ -1337,7 +1337,8 @@ function orderTraining(state, now) {
             kind = "ore";
             at = digs[0].village;
         } else if (!has("fisher") && workerCount(state, faction, state.fishermen) < 1 && producingFarms(state, faction) * FARM_PER_DAY < dailyFood(state, faction)) kind = "fisher";
-        else kind = "soldier";
+        else if (!has("soldier")) kind = "soldier";
+        if (!kind) continue;
         const cost = kind === "soldier" ? SOLDIER_COST : FISHER_COST;
         if (!pay(cost)) continue;
         state.training.push({ village: at, kind: kind, readyAt: now + RECRUIT_MS });
