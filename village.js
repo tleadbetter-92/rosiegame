@@ -5760,6 +5760,9 @@ function separateMen(dt) {
     }
 }
 
+const FAR_EVERY = 30;
+let farTurn = 0;
+
 function updateFight(dt) {
     if (player.guard > 0) player.guard -= dt;
     if (player.shake > 0) player.shake = Math.max(0, player.shake - dt);
@@ -5775,9 +5778,12 @@ function updateFight(dt) {
         }
         if (swing.age >= 0.36) swing = null;
     }
+    farTurn = (farTurn + 1) % FAR_EVERY;
     for (let i = men.length - 1; i >= 0; i--) {
         const man = men[i];
-        const close = man.dying || man.fisher || man.farmer || man.driver || (man.mode === "march" && man.path) || nearPerson(man, 500);
+        // Far people take a turn every FAR_EVERY frames; workers, carts and marchers are placed by the clock so they
+        // still arrive where they should (people draw within 260).
+        const close = man.dying || i % FAR_EVERY === farTurn || nearPerson(man, 300);
         if (close ? stepMan(man, dt) : false) {
             men.splice(i, 1);
             actorsDirty = true;

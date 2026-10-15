@@ -33,6 +33,8 @@ const minors = [
 ].map((minor, index) => Object.assign({}, World.hamlets[index], minor));
 const MINOR_BASE = factions.length;
 const FOLK_PER_HOUSE = 2;
+const WORK_MS = 60000;
+const WORK_YIELD = 10;
 // A hamlet's lord yields once enemy soldiers have stood in its farmhouse this long (real time, not game time).
 const HOLD_MS = 10 * 60 * 1000;
 const HOLD_PARTY = 2;
@@ -947,7 +949,7 @@ function dailyFood(state, faction) {
     const trainees = (state.training || []).filter((job) => state.owners[job.village] === faction).length;
     let held = 0;
     minors.forEach((minor, index) => {
-        if (state.minors && state.minors[index] && state.minors[index].owner === faction) held += hamletPop(index);
+        if (state.minors && state.minors[index] && state.minors[index].owner === faction) held += hamletPeople(index, state);
     });
     return factionPop(state, faction) - trainees + held;
 }
@@ -1408,7 +1410,7 @@ function consumeFood(state) {
             dirty = true;
             return;
         }
-        const need = hamletPop(index, state);
+        const need = hamletPeople(index, state);
         const meal = Math.min(need, minor.food || 0);
         minor.food = (minor.food || 0) - meal;
         minor.fedDay = today;
@@ -2509,7 +2511,10 @@ function present(state, now, turn, paused) {
                     heldMs: hold.heldMs || 0,
                     needMs: HOLD_MS
                 })),
-                pop: hamletPop(index, state),
+                pop: hamletPeople(index, state),
+                room: hamletPop(index, state),
+                workers: (state.minors[index].workers || 0) + (state.farms || []).filter((item) => item.village === MINOR_BASE + index && item.health > 0).reduce((sum, item) => sum + farmCrew(item), 0),
+                trainingWorker: !!state.minors[index].trainAt,
                 houses: hamletHouses(index, state),
                 farmers: (state.farms || []).filter((item) => item.village === MINOR_BASE + index && item.health > 0).reduce((sum, item) => sum + farmCrew(item), 0),
                 cutting: !!own.cutting,
@@ -2571,7 +2576,7 @@ function campaignRules() {
         fixed: [
             { name: "Village", gives: "Palisade, gates and a garrison post; holds " + POP_BASE + " people, counting its starting five Roblox houses. Starts with two farms (the old one and a Roblox one)" },
             { name: "Fishing cottage", gives: "One per village; fishermen land " + FISH_FOOD + " food a trip and carts carry it home" },
-            { name: "Hamlet", gives: "Rural community: " + FOLK_PER_HOUSE + " people a house, its own farm, no soldiers. Keeps food, wood, stone and gold in its farmhouse and never declares war. Enemies of its protector take it by standing soldiers in the farmhouse for " + Math.round(HOLD_MS / 60000) + " minutes. It sends its protector " + Math.round(TRIBUTE_SHARE * 100) + "% of every store a day by cart. It builds one more farm, then five houses, then a mine, sending one of its workers to cut wood while it saves" }
+            { name: "Hamlet", gives: "Rural community: " + FOLK_PER_HOUSE + " people a house, its own farm, no soldiers. Keeps food, wood, stone and gold in its farmhouse and never declares war. Enemies of its protector take it by standing soldiers in the farmhouse for " + Math.round(HOLD_MS / 60000) + " minutes. It sends its protector " + Math.round(TRIBUTE_SHARE * 100) + "% of every store a day by cart. Houses give room; it trains workers one at a time for " + FISHER_COST + " food each until full. Each worker brings in " + WORK_YIELD + " of whatever it is shortest of (food, then wood, then stone and gold once it has a mine) every " + Math.round(WORK_MS / 1000) + " s. It builds five houses when short of room, a mine, then farms up to " + FARM_CAP + "" }
         ],
         units: [
             { name: "Soldier", food: SOLDIER_COST, ms: RECRUIT_MS, does: "Guards and marches; " + MAX_HP + " hit points. Houses train as many as food and room allow" },
@@ -2662,8 +2667,16 @@ function hamletHouses(index, state) {
     return 1 + hamlets[index].cottages.length + built * 5;
 }
 
+// Room for people; the people themselves are the farm crews plus the hamlet's workers.
 function hamletPop(index, state) {
     return hamletHouses(index, state) * FOLK_PER_HOUSE;
+}
+
+function hamletPeople(index, state) {
+    const village = MINOR_BASE + index;
+    const crews = (state.farms || []).filter((farm) => farm.village === village && farm.health > 0).reduce((sum, farm) => sum + farmCrew(farm), 0);
+    const minor = state.minors && state.minors[index];
+    return crews + ((minor && minor.workers) || 0);
 }
 
 function hamletPlots() {
@@ -4036,29 +4049,75 @@ function addStore(state, who, key, amount) {
     state[key][who] = (state[key][who] || 0) + amount;
 }
 
-// What a hamlet builds next: one more farm, then five houses, then a mine. Each costs 100 wood.
+// What a hamlet builds next: five houses when it is short of room, a mine if it has none, then farms. Each costs 100 wood.
 function hamletWants(state, index) {
     const village = MINOR_BASE + index;
     const here = (item) => item.village === village;
-    if (farmModel && !(state.builtFarms || []).some(here) && !(state.farmJobs || []).some(here)) return "farm";
-    if (housesModel && !(state.houses || []).some(here) && !(state.siteJobs || []).some((job) => here(job) && job.kind === "house")) return "house";
+    const training = state.minors[index].trainAt ? 1 : 0;
+    const tight = hamletPop(index, state) - hamletPeople(index, state) - training <= FOLK_PER_HOUSE;
+    if (housesModel && tight) return "house";
     if (mineModel && !(state.mines || []).some(here) && !(state.siteJobs || []).some((job) => here(job) && job.kind === "mine")) return "mine";
+    const farms = 1 + (state.builtFarms || []).filter(here).length + (state.farmJobs || []).filter(here).length;
+    if (farmModel && farms < FARM_CAP) return "farm";
     return "";
+}
+
+// Hamlet workers are just a count: each one brings in a load every WORK_MS of play, of whatever the hamlet is shortest of.
+function hamletWork(state, index, now, play) {
+    const minor = state.minors[index];
+    const self = MINOR_BASE + index;
+    const people = hamletPeople(index, state);
+    let dirty = false;
+    if (minor.trainAt && now >= minor.trainAt) {
+        minor.trainAt = 0;
+        if (people < hamletPop(index, state)) {
+            minor.workers = (minor.workers || 0) + 1;
+            note(state, minors[index].name + " trains a worker.");
+        } else minor.food = (minor.food || 0) + FISHER_COST;
+        dirty = true;
+    }
+    if (!minor.trainAt && hamletPeople(index, state) < hamletPop(index, state) && (minor.food || 0) >= FISHER_COST + people) {
+        minor.food -= FISHER_COST;
+        minor.trainAt = now + RECRUIT_MS;
+        dirty = true;
+    }
+    const workers = minor.workers || 0;
+    if (!workers || !Number.isFinite(minor.workPlay)) {
+        minor.workPlay = play;
+        return dirty;
+    }
+    const loads = Math.floor((play - minor.workPlay) / WORK_MS);
+    if (loads <= 0) return dirty;
+    minor.workPlay += loads * WORK_MS;
+    const mine = (state.mines || []).some((item) => item.village === self);
+    const want = hamletWants(state, index);
+    const cost = want === "farm" ? FARM_WOOD : want === "mine" ? MINE_WOOD : BUILD_WOOD;
+    for (let n = Math.min(loads * workers, 500); n > 0; n--) {
+        if ((minor.food || 0) < people * 3) addStore(state, self, "food", WORK_YIELD);
+        else if (!mine || (minor.wood || 0) < cost) addStore(state, self, "wood", WORK_YIELD);
+        else {
+            addStore(state, self, "stone", WORK_YIELD);
+            addStore(state, self, "gold", WORK_YIELD);
+        }
+    }
+    return true;
 }
 
 const hamletThink = minors.map(() => 0);
 
-// While a hamlet saves for a building, one of its two workers leaves the fields to cut wood.
+// While a hamlet with no workers saves for a building, one of its two farmers leaves the fields to cut wood.
 function considerHamlets(state, now) {
     const play = playClock(state);
     if (play == null) return false;
     let dirty = false;
     state.minors.forEach((minor, index) => {
         const self = MINOR_BASE + index;
+        if (hamletWork(state, index, now, play)) dirty = true;
         const want = hamletWants(state, index);
         const busy = (state.farmJobs || []).some((job) => job.payer === self) || (state.siteJobs || []).some((job) => job.payer === self);
         const cost = want === "farm" ? FARM_WOOD : want === "mine" ? MINE_WOOD : BUILD_WOOD;
-        const cutting = !!want && !busy && (minor.wood || 0) < cost;
+        const short = (minor.wood || 0) < cost;
+        const cutting = !!want && !busy && short && !minor.workers;
         if (cutting !== !!minor.cutting) {
             minor.cutting = cutting;
             minor.cutPlay = play;
@@ -4073,7 +4132,7 @@ function considerHamlets(state, now) {
             }
             return;
         }
-        if (!want || busy || now < hamletThink[index]) return;
+        if (!want || busy || short || now < hamletThink[index]) return;
         hamletThink[index] = now + 60000;
         const readyPlay = buildReady(state);
         if (readyPlay == null) return;

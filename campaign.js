@@ -233,32 +233,15 @@ function paint(data) {
         hold.querySelector("[data-count]").textContent = String(village.alive);
         const popLabel = hold.querySelector("[data-pop]");
         if (popLabel) popLabel.textContent = (village.pop || 0) + "/" + (village.limit || 20);
-        const farmers = village.farmers || 0;
-        const farmLabel = hold.querySelector("[data-farm]");
-        if (farmLabel) farmLabel.textContent = farmers + (farmers === 1 ? " farmer" : " farmers");
-        const fishers = village.fishers || 0;
-        hold.querySelector("[data-fish]").textContent = fishers + (fishers === 1 ? " fisherman" : " fishermen");
-        const cutters = village.woodcutters || 0;
-        const miners = village.miners || 0;
-        hold.querySelector("[data-woodcut]").textContent = cutters + (cutters === 1 ? " woodcutter" : " woodcutters") + (miners ? " · " + miners + (miners === 1 ? " miner" : " miners") : "");
-        const jack = hold.querySelector("[data-jack]");
-        if (jack) {
-            const n = village.lumberjacks || 0;
-            if (village.hasYard || n) {
-                jack.textContent = " · " + n + (n === 1 ? " lumberjack" : " lumberjacks") + " · yard " + (village.yardWood || 0);
-            } else jack.textContent = "";
-        }
+        const workers = (village.farmers || 0) + (village.fishers || 0) + (village.woodcutters || 0) + (village.miners || 0) + (village.lumberjacks || 0);
+        hold.querySelector("[data-workers]").textContent = workers + (workers === 1 ? " worker" : " workers") +
+            (village.hasYard ? " · yard " + (village.yardWood || 0) + " wood" : "");
         const food = hold.querySelector("[data-food]");
         if (document.activeElement !== food) food.value = String(village.food || 0);
         hold.querySelector("[data-wood]").textContent = String(village.wood || 0);
         const status = hold.querySelector("[data-status]");
         const jobs = village.training || [];
-        const training = jobs.map((kind) => {
-            if (kind === "fisher") return "Training a fisherman";
-            if (kind === "wood") return "Training a woodcutter";
-            if (kind === "jack") return "Training a lumberjack";
-            return "Training a soldier";
-        }).concat((village.works || []).map((kind) => {
+        const training = jobs.map((kind) => (kind === "soldier" ? "Training a soldier" : "Training a worker")).concat((village.works || []).map((kind) => {
             if (kind === "house") return "Building a house";
             if (kind === "yard") return "Building a lumberyard";
             return "Building a farm";
@@ -267,9 +250,7 @@ function paint(data) {
         else if (village.marching) status.textContent = "Men marching out";
         else if (training) status.textContent = training;
         else if (village.repairing) status.textContent = "Repairing a gate";
-        else if (village.fishing && village.chopping) status.textContent = "Fishing and cutting wood";
-        else if (village.chopping) status.textContent = "Cutting wood";
-        else if (village.fishing) status.textContent = "Fisherman working";
+        else if (village.fishing || village.chopping) status.textContent = "Workers collecting";
         else status.textContent = "";
         hold.querySelector("[data-men]").innerHTML = men(village.alive, village.color);
         const select = hold.querySelector("[data-stance]");
@@ -287,14 +268,16 @@ function paint(data) {
         if (minor.owner !== minor.index) owner = "Held by " + minor.ownerName;
         else if (minor.protectorName) owner = "Rural community · protected by " + minor.protectorName;
         hold.querySelector("[data-owner]").textContent = owner;
-        hold.querySelector("[data-pop]").textContent = String(minor.pop || 0);
+        hold.querySelector("[data-pop]").textContent = (minor.pop || 0) + "/" + (minor.room || 0);
         hold.querySelector("[data-houses]").textContent = minor.houses + (minor.houses === 1 ? " house" : " houses");
-        hold.querySelector("[data-farm]").textContent = minor.farmers + (minor.farmers === 1 ? " farmer" : " farmers");
+        const workers = minor.workers || 0;
+        hold.querySelector("[data-workers]").textContent = workers + (workers === 1 ? " worker" : " workers");
         const food = hold.querySelector("[data-food]");
         food.disabled = minor.owner !== minor.index;
         if (document.activeElement !== food) food.value = String(minor.food || 0);
         hold.querySelector("[data-stores]").textContent = "wood " + (minor.wood || 0) + " · stone " + (minor.stone || 0) + " · gold " + (minor.gold || 0);
         const doing = (minor.building || []).map((kind) => "building " + (kind === "house" ? "five houses" : "a " + (buildNames[kind] || kind)));
+        if (minor.trainingWorker) doing.push("training a worker");
         if (minor.cutting) doing.push("a worker cutting wood for " + (minor.wants === "house" ? "five houses" : "a " + (buildNames[minor.wants] || minor.wants)));
         hold.querySelector("[data-status]").textContent = (minor.taking || []).map((take) =>
             take.name + " soldiers in the farmhouse: " + Math.floor(take.heldMs / 60000) + " of " + Math.round(take.needMs / 60000) + " min"
@@ -391,7 +374,7 @@ function minorCard(minor) {
     hold.innerHTML =
         "<h2>" + name + "</h2>" +
         '<p class="owner" data-owner>Rural community</p>' +
-        '<p class="count">pop <span data-pop>0</span> · <span data-houses>0 houses</span> · <span data-farm>0 farmers</span> · ' +
+        '<p class="count">pop <span data-pop>0</span> · <span data-houses>0 houses</span> · <span data-workers>0 workers</span> · ' +
         '<label class="food">food <input data-food type="number" min="0" max="99999" step="1" value="0" aria-label="' + name + ' food"></label></p>' +
         '<p class="count" data-stores></p>' +
         '<label class="stance"><span data-stance-name>Southwest and ' + name + ':</span> <select data-stance="' + minor.index + '" aria-label="Southwest and ' + name + '">' +
