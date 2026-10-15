@@ -7072,7 +7072,7 @@ function draw() {
         for (const man of men) {
             if (man.hidden || !nearPerson(man, 260)) continue;
             const kind = man.fisher || man.decor || man.driver || man.faction >= 4 ? "fisher" : "soldier";
-            const look = man.goblin ? "fisher1" : kind + man.faction;
+            const look = man.goblin ? "fisher1" : kind + Math.min(man.faction, 4);
             const model = peopleModels[look];
             if (!model) continue;
             plant(man);

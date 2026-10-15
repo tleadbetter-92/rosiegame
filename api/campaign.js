@@ -2285,7 +2285,7 @@ function present(state, now, turn, paused) {
                 name: folkPlate(man, homes).name,
                 plate: folkPlate(man, homes).plate
             };
-        }),
+        }).concat(hamletWalkers(state)),
         farms: presentFarms(state),
         plots: (state.builtFarms || []).map((site) => ({
             id: site.id,
@@ -4103,6 +4103,65 @@ function hamletWork(state, index, now, play) {
     return true;
 }
 
+// Hamlet workers walk from the farmhouse to the nearest trees (every other one to ore once there is a mine), drawn like woodcutters.
+const hamletRoutes = new Map();
+
+function hamletRoute(index, slot, ore) {
+    const key = index + ":" + slot + ":" + (ore ? 1 : 0);
+    if (hamletRoutes.has(key)) return hamletRoutes.get(key);
+    const farm = hamlets[index].farm;
+    const from = { x: (farm.out || farm.door).x, z: (farm.out || farm.door).z };
+    const to = (ore && nearestOre(from, slot)) || nearestTree(from, slot);
+    const route = to ? [from].concat((landRoute(from, to) || []).slice(1, -1), [{ x: to.x, z: to.z }]) : null;
+    hamletRoutes.set(key, route);
+    return route;
+}
+
+function hamletWalkers(state) {
+    const list = [];
+    (state.minors || []).forEach((minor, index) => {
+        const mine = (state.mines || []).some((item) => item.village === MINOR_BASE + index);
+        for (let slot = 0; slot < (minor.workers || 0); slot++) {
+            const ore = mine && slot % 2 === 1;
+            const path = hamletRoute(index, slot, ore);
+            if (!path) continue;
+            list.push({
+                id: "hamlet-" + index + "-" + slot,
+                village: MINOR_BASE + index,
+                slot,
+                ore,
+                owner: hamletOwner(state, index),
+                health: 1,
+                cycleStart: (state.restartedAt || 0) + slot * 9000,
+                walkMs: Math.round((pathLength(path) / FISH_WALK) * 1000),
+                from: path[0],
+                via: path[Math.min(1, path.length - 1)],
+                to: path[path.length - 1],
+                path,
+                asleep: false,
+                shelter: false,
+                bed: "manor",
+                home: null,
+                name: "",
+                plate: null
+            });
+        }
+    });
+    return list;
+}
+
+async function hitHamletWorker(id) {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    const index = Number(String(id).split("-")[1]);
+    const minor = state.minors && state.minors[index];
+    if (minor && (minor.workers || 0) > 0 && grudge(state, hamletOwner(state, index))) minor.workers -= 1;
+    await writeState(state);
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+}
+
 const hamletThink = minors.map(() => 0);
 
 // While a hamlet with no workers saves for a building, one of its two farmers leaves the fields to cut wood.
@@ -4750,6 +4809,10 @@ module.exports = async function handler(req, res) {
             }
             if (req.body && Number.isInteger(req.body.woodcutter)) {
                 res.status(200).json(await hitWood(req.body.woodcutter));
+                return;
+            }
+            if (req.body && typeof req.body.woodcutter === "string" && req.body.woodcutter.startsWith("hamlet-")) {
+                res.status(200).json(await hitHamletWorker(req.body.woodcutter));
                 return;
             }
             if (req.body && typeof req.body.farmer === "string") {
