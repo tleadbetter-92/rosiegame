@@ -25,7 +25,6 @@ if (flying) {
     cam.pitch = -0.62;
 }
 const homeVillage = 2;
-const allied = true;
 let inside = null;
 function activeCam() {
     return inside ? inside.view : cam;
@@ -1670,6 +1669,7 @@ function sceneryNear(x, z) {
         sceneryGrid = new Map();
         sceneryCount = scenery.length;
         for (const item of scenery) {
+            if (!item.raised && World.onPad(item.x + item.w / 2, item.z + item.d / 2)) continue;
             const c0 = Math.floor((item.x - 0.5) / 16);
             const c1 = Math.floor((item.x + item.w + 0.5) / 16);
             const r0 = Math.floor((item.z - 0.5) / 16);
@@ -2535,6 +2535,12 @@ function fillMeadow(x, z) {
     return grew;
 }
 
+// Builders clear what stands on a building's pad, and its earth bank buries what grew below.
+function cleared(x, z, y) {
+    if (!World.onPad(x, z, 40)) return false;
+    return World.onPad(x, z) || World.heightAt(x, z) > y + 0.4;
+}
+
 function refreshNearTrees() {
     const grew = growMeadow(cam.x, cam.z, cam.yaw);
     const dx = cam.x - nearMarkX;
@@ -2548,6 +2554,7 @@ function refreshNearTrees() {
     const farLeaf = [];
     const near = [];
     for (const spot of treeSpots) {
+        if (cleared(spot.x, spot.z, spot.y)) continue;
         const ox = spot.x - cam.x;
         const oz = spot.z - cam.z;
         const d2 = ox * ox + oz * oz;
@@ -2577,7 +2584,7 @@ function refreshNearTrees() {
         const prop = meadowProps[i];
         const ox = prop.x - cam.x;
         const oz = prop.z - cam.z;
-        if (ox * ox + oz * oz > 200 * 200) continue;
+        if (ox * ox + oz * oz > 200 * 200 || cleared(prop.x, prop.z, prop.y)) continue;
         if (prop.kind === "bush") {
             const w = 1.5 + prop.roll * 0.8;
             const d = 1.3 + prop.roll * 0.6;
@@ -4037,7 +4044,7 @@ function paintCarts() {
 
 function cartUnder(x, z, faction) {
     const lodges = campaign && campaign.lodges || [];
-    const who = faction == null ? homeVillage : faction;
+    const who = faction == null ? -1 : faction;
     let best = null;
     let bestDist = 1.35;
     for (const lodge of lodges) {
@@ -4054,6 +4061,7 @@ function cartUnder(x, z, faction) {
 
 function strikeCart(lodge) {
     if (!lodge || !lodge.cart || lodge.cart.hp <= 0) return false;
+    provoke(lodge.owner);
     lodge.cart.hp -= 1;
     showStrike(lodge.cart.hp > 0 ? "Cart " + lodge.cart.hp : "Cart lost");
     postHit({ cart: lodge.id });
@@ -4389,7 +4397,35 @@ function hurtPlayer(amount) {
         death.classList.add("show");
         swing = null;
         gesture = null;
+        forgiveAll();
     }
+}
+
+// The player belongs to no faction. Anyone struck turns hostile until the player dies.
+const struckFactions = new Set();
+
+function angry(faction) {
+    if (struckFactions.has(faction)) return true;
+    return !!(campaign && campaign.grudges && campaign.grudges.includes(faction));
+}
+
+function provoke(faction) {
+    if (Number.isInteger(faction) && faction !== GOBLINS) struckFactions.add(faction);
+}
+
+function forgiveAll() {
+    struckFactions.clear();
+    if (campaign) campaign.grudges = [];
+    pendingHit += 1;
+    fetch("/api/campaign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ forgive: true })
+    }).then((res) => res.json()).then((data) => {
+        pendingHit -= 1;
+        if (pendingHit === 0) applyCampaign(data);
+    }).catch(() => { pendingHit -= 1; });
 }
 
 function respawn() {
@@ -4446,8 +4482,10 @@ function postHit(body) {
 }
 
 function wound(man, label, quiet, knockX, knockZ) {
-    if (!man || man.dying || man.health <= 0 || man.jack || man.faction === homeVillage) return false;
-    if (campaign && campaign.peace && campaign.peace.includes(man.faction)) return false;
+    if (!man || man.dying || man.health <= 0 || man.jack) return false;
+    // Archers' arrows only count against goblins; the campaign settles fights between factions itself.
+    if (quiet && !man.goblin) return false;
+    if (!man.goblin) provoke(man.faction);
     const word = label || "Hit";
     if (man.goblin) {
         man.health -= 1;
@@ -4531,7 +4569,7 @@ function wound(man, label, quiet, knockX, knockZ) {
     }
     if (!quiet) {
         for (const other of men) {
-            if (other.dying || other.archer || other.faction !== man.faction || other.faction === homeVillage) continue;
+            if (other.dying || other.archer || other.faction !== man.faction) continue;
             const near = Math.hypot(other.x - man.x, other.z - man.z);
             if (near < 12) {
                 other.hostile = true;
@@ -4554,7 +4592,6 @@ function connectSwing() {
     let bestT = profile.reach;
     for (const man of men) {
         if (man.dying || man.hidden || man.decor || man.health <= 0) continue;
-        if (!man.goblin && (allied || man.faction === homeVillage)) continue;
         const chest = (man.stand || 0) + (man.goblin ? 0.7 : 0.95);
         const dx = man.x - ox;
         const dy = chest - cam.y;
@@ -4568,18 +4605,14 @@ function connectSwing() {
             bestT = t;
         }
     }
-    if (!allied) {
-        const gate = gateInReach(ox, oz, fx, fy, fz, profile.reach);
-        if (gate && gate.t < bestT) {
-            if (strikeGate(gate)) notePractice("sword");
-            return;
-        }
+    const gate = gateInReach(ox, oz, fx, fy, fz, profile.reach);
+    if (gate && gate.t < bestT) {
+        if (strikeGate(gate)) notePractice("sword");
+        return;
     }
     if (!best) {
-        if (!allied) {
-            const cart = cartUnder(ox + fx * Math.min(1.4, profile.reach), oz + fz * Math.min(1.4, profile.reach));
-            if (cart && strikeCart(cart)) notePractice("sword");
-        }
+        const cart = cartUnder(ox + fx * Math.min(1.4, profile.reach), oz + fz * Math.min(1.4, profile.reach));
+        if (cart && strikeCart(cart)) notePractice("sword");
         return;
     }
     const label = swing.kind === "chop" ? "Chop" : swing.kind === "thrust" ? "Thrust" : "Slash";
@@ -4974,7 +5007,7 @@ const BOW_RANGE = 22;
 function archerTarget(man) {
     let best = null;
     let bestDist = BOW_RANGE;
-    if (!allied && man.faction !== homeVillage && !player.dead) {
+    if (angry(man.faction) && !player.dead) {
         const dist = Math.hypot(cam.x - man.x, cam.z - man.z);
         if (dist < bestDist && dist > 1.2) {
             best = { x: cam.x, y: cam.y - 0.35, z: cam.z };
@@ -5034,7 +5067,7 @@ function shootArrow() {
         vx: a.fx * speed,
         vy: a.fy * speed,
         vz: a.fz * speed,
-        faction: homeVillage,
+        faction: -1,
         fromPlayer: true,
         age: 0,
         gravity: 0,
@@ -5060,7 +5093,6 @@ function sweptNear(x0, y0, z0, x1, y1, z1, cx, cy, cz, radius, yTol) {
 function arrowGate(arrow, x0, y0, z0) {
     if (!arrow.fromPlayer || !campaign || !campaign.owners) return null;
     for (let village = 0; village < 4; village++) {
-        if (campaign.owners[village] === homeVillage) continue;
         for (let side = 0; side < 4; side++) {
             if (gateHealth(village, side) <= 0) continue;
             const spot = gateCenter(village, side);
@@ -5207,11 +5239,9 @@ function stepArrows(dt) {
             }
         }
         let hit = false;
-        const peace = allied && arrow.fromPlayer;
         if (campaign) {
             for (const man of men) {
                 if (man.dying || man.hidden || man.decor || man.health <= 0 || man.faction === arrow.faction) continue;
-                if (peace && !man.goblin) continue;
                 const chest = (man.stand || 0) + (man.goblin ? 0.7 : 0.95);
                 if (!sweptNear(x0, y0, z0, arrow.x, arrow.y, arrow.z, man.x, chest, man.z, 0.48, 1.05)) continue;
                 const speed = Math.hypot(arrow.vx, arrow.vz) || 1;
@@ -5219,7 +5249,7 @@ function stepArrows(dt) {
                 hit = true;
                 break;
             }
-            if (!hit && !peace) {
+            if (!hit && arrow.fromPlayer) {
                 const lodge = cartUnder(arrow.x, arrow.z, arrow.faction);
                 if (lodge) {
                     const pose = clientCartPose(lodge.cart);
@@ -5230,7 +5260,7 @@ function stepArrows(dt) {
                 }
             }
         }
-        if (!hit && !allied && arrow.faction !== homeVillage && !player.dead) {
+        if (!hit && !arrow.fromPlayer && angry(arrow.faction) && !player.dead) {
             if (sweptNear(x0, y0, z0, arrow.x, arrow.y, arrow.z, cam.x, cam.y - 0.55, cam.z, 0.46, 1.05)) {
                 hurtPlayer(8);
                 hit = true;
@@ -5548,7 +5578,7 @@ function stepMan(man, dt) {
     const dist = Math.hypot(dx, dz) || 0.0001;
     const place = places[man.post];
     const outsideTown = (x, z) => Math.hypot(x - place.ox, z - place.oz) > townLeash;
-    if (allied || man.faction === homeVillage) {
+    if (!angry(man.faction)) {
         man.hostile = false;
         man.striking = 0;
     } else if (!man.hostile && dist < 5.6) {
@@ -5804,7 +5834,7 @@ function gateHealth(village, side) {
 
 function gatePasses(village, side, faction) {
     if (gateHealth(village, side) <= 0) return true;
-    if (allied && faction === homeVillage) return true;
+    if (faction === homeVillage && !angry(ownerOf(village))) return true;
     return faction === ownerOf(village);
 }
 
@@ -6038,7 +6068,7 @@ function gateWant(village, side) {
     if (gateHealth(village, side) <= 0) return 0;
     const owner = ownerOf(village);
     const spot = gateCenter(village, side);
-    if (!flying && (allied || owner === homeVillage) && !onTower(cam.x, cam.z) && floorAt(cam.x, cam.z, cam.y - 1.62) < 2 && Math.hypot(cam.x - spot.x, cam.z - spot.z) < 7.5) return 1;
+    if (!flying && !angry(owner) && !onTower(cam.x, cam.z) && floorAt(cam.x, cam.z, cam.y - 1.62) < 2 && Math.hypot(cam.x - spot.x, cam.z - spot.z) < 7.5) return 1;
     for (const man of men) {
         if (man.dying || man.health <= 0 || man.archer || man.faction !== owner) continue;
         if (onTower(man.x, man.z) || man.indoors || man.hidden || (man.floorY || 0) > 1) continue;
@@ -6072,7 +6102,7 @@ function gateInReach(ox, oz, fx, fy, fz, reach) {
 }
 
 function strikeGate(gate) {
-    if (allied) return false;
+    provoke(ownerOf(gate.village));
     const row = campaign.gates && campaign.gates[gate.village];
     if (!row || row[gate.side] <= 0) return false;
     row[gate.side] -= 1;
@@ -7523,8 +7553,13 @@ function robloxModel(name) {
 // Earth filled up under new buildings, drawn over the island ground wherever a pad lifts it.
 function stampPads(list, pads) {
     const cell = 2;
-    const reach = 12;
     for (const pad of pads) {
+        let low = pad.y;
+        for (const [fx, fz] of [[0, 0], [0.5, 0], [1, 0], [1, 0.5], [1, 1], [0.5, 1], [0, 1], [0, 0.5]]) {
+            low = Math.min(low, World.bareHeight(pad.minX + pad.w * fx, pad.minZ + pad.d * fz));
+        }
+        // The bank falls 0.7 m a metre, and further on ground that keeps falling away.
+        const reach = Math.min(40, 12 + ((pad.y - low) / 0.7) * 1.5);
         const x0 = Math.floor((pad.minX - reach) / cell) * cell;
         const z0 = Math.floor((pad.minZ - reach) / cell) * cell;
         const x1 = pad.minX + pad.w + reach;
@@ -7655,6 +7690,8 @@ function stampRaisedPlots() {
     const padGeom = [];
     const buckets = {};
     World.setPads(raisedData.pads || []);
+    sceneryGrid = null;
+    nearMarkX = 1e9;
     stampPads(padGeom, raisedData.pads || []);
     const cell = (list, x, z, w, d) => {
         const y00 = Math.max(0, World.heightAt(x, z)) + 0.07;

@@ -54,14 +54,23 @@ const farmModel = robloxModel(() => require("../models/roblox/farm.json"));
 const housesModel = robloxModel(() => require("../models/roblox/houses.json"));
 const mineModel = robloxModel(() => require("../models/roblox/mine.json"));
 
-// How far up a new building's ground may be filled to make it level.
+// How far up a hamlet's first farm's ground may be filled to make it level (kept so existing hamlets stay put).
 const PAD_RISE = 6;
+// Any other building fills as high as it needs; past this the bank would run beyond the reach of World.heightAt.
+const FILL_MAX = 25;
+// A new building stands within BUILD_REACH of its village and within BUILD_STEP of one of the village's buildings,
+// so every building pushes the edge of where the next can go.
+const BUILD_REACH = 500;
+const BUILD_STEP = 200;
 
 const places = World.places;
 
 const MAX_HP = 3;
 const FISHER_HP = 1;
-const POP_BASE = 20;
+const POP_BASE = 50;
+// Houses mass about this many men before marching, unless the target is weak enough to take with fewer.
+const MUSTER = 40;
+const RAID_MIN = 12;
 const HOUSE_POP = 2;
 // A house build with the Roblox template puts up five houses at once.
 const HOUSES_POP = 10;
@@ -402,6 +411,7 @@ function restartCampaign(state, now) {
     state.trails = [];
     state.holds = [];
     state.tributes = [];
+    state.grudges = [];
     state.goblins = { nextAt: nextGoblinRaid(now), raid: null };
 }
 
@@ -581,6 +591,8 @@ function maybeAttack(state, faction, turn, now) {
     if (to < 0 || to === from) return;
     const defender = state.owners[to];
     const defenders = fielded(state, defender, to);
+    const weak = !defenders.length || (marching.length >= RAID_MIN && marching.length >= defenders.length * 3);
+    if (company.length < MUSTER && !weak) return;
     const route = marchPath(from, to);
     const gateHp = (state.gates[to] && state.gates[to][route.gateSide]) || 0;
     if (!defenders.length && gateHp <= 0) {
@@ -863,9 +875,6 @@ function popLimit(state, faction) {
     let room = 0;
     for (const house of state.houses || []) {
         if (state.owners[house.village] === faction) room += house.model === "houses" ? HOUSES_POP : HOUSE_POP;
-    }
-    for (const homes of starts ? starts.houses : []) {
-        if (homes && state.owners[homes.village] === faction) room += HOUSES_POP;
     }
     return POP_BASE + room;
 }
@@ -1276,7 +1285,7 @@ function orderTraining(state, now) {
             kind = "jack";
             at = yards[0].village;
         } else if (!has("fisher") && workerCount(state, faction, state.fishermen) < 1 && producingFarms(state, faction) * FARM_PER_DAY < dailyFood(state, faction)) kind = "fisher";
-        else if (!has("soldier")) kind = "soldier";
+        else if (state.training.filter((job) => state.owners[job.village] === faction && job.kind === "soldier").length < 2) kind = "soldier";
         if (!kind) continue;
         const cost = kind === "soldier" ? SOLDIER_COST : FISHER_COST;
         if (!pay(cost)) continue;
@@ -2371,7 +2380,7 @@ function present(state, now, turn, paused) {
         }, []),
         hero: Hero.normalize(state.hero),
         stance: factions.concat(minors).map((faction, index) => relation(state, PLAYER_FACTION, index)),
-        peace: factions.concat(minors).map((faction, index) => index).filter((index) => !atWar(state, PLAYER_FACTION, index)),
+        grudges: (state.grudges || []).slice(),
         trails: state.trails || [],
         minors: minors.map((minor, index) => {
             const own = state.minors[index];
@@ -2454,7 +2463,7 @@ function campaignRules() {
             { name: "Mine", wood: MINE_WOOD, ms: BUILD_MS, gives: "Stone and gold, once there is ore on the map to dig", when: "Built once a faction has a lumberyard and no mine" }
         ] : []),
         fixed: [
-            { name: "Village", gives: "Palisade, gates and a garrison post; holds " + POP_BASE + " people before houses. Starts with two farms (the old one and a Roblox one) and five Roblox houses" },
+            { name: "Village", gives: "Palisade, gates and a garrison post; holds " + POP_BASE + " people, counting its starting five Roblox houses. Starts with two farms (the old one and a Roblox one)" },
             { name: "Fishing cottage", gives: "One per village; fishermen land " + FISH_FOOD + " food a trip and carts carry it home" },
             { name: "Hamlet", gives: "Rural community: " + FOLK_PER_HOUSE + " people a house, its own farm, no soldiers. Keeps food, wood, stone and gold in its farmhouse and never declares war. Enemies of its protector take it by standing soldiers in the farmhouse for " + Math.round(HOLD_MS / 60000) + " minutes. It sends its protector " + Math.round(TRIBUTE_SHARE * 100) + "% of every store a day by cart. It builds one more farm, then five houses, then a mine, sending one of its workers to cut wood while it saves" }
         ],
@@ -2527,7 +2536,7 @@ function hamletModelFarm(minor, village, cottages, outhouse) {
     const blocked = cottages.map(rectOf).concat([{ minX: outhouse.x - 2, minZ: outhouse.z - 2, w: 4, d: 4 }]);
     const spots = [[-22, 0], [-22, -18], [-22, 18], [4, 30], [4, -38], [50, 0], [-50, 0], [20, 40], [20, -45]];
     for (const [dx, dz] of spots) {
-        const site = layoutModelFarm({}, village, minor.x + dx, minor.z + dz, null, blocked, true);
+        const site = layoutModelFarm({}, village, minor.x + dx, minor.z + dz, blocked, true);
         if (site) return site;
     }
     return null;
@@ -2586,7 +2595,7 @@ function ensureStarts(state) {
     starts = { farms: [null, null, null, null], houses: [null, null, null, null] };
     for (let village = 0; village < 4; village++) {
         let farm = null;
-        if (farmModel) farm = village === 2 ? layoutModelFarm({}, 2, -2407.2, 540.2, nearbyWood(2), []) : pickFarmSite(state, village);
+        if (farmModel) farm = village === 2 ? layoutModelFarm({}, 2, -2407.2, 540.2, []) : pickFarmSite(state, village);
         if (farm) farm.id = "show-farm-" + village;
         starts.farms[village] = farm;
         let homes = null;
@@ -2613,7 +2622,7 @@ function shownMine() {
     const homes = starts && starts.houses[2];
     if (!mineModel || !farm || !homes) return null;
     showMine = null;
-    for (const spot of [[-2440, 530], [-2405, 505], [-2365, 535], [-2340, 600], [-2400, 590]]) {
+    for (const spot of [[-2405, 505], [-2365, 535], [-2340, 600], [-2400, 590]]) {
         showMine = layoutModelSite({}, 2, spot[0], spot[1], [farm.rect, homes.rect], "mine");
         if (showMine) break;
     }
@@ -3162,31 +3171,12 @@ function farmVillage(state, faction) {
     return best;
 }
 
-function landScore(x, z, wood) {
-    if (World.wet(x, z) || World.inField(x, z) || Town.street(x, z)) return -1;
-    const h = World.heightAt(x, z);
-    if (h < 0.45 || h > 30 || World.tooSteep(x, z)) return -1;
-    if (World.roadDist(x, z) < 18 || World.forestAt(x, z) > 0.4) return -1;
+// Builders clear trees and fill mounds and slopes, so only water, roads, streets and fields keep them off.
+function landOpen(x, z) {
+    if (World.wet(x, z) || World.inField(x, z) || Town.street(x, z)) return false;
+    if (World.heightAt(x, z) < 0.45 || World.roadDist(x, z) < 18) return false;
     const box = World.peakBox;
-    if (x >= box.minX && x <= box.maxX && z >= box.minZ && z <= box.maxZ) return -1;
-    const reach = 6;
-    const reach2 = reach * reach;
-    for (let i = 0; i < wood.length; i++) {
-        const tree = wood[i];
-        const dx = tree.x - x;
-        if (dx > reach || dx < -reach) continue;
-        const dz = tree.z - z;
-        if (dx * dx + dz * dz < reach2) return -1;
-    }
-    const s = 4;
-    const dh = Math.max(
-        Math.abs(World.heightAt(x + s, z) - h),
-        Math.abs(World.heightAt(x - s, z) - h),
-        Math.abs(World.heightAt(x, z + s) - h),
-        Math.abs(World.heightAt(x, z - s) - h)
-    );
-    if (dh > 3) return -1;
-    return dh;
+    return !(x >= box.minX && x <= box.maxX && z >= box.minZ && z <= box.maxZ);
 }
 
 // Where a village or hamlet's buildings gather round.
@@ -3194,26 +3184,68 @@ function centreOf(village) {
     return village < MINOR_BASE ? places[village] : minors[village - MINOR_BASE];
 }
 
+function buildAnchors(state, village) {
+    const points = [centreOf(village)];
+    const add = (site) => {
+        if (!site || site.village !== village) return;
+        const at = site.at || site.house || site;
+        if (Number.isFinite(at.x) && Number.isFinite(at.z)) points.push({ x: at.x, z: at.z });
+    };
+    startSites().forEach(add);
+    (state.builtFarms || []).forEach(add);
+    (state.farmJobs || []).forEach((job) => add(job.site));
+    (state.houses || []).forEach(add);
+    (state.siteJobs || []).forEach(add);
+    (state.yards || []).forEach(add);
+    (state.mines || []).forEach(add);
+    if (village >= MINOR_BASE) add(hamlets[village - MINOR_BASE].farm);
+    return points;
+}
+
+function inReach(anchors, x, z) {
+    const centre = anchors[0];
+    if (Math.hypot(x - centre.x, z - centre.z) > BUILD_REACH) return false;
+    return anchors.some((point) => Math.hypot(x - point.x, z - point.z) <= BUILD_STEP);
+}
+
+// Spots to try around each of the village's buildings, nearest the village first.
+function buildSpots(state, village, rings) {
+    const anchors = buildAnchors(state, village);
+    const centre = anchors[0];
+    const spots = [];
+    const seen = new Set();
+    anchors.forEach((anchor, a) => {
+        for (const dist of rings) {
+            for (let i = 0; i < 12; i++) {
+                const ang = (i / 12) * Math.PI * 2 + dist * 0.01 + a * 0.37;
+                const x = anchor.x + Math.cos(ang) * dist;
+                const z = anchor.z + Math.sin(ang) * dist;
+                const key = Math.round(x / 15) + ":" + Math.round(z / 15);
+                if (seen.has(key) || !inReach(anchors, x, z)) continue;
+                seen.add(key);
+                spots.push({ x, z, d: Math.hypot(x - centre.x, z - centre.z) });
+            }
+        }
+    });
+    return spots.sort((p, q) => p.d - q.d);
+}
+
+// Tries spots nearest first and keeps the best of the first few that work.
+function bestSite(spots, layout, score) {
+    let pick = null;
+    let found = 0;
+    for (let i = 0; i < spots.length && i < 260 && found < 6; i++) {
+        const site = layout(spots[i].x, spots[i].z);
+        if (!site) continue;
+        found += 1;
+        if (!pick || score(site) < score(pick)) pick = site;
+    }
+    return pick;
+}
+
 // Hamlets have no palisade; their own houses are kept clear as blocked rects instead.
 function clearOfWalls(village, rect) {
     return village >= MINOR_BASE || outsideWalls(village, rect);
-}
-
-function nearbyWood(village) {
-    const place = centreOf(village);
-    const reach = 240;
-    const wood = [];
-    const lists = [World.trees, World.groves];
-    for (let list = 0; list < lists.length; list++) {
-        const trees = lists[list];
-        for (let i = 0; i < trees.length; i++) {
-            const tree = trees[i];
-            if (tree.kind === "bush") continue;
-            if (Math.abs(tree.x - place.x) > reach || Math.abs(tree.z - place.z) > reach) continue;
-            wood.push(tree);
-        }
-    }
-    return wood;
 }
 
 function takenRects(state) {
@@ -3272,10 +3304,9 @@ function doorOf(house) {
     };
 }
 
-// The level pad a model site stands on: the highest ground under it. Null when the land is unusable or too steep to fill.
-// Without wood, only the height is checked (lumberyards stand beside trees on purpose).
-function padFor(rect, wood) {
-    let slope = 0;
+// The level pad a site stands on: the highest ground under it, so the slope score is how much earth it takes.
+// Without `land` only the height is checked (lumberyards stand beside trees on purpose).
+function padFor(rect, land, rise = FILL_MAX) {
     let low = Infinity;
     let high = -Infinity;
     const nx = Math.max(1, Math.ceil(rect.w / 6));
@@ -3284,18 +3315,14 @@ function padFor(rect, wood) {
         for (let j = 0; j <= nz; j++) {
             const x = rect.minX + (rect.w * i) / nx;
             const z = rect.minZ + (rect.d * j) / nz;
-            if (wood) {
-                const score = landScore(x, z, wood);
-                if (score < 0) return null;
-                slope = Math.max(slope, score);
-            }
+            if (land && !landOpen(x, z)) return null;
             const h = World.heightAt(x, z);
             low = Math.min(low, h);
             high = Math.max(high, h);
         }
     }
-    if (high - low > PAD_RISE) return null;
-    return { minX: rect.minX, minZ: rect.minZ, w: rect.w, d: rect.d, y: high, slope: slope + (high - low) * 0.1 };
+    if (high - low > rise) return null;
+    return { minX: rect.minX, minZ: rect.minZ, w: rect.w, d: rect.d, y: high, slope: high - low };
 }
 
 // Pads of everything built or being built, shared with the world so walking, building and drawing all see level ground.
@@ -3331,7 +3358,7 @@ function layoutModelSite(state, village, cx, cz, blocked, kind) {
     const model = kind === "mine" ? mineModel : housesModel;
     const place = centreOf(village);
     const dist = Math.hypot(place.x - cx, place.z - cz);
-    if (dist < (village >= MINOR_BASE ? 35 : 60) || dist > 150) return null;
+    if (dist < (village >= MINOR_BASE ? 35 : 60) || dist > BUILD_REACH) return null;
     const at = { x: cx, z: cz, theta: quarterTurn(village, cx, cz) };
     const whole = placeRect({ x: 0, z: 0, w: model.w, d: model.d }, at);
     const rect = { minX: whole.minX, minZ: whole.minZ, w: whole.w, d: whole.d };
@@ -3339,7 +3366,7 @@ function layoutModelSite(state, village, cx, cz, blocked, kind) {
     for (const other of blocked) {
         if (rectsHit(rect, other, 3)) return null;
     }
-    const pad = padFor(rect, nearbyWood(village));
+    const pad = padFor(rect, true);
     if (!pad) return null;
     at.y = pad.y;
     const yaw = snapYaw(place.x - cx, place.z - cz);
@@ -3363,19 +3390,8 @@ function layoutModelSite(state, village, cx, cz, blocked, kind) {
 
 function pickModelSite(state, village, kind) {
     const blocked = takenRects(state);
-    const place = centreOf(village);
-    const rings = village >= MINOR_BASE ? [45, 60, 75, 90, 108] : [72, 90, 108, 126, 144];
-    for (const dist of rings) {
-        let pick = null;
-        for (let i = 0; i < 16; i++) {
-            const ang = (i / 16) * Math.PI * 2 + dist * 0.01;
-            const site = layoutModelSite(state, village, place.x + Math.cos(ang) * dist, place.z + Math.sin(ang) * dist, blocked, kind);
-            if (!site) continue;
-            if (!pick || site.score < pick.score) pick = site;
-        }
-        if (pick) return pick;
-    }
-    return null;
+    const spots = buildSpots(state, village, [45, 75, 110, 150, 195]);
+    return bestSite(spots, (x, z) => layoutModelSite(state, village, x, z, blocked, kind), (site) => site.score);
 }
 
 // Model rects are centred and quarter-turned about the farm centre, so width and depth swap on a side turn.
@@ -3390,13 +3406,13 @@ function placeRect(r, at) {
 }
 
 // `home` is a hamlet's own starting farm: it stands right by the hamlet and its farmhouse is the hamlet's store.
-function layoutModelFarm(state, village, cx, cz, wood, blocked, home) {
+function layoutModelFarm(state, village, cx, cz, blocked, home) {
     const place = centreOf(village);
     const hamlet = village >= MINOR_BASE;
     const at = { x: cx, z: cz, theta: quarterTurn(village, cx, cz) };
     const whole = placeRect({ x: 0, z: 0, w: farmModel.w, d: farmModel.d }, at);
     const dist = Math.hypot(place.x - cx, place.z - cz);
-    if (dist < (home ? 0 : hamlet ? 35 : 60) || dist > (home ? 80 : 150)) return null;
+    if (dist < (home ? 0 : hamlet ? 35 : 60) || dist > (home ? 80 : BUILD_REACH)) return null;
     const wholeRect = { minX: whole.minX, minZ: whole.minZ, w: whole.w, d: whole.d };
     if (!clearOfWalls(village, wholeRect)) return null;
     for (const other of blocked) {
@@ -3407,7 +3423,7 @@ function layoutModelFarm(state, village, cx, cz, wood, blocked, home) {
         const ring = [{ x: r.minX, z: r.minZ }, { x: r.minX + r.w, z: r.minZ }, { x: r.minX + r.w, z: r.minZ + r.d }, { x: r.minX, z: r.minZ + r.d }, { x: r.minX, z: r.minZ }];
         if (pathWet(ring) || pathWet([ring[0], ring[2]]) || pathWet([ring[1], ring[3]])) return null;
     }
-    const pad = padFor(wholeRect, wood);
+    const pad = home ? padFor(wholeRect, false, PAD_RISE) : padFor(wholeRect, true);
     if (!pad) return null;
     const slope = pad.slope;
     const high = pad.y;
@@ -3456,12 +3472,12 @@ function layoutModelFarm(state, village, cx, cz, wood, blocked, home) {
     if (home) site.haul = [site.exits[1] || site.out, { x: door.out.x, z: door.out.z }];
     else if (hamlet) site.haul = [{ x: door.out.x, z: door.out.z }, hamlets[village - MINOR_BASE].farm.out];
     const path = pathToStore(site);
-    if (!path || path.length < 2 || pathWet(path) || pathLength(path) > 220) return null;
+    if (!path || path.length < 2 || pathWet(path) || pathLength(path) > BUILD_REACH + 100) return null;
     return site;
 }
 
-function layoutFarm(state, village, cx, cz, wood, blocked) {
-    if (farmModel) return layoutModelFarm(state, village, cx, cz, wood, blocked);
+function layoutFarm(state, village, cx, cz, blocked) {
+    if (farmModel) return layoutModelFarm(state, village, cx, cz, blocked);
     const place = places[village];
     const dx = place.x - cx;
     const dz = place.z - cz;
@@ -3489,8 +3505,8 @@ function layoutFarm(state, village, cx, cz, wood, blocked) {
     const fieldRect = { minX: field.x, minZ: field.z, w: field.w, d: field.d };
     const houseDist = Math.hypot(hx - place.x, hz - place.z);
     const fieldDist = Math.hypot(cx - place.x, cz - place.z);
-    if (houseDist < 44 || houseDist > 125) return null;
-    if (fieldDist < 56 || fieldDist > 145) return null;
+    if (houseDist < 44 || houseDist > BUILD_REACH) return null;
+    if (fieldDist < 56 || fieldDist > BUILD_REACH) return null;
     if (!outsideWalls(village, houseRect) || !outsideWalls(village, fieldRect)) return null;
     if (rectsHit(houseRect, fieldRect, 0.4)) return null;
     const spots = [
@@ -3501,12 +3517,10 @@ function layoutFarm(state, village, cx, cz, wood, blocked) {
         [field.x + 1, field.z + field.d - 1],
         [field.x + field.w - 1, field.z + field.d - 1]
     ];
-    let slope = 0;
     for (const spot of spots) {
-        const score = landScore(spot[0], spot[1], wood);
-        if (score < 0) return null;
-        slope = Math.max(slope, score);
+        if (!landOpen(spot[0], spot[1])) return null;
     }
+    const slope = 0;
     for (const rect of [houseRect, fieldRect]) {
         for (const other of blocked) {
             if (rectsHit(rect, other, 3)) return null;
@@ -3535,41 +3549,20 @@ function layoutFarm(state, village, cx, cz, wood, blocked) {
         slope: slope
     };
     const path = pathToStore(site);
-    if (!path || path.length < 2 || pathWet(path) || pathLength(path) > 220) return null;
+    if (!path || path.length < 2 || pathWet(path) || pathLength(path) > BUILD_REACH + 100) return null;
     return site;
 }
 
 function pickFarmSite(state, village) {
-    const wood = nearbyWood(village);
     const blocked = takenRects(state);
-    const place = centreOf(village);
-    for (const dist of village >= MINOR_BASE ? [45, 60, 75, 90] : [72, 90, 108, 126]) {
-        let pick = null;
-        for (let i = 0; i < 12; i++) {
-            const ang = (i / 12) * Math.PI * 2 + dist * 0.002;
-            const site = layoutFarm(
-                state,
-                village,
-                place.x + Math.cos(ang) * dist,
-                place.z + Math.sin(ang) * dist,
-                wood,
-                blocked
-            );
-            if (!site) continue;
-            if (!pick || site.slope < pick.slope) pick = site;
-        }
-        if (pick) return pick;
-    }
-    return null;
+    const spots = buildSpots(state, village, [45, 75, 110, 150, 195]);
+    return bestSite(spots, (x, z) => layoutFarm(state, village, x, z, blocked), (site) => site.slope);
 }
 
 function layoutBuilding(state, village, x, z, blocked) {
     const place = places[village];
-    const wood = nearbyWood(village);
-    const score = landScore(x, z, wood);
-    if (score < 0) return null;
     const dist = Math.hypot(place.x - x, place.z - z);
-    if (dist < 40 || dist > 110) return null;
+    if (dist < 40 || dist > BUILD_REACH) return null;
     const w = 4.6;
     const d = 4.6;
     const rect = { minX: x - w / 2, minZ: z - d / 2, w: w, d: d };
@@ -3578,7 +3571,7 @@ function layoutBuilding(state, village, x, z, blocked) {
         if (rectsHit(rect, other, 2.5)) return null;
     }
     const yaw = snapYaw(place.x - x, place.z - z);
-    const pad = padFor(rect, wood);
+    const pad = padFor(rect, true);
     if (!pad) return null;
     const y = pad.y;
     return {
@@ -3592,7 +3585,7 @@ function layoutBuilding(state, village, x, z, blocked) {
         d: d,
         rect: rect,
         pad: pad,
-        score: score,
+        score: pad.slope,
         house: {
             x: x,
             z: z,
@@ -3640,11 +3633,9 @@ function haulRisk(state, village, x, z, path) {
 
 function layoutYard(state, village, x, z, blocked, trees) {
     if (World.wet(x, z) || Town.street(x, z)) return null;
-    const h = World.heightAt(x, z);
-    if (h < 0.4 || h > 8 || World.tooSteep(x, z)) return null;
+    if (World.heightAt(x, z) < 0.4) return null;
     const timber = treesAround(x, z, trees, 34);
     if (timber < 3) return null;
-    if (treesAround(x, z, trees, 6) > 0) return null;
     const w = 9;
     const d = 5.6;
     const rect = { minX: x - w / 2, minZ: z - d / 2, w: w, d: d };
@@ -3709,6 +3700,7 @@ function pickYard(state, village) {
         }
     }
     const blocked = takenRects(state);
+    const anchors = buildAnchors(state, village);
     const seen = new Set();
     const found = [];
     for (let i = 0; i < trees.length; i++) {
@@ -3719,7 +3711,7 @@ function pickYard(state, village) {
         const x = tree.x + (dx / len) * 16;
         const z = tree.z + (dz / len) * 16;
         const key = Math.round(x / 18) + ":" + Math.round(z / 18);
-        if (seen.has(key)) continue;
+        if (seen.has(key) || !inReach(anchors, x, z)) continue;
         seen.add(key);
         const site = layoutYard(state, village, x, z, blocked, trees);
         if (site) found.push(site);
@@ -3740,25 +3732,8 @@ function pickBuilding(state, village, kind) {
     if (kind === "mine") return pickModelSite(state, village, "mine");
     if (housesModel) return pickModelSite(state, village, "house");
     const blocked = takenRects(state);
-    const place = places[village];
-    const rings = [46, 62, 80, 98];
-    let pick = null;
-    for (const dist of rings) {
-        for (let i = 0; i < 12; i++) {
-            const ang = (i / 12) * Math.PI * 2 + dist * 0.01;
-            const site = layoutBuilding(
-                state,
-                village,
-                place.x + Math.cos(ang) * dist,
-                place.z + Math.sin(ang) * dist,
-                blocked
-            );
-            if (!site) continue;
-            if (!pick || site.score < pick.score) pick = site;
-        }
-        if (pick) return pick;
-    }
-    return null;
+    const spots = buildSpots(state, village, [46, 80, 120, 160, 195]);
+    return bestSite(spots, (x, z) => layoutBuilding(state, village, x, z, blocked), (site) => site.score);
 }
 
 function buildingBusy(state, faction) {
@@ -3837,7 +3812,7 @@ function considerSites(state, now) {
         if (buildingBusy(state, faction)) continue;
         const village = homeVillage(state, faction);
         if (village < 0) continue;
-        const tight = popLimit(state, faction) - factionPop(state, faction) <= 2;
+        const tight = popLimit(state, faction) - factionPop(state, faction) <= (housesModel ? HOUSES_POP : HOUSE_POP) * 2;
         const hasYard = yardsOf(state, faction).length > 0;
         const hasMine = state.mines.some((mine) => state.owners[mine.village] === faction);
         const kind = tight ? "house" : !hasYard ? "yard" : mineModel && !hasMine ? "mine" : "";
@@ -4361,12 +4336,36 @@ async function campaignState(now, saved, playAdd) {
     return present(state, now, turn, paused);
 }
 
+// The player stands apart from every faction. Whoever the player strikes treats them as an enemy until the player dies.
+function grudge(state, faction) {
+    if (!Number.isInteger(faction) || faction < 0) return false;
+    if (!Array.isArray(state.grudges)) state.grudges = [];
+    if (!state.grudges.includes(faction)) {
+        state.grudges.push(faction);
+        note(state, nameOf(faction) + " turns on you.");
+    }
+    return true;
+}
+
+async function forgive() {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    if (Array.isArray(state.grudges) && state.grudges.length) {
+        state.grudges = [];
+        note(state, "You fall. The factions forget your quarrels.");
+    }
+    await writeState(state);
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+}
+
 async function hitDriver(id) {
     const state = await readState();
     const now = Date.now();
     syncWorld(state, now);
     const lodge = (state.lodges || []).find((item) => item.id === id);
-    if (lodge && lodge.cart && atWar(state, PLAYER_FACTION, state.owners[lodge.village]) && lodge.cart.driver > 0) {
+    if (lodge && lodge.cart && grudge(state, state.owners[lodge.village]) && lodge.cart.driver > 0) {
         lodge.cart.driver -= 1;
     }
     moveCarts(state, now);
@@ -4380,7 +4379,7 @@ async function hitCart(id) {
     const now = Date.now();
     syncWorld(state, now);
     const lodge = (state.lodges || []).find((item) => item.id === id);
-    if (lodge && lodge.cart && atWar(state, PLAYER_FACTION, state.owners[lodge.village]) && lodge.cart.hp > 0) {
+    if (lodge && lodge.cart && grudge(state, state.owners[lodge.village]) && lodge.cart.hp > 0) {
         lodge.cart.hp -= 1;
     }
     moveCarts(state, now);
@@ -4394,7 +4393,7 @@ async function hitWood(id) {
     const now = Date.now();
     syncWorld(state, now);
     const man = state.woodcutters[id];
-    if (man && man.health > 0 && atWar(state, PLAYER_FACTION, state.owners[man.village])) {
+    if (man && man.health > 0 && grudge(state, state.owners[man.village])) {
         man.health -= 1;
         if (man.health <= 0) dropRepair(state, man);
     }
@@ -4409,7 +4408,7 @@ async function hitFarmer(id) {
     const now = Date.now();
     syncWorld(state, now);
     const farm = (state.farms || []).find((item) => item.id === id);
-    if (farm && farm.health > 0 && atWar(state, PLAYER_FACTION, farmOwner(state, farm.village))) {
+    if (farm && farm.health > 0 && grudge(state, farmOwner(state, farm.village))) {
         farm.health -= 1;
         if (farm.health <= 0) {
             if (farm.carry > 0) {
@@ -4430,7 +4429,7 @@ async function hitFisher(village) {
     const now = Date.now();
     syncWorld(state, now);
     const man = livingFisher(state, village);
-    if (man && atWar(state, PLAYER_FACTION, state.owners[man.village])) {
+    if (man && grudge(state, state.owners[man.village])) {
         man.health -= 1;
         if (man.health <= 0) dropRepair(state, man);
     }
@@ -4444,7 +4443,7 @@ async function hitGate(village, side) {
     const state = await readState();
     const now = Date.now();
     syncWorld(state, now);
-    if (village >= 0 && village <= 3 && side >= 0 && side <= 3 && atWar(state, PLAYER_FACTION, state.owners[village])) {
+    if (village >= 0 && village <= 3 && side >= 0 && side <= 3 && grudge(state, state.owners[village])) {
         const row = state.gates && state.gates[village];
         if (row && row[side] > 0) {
             row[side] -= 1;
@@ -4464,7 +4463,7 @@ async function hitArcher(village, side) {
     const state = await readState();
     const now = Date.now();
     syncWorld(state, now);
-    if (village >= 0 && village <= 3 && side >= 0 && side <= 3 && atWar(state, PLAYER_FACTION, state.owners[village])) {
+    if (village >= 0 && village <= 3 && side >= 0 && side <= 3 && grudge(state, state.owners[village])) {
         const row = state.archers && state.archers[village];
         if (row && row[side] > 0) {
             row[side] -= 1;
@@ -4523,7 +4522,7 @@ async function hit(village, index) {
     const now = Date.now();
     syncWorld(state, now);
     const faction = village;
-    if (faction >= 0 && faction <= 3 && atWar(state, PLAYER_FACTION, faction) && index >= 0 && index < (state.nextIndex[faction] || 0)) {
+    if (faction >= 0 && faction <= 3 && index >= 0 && index < (state.nextIndex[faction] || 0) && grudge(state, faction)) {
         const key = keyOf(faction, index);
         const current = healthOf(state, faction, index);
         if (current > 0) state.health[key] = current - 1;
@@ -4555,6 +4554,10 @@ module.exports = async function handler(req, res) {
             }
             if (req.body && req.body.hero && typeof req.body.hero === "object") {
                 res.status(200).json(await saveHero(req.body.hero));
+                return;
+            }
+            if (req.body && req.body.forgive) {
+                res.status(200).json(await forgive());
                 return;
             }
             if (req.body && typeof req.body.driver === "string") {

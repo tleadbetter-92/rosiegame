@@ -689,6 +689,15 @@
         pads = list || [];
     }
 
+    // Ground under a building pad is cleared of trees and bushes.
+    function onPad(x, z, margin = 1) {
+        for (let i = 0; i < pads.length; i++) {
+            const p = pads[i];
+            if (x > p.minX - margin && x < p.minX + p.w + margin && z > p.minZ - margin && z < p.minZ + p.d + margin) return true;
+        }
+        return false;
+    }
+
     function heightAt(x, z) {
         let h = bareHeight(x, z);
         for (let i = 0; i < pads.length; i++) {
@@ -1407,6 +1416,7 @@
         heightAt,
         bareHeight,
         setPads,
+        onPad,
         waterLevel,
         wet,
         nearRiver,
