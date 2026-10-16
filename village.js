@@ -7904,21 +7904,68 @@ function robloxModel(name) {
     return null;
 }
 
-// Only stamp full Roblox detail for buildings near the camera (other towns stay unloaded until you walk there).
+// Other towns stay unloaded until you walk near them; inside a town only nearby plots get full Roblox mesh.
 function raisedViewKey() {
-    const cell = 90;
-    return Math.round(cam.x / cell) + ":" + Math.round(cam.z / cell) + ":" + Math.round(gfx().drawFar);
+    const cell = 32;
+    return Math.round(cam.x / cell) + ":" + Math.round(cam.z / cell) + ":" + Math.round(gfx().drawFar) + ":" + (graphics === "low" ? "L" : "H");
 }
 
 function raisedDetailReach() {
     return gfx().drawFar + 50;
 }
 
-function plotInView(plot, reach) {
+// Full part mesh + doors + rich collision only this close; farther plots become simple boxes.
+function raisedFullReach() {
+    return graphics === "low" ? 42 : 62;
+}
+
+function plotAnchor(plot) {
     const x = plot.at ? plot.at.x : plot.house ? plot.house.x : plot.x;
     const z = plot.at ? plot.at.z : plot.house ? plot.house.z : plot.z;
-    if (!Number.isFinite(x) || !Number.isFinite(z)) return true;
-    return Math.hypot(x - cam.x, z - cam.z) <= reach;
+    return { x: x, z: z };
+}
+
+function plotInView(plot, reach) {
+    const at = plotAnchor(plot);
+    if (!Number.isFinite(at.x) || !Number.isFinite(at.z)) return true;
+    return Math.hypot(at.x - cam.x, at.z - cam.z) <= reach;
+}
+
+function plotDist(plot) {
+    const at = plotAnchor(plot);
+    if (!Number.isFinite(at.x) || !Number.isFinite(at.z)) return 0;
+    return Math.hypot(at.x - cam.x, at.z - cam.z);
+}
+
+// Far-in-town stand-in: a few boxes + one shell collider instead of thousands of Roblox parts.
+function stampRobloxProxy(list, plot) {
+    const at = plot.at;
+    const house = plot.house;
+    const x = at.x;
+    const z = at.z;
+    const y = at.y != null ? at.y : Math.max(0, World.heightAt(x, z));
+    const theta = at.theta || 0;
+    const scale = at.scale || 1;
+    const mass = { farm: [18, 5, 12], houses: [14, 4.5, 11], singlehouse: [7.5, 4, 7.5], mine: [7, 3.2, 7], lumberyard: [11, 4, 9] };
+    const size = mass[plot.model] || [8, 3.5, 8];
+    const w = house ? house.w : size[0] * scale;
+    const d = house ? house.d : size[2] * scale;
+    const h = house ? (house.h || 3.8) : size[1] * scale;
+    const c = Math.cos(theta);
+    const s = Math.sin(theta);
+    const xf = (px, py, pz) => {
+        const lx = px - x;
+        const lz = pz - z;
+        return [x + lx * c + lz * s, py, z - lx * s + lz * c];
+    };
+    addBox(list, x - w / 2, y, z - d / 2, w, h * 0.7, d, xf);
+    addBox(list, x - w / 2 - 0.2, y + h * 0.7, z - d / 2 - 0.2, w + 0.4, h * 0.3, d + 0.4, xf);
+    if (house && Number.isFinite(house.minX) && Number.isFinite(house.minZ)) {
+        solids.push({ x: house.minX, z: house.minZ, w: house.w, d: house.d, y0: y, y1: y + h, raised: true });
+        floors.push({ x: house.minX + 0.4, z: house.minZ + 0.4, w: Math.max(0.5, house.w - 0.8), d: Math.max(0.5, house.d - 0.8), y: y + 0.05, raised: true });
+    } else {
+        solids.push({ x: x - w / 2, z: z - d / 2, w: w, d: d, y0: y, y1: y + h, raised: true });
+    }
 }
 
 // Earth filled up under new buildings, drawn over the island ground wherever a pad lifts it.
@@ -8003,13 +8050,21 @@ function robloxDoorLeaf(pts, hideDoor) {
 
 // Square-set pieces become walls you bump into, and every top is a floor you can step onto, so doorways and stairs work.
 // Slanted pieces (roofs), balls, doors and pieces Roblox lets you walk through are only drawn.
+// Tiny décor is skipped for collision (and on Low, skipped from the mesh too) so villages stay walkable without tens of thousands of boxes.
 function stampRoblox(list, model, at) {
     const c = Math.cos(at.theta);
     const s = Math.sin(at.theta);
     const scale = at.scale || 1;
     const light = [0.25, 0.86, 0.28];
     const lightLen = Math.hypot(light[0], light[1], light[2]);
+    const skipTinyDraw = at.cheapDraw || graphics === "low";
     for (const part of model.parts) {
+        const pw = part[1] * scale;
+        const ph = part[2] * scale;
+        const pd = part[3] * scale;
+        const vol = pw * ph * pd;
+        // Trim nails, trim, tiny props — still drawn on High unless volume is dust-sized.
+        if (vol < (skipTinyDraw ? 0.05 : 0.012)) continue;
         const shape = robloxShapes[part[0]] || robloxShapes.box;
         let sy = part[2];
         let py = part[5];
@@ -8038,9 +8093,14 @@ function stampRoblox(list, model, at) {
             const top = Math.max(...pts.map((p) => p[1]));
             const d = Math.max(...pts.map((p) => p[2])) - minZ;
             const tall = (Math.abs(r[3]) * part[1] + Math.abs(r[4]) * part[2] + Math.abs(r[5]) * part[3]) * scale;
-            if (w > 0.05 && d > 0.05) {
-                if (tall > 0.6) solids.push({ x: minX, z: minZ, w: w, d: d, y0: minY, y1: top, raised: true });
-                if (w * d >= 0.1) floors.push({ x: minX, z: minZ, w: w, d: d, y: top, raised: true });
+            // Walls/blocks only — skip thin posts, sills, and postcard-sized tops as collision.
+            if (w > 0.14 && d > 0.14) {
+                if (tall > 0.95 && (w > 0.4 || d > 0.4) && vol > 0.12) {
+                    solids.push({ x: minX, z: minZ, w: w, d: d, y0: minY, y1: top, raised: true });
+                }
+                if (w * d >= 0.55 && Math.min(w, d) > 0.35 && vol > 0.08) {
+                    floors.push({ x: minX, z: minZ, w: w, d: d, y: top, raised: true });
+                }
             }
         }
         const mid = [0, 1, 2].map((k) => pts.reduce((sum, p) => sum + p[k], 0) / pts.length);
@@ -8090,7 +8150,13 @@ function stampRaisedPlots() {
     World.setPads(raisedData.pads || []);
     sceneryGrid = null;
     nearMarkX = 1e9;
-    stampPads(padGeom, raisedData.pads || []);
+    const fullReach = raisedFullReach();
+    const nearPads = (raisedData.pads || []).filter((pad) => {
+        const cx = pad.minX + pad.w * 0.5;
+        const cz = pad.minZ + pad.d * 0.5;
+        return Math.hypot(cx - cam.x, cz - cam.z) <= reach;
+    });
+    stampPads(padGeom, nearPads);
     const cell = (list, x, z, w, d) => {
         const y00 = Math.max(0, World.heightAt(x, z)) + 0.07;
         const y10 = Math.max(0, World.heightAt(x + w, z)) + 0.07;
@@ -8108,13 +8174,15 @@ function stampRaisedPlots() {
         const model = robloxModel("ore");
         if (model) {
             for (const [x, z] of World.ores) {
-                if (Math.hypot(x - cam.x, z - cam.z) > reach) continue;
+                if (Math.hypot(x - cam.x, z - cam.z) > fullReach) continue;
                 stampRoblox(modelParts.ore, model, { x: x, z: z, y: Math.max(0, World.heightAt(x, z)) - 1, theta: 0, scale: 5 });
             }
         }
     }
     for (const plot of plots) {
         if (!plotInView(plot, reach)) continue;
+        const dist = plotDist(plot);
+        const close = dist <= fullReach;
         if (plot.kind === "yard" && !plot.model) {
             const x = plot.x;
             const z = plot.z;
@@ -8140,15 +8208,20 @@ function stampRaisedPlots() {
             const house = plot.house;
             const enterable = house && (plot.kind === "house" || plot.kind === "farm");
             let hideDoor = null;
-            if (enterable) {
+            if (enterable && close) {
                 // Centre the swinging door on the front; Roblox models rarely match the old off-centre farmhouse door.
                 const side = house.doorSide;
                 house.doorSide = 0;
                 hideDoor = doorFront(house);
                 house.doorSide = side;
             }
-            if (model) stampRoblox(modelParts[plot.model], model, Object.assign({}, plot.at, { hideDoor: hideDoor }));
-            if (enterable) {
+            if (close && model) {
+                stampRoblox(modelParts[plot.model], model, Object.assign({}, plot.at, { hideDoor: hideDoor }));
+            } else if (!close) {
+                // Proxies use the wood trunk mesh so a couple of boxes don't sample the Roblox palette oddly.
+                stampRobloxProxy(trunk, plot);
+            }
+            if (enterable && close) {
                 house.village = plot.village;
                 house.mesh = "house";
                 house.role = plot.kind === "house" ? "house" : "farmhouse";
@@ -8159,7 +8232,7 @@ function stampRaisedPlots() {
                 house.doorSide = side;
             }
             const f = plot.field;
-            if (f) {
+            if (f && close) {
                 for (let z = f.z; z < f.z + f.d - 0.1; z += 2) {
                     for (let x = f.x; x < f.x + f.w - 0.1; x += 2) {
                         cell(field, x, z, Math.min(2, f.x + f.w - x), Math.min(2, f.z + f.d - z));
@@ -8170,7 +8243,7 @@ function stampRaisedPlots() {
                     addBox(leaf, f.x + 1.2, y, row, Math.max(2, f.w - 2.4), 0.28, 0.45);
                 }
             }
-            if (plot.hay) {
+            if (plot.hay && close) {
                 const hx = plot.hay[0];
                 const hz = plot.hay[1];
                 const y = Math.max(0, World.heightAt(hx, hz));
@@ -8182,6 +8255,14 @@ function stampRaisedPlots() {
         }
         const house = plot.house;
         if (!house) continue;
+        if (!close) {
+            // Kit houses past full detail: one shell so the street still reads, without meshing every board.
+            const y = house.y || Math.max(0, World.heightAt(house.x, house.z));
+            addBox(trunk, house.minX, y, house.minZ, house.w, (house.h || 3.5) * 0.7, house.d);
+            addBox(trunk, house.minX - 0.15, y + (house.h || 3.5) * 0.7, house.minZ - 0.15, house.w + 0.3, (house.h || 3.5) * 0.3, house.d + 0.3);
+            solids.push({ x: house.minX, z: house.minZ, w: house.w, d: house.d, y0: y, y1: y + (house.h || 3.5), raised: true });
+            continue;
+        }
         house.village = plot.village;
         house.mesh = "house";
         house.role = plot.kind === "house" ? "house" : "farmhouse";
