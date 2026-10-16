@@ -1517,7 +1517,8 @@ void main() {
     vec3 color = texture2D(uTex, uv).rgb * vShade * uTint;
     if (uFlow > 0.5) color *= vec3(0.78, 0.9, 0.86);
     float fog = clamp((dist - uFogNear) / uFogSpan, 0.0, 1.0);
-    vec3 fogCol = mix(vec3(0.80, 0.75, 0.64), vec3(0.07, 0.08, 0.13), uDark);
+    // Sky-colored haze (not dusty beige) so open country stays green until it dissolves into the sky.
+    vec3 fogCol = mix(vec3(0.58, 0.72, 0.88), vec3(0.07, 0.08, 0.13), uDark);
     if (uGlow > 0.5) {
         if (uGlow > 1.5) {
             float flick = 0.72 + 0.28 * sin(uTime * 9.0 + vWorld.x * 5.0 + vWorld.y * 4.0);
@@ -1557,7 +1558,7 @@ uniform float uSpin;
 void main() {
     float horizon = 0.46 - uPitch * 0.42;
     float t = clamp((gl_FragCoord.y / uRes.y - horizon) / 0.62, 0.0, 1.0);
-    vec3 haze = mix(vec3(0.80, 0.75, 0.64), vec3(0.07, 0.08, 0.13), uDark);
+    vec3 haze = mix(vec3(0.58, 0.72, 0.88), vec3(0.07, 0.08, 0.13), uDark);
     vec3 zenith = mix(vec3(0.42, 0.58, 0.74), vec3(0.02, 0.025, 0.07), uDark);
     vec3 col = mix(haze, zenith, t);
     float aspect = uRes.x / max(uRes.y, 1.0);
@@ -2577,8 +2578,8 @@ function gfx() {
     return {
         scale: 0.32,
         far: 360,
-        fogNear: 130,
-        fogSpan: 200,
+        fogNear: 180,
+        fogSpan: 160,
         drawFar: 300,
         treeNear: 140,
         treeFar: 0,
