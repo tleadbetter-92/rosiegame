@@ -644,9 +644,9 @@ function paveShade(kind, x, z) {
     return 1;
 }
 
-// AoE tile ground: one quad per 32 m cell — no river/cliff subdivision.
+// Open country between villages — fine enough that hillsides are not one big triangle pair.
 function countrySub() {
-    return 32;
+    return 8;
 }
 
 // Coarse town patch — fewer tiles than the old fine village carpet.
@@ -798,29 +798,11 @@ function buildLand() {
             const h10 = sample(ix + 1, iz);
             const h11 = sample(ix + 1, iz + 1);
             const h01 = sample(ix, iz + 1);
-            const rise = Math.max(h00, h10, h11, h01) - Math.min(h00, h10, h11, h01);
             const mid = (h00 + h10 + h11 + h01) * 0.25;
-            const mx = x + cell * 0.5;
-            const mz = z + cell * 0.5;
             if (mid > -0.35) {
-                // Slopes and mixed ground used to be one 32 m rock/dirt slab — hard triangular seams on grass.
-                // Split those cells so kinds follow the hillside and blend at the edges.
-                if (rise > 1.6) {
-                    subdivide(x, z, 8, h00, h10, h11, h01);
-                    continue;
-                }
-                const kind = countryKind(landKind(mx, mz, rise, mid));
-                const list = batches[kind] || batches.grass;
-                const tone = (px, pz) => groundTone(kind, px, pz);
-                const u = x / 8;
-                const v = z / 8;
-                pushQuad(
-                    list,
-                    [x, h00, z, u, v, tone(x, z)],
-                    [x, h01, z + cell, u, v + cell / 8, tone(x, z + cell)],
-                    [x + cell, h11, z + cell, u + cell / 8, v + cell / 8, tone(x + cell, z + cell)],
-                    [x + cell, h10, z, u + cell / 8, v, tone(x + cell, z)]
-                );
+                // All open country between villages — not only steep cells. A flat 32 m quad still
+                // folds into two hard triangles on any real hillside, and paints one dirt/rock slab.
+                subdivide(x, z, countrySub(), h00, h10, h11, h01);
             }
         }
     }
@@ -2590,38 +2572,8 @@ const meadowSeen = new Set();
 const meadowProps = [];
 plantFocusTrees();
 
-// Low is the default on desktop and phones — Roblox towns are too heavy for High as a first load.
-// New key so an old saved "high" does not stick after this change; players can still toggle High.
-function defaultGraphics() {
-    try {
-        const saved = localStorage.getItem("village-gfx");
-        if (saved === "low" || saved === "high") return saved;
-    } catch (err) { /* keep the default */ }
-    return "low";
-}
-let graphics = defaultGraphics();
-
+// Always High — outdoor Roblox meshes are gone, so the quality toggle is no longer needed.
 function gfx() {
-    // Longer clear view; haze only at the far edge so the next town stays hidden.
-    if (graphics === "low") {
-        return {
-            scale: 0.22,
-            far: 280,
-            fogNear: 90,
-            fogSpan: 150,
-            drawFar: 220,
-            treeNear: 90,
-            treeFar: 0,
-            treeCap: 16,
-            meadowReach: 64,
-            meadowStep: 56,
-            meadowProps: false,
-            personDraw: 48,
-            personStep: 40,
-            farEvery: 240,
-            miniEvery: 8
-        };
-    }
     return {
         scale: 0.32,
         far: 360,
@@ -2929,9 +2881,10 @@ function landMeshHeight(x, z) {
             return cellHeight(x, z, step, b.x0, b.z0);
         }
     }
-    const x0 = -3616 + Math.floor((x + 3616) / 32) * 32;
-    const z0 = -3616 + Math.floor((z + 3616) / 32) * 32;
-    return cellHeight(x, z, 32, x0, z0);
+    const step = countrySub();
+    const x0 = -3616 + Math.floor((x + 3616) / step) * step;
+    const z0 = -3616 + Math.floor((z + 3616) / step) * step;
+    return cellHeight(x, z, step, x0, z0);
 }
 
 function cellHeight(x, z, s, ox, oz) {
@@ -6179,20 +6132,6 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
 
 let proj = new Float32Array(16);
 
-function setGraphics(kind) {
-    graphics = kind === "high" ? "high" : "low";
-    try { localStorage.setItem("village-gfx", graphics); } catch (err) { /* ignore */ }
-    const button = document.getElementById("gfx");
-    if (button) button.textContent = graphics === "low" ? "Gfx Low" : "Gfx High";
-    nearMarkX = Infinity;
-    nearMarkZ = Infinity;
-    raisedKey = "";
-    cartMeshKey = "";
-    resize();
-    refreshNearTrees();
-    stampRaisedPlots();
-}
-
 function resize() {
     const scale = gfx().scale;
     canvas.width = Math.max(240, Math.floor(window.innerWidth * scale));
@@ -7818,7 +7757,7 @@ function addRaisedDoor(b, id, floorsGeom, startClosed) {
 // Only the focused town is detailed in 3D.
 function raisedViewKey() {
     const cell = 48;
-    return focusTown.id + ":" + Math.round(cam.x / cell) + ":" + Math.round(cam.z / cell) + ":" + Math.round(gfx().drawFar) + ":" + (graphics === "low" ? "L" : "H");
+    return focusTown.id + ":" + Math.round(cam.x / cell) + ":" + Math.round(cam.z / cell) + ":" + Math.round(gfx().drawFar);
 }
 
 function raisedDetailReach() {
@@ -7827,7 +7766,7 @@ function raisedDetailReach() {
 
 // Doors, crop rows, and kit-house boards only this close.
 function raisedUseReach() {
-    return graphics === "low" ? 48 : 72;
+    return 72;
 }
 
 function ptsBounds(pts) {
@@ -8875,11 +8814,6 @@ bowButton.addEventListener("pointerup", () => bowButton.classList.remove("down")
 bowButton.addEventListener("pointercancel", () => bowButton.classList.remove("down"));
 bowButton.addEventListener("contextmenu", (e) => e.preventDefault());
 
-const gfxButton = document.getElementById("gfx");
-if (gfxButton) {
-    gfxButton.textContent = graphics === "low" ? "Gfx Low" : "Gfx High";
-    gfxButton.addEventListener("click", () => setGraphics(graphics === "low" ? "high" : "low"));
-}
 packButton.addEventListener("click", () => {
     packPanel.hidden = !packPanel.hidden;
     if (!packPanel.hidden) paintSheet();

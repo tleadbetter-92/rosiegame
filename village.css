@@ -251,20 +251,6 @@ html, body {
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
 }
 
-#gfx {
-    position: fixed;
-    top: 52px;
-    left: 108px;
-    z-index: 4;
-    padding: 6px 14px;
-    border: 2px solid rgba(255, 255, 255, 0.85);
-    border-radius: 8px;
-    background: rgba(20, 16, 14, 0.55);
-    color: white;
-    font: 650 0.95rem "Segoe UI", system-ui, sans-serif;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
-}
-
 #self-panel {
     position: fixed;
     top: 98px;
@@ -655,9 +641,9 @@ html, body {
         height: clamp(76px, 22vw, 92px);
     }
 
-    #pack,
-    #gfx {
+    #pack {
         top: calc(10px + env(safe-area-inset-top));
+        left: calc(10px + env(safe-area-inset-left));
         min-height: 32px;
         padding: 3px 8px;
         border-width: 1px;
@@ -667,10 +653,6 @@ html, body {
         font-size: 0.72rem;
         font-weight: 600;
     }
-
-    #pack { left: calc(10px + env(safe-area-inset-left)); }
-
-    #gfx { left: calc(58px + env(safe-area-inset-left)); }
 
     #pack-panel { top: calc(48px + env(safe-area-inset-top)); }
 
