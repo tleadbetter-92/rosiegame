@@ -2505,42 +2505,42 @@ function defaultGraphics() {
 let graphics = defaultGraphics();
 
 function gfx() {
-    // Both modes stay lean — High is only a little richer. Gameplay does not depend on these numbers.
+    // Performance first — High is only a touch sharper. Mechanics do not depend on these numbers.
     if (graphics === "low") {
         return {
-            scale: 0.32,
-            far: 140,
-            fogNear: 22,
-            fogSpan: 70,
-            drawFar: 110,
-            treeNear: 70,
+            scale: 0.28,
+            far: 120,
+            fogNear: 18,
+            fogSpan: 55,
+            drawFar: 90,
+            treeNear: 55,
             treeFar: 0,
-            treeCap: 28,
-            meadowReach: 80,
-            meadowStep: 48,
+            treeCap: 18,
+            meadowReach: 60,
+            meadowStep: 52,
             meadowProps: false,
-            personDraw: 70,
-            personStep: 95,
-            farEvery: 90,
-            miniEvery: 4
+            personDraw: 55,
+            personStep: 75,
+            farEvery: 120,
+            miniEvery: 5
         };
     }
     return {
-        scale: 0.48,
-        far: 220,
-        fogNear: 36,
-        fogSpan: 120,
-        drawFar: 170,
-        treeNear: 110,
+        scale: 0.4,
+        far: 180,
+        fogNear: 28,
+        fogSpan: 90,
+        drawFar: 130,
+        treeNear: 85,
         treeFar: 0,
-        treeCap: 70,
-        meadowReach: 140,
-        meadowStep: 36,
+        treeCap: 40,
+        meadowReach: 100,
+        meadowStep: 40,
         meadowProps: false,
-        personDraw: 120,
-        personStep: 160,
-        farEvery: 45,
-        miniEvery: 2
+        personDraw: 90,
+        personStep: 120,
+        farEvery: 60,
+        miniEvery: 3
     };
 }
 
@@ -7945,7 +7945,14 @@ function addRaisedDoor(b, id, floorsGeom, startClosed) {
 // plain parts in metres, coloured from a palette texture, drawn as the robloxfarm, robloxhouses and robloxmine meshes.
 const roblox = {};
 
+// Heavy building converts are never loaded — stamped as proxies. Only the cart (and similar) fetch JSON.
+const robloxProxyNames = { farm: true, houses: true, singlehouse: true, mine: true, lumberyard: true, ore: true };
+
 function robloxModel(name) {
+    if (robloxProxyNames[name]) {
+        roblox[name] = null;
+        return null;
+    }
     if (roblox[name] !== undefined) return roblox[name];
     roblox[name] = null;
     fetch("models/roblox/" + name + ".json", { cache: "no-store" }).then((res) => res.json()).then((data) => {
@@ -7963,39 +7970,19 @@ function robloxModel(name) {
     return null;
 }
 
-// Other towns stay unloaded until you walk near them; inside a town only nearby plots get full Roblox mesh.
+// Other towns stay unloaded until you walk near them. Roblox houses are always cheap proxies (no 2000-part stamps).
 function raisedViewKey() {
-    const cell = 22;
+    const cell = 20;
     return Math.round(cam.x / cell) + ":" + Math.round(cam.z / cell) + ":" + Math.round(gfx().drawFar) + ":" + (graphics === "low" ? "L" : "H");
 }
 
 function raisedDetailReach() {
-    return gfx().drawFar + 20;
+    return gfx().drawFar + 16;
 }
 
-// Full part mesh + doors only this close; farther plots become simple boxes.
-function raisedFullReach() {
-    return graphics === "low" ? 28 : 38;
-}
-
-// Hard cap: only the nearest few Roblox models get full parts (the rest stay proxies even inside that radius).
-function raisedFullCap() {
-    return graphics === "low" ? 2 : 3;
-}
-
-function raisedFocusKey(plots, fullReach, cap) {
-    const hits = [];
-    for (let i = 0; i < plots.length; i++) {
-        const plot = plots[i];
-        if (!plot.model || !plot.at) continue;
-        const dist = plotDist(plot);
-        if (dist > fullReach) continue;
-        hits.push({ id: plot.id, dist: dist });
-    }
-    hits.sort((a, b) => a.dist - b.dist);
-    let key = "";
-    for (let i = 0; i < hits.length && i < cap; i++) key += (i ? "," : "") + hits[i].id;
-    return key;
+// Doors, crop rows, and kit-house boards only this close.
+function raisedUseReach() {
+    return graphics === "low" ? 20 : 28;
 }
 
 function ptsBounds(pts) {
@@ -8035,8 +8022,9 @@ function plotDist(plot) {
     return Math.hypot(at.x - cam.x, at.z - cam.z);
 }
 
-// Far-in-town stand-in: a few boxes + one shell collider instead of thousands of Roblox parts.
-function stampRobloxProxy(list, plot) {
+// Stand-in for a Roblox building: a few boxes. Enterable plots use shell+door collision instead of a solid block.
+function stampRobloxProxy(list, plot, opt) {
+    opt = opt || {};
     const at = plot.at;
     const house = plot.house;
     const x = at.x;
@@ -8056,11 +8044,14 @@ function stampRobloxProxy(list, plot) {
         const lz = pz - z;
         return [x + lx * c + lz * s, py, z - lx * s + lz * c];
     };
-    addBox(list, x - w / 2, y, z - d / 2, w, h * 0.7, d, xf);
-    addBox(list, x - w / 2 - 0.2, y + h * 0.7, z - d / 2 - 0.2, w + 0.4, h * 0.3, d + 0.4, xf);
+    addBox(list, x - w / 2, y, z - d / 2, w, h * 0.68, d, xf);
+    addBox(list, x - w / 2 - 0.25, y + h * 0.68, z - d / 2 - 0.25, w + 0.5, h * 0.32, d + 0.5, xf);
+    if (opt.detail) {
+        addBox(list, x - w * 0.08, y + h * 0.72, z - d / 2 - 0.15, w * 0.16, h * 0.4, d * 0.18, xf);
+    }
+    if (opt.noCollide) return;
     if (house && Number.isFinite(house.minX) && Number.isFinite(house.minZ)) {
         solids.push({ x: house.minX, z: house.minZ, w: house.w, d: house.d, y0: y, y1: y + h, raised: true });
-        floors.push({ x: house.minX + 0.4, z: house.minZ + 0.4, w: Math.max(0.5, house.w - 0.8), d: Math.max(0.5, house.d - 0.8), y: y + 0.05, raised: true });
     } else {
         solids.push({ x: x - w / 2, z: z - d / 2, w: w, d: d, y0: y, y1: y + h, raised: true });
     }
@@ -8068,7 +8059,7 @@ function stampRobloxProxy(list, plot) {
 
 // Earth filled up under new buildings, drawn over the island ground wherever a pad lifts it.
 function stampPads(list, pads) {
-    const cell = 3;
+    const cell = 4;
     for (const pad of pads) {
         let low = pad.y;
         for (const [fx, fz] of [[0, 0], [0.5, 0], [1, 0], [1, 0.5], [1, 1], [0.5, 1], [0, 1], [0, 0.5]]) {
@@ -8222,13 +8213,11 @@ function stampRaisedPlots() {
     const plots = raisedData.plots || [];
     const raising = raisedData.raising || [];
     const reach = raisedDetailReach();
-    const fullReach = raisedFullReach();
-    const fullCap = raisedFullCap();
+    const useReach = raisedUseReach();
     if (!raisedContentKey) {
         raisedContentKey = (raisedData.restartedAt || 0) + "|" + plots.map((plot) => plot.id).join(",") + "|" + raising.map((job) => job.id).join(",");
     }
-    const focusKey = raisedFocusKey(plots, fullReach, fullCap);
-    const key = raisedContentKey + "|" + raisedViewKey() + "|" + focusKey;
+    const key = raisedContentKey + "|" + raisedViewKey();
     if (key === raisedKey) return;
     raisedKey = key;
     clearRaised();
@@ -8242,7 +8231,6 @@ function stampRaisedPlots() {
     World.setPads(raisedData.pads || []);
     sceneryGrid = null;
     nearMarkX = 1e9;
-    const fullIds = new Set(focusKey ? focusKey.split(",") : []);
     const nearPads = (raisedData.pads || []).filter((pad) => {
         const cx = pad.minX + pad.w * 0.5;
         const cz = pad.minZ + pad.d * 0.5;
@@ -8262,33 +8250,26 @@ function stampRaisedPlots() {
             [x + w, y10, z, (x + w) / 4, z / 4, 0.9]
         );
     };
-    if (World.ores.length) {
-        const model = robloxModel("ore");
-        if (model) {
-            let best = null;
-            let bestD = fullReach;
-            for (const [x, z] of World.ores) {
-                const dist = Math.hypot(x - cam.x, z - cam.z);
-                if (dist < bestD) {
-                    best = [x, z];
-                    bestD = dist;
-                }
-            }
-            if (best) {
-                stampRoblox(modelParts.ore, model, {
-                    x: best[0],
-                    z: best[1],
-                    y: Math.max(0, World.heightAt(best[0], best[1])) - 1,
-                    theta: 0,
-                    scale: 5
-                });
-            }
+    // Ore: one or two rock boxes near the camera — never the full Roblox rock mesh.
+    {
+        const rocks = [];
+        for (const [x, z] of World.ores) {
+            const dist = Math.hypot(x - cam.x, z - cam.z);
+            if (dist > useReach) continue;
+            rocks.push({ x: x, z: z, dist: dist });
+        }
+        rocks.sort((a, b) => a.dist - b.dist);
+        for (let i = 0; i < rocks.length && i < 2; i++) {
+            const rock = rocks[i];
+            const y = Math.max(0, World.heightAt(rock.x, rock.z));
+            addBox(trunk, rock.x - 2.2, y - 0.4, rock.z - 1.8, 4.4, 2.4, 3.6);
+            solids.push({ x: rock.x - 2.2, z: rock.z - 1.8, w: 4.4, d: 3.6, y0: y - 0.4, y1: y + 2, raised: true });
         }
     }
     for (const plot of plots) {
         if (!plotInView(plot, reach)) continue;
         const dist = plotDist(plot);
-        const close = !!plot.model && plot.at ? fullIds.has(plot.id) : dist <= fullReach;
+        const close = dist <= useReach;
         if (plot.kind === "yard" && !plot.model) {
             const x = plot.x;
             const z = plot.z;
@@ -8310,27 +8291,10 @@ function stampRaisedPlots() {
             continue;
         }
         if (modelParts[plot.model] && plot.at) {
-            const model = robloxModel(plot.model);
             const house = plot.house;
             const enterable = house && (plot.kind === "house" || plot.kind === "farm");
-            let hideDoor = null;
-            if (enterable && close) {
-                // Centre the swinging door on the front; Roblox models rarely match the old off-centre farmhouse door.
-                const side = house.doorSide;
-                house.doorSide = 0;
-                hideDoor = doorFront(house);
-                house.doorSide = side;
-            }
-            if (close && model) {
-                // Enterable houses: draw the mesh, collide with one shell + door (not thousands of part boxes).
-                stampRoblox(modelParts[plot.model], model, Object.assign({}, plot.at, {
-                    hideDoor: hideDoor,
-                    drawOnly: !!enterable
-                }));
-            } else if (!close) {
-                // Proxies use the wood trunk mesh so a couple of boxes don't sample the Roblox palette oddly.
-                stampRobloxProxy(trunk, plot);
-            }
+            // Never stamp the heavy Roblox part mesh for buildings — proxies only. Carts still use the lite horsecart model.
+            stampRobloxProxy(trunk, plot, { noCollide: enterable && close, detail: close });
             if (enterable && close) {
                 house.village = plot.village;
                 house.mesh = "house";
@@ -8344,12 +8308,12 @@ function stampRaisedPlots() {
             }
             const f = plot.field;
             if (f && close) {
-                for (let z = f.z; z < f.z + f.d - 0.1; z += 2) {
-                    for (let x = f.x; x < f.x + f.w - 0.1; x += 2) {
-                        cell(field, x, z, Math.min(2, f.x + f.w - x), Math.min(2, f.z + f.d - z));
+                for (let z = f.z; z < f.z + f.d - 0.1; z += 4) {
+                    for (let x = f.x; x < f.x + f.w - 0.1; x += 4) {
+                        cell(field, x, z, Math.min(4, f.x + f.w - x), Math.min(4, f.z + f.d - z));
                     }
                 }
-                for (let row = f.z + 2; row < f.z + f.d - 1; row += 3) {
+                for (let row = f.z + 2; row < f.z + f.d - 1; row += 5) {
                     const y = Math.max(0, World.heightAt(f.x + f.w / 2, row));
                     addBox(leaf, f.x + 1.2, y, row, Math.max(2, f.w - 2.4), 0.28, 0.45);
                 }
@@ -8359,7 +8323,6 @@ function stampRaisedPlots() {
                 const hz = plot.hay[1];
                 const y = Math.max(0, World.heightAt(hx, hz));
                 addBox(field, hx, y, hz, 1.5, 0.7, 1.15);
-                addBox(field, hx + 0.25, y + 0.7, hz + 0.18, 1, 0.45, 0.75);
                 scenery.push({ x: hx, z: hz, w: 1.5, d: 1.15, raised: true });
             }
             continue;
@@ -8367,7 +8330,6 @@ function stampRaisedPlots() {
         const house = plot.house;
         if (!house) continue;
         if (!close) {
-            // Kit houses past full detail: one shell so the street still reads, without meshing every board.
             const y = house.y || Math.max(0, World.heightAt(house.x, house.z));
             addBox(trunk, house.minX, y, house.minZ, house.w, (house.h || 3.5) * 0.7, house.d);
             addBox(trunk, house.minX - 0.15, y + (house.h || 3.5) * 0.7, house.minZ - 0.15, house.w + 0.3, (house.h || 3.5) * 0.3, house.d + 0.3);
