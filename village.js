@@ -2505,41 +2505,42 @@ function defaultGraphics() {
 let graphics = defaultGraphics();
 
 function gfx() {
+    // Both modes stay lean — High is only a little richer. Gameplay does not depend on these numbers.
     if (graphics === "low") {
         return {
-            scale: 0.38,
-            far: 160,
-            fogNear: 28,
-            fogSpan: 90,
-            drawFar: 140,
-            treeNear: 90,
+            scale: 0.32,
+            far: 140,
+            fogNear: 22,
+            fogSpan: 70,
+            drawFar: 110,
+            treeNear: 70,
             treeFar: 0,
-            treeCap: 45,
-            meadowReach: 110,
-            meadowStep: 44,
+            treeCap: 28,
+            meadowReach: 80,
+            meadowStep: 48,
             meadowProps: false,
-            personDraw: 90,
-            personStep: 120,
-            farEvery: 60,
-            miniEvery: 3
+            personDraw: 70,
+            personStep: 95,
+            farEvery: 90,
+            miniEvery: 4
         };
     }
     return {
-        scale: 0.65,
-        far: 420,
-        fogNear: 52,
-        fogSpan: 190,
-        drawFar: 280,
-        treeNear: 175,
-        treeFar: 300,
-        treeCap: 180,
-        meadowReach: 320,
-        meadowStep: 26,
-        meadowProps: true,
-        personDraw: 260,
-        personStep: 300,
-        farEvery: 30,
-        miniEvery: 1
+        scale: 0.48,
+        far: 220,
+        fogNear: 36,
+        fogSpan: 120,
+        drawFar: 170,
+        treeNear: 110,
+        treeFar: 0,
+        treeCap: 70,
+        meadowReach: 140,
+        meadowStep: 36,
+        meadowProps: false,
+        personDraw: 120,
+        personStep: 160,
+        farEvery: 45,
+        miniEvery: 2
     };
 }
 
@@ -2600,7 +2601,7 @@ function refreshNearTrees() {
     const grew = growMeadow(cam.x, cam.z, cam.yaw);
     const dx = cam.x - nearMarkX;
     const dz = cam.z - nearMarkZ;
-    if (!grew && dx * dx + dz * dz < 40 * 40) return;
+    if (!grew && dx * dx + dz * dz < 55 * 55) return;
     nearMarkX = cam.x;
     nearMarkZ = cam.z;
     const quality = gfx();
@@ -2698,11 +2699,14 @@ function addHead(list, x, y, z, w, h, d, xf) {
     pushQuad(list, p(x, y1, z, 0.8, 0.2, 0.95), p(x1, y1, z, 0.98, 0.2, 0.95), p(x1, y1, z1, 0.98, 0.8, 0.95), p(x, y1, z1, 0.8, 0.8, 0.95));
 }
 
+let outdoorMeshNames = null;
+
 function uploadMesh(name, floats) {
     const data = new Float32Array(floats);
     if (!mesh[name]) {
         const buffer = gl.createBuffer();
         mesh[name] = { buffer, count: 0 };
+        outdoorMeshNames = null;
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, mesh[name].buffer);
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
@@ -3054,8 +3058,16 @@ function personXf(man) {
     };
 }
 
+const matPool = [new Float32Array(16), new Float32Array(16), new Float32Array(16), new Float32Array(16)];
+let matPoolAt = 0;
+function takeMat4() {
+    const m = matPool[matPoolAt];
+    matPoolAt = (matPoolAt + 1) % matPool.length;
+    return m;
+}
+
 function mulMat4(a, b) {
-    const out = new Float32Array(16);
+    const out = takeMat4();
     for (let c = 0; c < 4; c++) {
         for (let r = 0; r < 4; r++) {
             out[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
@@ -3064,18 +3076,20 @@ function mulMat4(a, b) {
     return out;
 }
 
+const legLocal = new Float32Array(16);
 function legMatrix(man, hip, angle) {
     const ca = Math.cos(angle);
     const sa = Math.sin(angle);
     const hy = hip[1];
     const hz = hip[2];
-    const local = new Float32Array([
-        1, 0, 0, 0,
-        0, ca, sa, 0,
-        0, -sa, ca, 0,
-        0, hy - ca * hy + sa * hz, hz - sa * hy - ca * hz, 1
-    ]);
-    return mulMat4(personMatrix(man), local);
+    legLocal[0] = 1; legLocal[1] = 0; legLocal[2] = 0; legLocal[3] = 0;
+    legLocal[4] = 0; legLocal[5] = ca; legLocal[6] = sa; legLocal[7] = 0;
+    legLocal[8] = 0; legLocal[9] = -sa; legLocal[10] = ca; legLocal[11] = 0;
+    legLocal[12] = 0;
+    legLocal[13] = hy - ca * hy + sa * hz;
+    legLocal[14] = hz - sa * hy - ca * hz;
+    legLocal[15] = 1;
+    return mulMat4(personMatrix(man), legLocal);
 }
 
 function plant(man) {
@@ -3097,12 +3111,12 @@ function personMatrix(man) {
     const y = (man.stand || 0) + man.bob - Math.min(man.down, 1.05) * k;
     const px = man.x + Math.sin(man.yaw) * lunge;
     const pz = man.z - Math.cos(man.yaw) * lunge;
-    return new Float32Array([
-        c, 0, -s, 0,
-        0, k, 0, 0,
-        s, 0, c, 0,
-        px, y, pz, 1
-    ]);
+    const out = takeMat4();
+    out[0] = c; out[1] = 0; out[2] = -s; out[3] = 0;
+    out[4] = 0; out[5] = k; out[6] = 0; out[7] = 0;
+    out[8] = s; out[9] = 0; out[10] = c; out[11] = 0;
+    out[12] = px; out[13] = y; out[14] = pz; out[15] = 1;
+    return out;
 }
 
 const horse = {
@@ -5969,19 +5983,28 @@ function nearPerson(man, range) {
     return dx * dx + dz * dz < range * range;
 }
 
+let separateTurn = 0;
 function separateMen(dt) {
+    // Every other frame, and only people already near the camera — same spacing, less O(n²) work.
+    separateTurn = 1 - separateTurn;
+    if (separateTurn) return;
+    const near = [];
     for (let i = 0; i < men.length; i++) {
         const man = men[i];
-        if (!nearPerson(man, 70)) continue;
+        if (!nearPerson(man, 40)) continue;
         if (man.dying || man.archer || man.decor || man.driver || man.hidden || man.indoors || man.mode === "march") continue;
-        for (let j = i + 1; j < men.length; j++) {
-            const other = men[j];
-            if (other.dying || other.archer || other.decor || other.driver || other.hidden || other.indoors || other.mode === "march") continue;
+        near.push(man);
+    }
+    const step = dt * 2;
+    for (let i = 0; i < near.length; i++) {
+        const man = near[i];
+        for (let j = i + 1; j < near.length; j++) {
+            const other = near[j];
             const ox = man.x - other.x;
             const oz = man.z - other.z;
             const dist = Math.hypot(ox, oz);
             if (dist >= 0.72 || dist < 0.001) continue;
-            const push = (0.72 - dist) * 0.5 * dt * 8;
+            const push = (0.72 - dist) * 0.5 * step * 8;
             const px = ox / dist * push;
             const pz = oz / dist * push;
             if (!blocked(man.x + px, man.z, man.faction)) man.x += px;
@@ -6591,6 +6614,38 @@ function floorsNear(x, z) {
     if (!floorGrid || floorGrid.count !== floors.length) floorGrid = boxGrid(floors);
     return floorGrid.get(Math.floor(x / 16) + "," + Math.floor(z / 16)) || noScenery;
 }
+
+let townBuildGrid = null;
+let doorGrid = null;
+
+function buildingsNear(x, z) {
+    const list = Town.buildings;
+    if (!townBuildGrid || townBuildGrid.count !== list.length) {
+        const boxes = [];
+        for (let i = 0; i < list.length; i++) {
+            const b = list[i];
+            if (!Number.isFinite(b.minX) || !Number.isFinite(b.minZ)) continue;
+            boxes.push({ x: b.minX, z: b.minZ, w: b.w, d: b.d, building: b });
+        }
+        townBuildGrid = boxGrid(boxes);
+        townBuildGrid.source = list.length;
+        townBuildGrid.count = list.length;
+    }
+    return townBuildGrid.get(Math.floor(x / 16) + "," + Math.floor(z / 16)) || noScenery;
+}
+
+function doorsNear(x, z) {
+    if (!doorGrid || doorGrid.count !== doors.length) {
+        const boxes = [];
+        for (let i = 0; i < doors.length; i++) {
+            const door = doors[i];
+            boxes.push({ x: door.x - 1.5, z: door.z - 1.5, w: 3, d: 3, door: door });
+        }
+        doorGrid = boxGrid(boxes);
+        doorGrid.count = doors.length;
+    }
+    return doorGrid.get(Math.floor(x / 16) + "," + Math.floor(z / 16)) || noScenery;
+}
 const TOWER_RISE = 0.46;
 const TOWER_RUN = 0.34;
 const TOWER_STEPS = 6;
@@ -6881,11 +6936,13 @@ function blockedOutside(x, z, faction, feet) {
         }
         if (stand < b.h && x > b.x - r && x < b.x + b.w + r && z > b.z - r && z < b.z + b.d + r) return true;
     }
-    for (const b of Town.buildings) {
-        if (hitsShell(b, x, z, r)) return true;
+    const nearBuilds = buildingsNear(x, z);
+    for (let i = 0; i < nearBuilds.length; i++) {
+        if (hitsShell(nearBuilds[i].building, x, z, r)) return true;
     }
-    for (const door of doors) {
-        if (hitsDoor(door, x, z, r)) return true;
+    const nearDoors = doorsNear(x, z);
+    for (let i = 0; i < nearDoors.length; i++) {
+        if (hitsDoor(nearDoors[i].door, x, z, r)) return true;
     }
     for (const item of sceneryNear(x, z)) {
         if (item === passFence || (item.top != null && stand >= item.top)) continue;
@@ -7271,10 +7328,10 @@ function draw() {
         gl.disable(gl.POLYGON_OFFSET_FILL);
     };
     gl.clear(gl.DEPTH_BUFFER_BIT);
-    for (const name of Object.keys(mesh)) {
-        if (name.indexOf("far") === 0 || name.indexOf("near") === 0 || name.indexOf("room") === 0) continue;
-        drawMesh(name, 1);
+    if (!outdoorMeshNames) {
+        outdoorMeshNames = Object.keys(mesh).filter((name) => name.indexOf("far") !== 0 && name.indexOf("near") !== 0 && name.indexOf("room") !== 0);
     }
+    for (let i = 0; i < outdoorMeshNames.length; i++) drawMesh(outdoorMeshNames[i], 1);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthFunc(gl.LEQUAL);
@@ -7795,6 +7852,8 @@ function clearRaised() {
     sceneryGrid = null;
     solidGrid = null;
     floorGrid = null;
+    townBuildGrid = null;
+    doorGrid = null;
     routeCache.clear();
     textures.raisedfield = textures.dirt;
     textures.raisedleaf = textures.leaf;
@@ -7906,17 +7965,56 @@ function robloxModel(name) {
 
 // Other towns stay unloaded until you walk near them; inside a town only nearby plots get full Roblox mesh.
 function raisedViewKey() {
-    const cell = 32;
+    const cell = 22;
     return Math.round(cam.x / cell) + ":" + Math.round(cam.z / cell) + ":" + Math.round(gfx().drawFar) + ":" + (graphics === "low" ? "L" : "H");
 }
 
 function raisedDetailReach() {
-    return gfx().drawFar + 50;
+    return gfx().drawFar + 20;
 }
 
-// Full part mesh + doors + rich collision only this close; farther plots become simple boxes.
+// Full part mesh + doors only this close; farther plots become simple boxes.
 function raisedFullReach() {
-    return graphics === "low" ? 42 : 62;
+    return graphics === "low" ? 28 : 38;
+}
+
+// Hard cap: only the nearest few Roblox models get full parts (the rest stay proxies even inside that radius).
+function raisedFullCap() {
+    return graphics === "low" ? 2 : 3;
+}
+
+function raisedFocusKey(plots, fullReach, cap) {
+    const hits = [];
+    for (let i = 0; i < plots.length; i++) {
+        const plot = plots[i];
+        if (!plot.model || !plot.at) continue;
+        const dist = plotDist(plot);
+        if (dist > fullReach) continue;
+        hits.push({ id: plot.id, dist: dist });
+    }
+    hits.sort((a, b) => a.dist - b.dist);
+    let key = "";
+    for (let i = 0; i < hits.length && i < cap; i++) key += (i ? "," : "") + hits[i].id;
+    return key;
+}
+
+function ptsBounds(pts) {
+    let minX = pts[0][0];
+    let maxX = minX;
+    let minY = pts[0][1];
+    let maxY = minY;
+    let minZ = pts[0][2];
+    let maxZ = minZ;
+    for (let i = 1; i < pts.length; i++) {
+        const p = pts[i];
+        if (p[0] < minX) minX = p[0];
+        else if (p[0] > maxX) maxX = p[0];
+        if (p[1] < minY) minY = p[1];
+        else if (p[1] > maxY) maxY = p[1];
+        if (p[2] < minZ) minZ = p[2];
+        else if (p[2] > maxZ) maxZ = p[2];
+    }
+    return { minX: minX, maxX: maxX, minY: minY, maxY: maxY, minZ: minZ, maxZ: maxZ };
 }
 
 function plotAnchor(plot) {
@@ -7970,7 +8068,7 @@ function stampRobloxProxy(list, plot) {
 
 // Earth filled up under new buildings, drawn over the island ground wherever a pad lifts it.
 function stampPads(list, pads) {
-    const cell = 2;
+    const cell = 3;
     for (const pad of pads) {
         let low = pad.y;
         for (const [fx, fz] of [[0, 0], [0.5, 0], [1, 0], [1, 0.5], [1, 1], [0.5, 1], [0, 1], [0, 0.5]]) {
@@ -8030,41 +8128,35 @@ const robloxShapes = (() => {
 // A thin upright panel by the doorway is the Roblox door leaf: skip it so our swinging door can take its place.
 function robloxDoorLeaf(pts, hideDoor) {
     if (!hideDoor) return false;
-    const minX = Math.min(...pts.map((p) => p[0]));
-    const maxX = Math.max(...pts.map((p) => p[0]));
-    const minY = Math.min(...pts.map((p) => p[1]));
-    const maxY = Math.max(...pts.map((p) => p[1]));
-    const minZ = Math.min(...pts.map((p) => p[2]));
-    const maxZ = Math.max(...pts.map((p) => p[2]));
-    const mx = (minX + maxX) / 2;
-    const mz = (minZ + maxZ) / 2;
+    const b = ptsBounds(pts);
+    const mx = (b.minX + b.maxX) / 2;
+    const mz = (b.minZ + b.maxZ) / 2;
     if (Math.hypot(mx - hideDoor.x, mz - hideDoor.z) > 2.4) return false;
-    if (minY > hideDoor.y + 1.2 || maxY < hideDoor.y + 0.8) return false;
-    const w = maxX - minX;
-    const h = maxY - minY;
-    const d = maxZ - minZ;
+    if (b.minY > hideDoor.y + 1.2 || b.maxY < hideDoor.y + 0.8) return false;
+    const w = b.maxX - b.minX;
+    const h = b.maxY - b.minY;
+    const d = b.maxZ - b.minZ;
     const thin = Math.min(w, d);
     const face = Math.max(w, d);
     return thin < 0.5 && h > 1.05 && face > 0.55 && face < 2.8;
 }
 
-// Square-set pieces become walls you bump into, and every top is a floor you can step onto, so doorways and stairs work.
-// Slanted pieces (roofs), balls, doors and pieces Roblox lets you walk through are only drawn.
-// Tiny décor is skipped for collision (and on Low, skipped from the mesh too) so villages stay walkable without tens of thousands of boxes.
+// Draw Roblox parts; collision is either off (shell houses), or only large wall/floor blocks.
+// Tiny décor and balls are dropped — looks simpler, costs far less, doors/entry still work via shells.
 function stampRoblox(list, model, at) {
     const c = Math.cos(at.theta);
     const s = Math.sin(at.theta);
     const scale = at.scale || 1;
     const light = [0.25, 0.86, 0.28];
     const lightLen = Math.hypot(light[0], light[1], light[2]);
-    const skipTinyDraw = at.cheapDraw || graphics === "low";
+    const minVol = at.cheapDraw || graphics === "low" ? 0.14 : 0.08;
     for (const part of model.parts) {
+        if (part[0] === "ball") continue;
         const pw = part[1] * scale;
         const ph = part[2] * scale;
         const pd = part[3] * scale;
         const vol = pw * ph * pd;
-        // Trim nails, trim, tiny props — still drawn on High unless volume is dust-sized.
-        if (vol < (skipTinyDraw ? 0.05 : 0.012)) continue;
+        if (vol < minVol) continue;
         const shape = robloxShapes[part[0]] || robloxShapes.box;
         let sy = part[2];
         let py = part[5];
@@ -8085,21 +8177,18 @@ function stampRoblox(list, model, at) {
         });
         if (robloxDoorLeaf(pts, at.hideDoor)) continue;
         const square = r.every((v) => Math.abs(v) < 0.05 || Math.abs(v) > 0.95);
-        if (!at.drawOnly && part[18] !== 0 && part[0] !== "ball" && part[0] !== "wedge" && (square || Math.abs(r[4]) > 0.95)) {
-            const minX = Math.min(...pts.map((p) => p[0]));
-            const minY = Math.min(...pts.map((p) => p[1]));
-            const minZ = Math.min(...pts.map((p) => p[2]));
-            const w = Math.max(...pts.map((p) => p[0])) - minX;
-            const top = Math.max(...pts.map((p) => p[1]));
-            const d = Math.max(...pts.map((p) => p[2])) - minZ;
+        if (!at.drawOnly && part[18] !== 0 && part[0] !== "wedge" && (square || Math.abs(r[4]) > 0.95)) {
+            const box = ptsBounds(pts);
+            const w = box.maxX - box.minX;
+            const top = box.maxY;
+            const d = box.maxZ - box.minZ;
             const tall = (Math.abs(r[3]) * part[1] + Math.abs(r[4]) * part[2] + Math.abs(r[5]) * part[3]) * scale;
-            // Walls/blocks only — skip thin posts, sills, and postcard-sized tops as collision.
-            if (w > 0.14 && d > 0.14) {
-                if (tall > 0.95 && (w > 0.4 || d > 0.4) && vol > 0.12) {
-                    solids.push({ x: minX, z: minZ, w: w, d: d, y0: minY, y1: top, raised: true });
+            if (w > 0.2 && d > 0.2) {
+                if (tall > 1.15 && (w > 0.55 || d > 0.55) && vol > 0.35) {
+                    solids.push({ x: box.minX, z: box.minZ, w: w, d: d, y0: box.minY, y1: top, raised: true });
                 }
-                if (w * d >= 0.55 && Math.min(w, d) > 0.35 && vol > 0.08) {
-                    floors.push({ x: minX, z: minZ, w: w, d: d, y: top, raised: true });
+                if (w * d >= 1.1 && Math.min(w, d) > 0.5 && vol > 0.25) {
+                    floors.push({ x: box.minX, z: box.minZ, w: w, d: d, y: top, raised: true });
                 }
             }
         }
@@ -8133,10 +8222,13 @@ function stampRaisedPlots() {
     const plots = raisedData.plots || [];
     const raising = raisedData.raising || [];
     const reach = raisedDetailReach();
+    const fullReach = raisedFullReach();
+    const fullCap = raisedFullCap();
     if (!raisedContentKey) {
         raisedContentKey = (raisedData.restartedAt || 0) + "|" + plots.map((plot) => plot.id).join(",") + "|" + raising.map((job) => job.id).join(",");
     }
-    const key = raisedContentKey + "|" + raisedViewKey();
+    const focusKey = raisedFocusKey(plots, fullReach, fullCap);
+    const key = raisedContentKey + "|" + raisedViewKey() + "|" + focusKey;
     if (key === raisedKey) return;
     raisedKey = key;
     clearRaised();
@@ -8150,7 +8242,7 @@ function stampRaisedPlots() {
     World.setPads(raisedData.pads || []);
     sceneryGrid = null;
     nearMarkX = 1e9;
-    const fullReach = raisedFullReach();
+    const fullIds = new Set(focusKey ? focusKey.split(",") : []);
     const nearPads = (raisedData.pads || []).filter((pad) => {
         const cx = pad.minX + pad.w * 0.5;
         const cz = pad.minZ + pad.d * 0.5;
@@ -8173,16 +8265,30 @@ function stampRaisedPlots() {
     if (World.ores.length) {
         const model = robloxModel("ore");
         if (model) {
+            let best = null;
+            let bestD = fullReach;
             for (const [x, z] of World.ores) {
-                if (Math.hypot(x - cam.x, z - cam.z) > fullReach) continue;
-                stampRoblox(modelParts.ore, model, { x: x, z: z, y: Math.max(0, World.heightAt(x, z)) - 1, theta: 0, scale: 5 });
+                const dist = Math.hypot(x - cam.x, z - cam.z);
+                if (dist < bestD) {
+                    best = [x, z];
+                    bestD = dist;
+                }
+            }
+            if (best) {
+                stampRoblox(modelParts.ore, model, {
+                    x: best[0],
+                    z: best[1],
+                    y: Math.max(0, World.heightAt(best[0], best[1])) - 1,
+                    theta: 0,
+                    scale: 5
+                });
             }
         }
     }
     for (const plot of plots) {
         if (!plotInView(plot, reach)) continue;
         const dist = plotDist(plot);
-        const close = dist <= fullReach;
+        const close = !!plot.model && plot.at ? fullIds.has(plot.id) : dist <= fullReach;
         if (plot.kind === "yard" && !plot.model) {
             const x = plot.x;
             const z = plot.z;
@@ -8216,7 +8322,11 @@ function stampRaisedPlots() {
                 house.doorSide = side;
             }
             if (close && model) {
-                stampRoblox(modelParts[plot.model], model, Object.assign({}, plot.at, { hideDoor: hideDoor }));
+                // Enterable houses: draw the mesh, collide with one shell + door (not thousands of part boxes).
+                stampRoblox(modelParts[plot.model], model, Object.assign({}, plot.at, {
+                    hideDoor: hideDoor,
+                    drawOnly: !!enterable
+                }));
             } else if (!close) {
                 // Proxies use the wood trunk mesh so a couple of boxes don't sample the Roblox palette oddly.
                 stampRobloxProxy(trunk, plot);
@@ -8230,6 +8340,7 @@ function stampRaisedPlots() {
                 house.doorSide = 0;
                 addRaisedDoor(house, plot.id, floorGeom, true);
                 house.doorSide = side;
+                Town.buildings.push(house);
             }
             const f = plot.field;
             if (f && close) {
@@ -8634,7 +8745,9 @@ function nearestDoor() {
     if (flying || player.dead) return null;
     let best = null;
     let bestD = 2.6;
-    for (const door of doors) {
+    const near = doorsNear(cam.x, cam.z);
+    for (let i = 0; i < near.length; i++) {
+        const door = near[i].door;
         const dist = Math.hypot(cam.x - door.x, cam.z - door.z);
         if (dist < bestD) {
             best = door;
