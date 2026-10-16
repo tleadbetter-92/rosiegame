@@ -60,7 +60,7 @@ const KIT_HOUSE_MESH = "tall";
 // Southwest farm: fenced dirt enclosure (like the town field plots) plus one kit farmhouse beside it.
 const KIT_FIELD_W = 56;
 const KIT_FIELD_D = 40;
-const KIT_FARM_GAP = 2.5;
+const KIT_FARM_GAP = 8;
 // Player houses finish on real wall-clock time, not the campaign day clock.
 const PLAYER_BUILD_MS = 60 * 1000;
 
@@ -2717,8 +2717,8 @@ function hamletPlots() {
     return plots;
 }
 
-// Each village starts with a farm and five houses beside it. Southwest uses the kit enclosure + kit houses; other towns
-// still use the Roblox farm for comparison. Placed once and kept in the save so they never move.
+// Each major village starts with a kit farm (enclosure + tall farmhouse) and five kit houses. Placed once and kept
+// in the save so they never move; Southwest's preferred spots stay where the first test ones stood.
 let starts = null;
 
 function startSites() {
@@ -2730,7 +2730,8 @@ function startFarm(id) {
 }
 
 function usesKitFarm(village) {
-    return village === 2 || village >= MINOR_BASE;
+    // All major towns and minor hamlets use the kit enclosure + tall farmhouse.
+    return Number.isInteger(village) && village >= 0;
 }
 
 // Swap an old Roblox farm site for the kit enclosure + tall farmhouse at the same centre.
@@ -2770,21 +2771,32 @@ function migrateKitFarms(state) {
 
 function ensureStarts(state) {
     if (starts) return false;
-    // Rebuild if Southwest still has Roblox farm/houses, or any town still has the one-block five-house model.
+    // Rebuild Roblox farms / one-block five-house rows so every major town matches Southwest's kit setup.
     let keepFarms = null;
     let keepHouses = null;
     if (state.starts && Array.isArray(state.starts.farms) && Array.isArray(state.starts.houses)) {
         const staleHouses = state.starts.houses.some((h) => h && h.model === "houses" && !(h.homes && h.homes.length));
-        const staleFarm = state.starts.farms.some((f) => f && f.village === 2 && f.model === "farm");
+        const staleFarmAt = state.starts.farms.map((f) => {
+            if (!f) return false;
+            if (f.model === "farm") return true;
+            // Rebuild kit farms whose farmhouse still sits on the field.
+            if (f.model === "kitFarm" && f.house && f.fields && f.fields[0]) {
+                const field = f.fields[0];
+                return rectsHit(
+                    { minX: f.house.minX, minZ: f.house.minZ, w: f.house.w, d: f.house.d },
+                    { minX: field.x, minZ: field.z, w: field.w, d: field.d },
+                    5
+                );
+            }
+            return false;
+        });
+        const staleFarm = staleFarmAt.some(Boolean);
         if (!staleHouses && !staleFarm) {
             starts = state.starts;
             return false;
         }
-        keepFarms = state.starts.farms.map((f) => (f && f.village === 2 && f.model === "farm" ? null : f));
-        // New Southwest farm moves the pad — rebuild its house row beside it too.
-        keepHouses = staleHouses
-            ? null
-            : state.starts.houses.map((h, i) => (i === 2 && staleFarm ? null : h));
+        keepFarms = state.starts.farms.map((f, i) => (staleFarmAt[i] ? null : f));
+        keepHouses = staleHouses ? null : state.starts.houses.map((h, i) => (staleFarmAt[i] ? null : h));
     }
     starts = {
         farms: keepFarms || [null, null, null, null],
@@ -2798,7 +2810,7 @@ function ensureStarts(state) {
                     farm = layoutKitFarm({}, 2, spot[0], spot[1], []);
                     if (farm) break;
                 }
-            } else if (farmModel) {
+            } else {
                 farm = pickFarmSite(state, village);
             }
             if (farm) farm.id = "show-farm-" + village;
@@ -3769,7 +3781,7 @@ function placeRect(r, at) {
     return { x, z, w, d, minX: x - w / 2, minZ: z - d / 2 };
 }
 
-// Southwest kit farm: one enclosure (field + fence) and a kit house on the village side of it.
+// Kit farm: fenced field enclosure with a tall kit farmhouse beside it (not on the field).
 function layoutKitFarm(state, village, cx, cz, blocked, home) {
     const place = centreOf(village);
     const hamlet = village >= MINOR_BASE;
@@ -3778,12 +3790,32 @@ function layoutKitFarm(state, village, cx, cz, blocked, home) {
     const theta = quarterTurn(village, cx, cz);
     const at = { x: cx, z: cz, theta: theta };
     const fieldBox = placeRect({ x: 0, z: 0, w: KIT_FIELD_W, d: KIT_FIELD_D }, at);
-    const houseOff = KIT_FIELD_D / 2 + KIT_FARM_GAP + KIT_HOUSE.d / 2;
-    const houseBox = placeRect({ x: 0, z: -houseOff, w: KIT_HOUSE.w, d: KIT_HOUSE.d }, at);
-    const minX = Math.min(fieldBox.minX, houseBox.minX);
-    const minZ = Math.min(fieldBox.minZ, houseBox.minZ);
-    const maxX = Math.max(fieldBox.minX + fieldBox.w, houseBox.minX + houseBox.w);
-    const maxZ = Math.max(fieldBox.minZ + fieldBox.d, houseBox.minZ + houseBox.d);
+    const field = { x: fieldBox.minX, z: fieldBox.minZ, w: fieldBox.w, d: fieldBox.d };
+    const midX = field.x + field.w * 0.5;
+    const midZ = field.z + field.d * 0.5;
+    const toX = place.x - midX;
+    const toZ = place.z - midZ;
+    const len = Math.hypot(toX, toZ) || 1;
+    const ux = toX / len;
+    const uz = toZ / len;
+    // Distance from field centre to the fence edge toward the village, then clear past it.
+    let edge = Infinity;
+    if (ux > 1e-6) edge = Math.min(edge, (field.x + field.w - midX) / ux);
+    if (ux < -1e-6) edge = Math.min(edge, (field.x - midX) / ux);
+    if (uz > 1e-6) edge = Math.min(edge, (field.z + field.d - midZ) / uz);
+    if (uz < -1e-6) edge = Math.min(edge, (field.z - midZ) / uz);
+    if (!Number.isFinite(edge) || edge < 1) edge = Math.max(field.w, field.d) * 0.5;
+    const houseDist = edge + KIT_FARM_GAP + KIT_HOUSE.d * 0.5;
+    const hx = midX + ux * houseDist;
+    const hz = midZ + uz * houseDist;
+    const yaw = snapYaw(place.x - hx, place.z - hz);
+    const houseProbe = kitHouseBody(village, hx, hz, yaw, "farmhouse", 0);
+    const houseRect = { minX: houseProbe.minX, minZ: houseProbe.minZ, w: houseProbe.w, d: houseProbe.d };
+    if (rectsHit(houseRect, { minX: field.x, minZ: field.z, w: field.w, d: field.d }, KIT_FARM_GAP - 0.5)) return null;
+    const minX = Math.min(field.x, houseRect.minX);
+    const minZ = Math.min(field.z, houseRect.minZ);
+    const maxX = Math.max(field.x + field.w, houseRect.minX + houseRect.w);
+    const maxZ = Math.max(field.z + field.d, houseRect.minZ + houseRect.d);
     const wholeRect = { minX: minX, minZ: minZ, w: maxX - minX, d: maxZ - minZ };
     if (!clearOfWalls(village, wholeRect)) return null;
     for (const other of blocked) {
@@ -3797,9 +3829,7 @@ function layoutKitFarm(state, village, cx, cz, blocked, home) {
     const pad = home ? padFor(wholeRect, false, PAD_RISE) : padFor(wholeRect, true);
     if (!pad) return null;
     const high = pad.y;
-    const yaw = snapYaw(place.x - houseBox.x, place.z - houseBox.z);
-    const house = kitHouseBody(village, houseBox.x, houseBox.z, yaw, "farmhouse", high);
-    const field = { x: fieldBox.minX, z: fieldBox.minZ, w: fieldBox.w, d: fieldBox.d };
+    const house = kitHouseBody(village, hx, hz, yaw, "farmhouse", high);
     const door = doorOf(house);
     const site = {
         id: "raised-" + village + "-" + ((state.farmSerial || 0) + 1),

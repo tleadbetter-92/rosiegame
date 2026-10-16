@@ -91,9 +91,9 @@ let cottage = null;
 const homeKinds = ["manor", "barracks", "smith", "shop", "stores", "tavern"];
 const homeDoors = ["east", "west", "east", "west", "south", "south"];
 const homeRise = [1.9, 1.5, 1.35, 1.45, 1.6, 1.7];
-// Civic kit houses only for the focused home village — other towns stay on the campaign map.
-{
-    const place = places[homeVillage];
+// Civic kit houses inside every major village keep (same layout as Southwest).
+for (let village = 0; village < 4; village++) {
+    const place = places[village];
     housePlan.forEach((house, index) => {
         houses.push({
             x: house.x + place.ox,
@@ -108,7 +108,7 @@ const homeRise = [1.9, 1.5, 1.35, 1.45, 1.6, 1.7];
             entrance: homeDoors[index],
             kind: homeKinds[index],
             parts: [],
-            village: homeVillage,
+            village: village,
             decks: [],
             nap: []
         });
@@ -675,6 +675,7 @@ function clearLandBatches() {
         const name = LAND_BATCHES[i];
         if (batches[name]) batches[name].length = 0;
     }
+    for (const kind of Object.keys(blends)) blends[kind].length = 0;
 }
 
 function uploadLandMeshes() {
@@ -683,6 +684,20 @@ function uploadLandMeshes() {
         if (!batches[name]) continue;
         uploadMesh(name, batches[name]);
         if (mesh[name] && (name === "water" || name.indexOf("town") === 0)) mesh[name].cull = false;
+    }
+    // Soft edges between grass / dirt / rock — rebuilt whenever the land bubble remeshes.
+    for (const kind of Object.keys(blendMesh)) {
+        if (kind === "trail") continue;
+        blendMesh[kind].count = 0;
+    }
+    for (const kind of Object.keys(blends)) {
+        const floats = blends[kind];
+        if (!floats || !floats.length) continue;
+        if (!blendMesh[kind]) blendMesh[kind] = { buffer: gl.createBuffer(), count: 0 };
+        const data = new Float32Array(floats);
+        gl.bindBuffer(gl.ARRAY_BUFFER, blendMesh[kind].buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+        blendMesh[kind].count = data.length / 7;
     }
 }
 
@@ -788,6 +803,12 @@ function buildLand() {
             const mx = x + cell * 0.5;
             const mz = z + cell * 0.5;
             if (mid > -0.35) {
+                // Slopes and mixed ground used to be one 32 m rock/dirt slab — hard triangular seams on grass.
+                // Split those cells so kinds follow the hillside and blend at the edges.
+                if (rise > 1.6) {
+                    subdivide(x, z, 8, h00, h10, h11, h01);
+                    continue;
+                }
                 const kind = countryKind(landKind(mx, mz, rise, mid));
                 const list = batches[kind] || batches.grass;
                 const tone = (px, pz) => groundTone(kind, px, pz);
@@ -910,7 +931,7 @@ function putCivic(b, furn, side, out, w, h, d, y, batch) {
 }
 
 function dressCivic(b, furn) {
-    if (b.village !== 2) return;
+    if (b.village == null || b.village < 0 || b.village > 3) return;
     const entrance = b.entrance || "south";
     const { x, z, w, d, h } = b;
     const skirt = (height, thick) => {
@@ -2243,13 +2264,13 @@ function dressFarms() {
         scenery.push({ x: x, z: z, w: 2.4, d: 0.42 });
     };
     for (const building of Town.buildings) {
-        if (building.village !== homeVillage || building.role !== "lumber") continue;
+        if (building.village == null || building.village < 0 || building.village > 3 || building.role !== "lumber") continue;
         drawTimber(building);
         drawLogs(building.minX + 0.3, building.minZ + building.d + 0.45, building.y || 0);
         drawLogs(building.minX + building.w - 2.7, building.minZ + building.d + 0.45, building.y || 0);
     }
     for (const farm of Town.farms) {
-        if (farm.village !== homeVillage) continue;
+        if (farm.village == null || farm.village < 0 || farm.village > 3) continue;
         for (const building of farm.buildings) {
             if (building.role === "barn" || building.role === "shed") drawTimber(building);
         }
@@ -2522,10 +2543,10 @@ function dressFlatHouses() {
     textures.billBrick = flatWallTexture(true, false);
     textures.billBrickFront = flatWallTexture(true, true);
     const kinds = { house: 1, tall: 1, shop: 1, brick: 1, long: 1, grand: 1 };
-    const place = World.places[2];
     for (const b of Town.buildings) {
-        if (b.village !== 2 || b.raised || !kinds[b.mesh]) continue;
-        if (Math.hypot(b.x - place.x, b.z - place.z) < 22) continue;
+        if (b.village == null || b.village < 0 || b.village > 3 || b.raised || !kinds[b.mesh]) continue;
+        const place = World.places[b.village];
+        if (!place || Math.hypot(b.x - place.x, b.z - place.z) < 22) continue;
         const brick = b.mesh === "brick";
         stampFlatKitHouse({
             wall: brick ? batches.billBrick : batches.bill,
@@ -6889,7 +6910,7 @@ function prepareTowers() {
     floors.length = 0;
     solids.length = 0;
     const post = 0.16;
-    for (let village = homeVillage; village <= homeVillage; village++) {
+    for (let village = 0; village < 4; village++) {
         for (let side = 0; side < 4; side++) {
             const layout = towerLayout(village, side);
             floors.push({ x: layout.x, z: layout.z, w: layout.w, d: layout.d, y: layout.floor, tower: true });
@@ -6959,17 +6980,11 @@ function rebuildPalisade() {
     const flat = [];
     for (let village = 0; village < 4; village++) {
         const box = palisadeBox(village);
-        if (village === homeVillage) {
-            addFlatWall(flat, box.minX, box.minZ, box.maxX, box.minZ, box.cx, "x", 0.98);
-            addFlatWall(flat, box.minX, box.maxZ, box.maxX, box.maxZ, box.cx, "x", 0.74);
-            addFlatWall(flat, box.minX, box.minZ, box.minX, box.maxZ, box.cz, "z", 0.8);
-            addFlatWall(flat, box.maxX, box.minZ, box.maxX, box.maxZ, box.cz, "z", 0.86);
-        } else {
-            addWallRun(list, box.minX, box.minZ, box.maxX, box.minZ, box.cx, "x");
-            addWallRun(list, box.minX, box.maxZ, box.maxX, box.maxZ, box.cx, "x");
-            addWallRun(list, box.minX, box.minZ, box.minX, box.maxZ, box.cz, "z");
-            addWallRun(list, box.maxX, box.minZ, box.maxX, box.maxZ, box.cz, "z");
-        }
+        // Same flat keep walls as Southwest for every major town.
+        addFlatWall(flat, box.minX, box.minZ, box.maxX, box.minZ, box.cx, "x", 0.98);
+        addFlatWall(flat, box.minX, box.maxZ, box.maxX, box.maxZ, box.cx, "x", 0.74);
+        addFlatWall(flat, box.minX, box.minZ, box.minX, box.maxZ, box.cz, "z", 0.8);
+        addFlatWall(flat, box.maxX, box.minZ, box.maxX, box.maxZ, box.cz, "z", 0.86);
         for (let side = 0; side < 4; side++) {
             addTower(list, towerLayout(village, side));
             if (gateHealth(village, side) <= 0) continue;
@@ -8360,7 +8375,7 @@ function stampFarmProps() {
     const light = [0.25, 0.86, 0.28];
     const lightLen = Math.hypot(light[0], light[1], light[2]);
     for (const farm of Town.farms) {
-        if (farm.village !== homeVillage) continue;
+        if (farm.village == null || farm.village < 0 || farm.village > 3) continue;
         for (const item of farm.props || []) {
             const src = propData.props[item.name];
             const bounds = propData.bounds[item.name];
