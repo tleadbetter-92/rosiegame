@@ -701,13 +701,18 @@ function uploadLandMeshes() {
     }
 }
 
-// Ground only around the focused town — the rest is haze on the campaign map, not a full-island mesh.
+// Ground follows the player — not only the focused town — so walks between villages keep a floor.
+let landMarkX = Infinity;
+let landMarkZ = Infinity;
+
 function buildLand() {
     clearLandBatches();
     const cell = 32;
-    const cx = focusTown.x;
-    const cz = focusTown.z;
-    const reach = TOWN_VIEW + 16;
+    const cx = cam.x;
+    const cz = cam.z;
+    // gfx() is defined later on first boot — fall back to the High draw distance.
+    const drawFar = typeof gfx === "function" ? gfx().drawFar : 300;
+    const reach = Math.max(TOWN_VIEW, drawFar) + 48;
     const x0 = Math.floor((cx - reach) / cell) * cell;
     const z0 = Math.floor((cz - reach) / cell) * cell;
     const x1 = Math.ceil((cx + reach) / cell) * cell;
@@ -783,12 +788,23 @@ function buildLand() {
             heights[iz * (nx + 1) + ix] = World.heightAt(x0 + ix * cell, z0 + iz * cell);
         }
     }
-    const focusPlace = World.places.find((p) => Math.hypot(p.ox - cx, p.oz - cz) < 8) || null;
+    // Fine streets only when standing near a town; between villages the whole bubble is country mesh.
+    let focusPlace = null;
+    let nearTown = Infinity;
+    for (let i = 0; i < World.places.length; i++) {
+        const p = World.places[i];
+        const d = Math.hypot(p.ox - cx, p.oz - cz);
+        if (d < nearTown) {
+            nearTown = d;
+            focusPlace = p;
+        }
+    }
+    if (nearTown > 220) focusPlace = null;
     const home = World.places[2];
     const homeFocus = focusPlace === home;
     const finePatch = focusPlace
         ? townPatch(focusPlace)
-        : { x0: x0, x1: x1, z0: z0, z1: z1 };
+        : { x0: 0, x1: 0, z0: 0, z1: 0 };
     for (let iz = 0; iz < nz; iz++) {
         for (let ix = 0; ix < nx; ix++) {
             const x = x0 + ix * cell;
@@ -798,12 +814,8 @@ function buildLand() {
             const h10 = sample(ix + 1, iz);
             const h11 = sample(ix + 1, iz + 1);
             const h01 = sample(ix, iz + 1);
-            const mid = (h00 + h10 + h11 + h01) * 0.25;
-            if (mid > -0.35) {
-                // All open country between villages — not only steep cells. A flat 32 m quad still
-                // folds into two hard triangles on any real hillside, and paints one dirt/rock slab.
-                subdivide(x, z, countrySub(), h00, h10, h11, h01);
-            }
+            // Always mesh — paintPatch lays water in the hollows so the sky never shows as a "floor".
+            subdivide(x, z, countrySub(), h00, h10, h11, h01);
         }
     }
     // Outside the streets keep coarse tiles; Southwest streets stay fine so cobble/dirt do not stretch.
@@ -1806,12 +1818,19 @@ function plantFocusTrees() {
 }
 
 function remeshFocusLand() {
-    // Rebuild the town ground bubble only; cliffs are cheap to stamp again for the new focus.
+    // Rebuild ground around the player; cliffs stamp again for the current view.
+    landMarkX = cam.x;
+    landMarkZ = cam.z;
     buildLand();
     if (batches.crag) batches.crag.length = 0;
     raiseCliffs();
     uploadLandMeshes();
     if (batches.crag) uploadMesh("crag", batches.crag);
+}
+
+function maybeRemeshLand() {
+    if (Math.hypot(cam.x - landMarkX, cam.z - landMarkZ) < 64) return;
+    remeshFocusLand();
 }
 
 function updateFocusTown() {
@@ -8528,6 +8547,7 @@ function frame(now) {
     stepHorse(dt);
     swingDoors(dt);
     updateFocusTown();
+    maybeRemeshLand();
     stampRaisedPlots();
     refreshNearTrees();
     paintPlaceGhost();
