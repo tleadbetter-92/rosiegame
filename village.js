@@ -31,7 +31,10 @@ function activeCam() {
 }
 const townLeash = 30;
 // 3D view is one town (or hamlet) at a time — the rest stays on the campaign map.
-const TOWN_VIEW = 175;
+// AoE-style: small viewport bubble, not a wide continuous world.
+const TOWN_VIEW = 110;
+// Hard RTS unit budget: only this many nearest people are simmed/drawn in 3D.
+const UNIT_CAP = 16;
 let focusTown = { id: "p2", x: places[2].ox, z: places[2].oz };
 const player = { hp: 40, max: 40, guard: 0, dead: 0, shake: 0 };
 let hero = Hero.create();
@@ -51,9 +54,10 @@ let cottage = null;
 const homeKinds = ["manor", "barracks", "smith", "shop", "stores", "tavern"];
 const homeDoors = ["east", "west", "east", "west", "south", "south"];
 const homeRise = [1.9, 1.5, 1.35, 1.45, 1.6, 1.7];
-for (const place of places) {
+// Civic kit houses only for the focused home village — other towns stay on the campaign map.
+{
+    const place = places[homeVillage];
     housePlan.forEach((house, index) => {
-        const village = places.indexOf(place);
         houses.push({
             x: house.x + place.ox,
             z: house.z + place.oz,
@@ -64,10 +68,10 @@ for (const place of places) {
             door: house.door,
             store: house === housePlan[4],
             open: true,
-            entrance: index === 4 && village !== 2 ? "north" : homeDoors[index],
+            entrance: homeDoors[index],
             kind: homeKinds[index],
             parts: [],
-            village,
+            village: homeVillage,
             decks: [],
             nap: []
         });
@@ -601,24 +605,18 @@ function paveShade(kind, x, z) {
     return 1;
 }
 
-// How finely a 32 m country cell is cut: finer near rivers, paths, cliffs, shores and painted ground.
-function countrySub(x, z, h00, h10, h11, h01) {
-    const cx = x + 16;
-    const cz = z + 16;
-    const fine = World.nearRiver(cx, cz) || World.pathDist(cx, cz) < 28 || World.cliffDist(cx, cz) < 40;
-    if (fine) return 4;
-    if (Math.min(h00, h10, h11, h01) < 0.35 || World.paintedNear(cx, cz, 16)) return 8;
-    if (Math.max(h00, h10, h11, h01) - Math.min(h00, h10, h11, h01) > 0.55) return 16;
+// AoE tile ground: one quad per 32 m cell — no river/cliff subdivision.
+function countrySub() {
     return 32;
 }
 
-// The fine ground around a village, widened to whole 32 m land cells so no strip is left undrawn.
+// Coarse town patch — fewer tiles than the old fine village carpet.
 function townPatch(place) {
     const min = -3616;
     const cell = 32;
     const down = (v) => min + Math.floor((v - min) / cell) * cell;
     const up = (v) => min + Math.ceil((v - min) / cell) * cell;
-    return { x0: down(place.x - 180), x1: up(place.x + 180), z0: down(place.z - 180), z1: up(place.z + 180) };
+    return { x0: down(place.x - 96), x1: up(place.x + 96), z0: down(place.z - 96), z1: up(place.z + 96) };
 }
 
 const LAND_BATCHES = ["grass", "dirt", "cobble", "sand", "gravel", "marsh", "water", "townDirt", "townCobble", "crag"];
@@ -645,7 +643,7 @@ function buildLand() {
     const cell = 32;
     const cx = focusTown.x;
     const cz = focusTown.z;
-    const reach = TOWN_VIEW + 48;
+    const reach = TOWN_VIEW + 16;
     const x0 = Math.floor((cx - reach) / cell) * cell;
     const z0 = Math.floor((cz - reach) / cell) * cell;
     const x1 = Math.ceil((cx + reach) / cell) * cell;
@@ -740,11 +738,6 @@ function buildLand() {
             const mid = (h00 + h10 + h11 + h01) * 0.25;
             const mx = x + cell * 0.5;
             const mz = z + cell * 0.5;
-            const sub = countrySub(x, z, h00, h10, h11, h01);
-            if (sub < cell) {
-                subdivide(x, z, sub, h00, h10, h11, h01);
-                continue;
-            }
             if (mid > -0.35) {
                 const kind = countryKind(landKind(mx, mz, rise, mid));
                 const list = batches[kind] || batches.grass;
@@ -761,8 +754,9 @@ function buildLand() {
             }
         }
     }
-    const fine = 4;
-    const inner = 100;
+    // Town carpet: 16 m tiles (AoE-like), not 4 m / 2 m carpets.
+    const fine = 16;
+    const inner = 64;
     for (let x = finePatch.x0; x < finePatch.x1; x += fine) {
         for (let z = finePatch.z0; z < finePatch.z1; z += fine) {
             if (homeFocus && x >= home.x - inner && x < home.x + inner && z >= home.z - inner && z < home.z + inner) continue;
@@ -791,7 +785,7 @@ function buildLand() {
         }
     }
     if (homeFocus) {
-        const pave = 2;
+        const pave = 8;
         for (let x = home.x - inner; x < home.x + inner; x += pave) {
             for (let z = home.z - inner; z < home.z + inner; z += pave) {
                 const h00 = World.heightAt(x, z);
@@ -1741,7 +1735,7 @@ function plantFocusTrees() {
     treeSpots.length = 0;
     const cx = focusTown.x;
     const cz = focusTown.z;
-    for (let i = 0; i < 56; i++) {
+    for (let i = 0; i < 24; i++) {
         const a = i * 0.71 + 0.4;
         const r = 42 + (i % 7) * 3.2;
         const x = cx + Math.cos(a) * r;
@@ -2197,12 +2191,13 @@ function dressFarms() {
         scenery.push({ x: x, z: z, w: 2.4, d: 0.42 });
     };
     for (const building of Town.buildings) {
-        if (building.role !== "lumber") continue;
+        if (building.village !== homeVillage || building.role !== "lumber") continue;
         drawTimber(building);
         drawLogs(building.minX + 0.3, building.minZ + building.d + 0.45, building.y || 0);
         drawLogs(building.minX + building.w - 2.7, building.minZ + building.d + 0.45, building.y || 0);
     }
     for (const farm of Town.farms) {
+        if (farm.village !== homeVillage) continue;
         for (const building of farm.buildings) {
             if (building.role === "barn" || building.role === "shed") drawTimber(building);
         }
@@ -2486,7 +2481,7 @@ growScenery();
 raiseCliffs();
 dressSouthMeadow();
 dressFarms();
-places.forEach(addYard);
+addYard(places[homeVillage]);
 
 const mesh = {};
 for (const name of Object.keys(batches)) {
@@ -2529,39 +2524,39 @@ function gfx() {
     // Performance first — High is only a touch sharper. Mechanics do not depend on these numbers.
     if (graphics === "low") {
         return {
-            scale: 0.28,
-            far: 120,
-            fogNear: 18,
-            fogSpan: 55,
-            drawFar: 90,
-            treeNear: 55,
+            scale: 0.22,
+            far: 70,
+            fogNear: 12,
+            fogSpan: 36,
+            drawFar: 55,
+            treeNear: 35,
             treeFar: 0,
-            treeCap: 18,
-            meadowReach: 60,
-            meadowStep: 52,
+            treeCap: 8,
+            meadowReach: 32,
+            meadowStep: 64,
             meadowProps: false,
-            personDraw: 55,
-            personStep: 75,
-            farEvery: 120,
-            miniEvery: 5
+            personDraw: 28,
+            personStep: 28,
+            farEvery: 240,
+            miniEvery: 8
         };
     }
     return {
-        scale: 0.4,
-        far: 180,
-        fogNear: 28,
-        fogSpan: 90,
-        drawFar: 130,
-        treeNear: 85,
+        scale: 0.32,
+        far: 100,
+        fogNear: 18,
+        fogSpan: 55,
+        drawFar: 80,
+        treeNear: 50,
         treeFar: 0,
-        treeCap: 40,
-        meadowReach: 100,
-        meadowStep: 40,
+        treeCap: 14,
+        meadowReach: 48,
+        meadowStep: 48,
         meadowProps: false,
-        personDraw: 90,
-        personStep: 120,
-        farEvery: 60,
-        miniEvery: 3
+        personDraw: 40,
+        personStep: 40,
+        farEvery: 120,
+        miniEvery: 5
     };
 }
 
@@ -2716,14 +2711,25 @@ function addHead(list, x, y, z, w, h, d, xf) {
     pushQuad(list, p(x, y1, z, 0.8, 0.2, 0.95), p(x1, y1, z, 0.98, 0.2, 0.95), p(x1, y1, z1, 0.98, 0.8, 0.95), p(x, y1, z1, 0.8, 0.8, 0.95));
 }
 
-let outdoorMeshNames = null;
+// Explicit outdoor draw set — never Object.keys(mesh) (that pulled every town/prop buffer).
+const outdoorDrawList = [
+    "grass", "dirt", "cobble", "sand", "gravel", "marsh", "water", "crag",
+    "townDirt", "townCobble",
+    "wall", "door", "roof", "store", "plaster", "trunk", "leaf", "bloom", "rock", "linen", "glow",
+    "bill", "billFront", "billBrick", "billBrickFront",
+    "bridge", "road", "wood", "palisade",
+    "cotWall", "cotRoof", "cotDoor", "cotWood", "cotGlow", "cotFloor",
+    "raisedfield", "raisedleaf", "raisedtrunk", "raisedfloor", "raisedpad",
+    "housedoor", "cart", "meadowBush", "meadowRock",
+    "cloth0", "cloth1", "cloth2", "cloth3", "cloth4", "skin", "pants", "steel",
+    "placeGhost"
+];
 
 function uploadMesh(name, floats) {
     const data = new Float32Array(floats);
     if (!mesh[name]) {
         const buffer = gl.createBuffer();
         mesh[name] = { buffer, count: 0 };
-        outdoorMeshNames = null;
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, mesh[name].buffer);
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
@@ -2795,7 +2801,12 @@ function addBridge(list, bridge) {
 
 function buildBridges() {
     const list = [];
-    for (const bridge of World.bridgeList()) addBridge(list, bridge);
+    const fx = focusTown.x;
+    const fz = focusTown.z;
+    for (const bridge of World.bridgeList()) {
+        if (Math.hypot(bridge.x - fx, bridge.z - fz) > TOWN_VIEW + 80) continue;
+        addBridge(list, bridge);
+    }
     textures.bridge = textures.cobble;
     uploadMesh("bridge", list);
     mesh.bridge.cull = false;
@@ -2828,24 +2839,15 @@ function smoothRoad(chain) {
 // Height of the drawn land, not the true ground, found from the same cells buildLand lays (each split corner 00 to 11).
 function landMeshHeight(x, z) {
     const home = World.places[2];
-    if (Math.abs(x - home.x) < 100 && Math.abs(z - home.z) < 100) return cellHeight(x, z, 2, home.x - 100, home.z - 100);
+    if (Math.abs(x - home.x) < 64 && Math.abs(z - home.z) < 64) return cellHeight(x, z, 8, home.x - 64, home.z - 64);
     for (const place of World.places) {
         const b = townPatch(place);
-        if (x >= b.x0 && x < b.x1 && z >= b.z0 && z < b.z1) return cellHeight(x, z, 4, b.x0, b.z0);
+        if (x >= b.x0 && x < b.x1 && z >= b.z0 && z < b.z1) return cellHeight(x, z, 16, b.x0, b.z0);
     }
-    const peak = World.peakBox;
-    if (x >= peak.minX && x < peak.maxX && z >= peak.minZ && z < peak.maxZ) return cellHeight(x, z, 4, peak.minX, peak.minZ);
     const x0 = -3616 + Math.floor((x + 3616) / 32) * 32;
     const z0 = -3616 + Math.floor((z + 3616) / 32) * 32;
-    const key = x0 + "," + z0;
-    let sub = cellSubs.get(key);
-    if (sub == null) {
-        sub = countrySub(x0, z0, World.heightAt(x0, z0), World.heightAt(x0 + 32, z0), World.heightAt(x0 + 32, z0 + 32), World.heightAt(x0, z0 + 32));
-        cellSubs.set(key, sub);
-    }
-    return cellHeight(x, z, sub, x0, z0);
+    return cellHeight(x, z, 32, x0, z0);
 }
-const cellSubs = new Map();
 
 function cellHeight(x, z, s, ox, oz) {
     const x0 = ox + Math.floor((x - ox) / s) * s;
@@ -2912,6 +2914,9 @@ function buildRoads() {
     const list = [];
     const across = [-1, -0.55, 0, 0.55, 1];
     const shade = [0.74, 0.92, 1, 0.92, 0.74];
+    const fx = focusTown.x;
+    const fz = focusTown.z;
+    const roadReach = TOWN_VIEW + 80;
     for (const chain of World.stoneRoads) {
         if (chain.length < 2) continue;
         const line = smoothRoad(chain);
@@ -2919,6 +2924,10 @@ function buildRoads() {
         let prev = null;
         for (let i = 0; i < line.length; i++) {
             const p = line[i];
+            if (Math.hypot(p[0] - fx, p[1] - fz) > roadReach) {
+                prev = null;
+                continue;
+            }
             const a = line[Math.max(0, i - 1)];
             const b = line[Math.min(line.length - 1, i + 1)];
             const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
@@ -3250,7 +3259,7 @@ function loadStudy() {
         pic.src = URL.createObjectURL(blob);
     }).catch(() => {});
 }
-loadStudy();
+// Skip GLB study character — outdoors stay box people only.
 let horseBody = null;
 let horseLeg = null;
 
@@ -3482,17 +3491,34 @@ function bowMatrix(man) {
     ]);
 }
 
-function rebuildMesh() {
-    if (peopleReady) {
-        actorsDirty = false;
-        return;
+function nearestMen(cap, range) {
+    const reach = range * range;
+    const list = [];
+    for (let i = 0; i < men.length; i++) {
+        const man = men[i];
+        if (man.hidden) continue;
+        const dx = (man.x || 0) - cam.x;
+        const dz = (man.z || 0) - cam.z;
+        const d2 = dx * dx + dz * dz;
+        if (d2 > reach) continue;
+        list.push({ man: man, d2: d2 });
     }
+    list.sort((a, b) => a.d2 - b.d2);
+    if (list.length > cap) list.length = cap;
+    return list;
+}
+
+let actorsRebuildAt = 0;
+function rebuildMesh() {
+    // Tiny box people, nearest UNIT_CAP only — like an old RTS unit sprite budget.
     const skin = [];
     const pants = [];
     const steel = [];
     const cloth = [[], [], [], [], []];
-    for (const man of men) {
-        if (man.hidden || !cloth[man.faction]) continue;
+    const near = nearestMen(UNIT_CAP, gfx().personDraw);
+    for (let i = 0; i < near.length; i++) {
+        const man = near[i].man;
+        if (man.faction == null || !cloth[man.faction]) continue;
         addPerson(cloth[man.faction], skin, pants, steel, man.x - 0.24, man.z - 0.14, personXf(man), man.swing, man.fisher || man.farmer);
     }
     for (let i = 0; i < cloth.length; i++) uploadMesh("cloth" + i, cloth[i]);
@@ -3500,6 +3526,7 @@ function rebuildMesh() {
     uploadMesh("pants", pants);
     uploadMesh("steel", steel);
     actorsDirty = false;
+    actorsRebuildAt = performance.now();
 }
 
 function mergeMen(data) {
@@ -4113,29 +4140,11 @@ function ensureCottages(data) {
     if (mesh.cotRoof) mesh.cotRoof.cull = false;
     if (mesh.cotFloor) mesh.cotFloor.cull = false;
     poseDoors();
-    stampCottageProps();
-}
-
-function stampHorseCart(list, pose) {
-    const model = robloxModel("horsecart");
-    if (!model) return false;
-    const y = Math.max(0, World.heightAt(pose.x, pose.z));
-    // Model is long on X with the horse toward +X; path yaw faces travel, so turn a quarter so the horse leads.
-    stampRoblox(list, model, {
-        x: pose.x,
-        z: pose.z,
-        y: y,
-        theta: (pose.yaw || 0) + Math.PI / 2,
-        scale: 0.5,
-        drawOnly: true
-    });
-    return true;
 }
 
 let cartMeshKey = "";
 
 function paintCarts() {
-    const model = robloxModel("horsecart");
     const jobs = [];
     const lodges = campaign && campaign.lodges || [];
     for (const lodge of lodges) {
@@ -4147,8 +4156,7 @@ function paintCarts() {
     if (haul && (haul.phase === "out" || haul.phase === "back") && haul.path && haul.path.length > 1) {
         jobs.push({ pose: clientCartPose(haul), cargo: haul.cargo || 0 });
     }
-    // Rebuild only when a cart moves a notch or cargo/model changes — not every frame.
-    let key = model ? "m" : "b";
+    let key = "b";
     for (const job of jobs) {
         const pose = job.pose;
         key += "|" + Math.round(pose.x * 6) + "," + Math.round(pose.z * 6) + "," + Math.round((pose.yaw || 0) * 16) + "," + (job.cargo > 0 ? 1 : 0);
@@ -4158,7 +4166,6 @@ function paintCarts() {
     const list = [];
     for (const job of jobs) {
         const pose = job.pose;
-        if (model && stampHorseCart(list, pose)) continue;
         const y = Math.max(0, World.heightAt(pose.x, pose.z));
         const c = Math.cos(pose.yaw || 0);
         const s = Math.sin(pose.yaw || 0);
@@ -4173,7 +4180,7 @@ function paintCarts() {
         addBox(list, pose.x + 0.42, y + 0.02, pose.z + 0.08, 0.18, 0.32, 0.18, xf);
         if (job.cargo > 0) addBox(list, pose.x - 0.4, y + 0.78, pose.z - 0.22, 0.72, 0.26, 0.44, xf);
     }
-    textures.cart = (model && textures.robloxhorsecart) || textures.trunk;
+    textures.cart = textures.trunk;
     uploadMesh("cart", list);
 }
 
@@ -4181,7 +4188,7 @@ function cartUnder(x, z, faction) {
     const lodges = campaign && campaign.lodges || [];
     const who = faction == null ? -1 : faction;
     let best = null;
-    let bestDist = roblox.horsecart ? 2.4 : 1.35;
+    let bestDist = 1.35;
     for (const lodge of lodges) {
         if (!lodge.cart || lodge.cart.hp <= 0 || lodge.owner === who) continue;
         const pose = clientCartPose(lodge.cart);
@@ -6001,14 +6008,14 @@ function nearPerson(man, range) {
 
 let separateTurn = 0;
 function separateMen(dt) {
-    // Every other frame, and only people already near the camera — same spacing, less O(n²) work.
-    separateTurn = 1 - separateTurn;
+    // Few nearest units only, every 4th frame — AoE never ran O(n²) on a full army in 3D.
+    separateTurn = (separateTurn + 1) % 4;
     if (separateTurn) return;
+    const picked = nearestMen(UNIT_CAP, 28);
     const near = [];
-    for (let i = 0; i < men.length; i++) {
-        const man = men[i];
-        if (!nearPerson(man, 40)) continue;
-        if (man.dying || man.archer || man.decor || man.driver || man.hidden || man.indoors || man.mode === "march") continue;
+    for (let i = 0; i < picked.length; i++) {
+        const man = picked[i].man;
+        if (man.dying || man.archer || man.decor || man.driver || man.indoors || man.mode === "march") continue;
         near.push(man);
     }
     const step = dt * 2;
@@ -6050,23 +6057,32 @@ function updateFight(dt) {
         if (swing.age >= 0.36) swing = null;
     }
     const quality = gfx();
-    const farEvery = quality.farEvery;
-    farTurn = (farTurn + 1) % farEvery;
+    // Only the nearest UNIT_CAP people step in 3D; everyone else is campaign-map state.
+    const active = nearestMen(UNIT_CAP, Math.max(quality.personStep, 36));
+    const activeSet = new Set();
+    for (let i = 0; i < active.length; i++) activeSet.add(active[i].man);
     for (let i = men.length - 1; i >= 0; i--) {
         const man = men[i];
-        // Far people take a turn every few frames; workers, carts and marchers are placed by the clock so they
-        // still arrive where they should.
-        const close = man.dying || i % farEvery === farTurn || nearPerson(man, quality.personStep);
-        if (close ? stepMan(man, dt) : false) {
+        if (man.dying) {
+            if (stepMan(man, dt)) {
+                men.splice(i, 1);
+                actorsDirty = true;
+            }
+            continue;
+        }
+        if (!activeSet.has(man)) {
+            man.walking = false;
+            continue;
+        }
+        if (stepMan(man, dt)) {
             men.splice(i, 1);
             actorsDirty = true;
-        } else if (!close) {
-            man.walking = false;
         }
     }
     stepArrows(dt);
     separateMen(dt);
-    if (actorsDirty) rebuildMesh();
+    // Remesh people at most ~5/sec — sprites in AoE did not rebuild every frame.
+    if (actorsDirty && performance.now() - actorsRebuildAt > 200) rebuildMesh();
 }
 
 paintHealth();
@@ -6813,7 +6829,7 @@ function prepareTowers() {
     floors.length = 0;
     solids.length = 0;
     const post = 0.16;
-    for (let village = 0; village < 4; village++) {
+    for (let village = homeVillage; village <= homeVillage; village++) {
         for (let side = 0; side < 4; side++) {
             const layout = towerLayout(village, side);
             floors.push({ x: layout.x, z: layout.z, w: layout.w, d: layout.d, y: layout.floor, tower: true });
@@ -7344,10 +7360,7 @@ function draw() {
         gl.disable(gl.POLYGON_OFFSET_FILL);
     };
     gl.clear(gl.DEPTH_BUFFER_BIT);
-    if (!outdoorMeshNames) {
-        outdoorMeshNames = Object.keys(mesh).filter((name) => name.indexOf("far") !== 0 && name.indexOf("near") !== 0 && name.indexOf("room") !== 0);
-    }
-    for (let i = 0; i < outdoorMeshNames.length; i++) drawMesh(outdoorMeshNames[i], 1);
+    for (let i = 0; i < outdoorDrawList.length; i++) drawMesh(outdoorDrawList[i], 1);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthFunc(gl.LEQUAL);
@@ -7392,62 +7405,8 @@ function draw() {
     gl.uniform1f(loc.band, 1);
     gl.uniform1f(loc.flow, 0);
     gl.uniformMatrix4fv(loc.proj, false, proj);
-    if (peopleReady && textures.people) {
-        gl.enable(gl.CULL_FACE);
-        gl.bindTexture(gl.TEXTURE_2D, textures.people);
-        for (const man of men) {
-            if (man.hidden || !nearPerson(man, gfx().personDraw)) continue;
-            const kind = man.fisher || man.decor || man.driver || man.faction >= 4 ? "fisher" : "soldier";
-            const look = man.goblin ? "fisher1" : kind + Math.min(man.faction, 4);
-            const model = peopleModels[look];
-            if (!model) continue;
-            plant(man);
-            const hand = peopleHands[look];
-            if (man.goblin) gl.uniform3f(loc.tint, 0.5, 0.95, 0.4);
-            gl.uniformMatrix4fv(loc.model, false, personMatrix(man));
-            gl.bindBuffer(gl.ARRAY_BUFFER, model.buffer);
-            gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
-            gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
-            gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
-            gl.drawArrays(gl.TRIANGLES, 0, model.count);
-            if (model.left && model.right) {
-                const phase = man.walking ? performance.now() * 0.008 + (man.index || 0) * 1.7 : 0;
-                const step = man.walking ? Math.sin(phase) * 0.55 : 0;
-                gl.uniformMatrix4fv(loc.model, false, legMatrix(man, model.hipL, step));
-                gl.bindBuffer(gl.ARRAY_BUFFER, model.left.buffer);
-                gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
-                gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
-                gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
-                gl.drawArrays(gl.TRIANGLES, 0, model.left.count);
-                gl.uniformMatrix4fv(loc.model, false, legMatrix(man, model.hipR, -step));
-                gl.bindBuffer(gl.ARRAY_BUFFER, model.right.buffer);
-                gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
-                gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
-                gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
-                gl.drawArrays(gl.TRIANGLES, 0, model.right.count);
-            }
-            if (man.archer && bowModel && textures.wood) {
-                gl.bindTexture(gl.TEXTURE_2D, textures.wood);
-                gl.uniformMatrix4fv(loc.model, false, bowMatrix(man));
-                gl.bindBuffer(gl.ARRAY_BUFFER, bowModel.buffer);
-                gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
-                gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
-                gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
-                gl.drawArrays(gl.TRIANGLES, 0, bowModel.count);
-                gl.bindTexture(gl.TEXTURE_2D, textures.people);
-            } else if (!man.fisher && !man.decor && !man.driver && hand && swordModel && textures.sword) {
-                gl.bindTexture(gl.TEXTURE_2D, textures.sword);
-                gl.uniformMatrix4fv(loc.model, false, swordMatrix(man, hand));
-                gl.bindBuffer(gl.ARRAY_BUFFER, swordModel.buffer);
-                gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
-                gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
-                gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
-                gl.drawArrays(gl.TRIANGLES, 0, swordModel.count);
-                gl.bindTexture(gl.TEXTURE_2D, textures.people);
-            }
-            if (man.goblin) gl.uniform3f(loc.tint, 1, 1, 1);
-        }
-    }
+    // People are box stamps in cloth/skin meshes (rebuildMesh) — not people.json models.
+    gl.uniformMatrix4fv(loc.model, false, identity);
     drawHorse();
     if (studyMesh && studyTex) {
         gl.enable(gl.CULL_FACE);
@@ -7473,168 +7432,6 @@ function draw() {
         gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
         gl.drawArrays(gl.TRIANGLES, 0, arrowMesh.count);
     }
-}
-
-let townKit = null;
-function loadTown() {
-    fetch("models/town.json", { cache: "no-store" }).then((res) => res.json()).then((data) => {
-        townKit = data;
-        const buckets = {};
-        const light = [0.25, 0.86, 0.28];
-        const lightLen = Math.hypot(light[0], light[1], light[2]);
-        for (const b of Town.buildings) {
-            if (b.village === 2 && (b.mesh === "house" || b.mesh === "tall" || b.mesh === "shop" || b.mesh === "brick" || b.mesh === "long" || b.mesh === "grand") && Math.hypot(b.x + 2480, b.z - 620) > 22) continue;
-            const src = data.buildings[b.mesh];
-            const groups = src && (src.groups || src);
-            if (!groups) continue;
-            const c = Math.cos(b.yaw);
-            const s = Math.sin(b.yaw);
-            for (const name of Object.keys(groups)) {
-                const verts = groups[name];
-                if (!buckets[name]) buckets[name] = [];
-                const list = buckets[name];
-                for (let i = 0; i < verts.length; i += 8) {
-                    const x = verts[i];
-                    const y = verts[i + 1];
-                    const z = verts[i + 2];
-                    const nx = verts[i + 5] * c + verts[i + 7] * s;
-                    const ny = verts[i + 6];
-                    const nz = -verts[i + 5] * s + verts[i + 7] * c;
-                    const lit = Math.max(0, (nx * light[0] + ny * light[1] + nz * light[2]) / lightLen);
-                    list.push(x * c + z * s + b.x, y + (b.y || 0), -x * s + z * c + b.z, verts[i + 3], verts[i + 4], Math.min(1, 0.42 + 0.58 * lit));
-                }
-            }
-        }
-        for (const name of Object.keys(buckets)) {
-            const floats = new Float32Array(buckets[name]);
-            const img = new Image();
-            img.onload = () => {
-                const tex = gl.createTexture();
-                gl.bindTexture(gl.TEXTURE_2D, tex);
-                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                textures["town" + name] = tex;
-                textures["raise" + name] = tex;
-                const buffer = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-                gl.bufferData(gl.ARRAY_BUFFER, floats, gl.STATIC_DRAW);
-                mesh["town" + name] = { buffer, count: floats.length / 6, cull: false };
-            };
-            img.src = "models/" + name + ".png";
-        }
-        stampRaisedPlots();
-    }).catch(() => {});
-}
-
-function loadCottage() {
-    if (!cottage) return;
-    fetch("models/cottage.json", { cache: "no-store" }).then((res) => res.json()).then((data) => {
-        const c = Math.cos(cottage.yaw);
-        const s = Math.sin(cottage.yaw);
-        const light = [0.25, 0.86, 0.28];
-        const lightLen = Math.hypot(light[0], light[1], light[2]);
-        for (const [name, src] of Object.entries(data.groups)) {
-            const floats = new Float32Array(src.length / 8 * 6);
-            for (let i = 0, o = 0; i < src.length; i += 8, o += 6) {
-                const x = src[i];
-                const y = src[i + 1];
-                const z = src[i + 2];
-                const nx = src[i + 5] * c + src[i + 7] * s;
-                const ny = src[i + 6];
-                const nz = -src[i + 5] * s + src[i + 7] * c;
-                const lit = Math.max(0, (nx * light[0] + ny * light[1] + nz * light[2]) / lightLen);
-                floats[o] = x * c + z * s + cottage.x;
-                floats[o + 1] = y;
-                floats[o + 2] = -x * s + z * c + cottage.z;
-                floats[o + 3] = src[i + 3];
-                floats[o + 4] = src[i + 4];
-                floats[o + 5] = Math.min(1, 0.42 + 0.58 * lit);
-            }
-            const img = new Image();
-            img.onload = () => {
-                const tex = gl.createTexture();
-                gl.bindTexture(gl.TEXTURE_2D, tex);
-                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                textures["cottage" + name] = tex;
-                const buffer = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-                gl.bufferData(gl.ARRAY_BUFFER, floats, gl.STATIC_DRAW);
-                mesh["cottage" + name] = { buffer, count: floats.length / 6, cull: false };
-            };
-            img.src = "models/" + name + ".png";
-        }
-    }).catch(() => {});
-}
-
-function loadPeople() {
-    fetch("models/people.json", { cache: "no-store" }).then((res) => res.json()).then((data) => {
-        for (const [name, src] of Object.entries(data.models)) {
-            const part = (data.legs && data.legs[name]) || null;
-            const upload = (floats) => {
-                const data = new Float32Array(floats);
-                const buffer = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-                gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-                return { buffer, count: data.length / 6 };
-            };
-            const model = upload(src);
-            if (part && part.left && part.right) {
-                model.left = upload(part.left);
-                model.right = upload(part.right);
-                model.hipL = part.hipL;
-                model.hipR = part.hipR;
-            }
-            peopleModels[name] = model;
-        }
-        Object.assign(peopleHands, data.hands || {});
-        const img = new Image();
-        img.onload = () => {
-            const tex = gl.createTexture();
-            gl.bindTexture(gl.TEXTURE_2D, tex);
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-            textures.people = tex;
-            for (let i = 0; i < 5; i++) uploadMesh("cloth" + i, []);
-            uploadMesh("skin", []);
-            uploadMesh("pants", []);
-            uploadMesh("steel", []);
-            peopleReady = true;
-        };
-        img.src = "models/people.png";
-    }).catch(() => {});
-    fetch("models/sword.json", { cache: "no-store" }).then((res) => res.json()).then((src) => {
-        const floats = new Float32Array(src);
-        const buffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-        gl.bufferData(gl.ARRAY_BUFFER, floats, gl.STATIC_DRAW);
-        swordModel = { buffer, count: floats.length / 6 };
-        const img = new Image();
-        img.onload = () => {
-            const tex = gl.createTexture();
-            gl.bindTexture(gl.TEXTURE_2D, tex);
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-            textures.sword = tex;
-        };
-        img.src = "models/sword.png";
-    }).catch(() => {});
 }
 
 let last = performance.now();
@@ -7837,15 +7634,16 @@ let raisedData = null;
 let raisedKey = "";
 let raisedContentKey = "";
 
-function houseGroups() {
-    const src = townKit && townKit.buildings && townKit.buildings.house;
-    if (!src) return null;
-    return src.groups || src;
-}
-
 function raisePlots(data) {
     raisedData = data || null;
-    raisedContentKey = "";
+    // Remesh only when plot content changes or the camera cell moves — not on every campaign poll.
+    const plots = (raisedData && raisedData.plots) || [];
+    const raising = (raisedData && raisedData.raising) || [];
+    const next = (raisedData && raisedData.restartedAt || 0) + "|" + plots.map((plot) => plot.id).join(",") + "|" + raising.map((job) => job.id).join(",");
+    if (next !== raisedContentKey) {
+        raisedContentKey = "";
+        raisedKey = "";
+    }
     stampRaisedPlots();
 }
 
@@ -7876,39 +7674,6 @@ function clearRaised() {
     textures.raisedtrunk = textures.trunk;
     textures.raisedfloor = textures.wood;
     for (const name of ["raisedfield", "raisedleaf", "raisedtrunk", "raisedfloor"]) uploadMesh(name, []);
-    const groups = houseGroups();
-    if (groups) {
-        for (const name of Object.keys(groups)) {
-            if (textures["town" + name]) textures["raise" + name] = textures["town" + name];
-            uploadMesh("raise" + name, []);
-            if (mesh["raise" + name]) mesh["raise" + name].cull = false;
-        }
-    }
-}
-
-function stampHouse(buckets, b) {
-    const groups = houseGroups();
-    if (!groups) return;
-    const c = Math.cos(b.yaw);
-    const s = Math.sin(b.yaw);
-    const light = [0.25, 0.86, 0.28];
-    const lightLen = Math.hypot(light[0], light[1], light[2]);
-    for (const name of Object.keys(groups)) {
-        const verts = groups[name];
-        if (!verts || !verts.length) continue;
-        if (!buckets[name]) buckets[name] = [];
-        const list = buckets[name];
-        for (let i = 0; i < verts.length; i += 8) {
-            const x = verts[i];
-            const y = verts[i + 1];
-            const z = verts[i + 2];
-            const nx = verts[i + 5] * c + verts[i + 7] * s;
-            const ny = verts[i + 6];
-            const nz = -verts[i + 5] * s + verts[i + 7] * c;
-            const lit = Math.max(0, (nx * light[0] + ny * light[1] + nz * light[2]) / lightLen);
-            list.push(x * c + z * s + b.x, y + (b.y || 0), -x * s + z * c + b.z, verts[i + 3], verts[i + 4], Math.min(1, 0.42 + 0.58 * lit));
-        }
-    }
 }
 
 function doorFront(b) {
@@ -7957,38 +7722,12 @@ function addRaisedDoor(b, id, floorsGeom, startClosed) {
     return door;
 }
 
-// Roblox models (models/roblox/farm.json, houses.json, mine.json, lumberyard.json, ore.json, horsecart.json, singlehouse.json):
-// plain parts in metres, coloured from a palette texture, drawn as the robloxfarm, robloxhouses and robloxmine meshes.
-const roblox = {};
+// Outdoor 3D never loads Roblox part meshes — box proxies only.
+// Campaign still uses models/roblox/*.json for building footprints/layout.
 
-// Heavy building converts are never loaded — stamped as proxies. Only the cart (and similar) fetch JSON.
-const robloxProxyNames = { farm: true, houses: true, singlehouse: true, mine: true, lumberyard: true, ore: true };
-
-function robloxModel(name) {
-    if (robloxProxyNames[name]) {
-        roblox[name] = null;
-        return null;
-    }
-    if (roblox[name] !== undefined) return roblox[name];
-    roblox[name] = null;
-    fetch("models/roblox/" + name + ".json", { cache: "no-store" }).then((res) => res.json()).then((data) => {
-        textures["roblox" + name] = makeTexture((g) => {
-            data.palette.forEach((rgb, i) => {
-                g.fillStyle = "rgb(" + rgb.join(",") + ")";
-                g.fillRect((i % 8) * 8, Math.floor(i / 8) * 8, 8, 8);
-            });
-        });
-        roblox[name] = data;
-        raisedKey = "";
-        if (name === "horsecart") cartMeshKey = "";
-        stampRaisedPlots();
-    }).catch(() => {});
-    return null;
-}
-
-// Only the focused town is detailed in 3D; Roblox houses stay cheap proxies.
+// Only the focused town is detailed in 3D.
 function raisedViewKey() {
-    const cell = 20;
+    const cell = 48;
     return focusTown.id + ":" + Math.round(cam.x / cell) + ":" + Math.round(cam.z / cell) + ":" + Math.round(gfx().drawFar) + ":" + (graphics === "low" ? "L" : "H");
 }
 
@@ -8040,7 +7779,7 @@ function plotDist(plot) {
 }
 
 // Stand-in for a Roblox building: a few boxes. Enterable plots use shell+door collision instead of a solid block.
-function stampRobloxProxy(list, plot, opt) {
+function stampBuildingProxy(list, plot, opt) {
     opt = opt || {};
     const at = plot.at;
     const house = plot.house;
@@ -8100,133 +7839,8 @@ function stampPads(list, pads) {
     }
 }
 
-const robloxShapes = (() => {
-    const ring = (n, at) => Array.from({ length: n }, (_, i) => at((i / n) * Math.PI * 2));
-    const box = {
-        verts: [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]],
-        faces: [[0, 1, 2, 3], [5, 4, 7, 6], [4, 0, 3, 7], [1, 5, 6, 2], [3, 2, 6, 7], [4, 5, 1, 0]]
-    };
-    const wedge = {
-        verts: [[-1, -1, -1], [1, -1, -1], [1, -1, 1], [-1, -1, 1], [-1, 1, 1], [1, 1, 1]],
-        faces: [[0, 1, 2, 3], [3, 2, 5, 4], [0, 3, 4], [1, 5, 2], [0, 4, 5, 1]]
-    };
-    const sides = 8;
-    const cyl = {
-        verts: ring(sides, (a) => [-1, Math.cos(a), Math.sin(a)]).concat(ring(sides, (a) => [1, Math.cos(a), Math.sin(a)])),
-        faces: ring(sides, (a) => a).map((_, i) => [i, (i + 1) % sides, sides + (i + 1) % sides, sides + i])
-            .concat([ring(sides, (a) => a).map((_, i) => i), ring(sides, (a) => a).map((_, i) => sides + i)])
-    };
-    const ballVerts = [[0, -1, 0]];
-    for (let k = 1; k < 4; k++) {
-        const lat = -Math.PI / 2 + (k / 4) * Math.PI;
-        ballVerts.push(...ring(sides, (a) => [Math.cos(lat) * Math.cos(a), Math.sin(lat), Math.cos(lat) * Math.sin(a)]));
-    }
-    ballVerts.push([0, 1, 0]);
-    const top = ballVerts.length - 1;
-    const ballFaces = [];
-    for (let i = 0; i < sides; i++) {
-        const j = (i + 1) % sides;
-        ballFaces.push([0, 1 + j, 1 + i]);
-        for (let k = 0; k < 2; k++) ballFaces.push([1 + k * sides + i, 1 + k * sides + j, 1 + (k + 1) * sides + j, 1 + (k + 1) * sides + i]);
-        ballFaces.push([1 + 2 * sides + i, 1 + 2 * sides + j, top]);
-    }
-    return { box, wedge, cyl, ball: { verts: ballVerts, faces: ballFaces } };
-})();
-
-// A thin upright panel by the doorway is the Roblox door leaf: skip it so our swinging door can take its place.
-function robloxDoorLeaf(pts, hideDoor) {
-    if (!hideDoor) return false;
-    const b = ptsBounds(pts);
-    const mx = (b.minX + b.maxX) / 2;
-    const mz = (b.minZ + b.maxZ) / 2;
-    if (Math.hypot(mx - hideDoor.x, mz - hideDoor.z) > 2.4) return false;
-    if (b.minY > hideDoor.y + 1.2 || b.maxY < hideDoor.y + 0.8) return false;
-    const w = b.maxX - b.minX;
-    const h = b.maxY - b.minY;
-    const d = b.maxZ - b.minZ;
-    const thin = Math.min(w, d);
-    const face = Math.max(w, d);
-    return thin < 0.5 && h > 1.05 && face > 0.55 && face < 2.8;
-}
-
-// Draw Roblox parts; collision is either off (shell houses), or only large wall/floor blocks.
-// Tiny décor and balls are dropped — looks simpler, costs far less, doors/entry still work via shells.
-function stampRoblox(list, model, at) {
-    const c = Math.cos(at.theta);
-    const s = Math.sin(at.theta);
-    const scale = at.scale || 1;
-    const light = [0.25, 0.86, 0.28];
-    const lightLen = Math.hypot(light[0], light[1], light[2]);
-    const minVol = at.cheapDraw || graphics === "low" ? 0.14 : 0.08;
-    for (const part of model.parts) {
-        if (part[0] === "ball") continue;
-        const pw = part[1] * scale;
-        const ph = part[2] * scale;
-        const pd = part[3] * scale;
-        const vol = pw * ph * pd;
-        if (vol < minVol) continue;
-        const shape = robloxShapes[part[0]] || robloxShapes.box;
-        let sy = part[2];
-        let py = part[5];
-        if (part[17] && part[0] === "box" && Math.abs(part[11]) > 0.99) {
-            sy += 1.5;
-            py -= 0.75;
-        }
-        const half = [part[1] / 2, sy / 2, part[3] / 2];
-        const r = part.slice(7, 16);
-        const pts = shape.verts.map((v) => {
-            const lx = v[0] * half[0];
-            const ly = v[1] * half[1];
-            const lz = v[2] * half[2];
-            const x = (r[0] * lx + r[1] * ly + r[2] * lz + part[4]) * scale;
-            const y = (r[3] * lx + r[4] * ly + r[5] * lz + py) * scale;
-            const z = (r[6] * lx + r[7] * ly + r[8] * lz + part[6]) * scale;
-            return [x * c + z * s + at.x, y + at.y, -x * s + z * c + at.z];
-        });
-        if (robloxDoorLeaf(pts, at.hideDoor)) continue;
-        const square = r.every((v) => Math.abs(v) < 0.05 || Math.abs(v) > 0.95);
-        if (!at.drawOnly && part[18] !== 0 && part[0] !== "wedge" && (square || Math.abs(r[4]) > 0.95)) {
-            const box = ptsBounds(pts);
-            const w = box.maxX - box.minX;
-            const top = box.maxY;
-            const d = box.maxZ - box.minZ;
-            const tall = (Math.abs(r[3]) * part[1] + Math.abs(r[4]) * part[2] + Math.abs(r[5]) * part[3]) * scale;
-            if (w > 0.2 && d > 0.2) {
-                if (tall > 1.15 && (w > 0.55 || d > 0.55) && vol > 0.35) {
-                    solids.push({ x: box.minX, z: box.minZ, w: w, d: d, y0: box.minY, y1: top, raised: true });
-                }
-                if (w * d >= 1.1 && Math.min(w, d) > 0.5 && vol > 0.25) {
-                    floors.push({ x: box.minX, z: box.minZ, w: w, d: d, y: top, raised: true });
-                }
-            }
-        }
-        const mid = [0, 1, 2].map((k) => pts.reduce((sum, p) => sum + p[k], 0) / pts.length);
-        const i = part[16];
-        const u = ((i % 8) * 8 + 4) / 64;
-        const v = 1 - (Math.floor(i / 8) * 8 + 4) / 64;
-        for (const face of shape.faces) {
-            const a = pts[face[0]];
-            const b = pts[face[1]];
-            const d = pts[face[2]];
-            let nx = (b[1] - a[1]) * (d[2] - a[2]) - (b[2] - a[2]) * (d[1] - a[1]);
-            let ny = (b[2] - a[2]) * (d[0] - a[0]) - (b[0] - a[0]) * (d[2] - a[2]);
-            let nz = (b[0] - a[0]) * (d[1] - a[1]) - (b[1] - a[1]) * (d[0] - a[0]);
-            const len = Math.hypot(nx, ny, nz) || 1;
-            const out = (a[0] - mid[0]) * nx + (a[1] - mid[1]) * ny + (a[2] - mid[2]) * nz < 0 ? -1 : 1;
-            nx *= out / len;
-            ny *= out / len;
-            nz *= out / len;
-            const lit = Math.max(0, (nx * light[0] + ny * light[1] + nz * light[2]) / lightLen);
-            const shade = Math.min(1, 0.42 + 0.58 * lit);
-            for (let k = 1; k < face.length - 1; k++) {
-                for (const p of [a, pts[face[k]], pts[face[k + 1]]]) list.push(p[0], p[1], p[2], u, v, shade);
-            }
-        }
-    }
-}
-
 function stampRaisedPlots() {
-    if (!townKit || !raisedData) return;
+    if (!raisedData) return;
     const plots = raisedData.plots || [];
     const raising = raisedData.raising || [];
     const reach = raisedDetailReach();
@@ -8242,9 +7856,7 @@ function stampRaisedPlots() {
     const leaf = [];
     const trunk = [];
     const floorGeom = [];
-    const modelParts = { farm: [], houses: [], mine: [], lumberyard: [], ore: [], singlehouse: [] };
-    const padGeom = [];
-    const buckets = {};
+        const padGeom = [];
     World.setPads(raisedData.pads || []);
     sceneryGrid = null;
     nearMarkX = 1e9;
@@ -8307,11 +7919,11 @@ function stampRaisedPlots() {
             scenery.push({ x: x, z: z, w: plot.w, d: plot.d, raised: true });
             continue;
         }
-        if (modelParts[plot.model] && plot.at) {
+        if (plot.model && plot.at) {
             const house = plot.house;
             const enterable = house && (plot.kind === "house" || plot.kind === "farm");
-            // Never stamp the heavy Roblox part mesh for buildings — proxies only. Carts still use the lite horsecart model.
-            stampRobloxProxy(trunk, plot, { noCollide: enterable && close, detail: close });
+            // Box buildings only — Roblox part meshes are not drawn.
+            stampBuildingProxy(trunk, plot, { noCollide: enterable && close, detail: close });
             if (enterable && close) {
                 house.village = plot.village;
                 house.mesh = "house";
@@ -8353,12 +7965,15 @@ function stampRaisedPlots() {
             solids.push({ x: house.minX, z: house.minZ, w: house.w, d: house.d, y0: y, y1: y + (house.h || 3.5), raised: true });
             continue;
         }
+        // Box house only — no town.json kit stamp.
+        const y = house.y || Math.max(0, World.heightAt(house.x, house.z));
         house.village = plot.village;
         house.mesh = "house";
         house.role = plot.kind === "house" ? "house" : "farmhouse";
         house.raised = true;
         Town.buildings.push(house);
-        stampHouse(buckets, house);
+        addBox(trunk, house.minX, y, house.minZ, house.w, (house.h || 3.5) * 0.7, house.d);
+        addBox(trunk, house.minX - 0.15, y + (house.h || 3.5) * 0.7, house.minZ - 0.15, house.w + 0.3, (house.h || 3.5) * 0.3, house.d + 0.3);
         addRaisedDoor(house, plot.id, floorGeom);
         const f = plot.field;
         if (f) {
@@ -8368,16 +7983,16 @@ function stampRaisedPlots() {
                 }
             }
             for (let row = f.z + 2; row < f.z + f.d - 1; row += 3) {
-                const y = Math.max(0, World.heightAt(f.x + f.w / 2, row));
-                addBox(leaf, f.x + 1.2, y, row, Math.max(2, f.w - 2.4), 0.28, 0.45);
+                const hy = Math.max(0, World.heightAt(f.x + f.w / 2, row));
+                addBox(leaf, f.x + 1.2, hy, row, Math.max(2, f.w - 2.4), 0.28, 0.45);
             }
         }
         if (plot.hay) {
             const hx = plot.hay[0];
             const hz = plot.hay[1];
-            const y = Math.max(0, World.heightAt(hx, hz));
-            addBox(field, hx, y, hz, 1.5, 0.7, 1.15);
-            addBox(field, hx + 0.25, y + 0.7, hz + 0.18, 1, 0.45, 0.75);
+            const hy = Math.max(0, World.heightAt(hx, hz));
+            addBox(field, hx, hy, hz, 1.5, 0.7, 1.15);
+            addBox(field, hx + 0.25, hy + 0.7, hz + 0.18, 1, 0.45, 0.75);
             scenery.push({ x: hx, z: hz, w: 1.5, d: 1.15, raised: true });
         }
     }
@@ -8396,20 +8011,11 @@ function stampRaisedPlots() {
     uploadMesh("raisedleaf", leaf);
     uploadMesh("raisedtrunk", trunk);
     uploadMesh("raisedfloor", floorGeom);
-    for (const name of Object.keys(modelParts)) {
-        uploadMesh("roblox" + name, modelParts[name]);
-        mesh["roblox" + name].cull = false;
-    }
-    uploadMesh("raisedpad", padGeom);
+        uploadMesh("raisedpad", padGeom);
     mesh.raisedpad.cull = false;
     textures.raisedpad = textures.grass;
     if (mesh.raisedfield) mesh.raisedfield.cull = false;
     if (mesh.raisedleaf) mesh.raisedleaf.cull = false;
-    for (const name of Object.keys(buckets)) {
-        uploadMesh("raise" + name, buckets[name]);
-        if (mesh["raise" + name]) mesh["raise" + name].cull = false;
-        if (textures["town" + name]) textures["raise" + name] = textures["town" + name];
-    }
     poseDoors();
 }
 
@@ -8457,39 +8063,6 @@ function aimedDoor(reach) {
 }
 
 let propData = null;
-function loadPropTextures() {
-    for (const name of ["furniture", "propmetal", "propcloth", "proppack"]) {
-        const img = new Image();
-        img.onload = () => {
-            const tex = gl.createTexture();
-            gl.bindTexture(gl.TEXTURE_2D, tex);
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
-            textures[name] = tex;
-            textures["farm" + name] = tex;
-            textures["lodge" + name] = tex;
-            textures["home" + name] = tex;
-            if (inside && !inside.furnished) furnishInterior();
-        };
-        img.src = "models/" + name + ".png";
-    }
-}
-function loadProps() {
-    if (propData) return;
-    fetch("models/props.json", { cache: "no-store" }).then((res) => res.json()).then((data) => {
-        propData = data;
-        loadPropTextures();
-        stampFarmProps();
-        stampCottageProps();
-        stampOuterHouses();
-        if (inside && !inside.furnished) furnishInterior();
-    }).catch(() => {});
-}
-
 function turnProp(x, y, z, yaw) {
     const c = Math.cos(yaw);
     const s = Math.sin(yaw);
@@ -8640,6 +8213,7 @@ function stampFarmProps() {
     const light = [0.25, 0.86, 0.28];
     const lightLen = Math.hypot(light[0], light[1], light[2]);
     for (const farm of Town.farms) {
+        if (farm.village !== homeVillage) continue;
         for (const item of farm.props || []) {
             const src = propData.props[item.name];
             const bounds = propData.bounds[item.name];
@@ -8674,7 +8248,12 @@ function stampFarmProps() {
 }
 
 function furnishInterior() {
-    if (!inside || !propData) return;
+    // Outdoor AoE mode does not load props.json — interiors keep plan boxes only.
+    if (!inside) return;
+    if (!propData) {
+        inside.furnished = true;
+        return;
+    }
     const plan = inside.plan;
     const buckets = {};
     const light = [0.25, 0.86, 0.28];
@@ -9211,12 +8790,6 @@ if (gl) {
     spawnKeepers();
     prepareBow();
     buildHorse();
-    // Draw a frame first, then pull the heavy Roblox JSON so first paint is not blocked.
+    // AoE cost model: no Roblox JSON outdoors — box/billboard stamps only (see outdoorDrawList).
     requestAnimationFrame(frame);
-    requestAnimationFrame(() => {
-        loadCottage();
-        loadTown();
-        loadPeople();
-        loadProps();
-    });
 }

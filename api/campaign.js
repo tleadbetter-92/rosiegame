@@ -38,7 +38,7 @@ const HOLD_SPARE = 4;
 const TRIBUTE_SHARE = 0.1;
 const STORES = ["food", "wood", "stone", "gold"];
 
-// The farm, five-house template and mine factions build, converted from Roblox models by tools/roblox-farm.js and tools/roblox-model.js.
+// Footprints/layout only (w/d/fields/house box) from Roblox converts — not drawn as meshes in the 3D view.
 // Without the files, farms and houses use the plain layouts and no mines are built.
 // Each is required by its literal path so the hosted build bundles the file.
 function robloxModel(load) {
