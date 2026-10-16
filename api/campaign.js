@@ -49,10 +49,16 @@ function robloxModel(load) {
     }
 }
 const farmModel = robloxModel(() => require("../models/roblox/farm.json"));
-const housesModel = robloxModel(() => require("../models/roblox/houses.json"));
 const mineModel = robloxModel(() => require("../models/roblox/mine.json"));
 const yardModel = robloxModel(() => require("../models/roblox/lumberyard.json"));
-const singleHouseModel = robloxModel(() => require("../models/roblox/singlehouse.json"));
+// Town kit house size — player builds and faction “five houses” use these, not Roblox meshes.
+const KIT_HOUSE = Town.MESH.house;
+const KIT_HOUSE_H = 3.8;
+const KIT_HOUSE_GAP = 1.4;
+// Southwest farm: fenced dirt enclosure (like the town field plots) plus one kit farmhouse beside it.
+const KIT_FIELD_W = 56;
+const KIT_FIELD_D = 40;
+const KIT_FARM_GAP = 2.5;
 // Player houses finish on real wall-clock time, not the campaign day clock.
 const PLAYER_BUILD_MS = 60 * 1000;
 
@@ -2267,15 +2273,7 @@ function present(state, now, turn, paused) {
             door: site.door,
             model: site.model || null,
             at: site.at || null
-        })).concat((state.houses || []).map((house) => ({
-            id: house.id,
-            village: house.village,
-            kind: "house",
-            yaw: house.yaw,
-            house: house.house,
-            model: house.model || null,
-            at: house.at || null
-        }))).concat((state.mines || []).map((mine) => ({
+        })).concat(presentHouseGroup(state.houses || [])).concat((state.mines || []).map((mine) => ({
             id: mine.id,
             village: mine.village,
             kind: "mine",
@@ -2294,15 +2292,7 @@ function present(state, now, turn, paused) {
             d: yard.d,
             model: yard.model || null,
             at: yard.at || null
-        }))).concat((state.playerSites || []).map((site) => ({
-            id: site.id,
-            village: -1,
-            kind: "house",
-            yaw: site.yaw,
-            house: site.house,
-            model: site.model || "singlehouse",
-            at: site.at || null
-        }))).concat(hamletPlots()),
+        }))).concat(presentHouseGroup(state.playerSites || [])).concat(hamletPlots()),
         raising: (state.farmJobs || []).map((job) => ({
             id: job.id,
             village: job.village,
@@ -2554,16 +2544,14 @@ function campaignRules() {
         housePop: HOUSE_POP,
         upkeep: 1,
         buildings: [
-            housesModel
-                ? { name: "Houses (five)", wood: BUILD_WOOD, ms: BUILD_MS, gives: "Room for " + HOUSES_POP + " more people", when: "Built first when room runs short, and whenever there is nothing else to build" }
-                : { name: "House", wood: BUILD_WOOD, ms: BUILD_MS, gives: "Room for " + HOUSE_POP + " more people", when: "Built first when room runs short, and whenever there is nothing else to build" },
+            { name: "Houses (five)", wood: BUILD_WOOD, ms: BUILD_MS, gives: "Room for " + HOUSES_POP + " more people (five kit houses)", when: "Built first when room runs short, and whenever there is nothing else to build" },
             { name: "Farm", wood: FARM_WOOD, ms: BUILD_MS, gives: FARM_PER_DAY + " food a day, worked by 2 farmers who live in the farmhouse", when: "Built whenever there is wood and room, up to " + FARM_CAP + " farms a village" },
             { name: "Lumberyard", wood: BUILD_WOOD, ms: BUILD_MS, gives: "Lumberjacks bring " + WOOD_YIELD + " wood every " + Math.round(JACK_MS / 1000) + " s", when: "Built once, when a faction has none" }
         ].concat(mineModel ? [
             { name: "Mine", wood: MINE_WOOD, ms: BUILD_MS, gives: "Lets a faction train " + MINERS_PER_MINE + " miners to dig the ore placed on the map", when: "Built once a faction has a lumberyard and no mine, if there is ore on the map; it goes up beside the nearest ore, however far away" }
         ] : []),
         fixed: [
-            { name: "Village", gives: "Palisade, gates and a garrison post; holds " + POP_BASE + " people, counting its starting five Roblox houses. Starts with two farms (the old one and a Roblox one)" },
+            { name: "Village", gives: "Palisade, gates and a garrison post; holds " + POP_BASE + " people, counting its starting five kit houses. Starts with two farms" },
             { name: "Fishing cottage", gives: "One per village; fishermen land " + FISH_FOOD + " food a trip and carts carry it home" },
             { name: "Hamlet", gives: "Rural community: " + FOLK_PER_HOUSE + " people a house, its own farm, no soldiers. Keeps food, wood, stone and gold in its farmhouse and never declares war. Enemies of its protector take it by standing soldiers in the farmhouse for " + Math.round(HOLD_MS / 60000) + " minutes. It sends its protector " + Math.round(TRIBUTE_SHARE * 100) + "% of every store a day by cart. Houses give room; it trains workers one at a time for " + FISHER_COST + " food each until full. Each worker brings in " + WORK_YIELD + " of whatever it is shortest of (food, then wood, then stone and gold once it has a mine) every " + Math.round(WORK_MS / 1000) + " s. It builds five houses when short of room, a mine, then farms up to " + FARM_CAP + "" }
         ],
@@ -2587,22 +2575,59 @@ function campaignRules() {
 
 const farmSiteList = Town.farmSites();
 
-function hamletHouse(village, x, z, yaw, role) {
-    const size = 4.7;
+function kitHouseBody(village, x, z, yaw, role, y) {
+    const w = KIT_HOUSE.w;
+    const d = KIT_HOUSE.d;
+    const ground = y != null ? y : Math.max(0, World.heightAt(x, z));
     return {
         x: x,
         z: z,
-        y: Math.max(0, World.heightAt(x, z)),
+        y: ground,
         yaw: yaw,
-        w: size,
-        d: size,
-        minX: x - size / 2,
-        minZ: z - size / 2,
+        w: w,
+        d: d,
+        h: KIT_HOUSE_H,
+        minX: x - w / 2,
+        minZ: z - d / 2,
         mesh: "house",
-        role: role,
+        role: role || "house",
         doorSide: 1,
         village: village
     };
+}
+
+function hamletHouse(village, x, z, yaw, role) {
+    return kitHouseBody(village, x, z, yaw, role);
+}
+
+// Expand a five-house site (or a single kit house) into one plot per building for the 3D view.
+function presentHouseGroup(list) {
+    const out = [];
+    for (const site of list) {
+        const village = site.village == null ? -1 : site.village;
+        if (site.homes && site.homes.length) {
+            for (let i = 0; i < site.homes.length; i++) {
+                const house = site.homes[i];
+                out.push({
+                    id: site.id + "-" + i,
+                    village: village,
+                    kind: "house",
+                    yaw: house.yaw,
+                    house: house
+                });
+            }
+            continue;
+        }
+        if (!site.house) continue;
+        out.push({
+            id: site.id,
+            village: village,
+            kind: "house",
+            yaw: site.yaw,
+            house: site.house
+        });
+    }
+    return out;
 }
 
 function hamletLayout(minor, index) {
@@ -2683,14 +2708,16 @@ function hamletPlots() {
     for (const farm of starts ? starts.farms : []) {
         if (farm) plots.push({ id: farm.id, village: farm.village, kind: "farm", yaw: farm.yaw, house: farm.house, field: farm.fields[0], hay: farm.hay, door: farm.door, model: farm.model, at: farm.at });
     }
-    for (const site of (starts ? starts.houses : []).concat(shownMine())) {
-        if (site) plots.push({ id: site.id, village: site.village, kind: site.kind, yaw: site.yaw, house: site.house, model: site.model, at: site.at });
+    for (const site of presentHouseGroup(starts ? starts.houses.filter(Boolean) : [])) {
+        plots.push(site);
     }
+    const mine = shownMine();
+    if (mine) plots.push({ id: mine.id, village: mine.village, kind: mine.kind, yaw: mine.yaw, house: mine.house, model: mine.model, at: mine.at });
     return plots;
 }
 
-// Each village starts with a Roblox farm and five Roblox houses beside its original farm. They belong to whoever holds
-// the village. They are placed once and kept in the save so they never move; Southwest's stand where the first test ones stood.
+// Each village starts with a farm and five houses beside it. Southwest uses the kit enclosure + kit houses; other towns
+// still use the Roblox farm for comparison. Placed once and kept in the save so they never move.
 let starts = null;
 
 function startSites() {
@@ -2701,29 +2728,90 @@ function startFarm(id) {
     return starts ? starts.farms.find((farm) => farm && farm.id === id) || null : null;
 }
 
+// Swap an old Southwest Roblox farm site for the kit enclosure + farmhouse at the same centre.
+function kitFarmFromOld(state, site) {
+    if (!site || site.village !== 2 || site.model !== "farm" || !site.at) return null;
+    const blocked = takenRects(state).filter((rect) => {
+        if (!site.rect) return true;
+        return rect.minX !== site.rect.minX || rect.minZ !== site.rect.minZ || rect.w !== site.rect.w || rect.d !== site.rect.d;
+    });
+    const next = layoutKitFarm(state, 2, site.at.x, site.at.z, blocked);
+    if (!next) return null;
+    next.id = site.id;
+    return next;
+}
+
+function migrateKitFarms(state) {
+    let dirty = false;
+    if (Array.isArray(state.builtFarms)) {
+        for (let i = 0; i < state.builtFarms.length; i++) {
+            const next = kitFarmFromOld(state, state.builtFarms[i]);
+            if (!next) continue;
+            state.builtFarms[i] = next;
+            dirty = true;
+        }
+    }
+    if (Array.isArray(state.farmJobs)) {
+        for (const job of state.farmJobs) {
+            if (!job.site) continue;
+            const next = kitFarmFromOld(state, job.site);
+            if (!next) continue;
+            job.site = next;
+            dirty = true;
+        }
+    }
+    return dirty;
+}
+
 function ensureStarts(state) {
     if (starts) return false;
+    // Rebuild if Southwest still has Roblox farm/houses, or any town still has the one-block five-house model.
+    let keepFarms = null;
+    let keepHouses = null;
     if (state.starts && Array.isArray(state.starts.farms) && Array.isArray(state.starts.houses)) {
-        starts = state.starts;
-        return false;
-    }
-    starts = { farms: [null, null, null, null], houses: [null, null, null, null] };
-    for (let village = 0; village < 4; village++) {
-        let farm = null;
-        if (farmModel) farm = village === 2 ? layoutModelFarm({}, 2, -2407.2, 540.2, []) : pickFarmSite(state, village);
-        if (farm) farm.id = "show-farm-" + village;
-        starts.farms[village] = farm;
-        let homes = null;
-        if (housesModel && village === 2 && farm) {
-            for (const spot of [[-2365, 540], [-2365, 505], [-2405, 495], [-2365, 575]]) {
-                homes = layoutModelSite({}, 2, spot[0], spot[1], [farm.rect], "house");
-                if (homes) break;
-            }
-        } else if (housesModel) {
-            homes = pickModelSite(state, village, "house");
+        const staleHouses = state.starts.houses.some((h) => h && h.model === "houses" && !(h.homes && h.homes.length));
+        const staleFarm = state.starts.farms.some((f) => f && f.village === 2 && f.model === "farm");
+        if (!staleHouses && !staleFarm) {
+            starts = state.starts;
+            return false;
         }
-        if (homes) homes.id = "show-houses-" + village;
-        starts.houses[village] = homes;
+        keepFarms = state.starts.farms.map((f) => (f && f.village === 2 && f.model === "farm" ? null : f));
+        // New Southwest farm moves the pad — rebuild its house row beside it too.
+        keepHouses = staleHouses
+            ? null
+            : state.starts.houses.map((h, i) => (i === 2 && staleFarm ? null : h));
+    }
+    starts = {
+        farms: keepFarms || [null, null, null, null],
+        houses: keepHouses || [null, null, null, null]
+    };
+    for (let village = 0; village < 4; village++) {
+        let farm = starts.farms[village];
+        if (!farm) {
+            if (village === 2) {
+                for (const spot of [[-2407.2, 540.2], [-2420, 520], [-2385, 555], [-2440, 560]]) {
+                    farm = layoutKitFarm({}, 2, spot[0], spot[1], []);
+                    if (farm) break;
+                }
+            } else if (farmModel) {
+                farm = pickFarmSite(state, village);
+            }
+            if (farm) farm.id = "show-farm-" + village;
+            starts.farms[village] = farm;
+        }
+        let homes = starts.houses[village];
+        if (!homes) {
+            if (village === 2 && farm) {
+                for (const spot of [[-2365, 540], [-2365, 505], [-2405, 495], [-2365, 575]]) {
+                    homes = layoutKitHouses({}, 2, spot[0], spot[1], [farm.rect]);
+                    if (homes) break;
+                }
+            } else {
+                homes = pickKitHouses(state, village);
+            }
+            if (homes) homes.id = "show-houses-" + village;
+            starts.houses[village] = homes;
+        }
     }
     state.starts = starts;
     return true;
@@ -3447,14 +3535,14 @@ function quarterTurn(village, cx, cz) {
     return Math.atan2(-toward.z, toward.x);
 }
 
-// The player's own house at the spot they aimed: facing the way they look, ground filled level like other builds.
+// The player's own kit house at the spot they aimed: facing the way they look, ground filled level like other builds.
 function layoutPlayerHouse(state, px, pz, yaw) {
-    if (!singleHouseModel || !Number.isFinite(px) || !Number.isFinite(pz)) return null;
+    if (!Number.isFinite(px) || !Number.isFinite(pz)) return null;
     const blocked = takenRects(state);
     const facing = Number.isFinite(yaw) ? yaw : 0;
     const theta = Math.round(facing / (Math.PI / 2)) * (Math.PI / 2);
     const at = { x: px, z: pz, theta: theta };
-    const whole = placeRect({ x: 0, z: 0, w: singleHouseModel.w, d: singleHouseModel.d }, at);
+    const whole = placeRect({ x: 0, z: 0, w: KIT_HOUSE.w, d: KIT_HOUSE.d }, at);
     const rect = { minX: whole.minX, minZ: whole.minZ, w: whole.w, d: whole.d };
     for (const other of blocked) {
         if (rectsHit(rect, other, 2)) return null;
@@ -3462,6 +3550,7 @@ function layoutPlayerHouse(state, px, pz, yaw) {
     const pad = padFor(rect, true);
     if (!pad) return null;
     at.y = pad.y;
+    const house = kitHouseBody(-1, px, pz, theta, "house", pad.y);
     return {
         id: null,
         village: -1,
@@ -3473,23 +3562,9 @@ function layoutPlayerHouse(state, px, pz, yaw) {
         w: whole.w,
         d: whole.d,
         rect: rect,
-        model: "singlehouse",
-        at: at,
         pad: pad,
-        house: {
-            x: px,
-            z: pz,
-            y: pad.y,
-            yaw: theta,
-            w: whole.w,
-            d: whole.d,
-            minX: rect.minX,
-            minZ: rect.minZ,
-            mesh: "house",
-            role: "house",
-            doorSide: 1,
-            village: -1
-        }
+        house: house,
+        homes: [house]
     };
 }
 
@@ -3520,10 +3595,9 @@ function finishPlayerJobs(state, now) {
             w: job.w,
             d: job.d,
             rect: job.rect,
-            model: job.model,
-            at: job.at,
             pad: job.pad,
-            house: job.house
+            house: job.house,
+            homes: job.homes || (job.house ? [job.house] : [])
         });
         note(state, "Your house is finished.");
         dirty = true;
@@ -3540,7 +3614,7 @@ async function startPlayerBuild(kind, x, z, yaw) {
     const now = Date.now();
     syncWorld(state, now);
     ensurePlayerBuilds(state);
-    if (kind !== "house" || !singleHouseModel) {
+    if (kind !== "house") {
         return present(state, now, turnOf(state, now), Number.isFinite(state.pausedAt));
     }
     if (state.playerJobs.length) {
@@ -3568,25 +3642,71 @@ async function startPlayerBuild(kind, x, z, yaw) {
         w: site.w,
         d: site.d,
         rect: site.rect,
-        model: site.model,
-        at: site.at,
         pad: site.pad,
-        house: site.house
+        house: site.house,
+        homes: site.homes
     });
     note(state, "You start a house. It will be ready in one minute.");
     await writeState(state);
     return present(state, now, turnOf(state, now), Number.isFinite(state.pausedAt));
 }
 
-// A Roblox building site (the five houses or a mine) on a level pad outside the walls, turned to face the village.
-function layoutModelSite(state, village, cx, cz, blocked, kind) {
-    const name = kind === "mine" ? "mine" : "houses";
-    const model = kind === "mine" ? mineModel : housesModel;
+
+// Five kit houses in a row on a level pad outside the walls, facing the village.
+function layoutKitHouses(state, village, cx, cz, blocked) {
     const place = centreOf(village);
     const dist = Math.hypot(place.x - cx, place.z - cz);
-    if (dist < (village >= MINOR_BASE ? 35 : 60) || (kind !== "mine" && dist > BUILD_REACH)) return null;
+    if (dist < (village >= MINOR_BASE ? 35 : 60) || dist > BUILD_REACH) return null;
     const at = { x: cx, z: cz, theta: quarterTurn(village, cx, cz) };
-    const whole = placeRect({ x: 0, z: 0, w: model.w, d: model.d }, at);
+    const span = 5 * KIT_HOUSE.w + 4 * KIT_HOUSE_GAP;
+    const whole = placeRect({ x: 0, z: 0, w: span, d: KIT_HOUSE.d + 1.2 }, at);
+    const rect = { minX: whole.minX, minZ: whole.minZ, w: whole.w, d: whole.d };
+    if (!clearOfWalls(village, rect)) return null;
+    for (const other of blocked) {
+        if (rectsHit(rect, other, 3)) return null;
+    }
+    const pad = padFor(rect, true);
+    if (!pad) return null;
+    at.y = pad.y;
+    const yaw = snapYaw(place.x - cx, place.z - cz);
+    const homes = [];
+    for (let i = 0; i < 5; i++) {
+        const lx = (i - 2) * (KIT_HOUSE.w + KIT_HOUSE_GAP);
+        const box = placeRect({ x: lx, z: 0, w: KIT_HOUSE.w, d: KIT_HOUSE.d }, at);
+        homes.push(kitHouseBody(village, box.x, box.z, yaw, "house", pad.y));
+    }
+    return {
+        village: village,
+        kind: "house",
+        x: cx,
+        z: cz,
+        y: pad.y,
+        yaw: yaw,
+        w: whole.w,
+        d: whole.d,
+        rect: rect,
+        score: pad.slope,
+        model: "houses",
+        pad: pad,
+        house: homes[2],
+        homes: homes
+    };
+}
+
+function pickKitHouses(state, village) {
+    const blocked = takenRects(state);
+    const spots = buildSpots(state, village, [45, 75, 110, 150, 195]);
+    return bestSite(spots, (x, z) => layoutKitHouses(state, village, x, z, blocked), (site) => site.score);
+}
+
+// A Roblox building site (the five houses or a mine) on a level pad outside the walls, turned to face the village.
+function layoutModelSite(state, village, cx, cz, blocked, kind) {
+    if (kind !== "mine" || !mineModel) return null;
+    const place = centreOf(village);
+    const dist = Math.hypot(place.x - cx, place.z - cz);
+    if (dist < (village >= MINOR_BASE ? 35 : 60)) return null;
+    const at = { x: cx, z: cz, theta: quarterTurn(village, cx, cz) };
+    const whole = placeRect({ x: 0, z: 0, w: mineModel.w, d: mineModel.d }, at);
     const rect = { minX: whole.minX, minZ: whole.minZ, w: whole.w, d: whole.d };
     if (!clearOfWalls(village, rect)) return null;
     for (const other of blocked) {
@@ -3607,7 +3727,7 @@ function layoutModelSite(state, village, cx, cz, blocked, kind) {
         d: whole.d,
         rect: rect,
         score: pad.slope,
-        model: name,
+        model: "mine",
         at: at,
         pad: pad,
         house: { x: cx, z: cz, y: pad.y, yaw: yaw, w: whole.w, d: whole.d, minX: rect.minX, minZ: rect.minZ, mesh: "house", role: kind, doorSide: 1, village: village }
@@ -3615,6 +3735,7 @@ function layoutModelSite(state, village, cx, cz, blocked, kind) {
 }
 
 function pickModelSite(state, village, kind) {
+    if (kind === "house") return pickKitHouses(state, village);
     const blocked = takenRects(state);
     // A mine goes up beside its ore, wherever that is.
     const ore = kind === "mine" ? nearestOre(centreOf(village), 0) : null;
@@ -3641,6 +3762,63 @@ function placeRect(r, at) {
     const w = s ? r.d : r.w;
     const d = s ? r.w : r.d;
     return { x, z, w, d, minX: x - w / 2, minZ: z - d / 2 };
+}
+
+// Southwest kit farm: one enclosure (field + fence) and a kit house on the village side of it.
+function layoutKitFarm(state, village, cx, cz, blocked, home) {
+    const place = centreOf(village);
+    const hamlet = village >= MINOR_BASE;
+    const dist = Math.hypot(place.x - cx, place.z - cz);
+    if (dist < (home ? 0 : hamlet ? 35 : 60) || dist > (home ? 80 : BUILD_REACH)) return null;
+    const theta = quarterTurn(village, cx, cz);
+    const at = { x: cx, z: cz, theta: theta };
+    const fieldBox = placeRect({ x: 0, z: 0, w: KIT_FIELD_W, d: KIT_FIELD_D }, at);
+    const houseOff = KIT_FIELD_D / 2 + KIT_FARM_GAP + KIT_HOUSE.d / 2;
+    const houseBox = placeRect({ x: 0, z: -houseOff, w: KIT_HOUSE.w, d: KIT_HOUSE.d }, at);
+    const minX = Math.min(fieldBox.minX, houseBox.minX);
+    const minZ = Math.min(fieldBox.minZ, houseBox.minZ);
+    const maxX = Math.max(fieldBox.minX + fieldBox.w, houseBox.minX + houseBox.w);
+    const maxZ = Math.max(fieldBox.minZ + fieldBox.d, houseBox.minZ + houseBox.d);
+    const wholeRect = { minX: minX, minZ: minZ, w: maxX - minX, d: maxZ - minZ };
+    if (!clearOfWalls(village, wholeRect)) return null;
+    for (const other of blocked) {
+        if (rectsHit(wholeRect, other, 3)) return null;
+    }
+    if (home) {
+        const r = wholeRect;
+        const ring = [{ x: r.minX, z: r.minZ }, { x: r.minX + r.w, z: r.minZ }, { x: r.minX + r.w, z: r.minZ + r.d }, { x: r.minX, z: r.minZ + r.d }, { x: r.minX, z: r.minZ }];
+        if (pathWet(ring) || pathWet([ring[0], ring[2]]) || pathWet([ring[1], ring[3]])) return null;
+    }
+    const pad = home ? padFor(wholeRect, false, PAD_RISE) : padFor(wholeRect, true);
+    if (!pad) return null;
+    const high = pad.y;
+    const yaw = snapYaw(place.x - houseBox.x, place.z - houseBox.z);
+    const house = kitHouseBody(village, houseBox.x, houseBox.z, yaw, "farmhouse", high);
+    const field = { x: fieldBox.minX, z: fieldBox.minZ, w: fieldBox.w, d: fieldBox.d };
+    const door = doorOf(house);
+    const site = {
+        id: "raised-" + village + "-" + ((state.farmSerial || 0) + 1),
+        village: village,
+        yaw: yaw,
+        y: high,
+        house: house,
+        hay: [door.out.x, door.out.z],
+        out: door.out,
+        inn: door.inn,
+        door: door.door,
+        bed: { x: house.x, z: house.z, y: high },
+        exits: [{ x: door.out.x, z: door.out.z }, { x: field.x + field.w / 2, z: field.z + field.d / 2 }],
+        fields: [field],
+        slope: pad.slope,
+        model: "kitFarm",
+        rect: wholeRect,
+        pad: pad
+    };
+    if (home) site.haul = [site.exits[1] || site.out, { x: door.out.x, z: door.out.z }];
+    else if (hamlet) site.haul = [{ x: door.out.x, z: door.out.z }, hamlets[village - MINOR_BASE].farm.out];
+    const path = pathToStore(site);
+    if (!path || path.length < 2 || pathWet(path) || pathLength(path) > BUILD_REACH + 100) return null;
+    return site;
 }
 
 // `home` is a hamlet's own starting farm: it stands right by the hamlet and its farmhouse is the hamlet's store.
@@ -3715,6 +3893,8 @@ function layoutModelFarm(state, village, cx, cz, blocked, home) {
 }
 
 function layoutFarm(state, village, cx, cz, blocked) {
+    // Southwest only: enclosure + kit house. Other towns keep the Roblox farm for comparison.
+    if (village === 2) return layoutKitFarm(state, village, cx, cz, blocked);
     if (farmModel) return layoutModelFarm(state, village, cx, cz, blocked);
     const place = places[village];
     const dx = place.x - cx;
@@ -3971,14 +4151,11 @@ function pickYard(state, village) {
 function pickBuilding(state, village, kind) {
     if (kind === "yard") return pickYard(state, village);
     if (kind === "mine") return pickModelSite(state, village, "mine");
-    if (housesModel) return pickModelSite(state, village, "house");
-    const blocked = takenRects(state);
-    const spots = buildSpots(state, village, [46, 80, 120, 160, 195]);
-    return bestSite(spots, (x, z) => layoutBuilding(state, village, x, z, blocked), (site) => site.score);
+    return pickKitHouses(state, village);
 }
 
 function roomTight(state, faction) {
-    return popLimit(state, faction) - factionPop(state, faction) <= (housesModel ? HOUSES_POP : HOUSE_POP) * 2;
+    return popLimit(state, faction) - factionPop(state, faction) <= HOUSES_POP * 2;
 }
 
 function buildingBusy(state, faction) {
@@ -4014,7 +4191,8 @@ function considerSites(state, now) {
                 model: job.model,
                 at: job.at,
                 rect: job.rect,
-                pad: job.pad
+                pad: job.pad,
+                homes: job.homes || null
             });
             note(state, nameOf(job.payer) + (job.model === "houses" ? " finishes five houses." : " finishes a house."));
         } else if (job.kind === "mine") {
@@ -4089,7 +4267,8 @@ function considerSites(state, now) {
             house: site.house,
             model: site.model,
             at: site.at,
-            pad: site.pad
+            pad: site.pad,
+            homes: site.homes || null
         });
         const what = kind === "yard" ? "a lumberyard" : kind === "mine" ? "a mine" : site.model === "houses" ? "five houses" : "a house";
         note(state, factions[faction].name + " starts " + what + ".");
@@ -4179,7 +4358,7 @@ function hamletWants(state, index) {
     const here = (item) => item.village === village;
     const training = state.minors[index].trainAt ? 1 : 0;
     const tight = hamletPop(index, state) - hamletPeople(index, state) - training <= FOLK_PER_HOUSE;
-    if (housesModel && tight) return "house";
+    if (tight) return "house";
     if (mineModel && !(state.mines || []).some(here) && !(state.siteJobs || []).some((job) => here(job) && job.kind === "mine")) return "mine";
     const farms = 1 + (state.builtFarms || []).filter(here).length + (state.farmJobs || []).filter(here).length;
     if (farmModel && farms < FARM_CAP) return "farm";
@@ -4352,7 +4531,8 @@ function considerHamlets(state, now) {
             house: site.house,
             model: site.model,
             at: site.at,
-            pad: site.pad
+            pad: site.pad,
+            homes: site.homes || null
         });
         note(state, name + " starts " + (want === "mine" ? "a mine." : "five houses."));
         dirty = true;
@@ -4639,6 +4819,7 @@ function syncWorld(state, now) {
     if (ensureLodges(state)) dirty = true;
     if (ensureMinors(state)) dirty = true;
     if (ensureStarts(state)) dirty = true;
+    if (migrateKitFarms(state)) dirty = true;
     if (ensureFarms(state)) dirty = true;
     if (finishTraining(state, now)) dirty = true;
     if (orderTraining(state, now)) dirty = true;

@@ -31,8 +31,8 @@ function activeCam() {
 }
 const townLeash = 30;
 // 3D view is one town (or hamlet) at a time — the rest stays on the campaign map.
-// AoE-style: small viewport bubble, not a wide continuous world.
-const TOWN_VIEW = 110;
+// Wide enough to see the local fields and trees; next town stays past the haze.
+const TOWN_VIEW = 200;
 // Hard RTS unit budget: only this many nearest people are simmed/drawn in 3D.
 const UNIT_CAP = 16;
 let focusTown = { id: "p2", x: places[2].ox, z: places[2].oz };
@@ -577,7 +577,8 @@ function paintPatch(x, z, s, h00, h10, h11, h01, corners) {
 
 function landKind(x, z, rise, h) {
     const home = World.places[2];
-    if (Math.hypot(x - home.x, z - home.z) < 125) {
+    // Far enough to cover Southwest's north fields (fences around z 758–812).
+    if (Math.hypot(x - home.x, z - home.z) < 220) {
         const pave = Town.groundAt(x, z);
         if (pave) return pave;
         return World.groundKind(x, z, rise, h);
@@ -594,7 +595,8 @@ function townBatch(kind) {
 
 function townTile(kind) {
     if (kind === "cobble") return 9;
-    if (kind === "dirt") return 26;
+    // Dirt used to repeat every 26 m and read as a flat beige sheet on the farm pads.
+    if (kind === "dirt") return 10;
     return 8;
 }
 
@@ -611,11 +613,21 @@ function countrySub() {
 }
 
 // Coarse town patch — fewer tiles than the old fine village carpet.
+// Southwest reaches farther north so the leveled farm fields are not 32 m dirt slabs.
 function townPatch(place) {
     const min = -3616;
     const cell = 32;
     const down = (v) => min + Math.floor((v - min) / cell) * cell;
     const up = (v) => min + Math.ceil((v - min) / cell) * cell;
+    const home = World.places[2];
+    if (place === home) {
+        return {
+            x0: down(place.x - 120),
+            x1: up(place.x + 120),
+            z0: down(place.z - 100),
+            z1: up(place.z + 220)
+        };
+    }
     return { x0: down(place.x - 96), x1: up(place.x + 96), z0: down(place.z - 96), z1: up(place.z + 96) };
 }
 
@@ -754,9 +766,9 @@ function buildLand() {
             }
         }
     }
-    // Town carpet: 16 m tiles (AoE-like), not 4 m / 2 m carpets.
-    const fine = 16;
-    const inner = 64;
+    // Outside the streets keep coarse tiles; Southwest streets stay fine so cobble/dirt do not stretch.
+    const fine = homeFocus ? 4 : 16;
+    const inner = 100;
     for (let x = finePatch.x0; x < finePatch.x1; x += fine) {
         for (let z = finePatch.z0; z < finePatch.z1; z += fine) {
             if (homeFocus && x >= home.x - inner && x < home.x + inner && z >= home.z - inner && z < home.z + inner) continue;
@@ -785,7 +797,7 @@ function buildLand() {
         }
     }
     if (homeFocus) {
-        const pave = 8;
+        const pave = 2;
         for (let x = home.x - inner; x < home.x + inner; x += pave) {
             for (let z = home.z - inner; z < home.z + inner; z += pave) {
                 const h00 = World.heightAt(x, z);
@@ -796,7 +808,10 @@ function buildLand() {
                 const kind = landKind(x + pave * 0.5, z + pave * 0.5, rise);
                 const list = batches[townBatch(kind)] || batches.grass;
                 const tile = townTile(kind);
-                const tone = (px, pz) => (kind === "grass" ? World.turfShade(px, pz) : 0.97);
+                const tone = (px, pz) => {
+                    if (kind === "grass") return World.turfShade(px, pz);
+                    return paveShade(kind, px, pz);
+                };
                 const u = x / tile;
                 const v = z / tile;
                 const step = pave / tile;
@@ -2521,40 +2536,40 @@ function defaultGraphics() {
 let graphics = defaultGraphics();
 
 function gfx() {
-    // Performance first — High is only a touch sharper. Mechanics do not depend on these numbers.
+    // Outdoor Roblox meshes are gone — room for a longer Daggerfall haze without the old cost.
     if (graphics === "low") {
         return {
             scale: 0.22,
-            far: 70,
-            fogNear: 12,
-            fogSpan: 36,
-            drawFar: 55,
-            treeNear: 35,
+            far: 160,
+            fogNear: 40,
+            fogSpan: 90,
+            drawFar: 130,
+            treeNear: 60,
             treeFar: 0,
-            treeCap: 8,
-            meadowReach: 32,
-            meadowStep: 64,
+            treeCap: 12,
+            meadowReach: 52,
+            meadowStep: 56,
             meadowProps: false,
-            personDraw: 28,
-            personStep: 28,
+            personDraw: 40,
+            personStep: 36,
             farEvery: 240,
             miniEvery: 8
         };
     }
     return {
         scale: 0.32,
-        far: 100,
-        fogNear: 18,
-        fogSpan: 55,
-        drawFar: 80,
-        treeNear: 50,
+        far: 220,
+        fogNear: 55,
+        fogSpan: 120,
+        drawFar: 180,
+        treeNear: 90,
         treeFar: 0,
-        treeCap: 14,
-        meadowReach: 48,
+        treeCap: 20,
+        meadowReach: 72,
         meadowStep: 48,
         meadowProps: false,
-        personDraw: 40,
-        personStep: 40,
+        personDraw: 55,
+        personStep: 48,
         farEvery: 120,
         miniEvery: 5
     };
@@ -2839,10 +2854,13 @@ function smoothRoad(chain) {
 // Height of the drawn land, not the true ground, found from the same cells buildLand lays (each split corner 00 to 11).
 function landMeshHeight(x, z) {
     const home = World.places[2];
-    if (Math.abs(x - home.x) < 64 && Math.abs(z - home.z) < 64) return cellHeight(x, z, 8, home.x - 64, home.z - 64);
+    if (Math.abs(x - home.x) < 100 && Math.abs(z - home.z) < 100) return cellHeight(x, z, 2, home.x - 100, home.z - 100);
     for (const place of World.places) {
         const b = townPatch(place);
-        if (x >= b.x0 && x < b.x1 && z >= b.z0 && z < b.z1) return cellHeight(x, z, 16, b.x0, b.z0);
+        if (x >= b.x0 && x < b.x1 && z >= b.z0 && z < b.z1) {
+            const step = place === home ? 4 : 16;
+            return cellHeight(x, z, step, b.x0, b.z0);
+        }
     }
     const x0 = -3616 + Math.floor((x + 3616) / 32) * 32;
     const z0 = -3616 + Math.floor((z + 3616) / 32) * 32;
@@ -4520,9 +4538,9 @@ function paintSheet() {
     paintBuildStatus();
 }
 
-// Footprint of models/roblox/singlehouse.json (metres). The ghost square matches this.
-const HOUSE_PLACE_W = 9.72;
-const HOUSE_PLACE_D = 10.95;
+// Footprint matches Town kit house (same as faction houses).
+const HOUSE_PLACE_W = Town.MESH.house.w;
+const HOUSE_PLACE_D = Town.MESH.house.d;
 let placing = null;
 
 function paintBuildStatus() {
@@ -7814,6 +7832,62 @@ function stampBuildingProxy(list, plot, opt) {
 }
 
 // Earth filled up under new buildings, drawn over the island ground wherever a pad lifts it.
+// Post-and-rail around a raised farm field, with a gate toward the farmhouse when we have one.
+function stampPlotFence(list, field, house) {
+    if (!field || !(field.w > 1) || !(field.d > 1)) return;
+    const yAt = (x, z) => Math.max(0, World.heightAt(x, z));
+    const post = (x, z) => {
+        const y = yAt(x, z);
+        addBox(list, x - 0.07, y, z - 0.07, 0.14, 0.92, 0.14);
+        scenery.push({ x: x - 0.07, z: z - 0.07, w: 0.14, d: 0.14, top: y + 0.92, raised: true });
+    };
+    const rail = (x0, z0, x1, z1) => {
+        const len = Math.hypot(x1 - x0, z1 - z0) || 1;
+        const n = Math.max(1, Math.round(len / 5));
+        for (let i = 0; i <= n; i++) {
+            const x = x0 + (x1 - x0) * (i / n);
+            const z = z0 + (z1 - z0) * (i / n);
+            post(x, z);
+            if (i === n) break;
+            const x2 = x0 + (x1 - x0) * ((i + 1) / n);
+            const z2 = z0 + (z1 - z0) * ((i + 1) / n);
+            const rx = Math.min(x, x2);
+            const rz = Math.min(z, z2);
+            const rw = Math.max(0.08, Math.abs(x2 - x));
+            const rd = Math.max(0.08, Math.abs(z2 - z));
+            const y = yAt((x + x2) * 0.5, (z + z2) * 0.5);
+            addBox(list, rx, y + 0.36, rz, rw, 0.07, rd);
+            addBox(list, rx, y + 0.68, rz, rw, 0.07, rd);
+            scenery.push({ x: rx, z: rz, w: rw, d: rd, top: y + 0.75, raised: true });
+        }
+    };
+    const edge = (x0, z0, x1, z1, gap) => {
+        const horizontal = Math.abs(z1 - z0) < 0.01;
+        if (!gap) {
+            rail(x0, z0, x1, z1);
+            return;
+        }
+        const along0 = horizontal ? x0 : z0;
+        const along1 = horizontal ? x1 : z1;
+        const lo = Math.min(along0, along1);
+        const hi = Math.max(along0, along1);
+        const cut0 = Math.max(lo, gap.at - gap.width / 2);
+        const cut1 = Math.min(hi, gap.at + gap.width / 2);
+        const piece = (a, b) => {
+            if (b - a < 0.4) return;
+            if (horizontal) rail(a, z0, b, z1);
+            else rail(x0, a, x1, b);
+        };
+        piece(lo, cut0);
+        piece(cut1, hi);
+    };
+    const gap = house ? Town.fieldGate(field, house) : null;
+    edge(field.x, field.z, field.x + field.w, field.z, gap && gap.side === "north" ? gap : null);
+    edge(field.x, field.z + field.d, field.x + field.w, field.z + field.d, gap && gap.side === "south" ? gap : null);
+    edge(field.x, field.z, field.x, field.z + field.d, gap && gap.side === "west" ? gap : null);
+    edge(field.x + field.w, field.z, field.x + field.w, field.z + field.d, gap && gap.side === "east" ? gap : null);
+}
+
 function stampPads(list, pads) {
     const cell = 4;
     for (const pad of pads) {
@@ -7946,6 +8020,7 @@ function stampRaisedPlots() {
                     const y = Math.max(0, World.heightAt(f.x + f.w / 2, row));
                     addBox(leaf, f.x + 1.2, y, row, Math.max(2, f.w - 2.4), 0.28, 0.45);
                 }
+                if (plot.kind === "farm") stampPlotFence(trunk, f, house);
             }
             if (plot.hay && close) {
                 const hx = plot.hay[0];
@@ -7963,6 +8038,7 @@ function stampRaisedPlots() {
             addBox(trunk, house.minX, y, house.minZ, house.w, (house.h || 3.5) * 0.7, house.d);
             addBox(trunk, house.minX - 0.15, y + (house.h || 3.5) * 0.7, house.minZ - 0.15, house.w + 0.3, (house.h || 3.5) * 0.3, house.d + 0.3);
             solids.push({ x: house.minX, z: house.minZ, w: house.w, d: house.d, y0: y, y1: y + (house.h || 3.5), raised: true });
+            if (plot.kind === "farm" && plot.field) stampPlotFence(trunk, plot.field, house);
             continue;
         }
         // Box house only — no town.json kit stamp.
@@ -7982,10 +8058,11 @@ function stampRaisedPlots() {
                     cell(field, x, z, Math.min(2, f.x + f.w - x), Math.min(2, f.z + f.d - z));
                 }
             }
-            for (let row = f.z + 2; row < f.z + f.d - 1; row += 3) {
+            for (let row = f.z + 2; row < f.z + f.d - 1; row += 6) {
                 const hy = Math.max(0, World.heightAt(f.x + f.w / 2, row));
-                addBox(leaf, f.x + 1.2, hy, row, Math.max(2, f.w - 2.4), 0.28, 0.45);
+                addBox(leaf, f.x + 1.2, hy, row, Math.max(2, f.w - 2.4), 0.34, 0.55);
             }
+            if (plot.kind === "farm") stampPlotFence(trunk, f, house);
         }
         if (plot.hay) {
             const hx = plot.hay[0];
