@@ -779,8 +779,19 @@ function fishPeriod(village) {
     return fishRoute(village).walkMs * 2 + FISH_MS;
 }
 
-function treeCenters() {
-    return World.trees.filter((tree) => tree.kind === "pine" || tree.kind === "oak");
+// Wood stands just outside each town/hamlet. Trees are never chopped down — workers gather wood here forever.
+function woodStand(village, slot) {
+    const n = (slot || 0) % 8;
+    const ang = n * (Math.PI / 4) + 0.35;
+    if (village >= MINOR_BASE) {
+        const hamlet = World.hamlets[village - MINOR_BASE];
+        if (!hamlet) return { x: 0, z: 0 };
+        const r = 34 + (n % 3) * 4;
+        return { x: hamlet.x + Math.cos(ang) * r, z: hamlet.z + Math.sin(ang) * r };
+    }
+    const place = places[village];
+    const r = 48 + (n % 3) * 5;
+    return { x: place.ox + Math.cos(ang) * r, z: place.oz + Math.sin(ang) * r };
 }
 
 function stretchMarches(state, now) {
@@ -811,32 +822,26 @@ function stretchMarches(state, now) {
     return dirty;
 }
 
-const trees = treeCenters();
-
 function nearestTree(from, slot) {
-    let best = null;
-    let bestDist = Infinity;
-    const consider = (tree) => {
-        const dist = Math.hypot(tree.x - from.x, tree.z - from.z);
-        if (dist < bestDist) {
-            best = tree;
-            bestDist = dist;
+    // Pick the village/hamlet closest to the store exit, then a stand around it (infinite wood, no felling).
+    let village = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < places.length; i++) {
+        const d = Math.hypot(places[i].ox - from.x, places[i].oz - from.z);
+        if (d < bestD) {
+            bestD = d;
+            village = i;
         }
-    };
-    for (const tree of trees) consider(tree);
-    const meadow = World.meadowNear(from.x, from.z, 240);
-    for (let i = 0; i < meadow.length; i++) {
-        if (meadow[i].kind === "pine" || meadow[i].kind === "oak") consider(meadow[i]);
     }
-    if (!best) return { x: from.x, z: from.z };
-    const dx = from.x - best.x;
-    const dz = from.z - best.z;
-    const len = Math.hypot(dx, dz) || 1;
-    const side = (slot || 0) * 0.75;
-    return {
-        x: best.x + (dx / len) * 1.15 + (-dz / len) * side,
-        z: best.z + (dz / len) * 1.15 + (dx / len) * side
-    };
+    for (let i = 0; i < World.hamlets.length; i++) {
+        const h = World.hamlets[i];
+        const d = Math.hypot(h.x - from.x, h.z - from.z);
+        if (d < bestD) {
+            bestD = d;
+            village = MINOR_BASE + i;
+        }
+    }
+    return woodStand(village, slot);
 }
 
 function nearestOre(from, slot) {

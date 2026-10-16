@@ -1114,112 +1114,34 @@
         return thick;
     }
 
+    // Trees are town scenery + infinite wood stands — not an island-wide forest of tens of thousands.
     function buildTrees() {
         const trees = [];
-        const seen = [];
-        const plant = (x, z, thick, gap) => {
-            if (trees.length > 4200) return;
-            const minD = gap || (thick > 0.62 ? 10 : 16);
-            for (let i = 0; i < seen.length; i++) {
-                const dx = seen[i].x - x;
-                const dz = seen[i].z - z;
-                if (dx * dx + dz * dz < minD * minD) return;
-            }
-            const roll = hash(Math.floor(x * 2) + 3, Math.floor(z * 2) + 1);
-            let kind = "oak";
-            if (thick < 0.3 && roll > 0.62) kind = "bush";
-            else if (hash(Math.floor(x) + 9, Math.floor(z)) > (thick > 0.55 ? 0.74 : 0.6)) kind = "pine";
-            const spot = { x: x, z: z, kind: kind };
-            trees.push(spot);
-            seen.push(spot);
-        };
-        for (const place of places) {
-            for (let i = 0; i < 16; i++) {
-                const ang = hash(i, place.x) * Math.PI * 2;
-                const dist = 108 + hash(i + 4, place.z) * 52;
-                const x = place.x + Math.cos(ang) * dist;
-                const z = place.z + Math.sin(ang) * dist;
+        const plantRing = (cx, cz, count, minR, maxR) => {
+            for (let i = 0; i < count; i++) {
+                const ang = (i / count) * Math.PI * 2 + hash(i + Math.floor(cx), Math.floor(cz)) * 0.4;
+                const dist = minR + hash(i + 4, Math.floor(cz) + 3) * (maxR - minR);
+                const x = cx + Math.cos(ang) * dist;
+                const z = cz + Math.sin(ang) * dist;
                 if (heightAt(x, z) < 0.3 || wet(x, z) || roadDist(x, z) < 12 || inField(x, z)) continue;
-                if (Math.hypot(x - place.x, z - place.z) < 96) continue;
-                plant(x, z, 0.2, 14);
-            }
-        }
-        const scatter = (x0, x1, z0, z1, step) => {
-            for (let x = x0; x <= x1; x += step) {
-                for (let z = z0; z <= z1; z += step) {
-                    const jx = x + (hash(x, z) - 0.5) * step * 0.9;
-                    const jz = z + (hash(x + 11, z + 7) - 0.5) * step * 0.9;
-                    const thick = forestAt(jx, jz);
-                    if (thick < 0.08) continue;
-                    const chance = thick > 0.58 ? 0.96 : thick > 0.3 ? 0.68 : 0.42;
-                    if (hash(Math.floor(jx), Math.floor(jz) + 4) > chance) continue;
-                    plant(jx, jz, thick);
-                }
+                const pine = hash(Math.floor(x) + 9, Math.floor(z)) > 0.55;
+                trees.push({ x: x, z: z, kind: pine ? "pine" : "oak" });
             }
         };
-        scatter(-2420, -1100, -900, 780, 22);
-        scatter(-480, 780, -520, 640, 22);
-        scatter(-560, 460, 1380, 2160, 22);
-        const heart = (x0, x1, z0, z1) => {
-            for (let x = x0; x <= x1; x += 11) {
-                for (let z = z0; z <= z1; z += 11) {
-                    const jx = x + (hash(x + 2, z + 5) - 0.5) * 9;
-                    const jz = z + (hash(x + 8, z + 3) - 0.5) * 9;
-                    const thick = forestAt(jx, jz);
-                    if (thick < 0.72) continue;
-                    if (hash(Math.floor(jx) + 2, Math.floor(jz)) > 0.9) continue;
-                    plant(jx, jz, thick);
-                }
-            }
-        };
-        heart(-360, 240, 1520, 2040);
-        heart(-280, 620, -360, 480);
-        heart(-2300, -1200, -760, 640);
+        for (const place of places) plantRing(place.x, place.z, 14, 100, 150);
+        for (const hamlet of hamlets) plantRing(hamlet.x, hamlet.z, 10, 32, 56);
         return trees;
     }
 
     const trees = buildTrees();
 
     function plantEditWoods() {
-        const made = [];
-        const add = (x, z) => {
-            for (const tree of trees) {
-                if (Math.abs(tree.x - x) < 4 && Math.abs(tree.z - z) < 4) return;
-            }
-            const kind = hash(Math.floor(x) + 11, Math.floor(z) + 4) < 0.6 ? "pine" : "oak";
-            made.push({ x, z, kind, edit: true });
-        };
-        const step = 9;
-        // Forest pieces painted over each other thicken the wood: each one covering a cell adds a tree, up to three.
-        const cover = new Map();
-        for (const [fx, fz, r] of edit.forests || []) {
-            for (let ix = Math.floor((fx - r) / step); ix <= Math.ceil((fx + r) / step); ix++) {
-                for (let iz = Math.floor((fz - r) / step); iz <= Math.ceil((fz + r) / step); iz++) {
-                    const x = ix * step + (hash(ix + 71, iz + 3) - 0.5) * step * 0.8;
-                    const z = iz * step + (hash(ix + 5, iz + 83) - 0.5) * step * 0.8;
-                    const d = Math.hypot(x - fx, z - fz);
-                    if (d > r) continue;
-                    const key = ix + "," + iz;
-                    const cell = cover.get(key) || { ix, iz, x, z, n: 0, edge: true };
-                    cell.n += 1;
-                    if (d <= r * 0.75) cell.edge = false;
-                    cover.set(key, cell);
-                }
-            }
-        }
-        const layers = [[0, 0], [0.5, 0.5], [0.5, 0]];
-        for (const { ix, iz, x, z, n, edge } of cover.values()) {
-            for (let k = 0; k < Math.min(3, n); k++) {
-                if (hash(ix + 19 + k * 37, iz + 61) > (edge ? 0.5 : 0.88)) continue;
-                const tx = k ? ix * step + (layers[k][0] + (hash(ix + 7 * k, iz + 29) - 0.5) * 0.4) * step : x;
-                const tz = k ? iz * step + (layers[k][1] + (hash(ix + 41, iz + 13 * k) - 0.5) * 0.4) * step : z;
-                if (woodRoom(tx, tz)) add(tx, tz);
-            }
-        }
+        // Ignore painted forest floods. Only keep a few hand-placed editor trees if any.
         for (const [x, z] of edit.trees || []) {
-            if (heightAt(x, z) > 0.3 && !wet(x, z)) add(x, z);
+            if (heightAt(x, z) <= 0.3 || wet(x, z)) continue;
+            const kind = hash(Math.floor(x) + 11, Math.floor(z) + 4) < 0.6 ? "pine" : "oak";
+            trees.push({ x: x, z: z, kind: kind, edit: true });
         }
-        for (const tree of made) trees.push(tree);
     }
     plantEditWoods();
 

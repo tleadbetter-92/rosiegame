@@ -30,6 +30,9 @@ function activeCam() {
     return inside ? inside.view : cam;
 }
 const townLeash = 30;
+// 3D view is one town (or hamlet) at a time — the rest stays on the campaign map.
+const TOWN_VIEW = 175;
+let focusTown = { id: "p2", x: places[2].ox, z: places[2].oz };
 const player = { hp: 40, max: 40, guard: 0, dead: 0, shake: 0 };
 let hero = Hero.create();
 let heroReady = false;
@@ -1693,44 +1696,16 @@ function sceneryNear(x, z) {
 }
 
 function growScenery() {
-    const roll = (x, z, salt) => {
-        const n = Math.sin(x * 12.9898 + z * 78.233 + salt * 45.164) * 43758.5453;
-        return n - Math.floor(n);
-    };
-    const bush = (x, z, y) => {
-        const w = 0.55 + roll(x, z, 2) * 0.45;
-        const d = 0.5 + roll(x, z, 3) * 0.4;
-        const h = 0.36 + roll(x, z, 4) * 0.24;
-        addBox(batches.leaf, x - w / 2, y, z - d / 2, w, h, d);
-        scenery.push({ x: x - w / 2, z: z - d / 2, w, d });
-    };
-    const stone = (x, z, y) => {
-        const w = 0.45 + roll(x, z, 5) * 0.75;
-        const d = 0.4 + roll(x, z, 6) * 0.55;
-        const h = 0.22 + roll(x, z, 7) * 0.4;
-        addBox(batches.rock, x - w / 2, y, z - d / 2, w, h, d);
-        if (roll(x, z, 8) > 0.45) addBox(batches.rock, x - w * 0.2, y + h * 0.55, z - d * 0.15, w * 0.55, h * 0.75, d * 0.5);
-        scenery.push({ x: x - w / 2, z: z - d / 2, w, d });
-    };
-    for (const spot of World.trees) {
-        const y = Math.max(0, World.heightAt(spot.x, spot.z));
-        if (spot.kind === "bush") bush(spot.x, spot.z, y);
-        else if (spot.kind === "rock") stone(spot.x, spot.z, y);
-        else {
-            treeSpots.push({ x: spot.x, z: spot.z, y: y, pine: spot.kind === "pine" });
-            impostor(spot.x, spot.z, y, spot.kind === "pine");
-        }
-    }
-    for (const spot of World.groves) {
-        const y = Math.max(0, World.heightAt(spot.x, spot.z));
-        treeSpots.push({ x: spot.x, z: spot.z, y: y, pine: spot.kind === "pine" });
-        impostor(spot.x, spot.z, y, spot.kind === "pine");
-    }
+    // Rocks/cliffs only — trees are planted per focused town (see plantFocusTrees), not from the old island list.
     for (const [x, z, ry, s] of World.editRocks) crag(x, z, ry, s);
     for (const [x, z, ry, s] of World.cliffRocks) {
+        if (Math.hypot(x - focusTown.x, z - focusTown.z) > TOWN_VIEW) continue;
         if (World.heightAt(x, z) > 0.3 && !World.wet(x, z)) crag(x, z, ry, s);
     }
-    for (const [x, z, ry, size] of World.groundStones) pebble(x, z, ry, size);
+    for (const [x, z, ry, size] of World.groundStones) {
+        if (Math.hypot(x - focusTown.x, z - focusTown.z) > TOWN_VIEW) continue;
+        pebble(x, z, ry, size);
+    }
 }
 
 function pebble(x, z, ry, size) {
@@ -1763,6 +1738,57 @@ function crag(x, z, ry, s) {
 }
 
 const treeSpots = [];
+
+function focusCenters() {
+    const list = [];
+    for (let i = 0; i < World.places.length; i++) {
+        const p = World.places[i];
+        list.push({ id: "p" + i, x: p.ox, z: p.oz });
+    }
+    for (let i = 0; i < (World.hamlets || []).length; i++) {
+        const h = World.hamlets[i];
+        list.push({ id: "h" + i, x: h.x, z: h.z });
+    }
+    return list;
+}
+
+function plantFocusTrees() {
+    treeSpots.length = 0;
+    const cx = focusTown.x;
+    const cz = focusTown.z;
+    for (let i = 0; i < 56; i++) {
+        const a = i * 0.71 + 0.4;
+        const r = 42 + (i % 7) * 3.2;
+        const x = cx + Math.cos(a) * r;
+        const z = cz + Math.sin(a) * r;
+        if (World.wet(x, z) || World.roadDist(x, z) < 12) continue;
+        const y = Math.max(0, World.heightAt(x, z));
+        if (y < 0.25) continue;
+        treeSpots.push({ x: x, z: z, y: y, pine: i % 3 !== 1 });
+    }
+    nearMarkX = 1e9;
+    nearMarkZ = 1e9;
+}
+
+function updateFocusTown() {
+    const centers = focusCenters();
+    let best = focusTown;
+    let bestD = Math.hypot(cam.x - focusTown.x, cam.z - focusTown.z);
+    for (let i = 0; i < centers.length; i++) {
+        const c = centers[i];
+        const d = Math.hypot(cam.x - c.x, cam.z - c.z);
+        if (d + 45 < bestD) {
+            best = c;
+            bestD = d;
+        }
+    }
+    if (best.id === focusTown.id) return;
+    focusTown = best;
+    plantFocusTrees();
+    raisedKey = "";
+    sceneryGrid = null;
+    refreshNearTrees();
+}
 
 function fullTree(trunk, leaf, x, z, y, pine) {
     const n = Math.sin(x * 12.9898 + z * 78.233 + 45.164) * 43758.5453;
@@ -1802,11 +1828,7 @@ function dressSouthMeadow() {
     };
     const outZ = 90;
     const plant = (x, z, pine) => {
-        z += outZ;
-        if (World.wet(x, z) || World.roadDist(x, z) < 14) return;
-        const y = yAt(x, z);
-        treeSpots.push({ x, z, y, pine: !!pine });
-        impostor(x, z, y, !!pine);
+        // Trees come from plantFocusTrees only — do not flood treeSpots from the south meadow.
     };
     const bush = (x, z) => {
         z += outZ;
@@ -2492,6 +2514,7 @@ let nearMarkX = 1e9;
 let nearMarkZ = 1e9;
 const meadowSeen = new Set();
 const meadowProps = [];
+plantFocusTrees();
 
 // Low is the default on desktop and phones — Roblox towns are too heavy for High as a first load.
 // New key so an old saved "high" does not stick after this change; players can still toggle High.
@@ -2576,16 +2599,12 @@ function fillMeadow(x, z) {
             meadowSeen.add(key);
             const spot = World.meadowAt(ix, iz);
             if (!spot) continue;
+            if (spot.kind === "pine" || spot.kind === "oak") continue;
             grew = true;
             const y = Math.max(0, World.heightAt(spot.x, spot.z));
-            if (spot.kind === "pine" || spot.kind === "oak") {
-                treeSpots.push({ x: spot.x, z: spot.z, y: y, pine: spot.kind === "pine" });
-                impostor(spot.x, spot.z, y, spot.kind === "pine");
-            } else {
-                meadowProps.push({ x: spot.x, z: spot.z, y: y, kind: spot.kind, roll: spot.roll });
-                const s = spot.kind === "rock" ? 0.8 : 0.7;
-                scenery.push({ x: spot.x - s / 2, z: spot.z - s / 2, w: s, d: s });
-            }
+            meadowProps.push({ x: spot.x, z: spot.z, y: y, kind: spot.kind, roll: spot.roll });
+            const s = spot.kind === "rock" ? 0.8 : 0.7;
+            scenery.push({ x: spot.x - s / 2, z: spot.z - s / 2, w: s, d: s });
         }
     }
     return grew;
@@ -7970,14 +7989,14 @@ function robloxModel(name) {
     return null;
 }
 
-// Other towns stay unloaded until you walk near them. Roblox houses are always cheap proxies (no 2000-part stamps).
+// Only the focused town is detailed in 3D; Roblox houses stay cheap proxies.
 function raisedViewKey() {
     const cell = 20;
-    return Math.round(cam.x / cell) + ":" + Math.round(cam.z / cell) + ":" + Math.round(gfx().drawFar) + ":" + (graphics === "low" ? "L" : "H");
+    return focusTown.id + ":" + Math.round(cam.x / cell) + ":" + Math.round(cam.z / cell) + ":" + Math.round(gfx().drawFar) + ":" + (graphics === "low" ? "L" : "H");
 }
 
 function raisedDetailReach() {
-    return gfx().drawFar + 16;
+    return Math.min(gfx().drawFar + 16, TOWN_VIEW);
 }
 
 // Doors, crop rows, and kit-house boards only this close.
@@ -8013,6 +8032,7 @@ function plotAnchor(plot) {
 function plotInView(plot, reach) {
     const at = plotAnchor(plot);
     if (!Number.isFinite(at.x) || !Number.isFinite(at.z)) return true;
+    if (Math.hypot(at.x - focusTown.x, at.z - focusTown.z) > TOWN_VIEW) return false;
     return Math.hypot(at.x - cam.x, at.z - cam.z) <= reach;
 }
 
@@ -8826,6 +8846,7 @@ function frame(now) {
     movePlayer(dt);
     stepHorse(dt);
     swingDoors(dt);
+    updateFocusTown();
     stampRaisedPlots();
     refreshNearTrees();
     paintPlaceGhost();
