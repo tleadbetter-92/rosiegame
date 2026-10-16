@@ -621,13 +621,39 @@ function townPatch(place) {
     return { x0: down(place.x - 180), x1: up(place.x + 180), z0: down(place.z - 180), z1: up(place.z + 180) };
 }
 
+const LAND_BATCHES = ["grass", "dirt", "cobble", "sand", "gravel", "marsh", "water", "townDirt", "townCobble", "crag"];
+
+function clearLandBatches() {
+    for (let i = 0; i < LAND_BATCHES.length; i++) {
+        const name = LAND_BATCHES[i];
+        if (batches[name]) batches[name].length = 0;
+    }
+}
+
+function uploadLandMeshes() {
+    for (let i = 0; i < LAND_BATCHES.length; i++) {
+        const name = LAND_BATCHES[i];
+        if (!batches[name]) continue;
+        uploadMesh(name, batches[name]);
+        if (mesh[name] && (name === "water" || name.indexOf("town") === 0)) mesh[name].cull = false;
+    }
+}
+
+// Ground only around the focused town — the rest is haze on the campaign map, not a full-island mesh.
 function buildLand() {
+    clearLandBatches();
     const cell = 32;
-    const min = -3616;
-    const span = 7232;
-    const n = span / cell;
-    const heights = new Float32Array((n + 1) * (n + 1));
-    const sample = (ix, iz) => heights[iz * (n + 1) + ix];
+    const cx = focusTown.x;
+    const cz = focusTown.z;
+    const reach = TOWN_VIEW + 48;
+    const x0 = Math.floor((cx - reach) / cell) * cell;
+    const z0 = Math.floor((cz - reach) / cell) * cell;
+    const x1 = Math.ceil((cx + reach) / cell) * cell;
+    const z1 = Math.ceil((cz + reach) / cell) * cell;
+    const nx = (x1 - x0) / cell;
+    const nz = (z1 - z0) / cell;
+    const heights = new Float32Array((nx + 1) * (nz + 1));
+    const sample = (ix, iz) => heights[iz * (nx + 1) + ix];
     // Each corner height is looked up once and shared by the patches that meet there.
     const subdivide = (x, z, sub, h00, h10, h11, h01) => {
         const k = cell / sub + 1;
@@ -690,38 +716,37 @@ function buildLand() {
             pushQuad(list, t0, d0, d1, t1);
         }
     };
-    for (let iz = 0; iz <= n; iz++) {
-        for (let ix = 0; ix <= n; ix++) {
-            heights[iz * (n + 1) + ix] = World.heightAt(min + ix * cell, min + iz * cell);
+    for (let iz = 0; iz <= nz; iz++) {
+        for (let ix = 0; ix <= nx; ix++) {
+            heights[iz * (nx + 1) + ix] = World.heightAt(x0 + ix * cell, z0 + iz * cell);
         }
     }
-    for (let iz = 0; iz < n; iz++) {
-        for (let ix = 0; ix < n; ix++) {
-            const x = min + ix * cell;
-            const z = min + iz * cell;
+    const focusPlace = World.places.find((p) => Math.hypot(p.ox - cx, p.oz - cz) < 8) || null;
+    const home = World.places[2];
+    const homeFocus = focusPlace === home;
+    const finePatch = focusPlace
+        ? townPatch(focusPlace)
+        : { x0: x0, x1: x1, z0: z0, z1: z1 };
+    for (let iz = 0; iz < nz; iz++) {
+        for (let ix = 0; ix < nx; ix++) {
+            const x = x0 + ix * cell;
+            const z = z0 + iz * cell;
+            if (x >= finePatch.x0 && x < finePatch.x1 && z >= finePatch.z0 && z < finePatch.z1) continue;
             const h00 = sample(ix, iz);
             const h10 = sample(ix + 1, iz);
             const h11 = sample(ix + 1, iz + 1);
             const h01 = sample(ix, iz + 1);
             const rise = Math.max(h00, h10, h11, h01) - Math.min(h00, h10, h11, h01);
             const mid = (h00 + h10 + h11 + h01) * 0.25;
-            const cx = x + cell * 0.5;
-            const cz = z + cell * 0.5;
-            let town = false;
-            for (const place of World.places) {
-                const b = townPatch(place);
-                if (x >= b.x0 && x < b.x1 && z >= b.z0 && z < b.z1) town = true;
-            }
-            if (town) continue;
-            const box = World.peakBox;
-            if (x + cell > box.minX && x < box.maxX && z + cell > box.minZ && z < box.maxZ) continue;
+            const mx = x + cell * 0.5;
+            const mz = z + cell * 0.5;
             const sub = countrySub(x, z, h00, h10, h11, h01);
             if (sub < cell) {
                 subdivide(x, z, sub, h00, h10, h11, h01);
                 continue;
             }
             if (mid > -0.35) {
-                const kind = countryKind(landKind(cx, cz, rise, mid));
+                const kind = countryKind(landKind(mx, mz, rise, mid));
                 const list = batches[kind] || batches.grass;
                 const tone = (px, pz) => groundTone(kind, px, pz);
                 const u = x / 8;
@@ -737,105 +762,60 @@ function buildLand() {
         }
     }
     const fine = 4;
-    const home = World.places[2];
     const inner = 100;
-    for (const place of World.places) {
-        const b = townPatch(place);
-        for (let x = b.x0; x < b.x1; x += fine) {
-            for (let z = b.z0; z < b.z1; z += fine) {
-                if (place === home && x >= home.x - inner && x < home.x + inner && z >= home.z - inner && z < home.z + inner) continue;
-                const h00 = World.heightAt(x, z);
-                const h10 = World.heightAt(x + fine, z);
-                const h11 = World.heightAt(x + fine, z + fine);
-                const h01 = World.heightAt(x, z + fine);
-                const rise = Math.max(h00, h10, h11, h01) - Math.min(h00, h10, h11, h01);
-                const cx = x + fine * 0.5;
-                const cz = z + fine * 0.5;
-                const kind = landKind(cx, cz, rise);
-                const homeHere = place === home;
-                const list = batches[homeHere ? townBatch(kind) : kind] || batches.grass;
-                const tile = homeHere ? townTile(kind) : 4;
-                const tone = (px, pz) => (kind === "grass" ? World.turfShade(px, pz) : 1);
-                const u = x / tile;
-                const v = z / tile;
-                const du = fine / tile;
-                const dv = fine / tile;
-                pushQuad(
-                    list,
-                    [x, h00, z, u, v, tone(x, z)],
-                    [x, h01, z + fine, u, v + dv, tone(x, z + fine)],
-                    [x + fine, h11, z + fine, u + du, v + dv, tone(x + fine, z + fine)],
-                    [x + fine, h10, z, u + du, v, tone(x + fine, z)]
-                );
-            }
-        }
-    }
-    const pave = 2;
-    for (let x = home.x - inner; x < home.x + inner; x += pave) {
-        for (let z = home.z - inner; z < home.z + inner; z += pave) {
+    for (let x = finePatch.x0; x < finePatch.x1; x += fine) {
+        for (let z = finePatch.z0; z < finePatch.z1; z += fine) {
+            if (homeFocus && x >= home.x - inner && x < home.x + inner && z >= home.z - inner && z < home.z + inner) continue;
             const h00 = World.heightAt(x, z);
-            const h10 = World.heightAt(x + pave, z);
-            const h11 = World.heightAt(x + pave, z + pave);
-            const h01 = World.heightAt(x, z + pave);
+            const h10 = World.heightAt(x + fine, z);
+            const h11 = World.heightAt(x + fine, z + fine);
+            const h01 = World.heightAt(x, z + fine);
             const rise = Math.max(h00, h10, h11, h01) - Math.min(h00, h10, h11, h01);
-            const kind = landKind(x + pave * 0.5, z + pave * 0.5, rise);
-            const list = batches[townBatch(kind)] || batches.grass;
-            const tile = townTile(kind);
-            const tone = (px, pz) => (kind === "grass" ? World.turfShade(px, pz) : 0.97);
+            const mx = x + fine * 0.5;
+            const mz = z + fine * 0.5;
+            const kind = landKind(mx, mz, rise);
+            const list = batches[homeFocus ? townBatch(kind) : kind] || batches.grass;
+            const tile = homeFocus ? townTile(kind) : 4;
+            const tone = (px, pz) => (kind === "grass" ? World.turfShade(px, pz) : 1);
             const u = x / tile;
             const v = z / tile;
-            const step = pave / tile;
+            const du = fine / tile;
+            const dv = fine / tile;
             pushQuad(
                 list,
                 [x, h00, z, u, v, tone(x, z)],
-                [x, h01, z + pave, u, v + step, tone(x, z + pave)],
-                [x + pave, h11, z + pave, u + step, v + step, tone(x + pave, z + pave)],
-                [x + pave, h10, z, u + step, v, tone(x + pave, z)]
+                [x, h01, z + fine, u, v + dv, tone(x, z + fine)],
+                [x + fine, h11, z + fine, u + du, v + dv, tone(x + fine, z + fine)],
+                [x + fine, h10, z, u + du, v, tone(x + fine, z)]
             );
         }
     }
-    const peak = World.peakBox;
-    const peakCell = 4;
-    for (let x = peak.minX; x < peak.maxX; x += peakCell) {
-        for (let z = peak.minZ; z < peak.maxZ; z += peakCell) {
-            const h00 = World.heightAt(x, z);
-            const h10 = World.heightAt(x + peakCell, z);
-            const h11 = World.heightAt(x + peakCell, z + peakCell);
-            const h01 = World.heightAt(x, z + peakCell);
-            const rise = Math.max(h00, h10, h11, h01) - Math.min(h00, h10, h11, h01);
-            const mid = (h00 + h10 + h11 + h01) * 0.25;
-            const cx = x + peakCell * 0.5;
-            const cz = z + peakCell * 0.5;
-            if (mid > -0.35) {
-                const kind = countryKind(landKind(cx, cz, rise));
-                const list = batches[kind] || batches.grass;
-                const tone = (px, pz) => groundTone(kind, px, pz);
+    if (homeFocus) {
+        const pave = 2;
+        for (let x = home.x - inner; x < home.x + inner; x += pave) {
+            for (let z = home.z - inner; z < home.z + inner; z += pave) {
+                const h00 = World.heightAt(x, z);
+                const h10 = World.heightAt(x + pave, z);
+                const h11 = World.heightAt(x + pave, z + pave);
+                const h01 = World.heightAt(x, z + pave);
+                const rise = Math.max(h00, h10, h11, h01) - Math.min(h00, h10, h11, h01);
+                const kind = landKind(x + pave * 0.5, z + pave * 0.5, rise);
+                const list = batches[townBatch(kind)] || batches.grass;
+                const tile = townTile(kind);
+                const tone = (px, pz) => (kind === "grass" ? World.turfShade(px, pz) : 0.97);
+                const u = x / tile;
+                const v = z / tile;
+                const step = pave / tile;
                 pushQuad(
                     list,
-                    [x, h00, z, x / 4, z / 4, tone(x, z)],
-                    [x, h01, z + peakCell, x / 4, (z + peakCell) / 4, tone(x, z + peakCell)],
-                    [x + peakCell, h11, z + peakCell, (x + peakCell) / 4, (z + peakCell) / 4, tone(x + peakCell, z + peakCell)],
-                    [x + peakCell, h10, z, (x + peakCell) / 4, z / 4, tone(x + peakCell, z)]
+                    [x, h00, z, u, v, tone(x, z)],
+                    [x, h01, z + pave, u, v + step, tone(x, z + pave)],
+                    [x + pave, h11, z + pave, u + step, v + step, tone(x + pave, z + pave)],
+                    [x + pave, h10, z, u + step, v, tone(x + pave, z)]
                 );
             }
-            const level = World.waterLevel(cx, cz);
-            if (level == null || mid > level + 0.45) continue;
-            const wy = (hh) => (hh < 0.3 ? 0.03 : hh + 0.16);
-            pushQuad(
-                batches.water,
-                [x, wy(h00), z, x / 8, z / 8, 0.95],
-                [x, wy(h01), z + peakCell, x / 8, (z + peakCell) / 8, 0.95],
-                [x + peakCell, wy(h11), z + peakCell, (x + peakCell) / 8, (z + peakCell) / 8, 0.95],
-                [x + peakCell, wy(h10), z, (x + peakCell) / 8, z / 8, 0.95]
-            );
         }
     }
-    const sea = 7200;
-    const lip = sea - 3616;
-    addWater(-sea, -sea, sea * 2, lip);
-    addWater(-sea, 3616, sea * 2, lip);
-    addWater(-sea, -3616, lip, 7232);
-    addWater(3616, -3616, lip, 7232);
 }
 
 function addWater(x, z, w, d) {
@@ -1696,14 +1676,19 @@ function sceneryNear(x, z) {
 }
 
 function growScenery() {
-    // Rocks/cliffs only — trees are planted per focused town (see plantFocusTrees), not from the old island list.
-    for (const [x, z, ry, s] of World.editRocks) crag(x, z, ry, s);
+    // Rocks only near the focused town — trees come from plantFocusTrees.
+    const fx = focusTown.x;
+    const fz = focusTown.z;
+    for (const [x, z, ry, s] of World.editRocks) {
+        if (Math.hypot(x - fx, z - fz) > TOWN_VIEW) continue;
+        crag(x, z, ry, s);
+    }
     for (const [x, z, ry, s] of World.cliffRocks) {
-        if (Math.hypot(x - focusTown.x, z - focusTown.z) > TOWN_VIEW) continue;
+        if (Math.hypot(x - fx, z - fz) > TOWN_VIEW) continue;
         if (World.heightAt(x, z) > 0.3 && !World.wet(x, z)) crag(x, z, ry, s);
     }
     for (const [x, z, ry, size] of World.groundStones) {
-        if (Math.hypot(x - focusTown.x, z - focusTown.z) > TOWN_VIEW) continue;
+        if (Math.hypot(x - fx, z - fz) > TOWN_VIEW) continue;
         pebble(x, z, ry, size);
     }
 }
@@ -1770,6 +1755,15 @@ function plantFocusTrees() {
     nearMarkZ = 1e9;
 }
 
+function remeshFocusLand() {
+    // Rebuild the town ground bubble only; cliffs are cheap to stamp again for the new focus.
+    buildLand();
+    if (batches.crag) batches.crag.length = 0;
+    raiseCliffs();
+    uploadLandMeshes();
+    if (batches.crag) uploadMesh("crag", batches.crag);
+}
+
 function updateFocusTown() {
     const centers = focusCenters();
     let best = focusTown;
@@ -1785,6 +1779,7 @@ function updateFocusTown() {
     if (best.id === focusTown.id) return;
     focusTown = best;
     plantFocusTrees();
+    remeshFocusLand();
     raisedKey = "";
     sceneryGrid = null;
     refreshNearTrees();
@@ -2008,6 +2003,8 @@ function raiseCliffs() {
         }
         return line[line.length - 1];
     };
+    const fx = focusTown.x;
+    const fz = focusTown.z;
     for (const line of World.cliffs) {
         let total = 0;
         for (let i = 1; i < line.length; i++) {
@@ -2019,6 +2016,7 @@ function raiseCliffs() {
             const spot = pointAlong(line, u);
             const x = spot[0];
             const z = spot[1];
+            if (Math.hypot(x - fx, z - fz) > TOWN_VIEW + 40) continue;
             const y = Math.max(0, World.heightAt(x, z));
             const taper = Math.sin(Math.PI * u);
             const nse = Math.sin(x * 12.9898 + z * 78.233 + 9) * 43758.5453;
@@ -4317,12 +4315,10 @@ function rememberPlay(data) {
 
 function syncCampaign() {
     if (pendingHit) return;
-    let url = "/api/campaign";
-    let sent = 0;
-    if (document.visibilityState === "visible") {
-        sent = pullPlay();
-        url += "?play=" + sent;
-    }
+    // Do not poll the campaign while the tab is hidden — nothing to update until you come back.
+    if (document.visibilityState !== "visible") return;
+    const sent = pullPlay();
+    const url = "/api/campaign?play=" + sent;
     fetch(url, { cache: "no-store" }).then((res) => res.json()).then((data) => {
         if (sent) pendingSend = Math.max(0, pendingSend - sent);
         applyCampaign(data);
@@ -4356,6 +4352,7 @@ function flushPlay() {
 document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
         accrueAt = Date.now();
+        syncCampaign();
         return;
     }
     flushPlay();
@@ -8481,14 +8478,17 @@ function loadPropTextures() {
         img.src = "models/" + name + ".png";
     }
 }
-fetch("models/props.json", { cache: "no-store" }).then((res) => res.json()).then((data) => {
-    propData = data;
-    loadPropTextures();
-    stampFarmProps();
-    stampCottageProps();
-    stampOuterHouses();
-    if (inside && !inside.furnished) furnishInterior();
-}).catch(() => {});
+function loadProps() {
+    if (propData) return;
+    fetch("models/props.json", { cache: "no-store" }).then((res) => res.json()).then((data) => {
+        propData = data;
+        loadPropTextures();
+        stampFarmProps();
+        stampCottageProps();
+        stampOuterHouses();
+        if (inside && !inside.furnished) furnishInterior();
+    }).catch(() => {});
+}
 
 function turnProp(x, y, z, yaw) {
     const c = Math.cos(yaw);
@@ -9211,8 +9211,12 @@ if (gl) {
     spawnKeepers();
     prepareBow();
     buildHorse();
-    loadCottage();
-    loadTown();
-    loadPeople();
+    // Draw a frame first, then pull the heavy Roblox JSON so first paint is not blocked.
     requestAnimationFrame(frame);
+    requestAnimationFrame(() => {
+        loadCottage();
+        loadTown();
+        loadPeople();
+        loadProps();
+    });
 }

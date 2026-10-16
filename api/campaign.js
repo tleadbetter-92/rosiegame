@@ -1,6 +1,3 @@
-const fs = require("fs");
-const path = require("path");
-const { getDb } = require("../lib/db");
 const World = require("../world");
 const Town = require("../town");
 const Clock = require("../clock");
@@ -12,7 +9,6 @@ const MARCH_SPEED = 4.5;
 // Soldiers each faction starts with; after that only houses (popLimit) limit growth.
 const CAP = 10;
 const FIELD = CAP;
-const file = path.join(__dirname, "..", "data", "campaign.json");
 
 const factions = [
     { id: "northwest", name: "Northwest", color: "#c45c3a" },
@@ -228,30 +224,9 @@ function ensureGates(state) {
     return dirty;
 }
 
-function readFileState() {
-    try {
-        const saved = JSON.parse(fs.readFileSync(file, "utf8"));
-        if (saved && Number.isFinite(saved.startedAt)) return saved;
-    } catch {
-        /* first run, or the host has no saved file */
-    }
-    const state = { startedAt: Date.now(), pausedAt: null, health: {} };
-    writeFileState(state);
-    return state;
-}
-
-function writeFileState(state) {
-    try {
-        fs.mkdirSync(path.dirname(file), { recursive: true });
-        fs.writeFileSync(file, JSON.stringify(state));
-    } catch (error) {
-        console.error(error);
-    }
-}
-
-function hosted() {
-    return Boolean(process.env.VERCEL && process.env.MONGODB_URI);
-}
+// Campaign stays in RAM for the life of the server process — no disk/Mongo writes.
+// Closing the tab does not wipe it; restarting the server does. Idle clients stop polling.
+let memoryState = null;
 
 function blankState() {
     const now = Date.now();
@@ -261,27 +236,12 @@ function blankState() {
 }
 
 async function readState() {
-    if (!hosted()) return readFileState();
-    const db = await getDb();
-    const doc = await db.collection("campaign").findOne({ _id: "world" });
-    if (doc && doc.state && Number.isFinite(doc.state.startedAt)) return doc.state;
-    const state = blankState();
-    await writeState(state);
-    return state;
+    if (!memoryState) memoryState = blankState();
+    return memoryState;
 }
 
 async function writeState(state) {
-    if (!hosted()) {
-        writeFileState(state);
-        return;
-    }
-    const db = await getDb();
-    const clean = JSON.parse(JSON.stringify(state));
-    await db.collection("campaign").updateOne(
-        { _id: "world" },
-        { $set: { state: clean } },
-        { upsert: true }
-    );
+    memoryState = state;
 }
 
 function turnOf(state, clock) {

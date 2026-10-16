@@ -456,7 +456,15 @@ refresh().catch(() => {
     clock.textContent = "The campaign is not reachable.";
 });
 setInterval(() => {
+    if (document.visibilityState !== "visible") return;
     refresh().then(() => paintClock()).catch(() => {
         clock.textContent = "The campaign is not reachable.";
     });
 }, 1000);
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+        refresh().then(() => paintClock()).catch(() => {
+            clock.textContent = "The campaign is not reachable.";
+        });
+    }
+});
