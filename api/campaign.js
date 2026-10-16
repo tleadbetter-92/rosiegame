@@ -52,9 +52,11 @@ const farmModel = robloxModel(() => require("../models/roblox/farm.json"));
 const mineModel = robloxModel(() => require("../models/roblox/mine.json"));
 const yardModel = robloxModel(() => require("../models/roblox/lumberyard.json"));
 // Town kit house size — player builds and faction “five houses” use these, not Roblox meshes.
-const KIT_HOUSE = Town.MESH.house;
-const KIT_HOUSE_H = 3.8;
+// Same footprint/look as the tall outside-village houses with doors (e.g. SW farmhouse at -2366, 770).
+const KIT_HOUSE = Town.MESH.tall;
+const KIT_HOUSE_H = 6.35 + 1.85;
 const KIT_HOUSE_GAP = 1.4;
+const KIT_HOUSE_MESH = "tall";
 // Southwest farm: fenced dirt enclosure (like the town field plots) plus one kit farmhouse beside it.
 const KIT_FIELD_W = 56;
 const KIT_FIELD_D = 40;
@@ -2589,7 +2591,7 @@ function kitHouseBody(village, x, z, yaw, role, y) {
         h: KIT_HOUSE_H,
         minX: x - w / 2,
         minZ: z - d / 2,
-        mesh: "house",
+        mesh: KIT_HOUSE_MESH,
         role: role || "house",
         doorSide: 1,
         village: village
@@ -2662,13 +2664,12 @@ function hamletLayout(minor, index) {
     return { village, farm: model || farm, cottages, outhouse };
 }
 
-// The Roblox farm beside a hamlet's cottages, where there is level dry ground for it.
+// Kit enclosure + tall farmhouse beside a hamlet's cottages, where there is level dry ground.
 function hamletModelFarm(minor, village, cottages, outhouse) {
-    if (!farmModel) return null;
     const blocked = cottages.map(rectOf).concat([{ minX: outhouse.x - 2, minZ: outhouse.z - 2, w: 4, d: 4 }]);
     const spots = [[-22, 0], [-22, -18], [-22, 18], [4, 30], [4, -38], [50, 0], [-50, 0], [20, 40], [20, -45]];
     for (const [dx, dz] of spots) {
-        const site = layoutModelFarm({}, village, minor.x + dx, minor.z + dz, blocked, true);
+        const site = layoutKitFarm({}, village, minor.x + dx, minor.z + dz, blocked, true);
         if (site) return site;
     }
     return null;
@@ -2728,14 +2729,18 @@ function startFarm(id) {
     return starts ? starts.farms.find((farm) => farm && farm.id === id) || null : null;
 }
 
-// Swap an old Southwest Roblox farm site for the kit enclosure + farmhouse at the same centre.
+function usesKitFarm(village) {
+    return village === 2 || village >= MINOR_BASE;
+}
+
+// Swap an old Roblox farm site for the kit enclosure + tall farmhouse at the same centre.
 function kitFarmFromOld(state, site) {
-    if (!site || site.village !== 2 || site.model !== "farm" || !site.at) return null;
+    if (!site || !usesKitFarm(site.village) || site.model !== "farm" || !site.at) return null;
     const blocked = takenRects(state).filter((rect) => {
         if (!site.rect) return true;
         return rect.minX !== site.rect.minX || rect.minZ !== site.rect.minZ || rect.w !== site.rect.w || rect.d !== site.rect.d;
     });
-    const next = layoutKitFarm(state, 2, site.at.x, site.at.z, blocked);
+    const next = layoutKitFarm(state, site.village, site.at.x, site.at.z, blocked);
     if (!next) return null;
     next.id = site.id;
     return next;
@@ -3893,8 +3898,8 @@ function layoutModelFarm(state, village, cx, cz, blocked, home) {
 }
 
 function layoutFarm(state, village, cx, cz, blocked) {
-    // Southwest only: enclosure + kit house. Other towns keep the Roblox farm for comparison.
-    if (village === 2) return layoutKitFarm(state, village, cx, cz, blocked);
+    // Southwest and minor hamlets: enclosure + tall kit farmhouse. Other towns keep Roblox for comparison.
+    if (usesKitFarm(village)) return layoutKitFarm(state, village, cx, cz, blocked);
     if (farmModel) return layoutModelFarm(state, village, cx, cz, blocked);
     const place = places[village];
     const dx = place.x - cx;

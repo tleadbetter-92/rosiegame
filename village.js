@@ -7,16 +7,53 @@ if (!gl) {
 
 const places = World.places;
 const flying = new URLSearchParams(location.search).get("fly") === "1";
-const cam = { x: places[2].ox, y: 1.62, z: places[2].oz + 20, yaw: 0, pitch: 0 };
+// Outside the Southwest kit farmhouse door (field centre -2407.2, 540.2 in campaign starts).
+const START_FARM = { x: -2376.6, z: 539.2, yaw: -Math.PI / 2 };
+const OLD_TOWN_SPAWN = { x: places[2].ox, z: places[2].oz + 20 };
+function atStartFarm(x, z, yaw) {
+    cam.x = x;
+    cam.z = z;
+    cam.y = 1.62 + Math.max(0, World.heightAt(x, z));
+    cam.yaw = yaw;
+    cam.pitch = 0;
+}
+
+// Prefer the live Southwest start-farm door once campaign plots are in; else the fixed kit spot.
+function placeAtKitFarm() {
+    const plots = raisedData && raisedData.plots || [];
+    const farm = plots.find((plot) => plot && plot.kind === "farm" && plot.village === 2 && plot.house
+        && (plot.id === "show-farm-2" || String(plot.id || "").indexOf("show-farm-2") === 0));
+    if (farm && farm.house) {
+        const h = farm.house;
+        const s = Math.sin(h.yaw || 0);
+        const c = Math.cos(h.yaw || 0);
+        const fx = -s;
+        const fz = -c;
+        const half = (Math.abs(fx) > Math.abs(fz) ? h.w : h.d) * 0.5;
+        const side = h.doorSide == null ? 1 : h.doorSide;
+        const doorX = h.x + fx * (half - 0.06) - c * side;
+        const doorZ = h.z + fz * (half - 0.06) + s * side;
+        const x = doorX + fx * 3.5;
+        const z = doorZ + fz * 3.5;
+        atStartFarm(x, z, Math.atan2(h.x - x, -(h.z - z)));
+        return;
+    }
+    atStartFarm(START_FARM.x, START_FARM.z, START_FARM.yaw);
+}
+const cam = { x: START_FARM.x, y: 1.62, z: START_FARM.z, yaw: START_FARM.yaw, pitch: 0 };
+cam.y = 1.62 + Math.max(0, World.heightAt(cam.x, cam.z));
 if (!flying) {
     try {
         const spot = JSON.parse(localStorage.getItem("village-spot") || "null");
-        if (spot && Number.isFinite(spot.x) && Number.isFinite(spot.z)) {
+        // Keep a saved walk position, but move anyone still parked on the old town spawn to the farm.
+        if (spot && Number.isFinite(spot.x) && Number.isFinite(spot.z)
+            && Math.hypot(spot.x - OLD_TOWN_SPAWN.x, spot.z - OLD_TOWN_SPAWN.z) > 50) {
             cam.x = spot.x;
             cam.z = spot.z;
             cam.y = 1.62 + Math.max(0, World.heightAt(spot.x, spot.z));
+            if (Number.isFinite(spot.yaw)) cam.yaw = spot.yaw;
         }
-    } catch (err) { /* start outside Southwest */ }
+    } catch (err) { /* start at the farm */ }
 }
 if (flying) {
     cam.x = -200;
@@ -31,8 +68,8 @@ function activeCam() {
 }
 const townLeash = 30;
 // 3D view is one town (or hamlet) at a time — the rest stays on the campaign map.
-// Wide enough to see the local fields and trees; next town stays past the haze.
-const TOWN_VIEW = 200;
+// Wide local countryside; next town stays past the haze.
+const TOWN_VIEW = 320;
 // Hard RTS unit budget: only this many nearest people are simmed/drawn in 3D.
 const UNIT_CAP = 16;
 let focusTown = { id: "p2", x: places[2].ox, z: places[2].oz };
@@ -2317,6 +2354,168 @@ function flatWallTexture(brick, front) {
     return tex;
 }
 
+// The outside-village houses with swinging doors (mesh house/tall) — reused for raised kit builds.
+function stampFlatKitHouse(lists, b) {
+    const wall = lists.wall;
+    const front = lists.front;
+    const plaster = lists.plaster;
+    const roof = lists.roof;
+    const tall = b.mesh === "tall" || b.mesh === "grand";
+    const wallH = tall ? 6.35 : 4.15;
+    const roofH = tall ? 1.85 : 1.45;
+    const uvTop = tall ? 1 : 0.62;
+    const y0 = b.y || 0;
+    const y1 = y0 + wallH;
+    const x0 = b.minX;
+    const z0 = b.minZ;
+    const x1 = x0 + b.w;
+    const z1 = z0 + b.d;
+    const yaw = b.yaw || 0;
+    const s = Math.sin(yaw);
+    const c = Math.cos(yaw);
+    const fx = -s;
+    const fz = -c;
+    const face = Math.abs(fz) >= Math.abs(fx) ? (fz < 0 ? "n" : "s") : (fx > 0 ? "e" : "w");
+    const half = (Math.abs(fx) > Math.abs(fz) ? b.w : b.d) * 0.5;
+    const side = b.doorSide == null ? 1 : b.doorSide;
+    const doorX = b.x + fx * (half - 0.06) - c * side;
+    const doorZ = b.z + fz * (half - 0.06) + s * side;
+    const holeW = 1.2;
+    const holeH = 2.18;
+    const quad = (list, a, b2, c2, d) => pushQuad(list, a, b2, c2, d);
+    const faceX = (list, xa, xb, ya, yb, z, u0, u1, v0, v1, shade, north) => {
+        const bl = [xa, ya, z, u0, v0, shade];
+        const tl = [xa, yb, z, u0, v1, shade];
+        const tr = [xb, yb, z, u1, v1, shade];
+        const br = [xb, ya, z, u1, v0, shade];
+        if (north) quad(list, bl, tl, tr, br);
+        else quad(list, br, tr, tl, bl);
+    };
+    const faceZ = (list, za, zb, ya, yb, x, u0, u1, v0, v1, shade, east) => {
+        const bl = [x, ya, za, u0, v0, shade];
+        const tl = [x, yb, za, u0, v1, shade];
+        const tr = [x, yb, zb, u1, v1, shade];
+        const br = [x, ya, zb, u1, v0, shade];
+        if (east) quad(list, bl, tl, tr, br);
+        else quad(list, br, tr, tl, bl);
+    };
+    const putX = (list, xa, xb, ya, yb, z, north, shade, vTop) => {
+        const u0 = (xa - x0) / b.w;
+        const u1 = (xb - x0) / b.w;
+        faceX(list, xa, xb, ya, yb, z, u0, u1, (ya - y0) / wallH * vTop, (yb - y0) / wallH * vTop, shade, north);
+    };
+    const putZ = (list, za, zb, ya, yb, x, east, shade, vTop) => {
+        const u0 = (za - z0) / b.d;
+        const u1 = (zb - z0) / b.d;
+        faceZ(list, za, zb, ya, yb, x, u0, u1, (ya - y0) / wallH * vTop, (yb - y0) / wallH * vTop, shade, east);
+    };
+    const wallAlongX = (z, north, isFront) => {
+        const list = isFront ? front : wall;
+        const shade = north ? 0.96 : 0.74;
+        const inset = north ? 0.07 : -0.07;
+        if (!isFront) {
+            putX(list, x0, x1, y0, y1, z, north, shade, uvTop);
+            putX(plaster, x1, x0, y0, y1, z + inset, north, 0.7, uvTop);
+            return;
+        }
+        let hx0 = Math.max(x0 + 0.35, doorX - holeW * 0.5);
+        let hx1 = Math.min(x1 - 0.35, doorX + holeW * 0.5);
+        const hy = y0 + holeH;
+        putX(list, x0, hx0, y0, y1, z, north, shade, uvTop);
+        putX(list, hx1, x1, y0, y1, z, north, shade, uvTop);
+        putX(list, hx0, hx1, hy, y1, z, north, shade, uvTop);
+        putX(plaster, x1, hx1, y0, y1, z + inset, north, 0.7, uvTop);
+        putX(plaster, hx0, x0, y0, y1, z + inset, north, 0.7, uvTop);
+        putX(plaster, hx1, hx0, hy, y1, z + inset, north, 0.7, uvTop);
+    };
+    const wallAlongZ = (x, east, isFront) => {
+        const list = isFront ? front : wall;
+        const shade = east ? 0.86 : 0.8;
+        const inset = east ? -0.07 : 0.07;
+        if (!isFront) {
+            putZ(list, z0, z1, y0, y1, x, east, shade, uvTop);
+            putZ(plaster, z1, z0, y0, y1, x + inset, east, 0.7, uvTop);
+            return;
+        }
+        let hz0 = Math.max(z0 + 0.35, doorZ - holeW * 0.5);
+        let hz1 = Math.min(z1 - 0.35, doorZ + holeW * 0.5);
+        const hy = y0 + holeH;
+        putZ(list, z0, hz0, y0, y1, x, east, shade, uvTop);
+        putZ(list, hz1, z1, y0, y1, x, east, shade, uvTop);
+        putZ(list, hz0, hz1, hy, y1, x, east, shade, uvTop);
+        putZ(plaster, z1, hz1, y0, y1, x + inset, east, 0.7, uvTop);
+        putZ(plaster, hz0, z0, y0, y1, x + inset, east, 0.7, uvTop);
+        putZ(plaster, hz1, hz0, hy, y1, x + inset, east, 0.7, uvTop);
+    };
+    wallAlongX(z0, true, face === "n");
+    wallAlongX(z1, false, face === "s");
+    wallAlongZ(x1, true, face === "e");
+    wallAlongZ(x0, false, face === "w");
+    const ridge = y1 + roofH;
+    const gable = (alongZ, at, eastOrNorth) => {
+        if (alongZ) {
+            const mid = (z0 + z1) * 0.5;
+            const tri = eastOrNorth
+                ? [[at, y1, z0, 0, uvTop, 0.86], [at, ridge, mid, 0.5, uvTop, 0.94], [at, y1, z1, 1, uvTop, 0.86]]
+                : [[at, y1, z1, 0, uvTop, 0.8], [at, ridge, mid, 0.5, uvTop, 0.9], [at, y1, z0, 1, uvTop, 0.8]];
+            pushTri(wall, tri[0], tri[1], tri[2]);
+            const back = eastOrNorth ? -0.07 : 0.07;
+            pushTri(plaster,
+                [at + back, y1, z1, 0, 0, 0.62],
+                [at + back, ridge - 0.05, mid, 0.5, 1, 0.62],
+                [at + back, y1, z0, 1, 0, 0.62]
+            );
+        } else {
+            const mid = (x0 + x1) * 0.5;
+            const tri = eastOrNorth
+                ? [[x0, y1, at, 0, uvTop, 0.96], [mid, ridge, at, 0.5, uvTop, 1], [x1, y1, at, 1, uvTop, 0.96]]
+                : [[x1, y1, at, 0, uvTop, 0.74], [mid, ridge, at, 0.5, uvTop, 0.82], [x0, y1, at, 1, uvTop, 0.74]];
+            pushTri(wall, tri[0], tri[1], tri[2]);
+            const back = eastOrNorth ? 0.07 : -0.07;
+            pushTri(plaster,
+                [x1, y1, at + back, 0, 0, 0.62],
+                [mid, ridge - 0.05, at + back, 0.5, 1, 0.62],
+                [x0, y1, at + back, 1, 0, 0.62]
+            );
+        }
+    };
+    const o = 0.16;
+    if (b.w >= b.d) {
+        gable(true, x1, true);
+        gable(true, x0, false);
+        const mid = (z0 + z1) * 0.5;
+        pushQuad(roof,
+            [x0 - o, y1, z0 - o, 0, 0, 0.9],
+            [x0 - o, ridge, mid, 0, 1, 1],
+            [x1 + o, ridge, mid, 3, 1, 1],
+            [x1 + o, y1, z0 - o, 3, 0, 0.9]
+        );
+        pushQuad(roof,
+            [x0 - o, y1, z1 + o, 0, 0, 0.78],
+            [x1 + o, y1, z1 + o, 3, 0, 0.78],
+            [x1 + o, ridge, mid, 3, 1, 1],
+            [x0 - o, ridge, mid, 0, 1, 1]
+        );
+    } else {
+        gable(false, z0, true);
+        gable(false, z1, false);
+        const mid = (x0 + x1) * 0.5;
+        pushQuad(roof,
+            [x0 - o, y1, z0 - o, 0, 0, 0.9],
+            [x0 - o, y1, z1 + o, 0, 3, 0.9],
+            [mid, ridge, z1 + o, 1, 3, 1],
+            [mid, ridge, z0 - o, 1, 0, 1]
+        );
+        pushQuad(roof,
+            [x1 + o, y1, z0 - o, 0, 0, 0.78],
+            [mid, ridge, z0 - o, 1, 0, 1],
+            [mid, ridge, z1 + o, 1, 3, 1],
+            [x1 + o, y1, z1 + o, 0, 3, 0.78]
+        );
+    }
+    b.h = wallH + roofH;
+}
+
 function dressFlatHouses() {
     textures.bill = flatWallTexture(false, false);
     textures.billFront = flatWallTexture(false, true);
@@ -2324,170 +2523,16 @@ function dressFlatHouses() {
     textures.billBrickFront = flatWallTexture(true, true);
     const kinds = { house: 1, tall: 1, shop: 1, brick: 1, long: 1, grand: 1 };
     const place = World.places[2];
-    const quad = (list, a, b, c, d) => pushQuad(list, a, b, c, d);
-    const faceX = (list, x0, x1, y0, y1, z, u0, u1, v0, v1, shade, north) => {
-        const bl = [x0, y0, z, u0, v0, shade];
-        const tl = [x0, y1, z, u0, v1, shade];
-        const tr = [x1, y1, z, u1, v1, shade];
-        const br = [x1, y0, z, u1, v0, shade];
-        if (north) quad(list, bl, tl, tr, br);
-        else quad(list, br, tr, tl, bl);
-    };
-    const faceZ = (list, z0, z1, y0, y1, x, u0, u1, v0, v1, shade, east) => {
-        const bl = [x, y0, z0, u0, v0, shade];
-        const tl = [x, y1, z0, u0, v1, shade];
-        const tr = [x, y1, z1, u1, v1, shade];
-        const br = [x, y0, z1, u1, v0, shade];
-        if (east) quad(list, bl, tl, tr, br);
-        else quad(list, br, tr, tl, bl);
-    };
     for (const b of Town.buildings) {
         if (b.village !== 2 || b.raised || !kinds[b.mesh]) continue;
         if (Math.hypot(b.x - place.x, b.z - place.z) < 22) continue;
-        const tall = b.mesh === "tall" || b.mesh === "grand";
         const brick = b.mesh === "brick";
-        const wallH = tall ? 6.35 : 4.15;
-        const roofH = tall ? 1.85 : 1.45;
-        const uvTop = tall ? 1 : 0.62;
-        const y0 = b.y || 0;
-        const y1 = y0 + wallH;
-        const x0 = b.minX;
-        const z0 = b.minZ;
-        const x1 = x0 + b.w;
-        const z1 = z0 + b.d;
-        const yaw = b.yaw || 0;
-        const s = Math.sin(yaw);
-        const c = Math.cos(yaw);
-        const fx = -s;
-        const fz = -c;
-        const front = Math.abs(fz) >= Math.abs(fx) ? (fz < 0 ? "n" : "s") : (fx > 0 ? "e" : "w");
-        const half = (Math.abs(fx) > Math.abs(fz) ? b.w : b.d) * 0.5;
-        const side = b.doorSide == null ? 1 : b.doorSide;
-        const doorX = b.x + fx * (half - 0.06) - c * side;
-        const doorZ = b.z + fz * (half - 0.06) + s * side;
-        const outer = brick ? batches.billBrick : batches.bill;
-        const outerFront = brick ? batches.billBrickFront : batches.billFront;
-        const holeW = 1.2;
-        const holeH = 2.18;
-        const putX = (list, xa, xb, ya, yb, z, north, shade, vTop) => {
-            const u0 = (xa - x0) / b.w;
-            const u1 = (xb - x0) / b.w;
-            faceX(list, xa, xb, ya, yb, z, u0, u1, (ya - y0) / wallH * vTop, (yb - y0) / wallH * vTop, shade, north);
-        };
-        const putZ = (list, za, zb, ya, yb, x, east, shade, vTop) => {
-            const u0 = (za - z0) / b.d;
-            const u1 = (zb - z0) / b.d;
-            faceZ(list, za, zb, ya, yb, x, u0, u1, (ya - y0) / wallH * vTop, (yb - y0) / wallH * vTop, shade, east);
-        };
-        const wallAlongX = (z, north, isFront) => {
-            const list = isFront ? outerFront : outer;
-            const shade = north ? 0.96 : 0.74;
-            const inset = north ? 0.07 : -0.07;
-            if (!isFront) {
-                putX(list, x0, x1, y0, y1, z, north, shade, uvTop);
-                putX(batches.plaster, x1, x0, y0, y1, z + inset, north, 0.7, uvTop);
-                return;
-            }
-            let hx0 = doorX - holeW * 0.5;
-            let hx1 = doorX + holeW * 0.5;
-            hx0 = Math.max(x0 + 0.35, hx0);
-            hx1 = Math.min(x1 - 0.35, hx1);
-            const hy = y0 + holeH;
-            putX(list, x0, hx0, y0, y1, z, north, shade, uvTop);
-            putX(list, hx1, x1, y0, y1, z, north, shade, uvTop);
-            putX(list, hx0, hx1, hy, y1, z, north, shade, uvTop);
-            putX(batches.plaster, x1, hx1, y0, y1, z + inset, north, 0.7, uvTop);
-            putX(batches.plaster, hx0, x0, y0, y1, z + inset, north, 0.7, uvTop);
-            putX(batches.plaster, hx1, hx0, hy, y1, z + inset, north, 0.7, uvTop);
-        };
-        const wallAlongZ = (x, east, isFront) => {
-            const list = isFront ? outerFront : outer;
-            const shade = east ? 0.86 : 0.8;
-            const inset = east ? -0.07 : 0.07;
-            if (!isFront) {
-                putZ(list, z0, z1, y0, y1, x, east, shade, uvTop);
-                putZ(batches.plaster, z1, z0, y0, y1, x + inset, east, 0.7, uvTop);
-                return;
-            }
-            let hz0 = doorZ - holeW * 0.5;
-            let hz1 = doorZ + holeW * 0.5;
-            hz0 = Math.max(z0 + 0.35, hz0);
-            hz1 = Math.min(z1 - 0.35, hz1);
-            const hy = y0 + holeH;
-            putZ(list, z0, hz0, y0, y1, x, east, shade, uvTop);
-            putZ(list, hz1, z1, y0, y1, x, east, shade, uvTop);
-            putZ(list, hz0, hz1, hy, y1, x, east, shade, uvTop);
-            putZ(batches.plaster, z1, hz1, y0, y1, x + inset, east, 0.7, uvTop);
-            putZ(batches.plaster, hz0, z0, y0, y1, x + inset, east, 0.7, uvTop);
-            putZ(batches.plaster, hz1, hz0, hy, y1, x + inset, east, 0.7, uvTop);
-        };
-        wallAlongX(z0, true, front === "n");
-        wallAlongX(z1, false, front === "s");
-        wallAlongZ(x1, true, front === "e");
-        wallAlongZ(x0, false, front === "w");
-        const ridge = y1 + roofH;
-        const gable = (alongZ, at, eastOrNorth) => {
-            const list = outer;
-            if (alongZ) {
-                const mid = (z0 + z1) * 0.5;
-                const tri = eastOrNorth
-                    ? [[at, y1, z0, 0, uvTop, 0.86], [at, ridge, mid, 0.5, uvTop, 0.94], [at, y1, z1, 1, uvTop, 0.86]]
-                    : [[at, y1, z1, 0, uvTop, 0.8], [at, ridge, mid, 0.5, uvTop, 0.9], [at, y1, z0, 1, uvTop, 0.8]];
-                pushTri(list, tri[0], tri[1], tri[2]);
-                const back = eastOrNorth ? -0.07 : 0.07;
-                pushTri(batches.plaster,
-                    [at + back, y1, z1, 0, 0, 0.62],
-                    [at + back, ridge - 0.05, mid, 0.5, 1, 0.62],
-                    [at + back, y1, z0, 1, 0, 0.62]
-                );
-            } else {
-                const mid = (x0 + x1) * 0.5;
-                const tri = eastOrNorth
-                    ? [[x0, y1, at, 0, uvTop, 0.96], [mid, ridge, at, 0.5, uvTop, 1], [x1, y1, at, 1, uvTop, 0.96]]
-                    : [[x1, y1, at, 0, uvTop, 0.74], [mid, ridge, at, 0.5, uvTop, 0.82], [x0, y1, at, 1, uvTop, 0.74]];
-                pushTri(list, tri[0], tri[1], tri[2]);
-                const back = eastOrNorth ? 0.07 : -0.07;
-                pushTri(batches.plaster,
-                    [x1, y1, at + back, 0, 0, 0.62],
-                    [mid, ridge - 0.05, at + back, 0.5, 1, 0.62],
-                    [x0, y1, at + back, 1, 0, 0.62]
-                );
-            }
-        };
-        const o = 0.16;
-        if (b.w >= b.d) {
-            gable(true, x1, true);
-            gable(true, x0, false);
-            const mid = (z0 + z1) * 0.5;
-            pushQuad(batches.roof,
-                [x0 - o, y1, z0 - o, 0, 0, 0.9],
-                [x0 - o, ridge, mid, 0, 1, 1],
-                [x1 + o, ridge, mid, 3, 1, 1],
-                [x1 + o, y1, z0 - o, 3, 0, 0.9]
-            );
-            pushQuad(batches.roof,
-                [x0 - o, y1, z1 + o, 0, 0, 0.78],
-                [x1 + o, y1, z1 + o, 3, 0, 0.78],
-                [x1 + o, ridge, mid, 3, 1, 1],
-                [x0 - o, ridge, mid, 0, 1, 1]
-            );
-        } else {
-            gable(false, z0, true);
-            gable(false, z1, false);
-            const mid = (x0 + x1) * 0.5;
-            pushQuad(batches.roof,
-                [x0 - o, y1, z0 - o, 0, 0, 0.9],
-                [x0 - o, y1, z1 + o, 0, 3, 0.9],
-                [mid, ridge, z1 + o, 1, 3, 1],
-                [mid, ridge, z0 - o, 1, 0, 1]
-            );
-            pushQuad(batches.roof,
-                [x1 + o, y1, z0 - o, 0, 0, 0.78],
-                [mid, ridge, z0 - o, 1, 0, 1],
-                [mid, ridge, z1 + o, 1, 3, 1],
-                [x1 + o, y1, z1 + o, 0, 3, 0.78]
-            );
-        }
+        stampFlatKitHouse({
+            wall: brick ? batches.billBrick : batches.bill,
+            front: brick ? batches.billBrickFront : batches.billFront,
+            plaster: batches.plaster,
+            roof: batches.roof
+        }, b);
     }
 }
 
@@ -2536,40 +2581,40 @@ function defaultGraphics() {
 let graphics = defaultGraphics();
 
 function gfx() {
-    // Outdoor Roblox meshes are gone — room for a longer Daggerfall haze without the old cost.
+    // Longer clear view; haze only at the far edge so the next town stays hidden.
     if (graphics === "low") {
         return {
             scale: 0.22,
-            far: 160,
-            fogNear: 40,
-            fogSpan: 90,
-            drawFar: 130,
-            treeNear: 60,
+            far: 280,
+            fogNear: 90,
+            fogSpan: 150,
+            drawFar: 220,
+            treeNear: 90,
             treeFar: 0,
-            treeCap: 12,
-            meadowReach: 52,
+            treeCap: 16,
+            meadowReach: 64,
             meadowStep: 56,
             meadowProps: false,
-            personDraw: 40,
-            personStep: 36,
+            personDraw: 48,
+            personStep: 40,
             farEvery: 240,
             miniEvery: 8
         };
     }
     return {
         scale: 0.32,
-        far: 220,
-        fogNear: 55,
-        fogSpan: 120,
-        drawFar: 180,
-        treeNear: 90,
+        far: 360,
+        fogNear: 130,
+        fogSpan: 200,
+        drawFar: 300,
+        treeNear: 140,
         treeFar: 0,
-        treeCap: 20,
-        meadowReach: 72,
+        treeCap: 24,
+        meadowReach: 90,
         meadowStep: 48,
         meadowProps: false,
-        personDraw: 55,
-        personStep: 48,
+        personDraw: 70,
+        personStep: 55,
         farEvery: 120,
         miniEvery: 5
     };
@@ -2735,6 +2780,7 @@ const outdoorDrawList = [
     "bridge", "road", "wood", "palisade",
     "cotWall", "cotRoof", "cotDoor", "cotWood", "cotGlow", "cotFloor",
     "raisedfield", "raisedleaf", "raisedtrunk", "raisedfloor", "raisedpad",
+    "raisedbill", "raisedbillFront", "raisedplaster", "raisedroof",
     "housedoor", "cart", "meadowBush", "meadowRock",
     "cloth0", "cloth1", "cloth2", "cloth3", "cloth4", "skin", "pants", "steel",
     "placeGhost"
@@ -4538,9 +4584,9 @@ function paintSheet() {
     paintBuildStatus();
 }
 
-// Footprint matches Town kit house (same as faction houses).
-const HOUSE_PLACE_W = Town.MESH.house.w;
-const HOUSE_PLACE_D = Town.MESH.house.d;
+// Footprint matches the tall outside-village kit houses (same as faction houses).
+const HOUSE_PLACE_W = Town.MESH.tall.w;
+const HOUSE_PLACE_D = Town.MESH.tall.d;
 let placing = null;
 
 function paintBuildStatus() {
@@ -4748,12 +4794,8 @@ function respawn() {
     hero.magicka = Hero.maxMagicka(hero);
     player.dead = 0;
     player.guard = 1.4;
-    cam.x = places[2].ox;
-    cam.y = 1.62;
     hop = 0;
-    cam.z = places[2].oz + 20;
-    cam.yaw = 0;
-    cam.pitch = 0;
+    placeAtKitFarm();
     death.classList.remove("show");
     death.hidden = true;
     paintHealth();
@@ -7652,6 +7694,7 @@ let raisedData = null;
 let raisedKey = "";
 let raisedContentKey = "";
 
+let farmStartPlaced = false;
 function raisePlots(data) {
     raisedData = data || null;
     // Remesh only when plot content changes or the camera cell moves — not on every campaign poll.
@@ -7663,6 +7706,16 @@ function raisePlots(data) {
         raisedKey = "";
     }
     stampRaisedPlots();
+    // First time the Southwest start farm is known, stand at its door (unless already walking elsewhere).
+    if (!flying && !farmStartPlaced && !inside) {
+        const nearStart = Math.hypot(cam.x - START_FARM.x, cam.z - START_FARM.z) < 40
+            || Math.hypot(cam.x - OLD_TOWN_SPAWN.x, cam.z - OLD_TOWN_SPAWN.z) < 50;
+        if (nearStart && plots.some((plot) => plot && plot.id === "show-farm-2" && plot.house)) {
+            placeAtKitFarm();
+            farmStartPlaced = true;
+            saveSpot();
+        }
+    }
 }
 
 function clearRaised() {
@@ -7691,7 +7744,11 @@ function clearRaised() {
     textures.raisedleaf = textures.leaf;
     textures.raisedtrunk = textures.trunk;
     textures.raisedfloor = textures.wood;
-    for (const name of ["raisedfield", "raisedleaf", "raisedtrunk", "raisedfloor"]) uploadMesh(name, []);
+    textures.raisedbill = textures.bill;
+    textures.raisedbillFront = textures.billFront;
+    textures.raisedplaster = textures.plaster;
+    textures.raisedroof = textures.roof;
+    for (const name of ["raisedfield", "raisedleaf", "raisedtrunk", "raisedfloor", "raisedbill", "raisedbillFront", "raisedplaster", "raisedroof"]) uploadMesh(name, []);
 }
 
 function doorFront(b) {
@@ -7755,7 +7812,7 @@ function raisedDetailReach() {
 
 // Doors, crop rows, and kit-house boards only this close.
 function raisedUseReach() {
-    return graphics === "low" ? 20 : 28;
+    return graphics === "low" ? 48 : 72;
 }
 
 function ptsBounds(pts) {
@@ -7930,7 +7987,11 @@ function stampRaisedPlots() {
     const leaf = [];
     const trunk = [];
     const floorGeom = [];
-        const padGeom = [];
+    const padGeom = [];
+    const bill = [];
+    const billFront = [];
+    const plaster = [];
+    const roof = [];
     World.setPads(raisedData.pads || []);
     sceneryGrid = null;
     nearMarkX = 1e9;
@@ -8041,16 +8102,15 @@ function stampRaisedPlots() {
             if (plot.kind === "farm" && plot.field) stampPlotFence(trunk, plot.field, house);
             continue;
         }
-        // Box house only — no town.json kit stamp.
-        const y = house.y || Math.max(0, World.heightAt(house.x, house.z));
-        house.village = plot.village;
-        house.mesh = "house";
+        // Same tall outside-village kit house as the SW farmhouse at -2366,770 (door + bill walls).
+        house.village = plot.village == null ? -1 : plot.village;
+        house.mesh = "tall";
         house.role = plot.kind === "house" ? "house" : "farmhouse";
         house.raised = true;
+        house.y = house.y != null ? house.y : Math.max(0, World.heightAt(house.x, house.z));
+        stampFlatKitHouse({ wall: bill, front: billFront, plaster: plaster, roof: roof }, house);
         Town.buildings.push(house);
-        addBox(trunk, house.minX, y, house.minZ, house.w, (house.h || 3.5) * 0.7, house.d);
-        addBox(trunk, house.minX - 0.15, y + (house.h || 3.5) * 0.7, house.minZ - 0.15, house.w + 0.3, (house.h || 3.5) * 0.3, house.d + 0.3);
-        addRaisedDoor(house, plot.id, floorGeom);
+        addRaisedDoor(house, plot.id, floorGeom, true);
         const f = plot.field;
         if (f) {
             for (let z = f.z; z < f.z + f.d - 0.1; z += 2) {
@@ -8088,11 +8148,21 @@ function stampRaisedPlots() {
     uploadMesh("raisedleaf", leaf);
     uploadMesh("raisedtrunk", trunk);
     uploadMesh("raisedfloor", floorGeom);
-        uploadMesh("raisedpad", padGeom);
+    uploadMesh("raisedpad", padGeom);
+    uploadMesh("raisedbill", bill);
+    uploadMesh("raisedbillFront", billFront);
+    uploadMesh("raisedplaster", plaster);
+    uploadMesh("raisedroof", roof);
     mesh.raisedpad.cull = false;
     textures.raisedpad = textures.grass;
+    textures.raisedbill = textures.bill;
+    textures.raisedbillFront = textures.billFront;
+    textures.raisedplaster = textures.plaster;
+    textures.raisedroof = textures.roof;
     if (mesh.raisedfield) mesh.raisedfield.cull = false;
     if (mesh.raisedleaf) mesh.raisedleaf.cull = false;
+    if (mesh.raisedbill) mesh.raisedbill.cull = false;
+    if (mesh.raisedbillFront) mesh.raisedbillFront.cull = false;
     poseDoors();
 }
 
