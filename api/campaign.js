@@ -2113,6 +2113,7 @@ function shoreRoute(village) {
     };
 }
 
+const routeMemo = new Map();
 function routeOf(state, man, cutting) {
     if (man.repair) {
         const route = repairRoute(man.village, man.repair.side);
@@ -2125,9 +2126,14 @@ function routeOf(state, man, cutting) {
             path: route.path
         };
     }
-    let route;
-    if (!cutting && fishLodge(state, man.village)) route = shoreRoute(man.village);
-    else route = cutting ? woodRoute(man.village, man.slot || 0, man.ore) : fishRoute(man.village);
+    const shore = !cutting && fishLodge(state, man.village);
+    const key = (cutting ? "c" : "f") + ":" + man.village + ":" + (man.slot || 0) + ":" + (man.ore ? 1 : 0) + ":" + (shore ? "s" : "");
+    let route = routeMemo.get(key);
+    if (!route) {
+        if (shore) route = shoreRoute(man.village);
+        else route = cutting ? woodRoute(man.village, man.slot || 0, man.ore) : fishRoute(man.village);
+        routeMemo.set(key, route);
+    }
     return {
         cycleStart: man.cycleStart,
         walkMs: route.walkMs,
@@ -2196,7 +2202,51 @@ function presentCart(cart, now) {
     };
 }
 
-function present(state, now, turn, paused) {
+function layoutKey(state, pads) {
+    const ids = [];
+    const push = (list) => {
+        for (let i = 0; i < (list || []).length; i++) {
+            const site = list[i];
+            if (site && site.id) ids.push(site.id);
+        }
+    };
+    push(state.builtFarms);
+    push(state.houses);
+    push(state.mines);
+    push(state.yards);
+    push(state.playerSites);
+    push(state.farmJobs);
+    push(state.siteJobs);
+    push(state.playerJobs);
+    let sig = (pads || []).length;
+    for (let i = 0; i < (pads || []).length; i++) {
+        const pad = pads[i];
+        sig = (Math.imul(sig, 33) + Math.round(pad.minX + pad.minZ + pad.y)) | 0;
+    }
+    return (state.restartedAt || 0) + "#" + ids.join("|") + "#" + sig;
+}
+
+function rosterKey(state) {
+    const bits = [];
+    for (const man of state.fishermen || []) {
+        if (man.health <= 0) continue;
+        bits.push("f" + man.village + ":" + (man.repair ? man.repair.side : ""));
+    }
+    for (const man of state.woodcutters || []) {
+        if (man.health <= 0) continue;
+        bits.push("w" + man.village + ":" + (man.slot || 0) + ":" + (man.ore ? 1 : 0) + ":" + (man.repair ? man.repair.side : ""));
+    }
+    (state.minors || []).forEach((minor, index) => {
+        const mine = (state.mines || []).some((item) => item.village === MINOR_BASE + index);
+        bits.push("h" + index + ":" + (minor.workers || 0) + ":" + (mine ? 1 : 0));
+    });
+    for (const farm of state.farms || []) {
+        if (farm.health > 0) bits.push("a" + farm.id);
+    }
+    return (state.restartedAt || 0) + "#" + bits.join(",");
+}
+
+function present(state, now, turn, paused, opts) {
     const elapsed = Math.max(0, (paused ? state.pausedAt : now) - state.startedAt);
     const nextIn = TURN_MS - (elapsed % TURN_MS);
     const shown = factions.map((faction, index) => ({ faction, index, units: [] }));
@@ -2229,6 +2279,12 @@ function present(state, now, turn, paused) {
     const beds = assigned.beds;
     const naps = assigned.naps;
     const homes = seDwellings();
+    const brief = !!(opts && opts.brief);
+    const padList = syncPads(state);
+    const layoutId = layoutKey(state, padList);
+    const rosterId = rosterKey(state);
+    const sendLayout = !brief && !(opts && opts.layout === layoutId);
+    const keepPaths = !brief && !(opts && opts.roster === rosterId);
     return {
         turn,
         paused,
@@ -2243,7 +2299,7 @@ function present(state, now, turn, paused) {
         wood: state.wood.slice(),
         stone: (state.stone || [0, 0, 0, 0]).slice(),
         gold: (state.gold || [0, 0, 0, 0]).slice(),
-        fishermen: state.fishermen.filter((man) => man.health > 0).map((man, index) => {
+        fishermen: brief ? [] : state.fishermen.filter((man) => man.health > 0).map((man, index) => {
             const route = routeOf(state, man, false);
             const shelter = state.attacks.some((attack) => !attack.resolved && attack.to === man.village);
             return {
@@ -2256,7 +2312,7 @@ function present(state, now, turn, paused) {
                 from: route.from,
                 via: route.via,
                 to: route.to,
-                path: route.path,
+                path: keepPaths ? route.path : undefined,
                 asleep: workerHeld(state, man) && !shelter,
                 shelter,
                 bed: beds.get(man) || "manor",
@@ -2265,7 +2321,7 @@ function present(state, now, turn, paused) {
                 plate: folkPlate(man, homes).plate
             };
         }),
-        woodcutters: state.woodcutters.filter((man) => man.health > 0).map((man) => {
+        woodcutters: brief ? [] : state.woodcutters.filter((man) => man.health > 0).map((man) => {
             const route = routeOf(state, man, true);
             const shelter = state.attacks.some((attack) => !attack.resolved && attack.to === man.village);
             return {
@@ -2280,7 +2336,7 @@ function present(state, now, turn, paused) {
                 from: route.from,
                 via: route.via,
                 to: route.to,
-                path: route.path,
+                path: keepPaths ? route.path : undefined,
                 asleep: workerHeld(state, man) && !man.repair && !shelter,
                 shelter,
                 bed: beds.get(man) || "manor",
@@ -2288,9 +2344,12 @@ function present(state, now, turn, paused) {
                 name: folkPlate(man, homes).name,
                 plate: folkPlate(man, homes).plate
             };
-        }).concat(hamletWalkers(state)),
-        farms: presentFarms(state),
-        plots: (state.builtFarms || []).map((site) => ({
+        }).concat(keepPaths ? hamletWalkers(state) : hamletWalkers(state).map((man) => {
+            man.path = undefined;
+            return man;
+        })),
+        farms: brief ? [] : presentFarms(state, keepPaths),
+        plots: sendLayout ? (state.builtFarms || []).map((site) => ({
             id: site.id,
             village: site.village,
             kind: "farm",
@@ -2320,7 +2379,11 @@ function present(state, now, turn, paused) {
             d: yard.d,
             model: yard.model || null,
             at: yard.at || null
-        }))).concat(presentHouseGroup(state.playerSites || [])).concat(hamletPlots()),
+        }))).concat(presentHouseGroup(state.playerSites || [])).concat(hamletPlots()) : undefined,
+        sameLayout: !sendLayout,
+        layout: layoutId,
+        sameRoster: !keepPaths && !brief,
+        roster: rosterId,
         raising: (state.farmJobs || []).map((job) => ({
             id: job.id,
             village: job.village,
@@ -2348,7 +2411,7 @@ function present(state, now, turn, paused) {
             kind: "house",
             readyAt: state.playerJobs[0].readyAt
         } : null,
-        pads: syncPads(state),
+        pads: sendLayout ? padList : undefined,
         lodges: (state.lodges || []).map((lodge) => ({
             id: lodge.id,
             village: lodge.village,
@@ -4839,7 +4902,7 @@ function stepFarms(state, now) {
     return dirty;
 }
 
-function presentFarms(state, now) {
+function presentFarms(state, keepPlaces) {
     const play = Number.isFinite(state.farmPlay) ? state.farmPlay : 0;
     return (state.farms || []).filter((farm) => farm.health > 0).map((farm) => {
         const site = farmSite(state, farm.id);
@@ -4864,13 +4927,13 @@ function presentFarms(state, now) {
             length: farm.length || 0,
             playAt: play,
             crew: farmCrew(farm),
-            spots: site ? workSpots(site) : [],
-            nap: site ? [
+            spots: keepPlaces === false || !site ? undefined : workSpots(site),
+            nap: keepPlaces === false || !site ? undefined : [
                 { x: site.out.x, z: site.out.z, y: y },
                 { x: site.door.x, z: site.door.z, y: y },
                 { x: site.inn.x, z: site.inn.z, y: y },
                 { x: site.bed.x, z: site.bed.z, y: y }
-            ] : []
+            ]
         };
     });
 }
@@ -4933,12 +4996,12 @@ async function saveHero(raw) {
     return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
 }
 
-async function campaignState(now, saved, playAdd) {
+async function campaignState(now, saved, playAdd, opts) {
     const state = saved || await readState();
     const moved = notePlay(state, Number(playAdd), now);
     const { dirty, turn, paused } = syncWorld(state, now);
     if ((dirty || moved) && !saved) await writeState(state);
-    return present(state, now, turn, paused);
+    return present(state, now, turn, paused, opts);
 }
 
 // The player stands apart from every faction. Whoever the player strikes treats them as an enemy until the player dies.
@@ -5229,11 +5292,18 @@ module.exports = async function handler(req, res) {
             return;
         }
         let playAdd = NaN;
+        let view = null;
         try {
-            const raw = new URL(req.url, "http://localhost").searchParams.get("play");
+            const params = new URL(req.url, "http://localhost").searchParams;
+            const raw = params.get("play");
             if (raw != null && raw !== "") playAdd = Number(raw);
+            view = {
+                brief: params.get("brief") === "1",
+                layout: params.get("layout") || "",
+                roster: params.get("roster") || ""
+            };
         } catch (err) { /* a campaign-page poll has no play time */ }
-        res.status(200).json(await campaignState(Date.now(), null, playAdd));
+        res.status(200).json(await campaignState(Date.now(), null, playAdd, view));
     } catch (error) {
         console.error(error);
         if (!res.headersSent) res.status(500).json({ error: "Something went wrong." });

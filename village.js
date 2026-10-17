@@ -1287,7 +1287,11 @@ void main() {
 }
 `));
 gl.attachShader(program, compile(gl.FRAGMENT_SHADER, `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
 precision mediump float;
+#endif
 varying vec2 vUv;
 varying float vShade;
 varying float vDepth;
@@ -1347,7 +1351,11 @@ attribute vec2 aPos;
 void main() { gl_Position = vec4(aPos, 1.0, 1.0); }
 `));
 gl.attachShader(skyProgram, compile(gl.FRAGMENT_SHADER, `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
 precision mediump float;
+#endif
 uniform vec2 uRes;
 uniform float uPitch;
 uniform float uYaw;
@@ -1467,8 +1475,6 @@ const skyLoc = {
 const skyTex = { day: null, morning: null, night: null };
 let skyReady = 0;
 function loadSky() {
-    const touch = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
-    if (touch) return;
     const files = [
         ["day", "kenney_skyboxes/Skyboxes/skybox-day.png", 1],
         ["morning", "kenney_skyboxes/Skyboxes/skybox-morning.png", 2],
@@ -2953,7 +2959,7 @@ const outdoorDrawList = [
     "wall", "door", "roof", "store", "plaster", "trunk", "leaf", "bloom", "rock", "linen", "glow",
     "bill", "billFront", "billBrick", "billBrickFront",
     "dfFront", "dfSide", "dfBack", "dfRoof", "dfLong", "dfThatch", "dfYard", "dfPlaster", "dfShop",
-    "bridge", "road", "wood", "palisade",
+    "bridge", "road", "wood", "gates", "palisade",
     "cotWall", "cotRoof", "cotDoor", "cotWood", "cotGlow", "cotFloor",
     "raisedfield", "raisedleaf", "raisedtrunk", "raisedfloor", "raisedpad",
     "raisedbill", "raisedbillFront", "raisedplaster", "raisedroof",
@@ -3978,6 +3984,54 @@ function mergeMen(data) {
 }
 
 let soldierKey = "";
+let heldLayout = "";
+let heldRoster = "";
+let heldPlots = null;
+let heldPads = null;
+let heldWood = null;
+let heldFish = null;
+let heldFarms = null;
+
+function rememberWorld(data) {
+    if (!data) return;
+    if (data.sameLayout && heldPlots) {
+        data.plots = heldPlots;
+        data.pads = heldPads;
+    } else if (data.plots) {
+        heldLayout = data.layout || "";
+        heldPlots = data.plots;
+        heldPads = data.pads || [];
+    }
+    if (data.sameRoster) {
+        const wood = new Map((heldWood || []).map((man) => [man.id, man.path]));
+        for (const man of data.woodcutters || []) {
+            if (!man.path && wood.has(man.id)) man.path = wood.get(man.id);
+        }
+        const fish = new Map((heldFish || []).map((man) => [man.village + ":" + man.slot, man.path]));
+        for (const man of data.fishermen || []) {
+            const key = man.village + ":" + man.slot;
+            if (!man.path && fish.has(key)) man.path = fish.get(key);
+        }
+        const farms = new Map((heldFarms || []).map((farm) => [farm.id, farm]));
+        for (const farm of data.farms || []) {
+            const old = farms.get(farm.id);
+            if (!old) continue;
+            if (!farm.spots) farm.spots = old.spots;
+            if (!farm.nap) farm.nap = old.nap;
+        }
+    }
+    if (data.woodcutters) heldWood = data.woodcutters;
+    if (data.fishermen) heldFish = data.fishermen;
+    if (data.farms) heldFarms = data.farms;
+    if (data.roster) heldRoster = data.roster;
+}
+
+function campaignQuery(play) {
+    let url = "/api/campaign?play=" + play;
+    if (heldLayout) url += "&layout=" + encodeURIComponent(heldLayout);
+    if (heldRoster) url += "&roster=" + encodeURIComponent(heldRoster);
+    return url;
+}
 const GOBLINS = 9;
 // Goblins of the camp in the woods are numbered from here, clear of raid goblins.
 const WILD_INDEX = 100;
@@ -3990,6 +4044,7 @@ function applyCampaign(data) {
     const stamp = Number(data && data.restartedAt) || 0;
     if (stamp < seenRestart) return;
     seenRestart = Math.max(seenRestart, stamp);
+    rememberWorld(data);
     adoptHero(data.hero);
     campaign = data;
     buildTrails(data.trails || []);
@@ -4059,7 +4114,7 @@ function mergeFishermen(data) {
             old.viaZ = item.via ? item.via.z : null;
             old.toX = item.to.x;
             old.toZ = item.to.z;
-            old.path = item.path || null;
+            old.path = item.path || old.path || null;
             old.asleep = !!item.asleep;
             old.shelter = !!item.shelter;
             old.bed = item.bed || "manor";
@@ -4136,7 +4191,7 @@ function touchFarmers(data) {
             man.health = pendingHit ? Math.min(man.health, item.health) : item.health;
             man.faction = item.owner;
             man.spots = item.spots || man.spots;
-            man.nap = farmerNap(item, man.hand || 0);
+            if (item.nap && item.nap.length) man.nap = farmerNap(item, man.hand || 0);
             if (man.health <= 0) man.dying = true;
         }
     }
@@ -4643,7 +4698,7 @@ function syncCampaign() {
     // Do not poll the campaign while the tab is hidden — nothing to update until you come back.
     if (document.visibilityState !== "visible") return;
     const sent = pullPlay();
-    const url = "/api/campaign?play=" + sent;
+    const url = campaignQuery(sent);
     fetch(url, { cache: "no-store" }).then((res) => res.json()).then((data) => {
         if (sent) pendingSend = Math.max(0, pendingSend - sent);
         applyCampaign(data);
@@ -4665,7 +4720,7 @@ function flushPlay() {
     if (sent <= 0) return;
     accrued -= sent;
     pendingSend += sent;
-    fetch("/api/campaign?play=" + sent, { cache: "no-store", keepalive: true }).then((res) => res.json()).then((data) => {
+    fetch(campaignQuery(sent), { cache: "no-store", keepalive: true }).then((res) => res.json()).then((data) => {
         pendingSend = Math.max(0, pendingSend - sent);
         applyCampaign(data);
     }).catch(() => {
@@ -6414,16 +6469,20 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
 let proj = new Float32Array(16);
 
 function resize() {
-    const scale = gfx().scale;
-    canvas.width = Math.max(240, Math.floor(window.innerWidth * scale));
-    canvas.height = Math.max(160, Math.floor(window.innerHeight * scale));
+    // A phone is already a small window. Shrinking it again left the farm in a 240px buffer stretched over the screen.
+    const scale = phone.matches ? 1 : gfx().scale;
+    canvas.width = Math.max(2, Math.floor(window.innerWidth * scale));
+    canvas.height = Math.max(2, Math.floor(window.innerHeight * scale));
     gl.viewport(0, 0, canvas.width, canvas.height);
     proj = perspective(0.12, gfx().far);
 }
 
 function perspective(near, far) {
-    const f = 1 / Math.tan((75 * Math.PI / 180) / 2);
     const aspect = canvas.width / Math.max(1, canvas.height);
+    const base = 75 * Math.PI / 180;
+    // Wide screens keep 75° top to bottom. A tall phone keeps 75° side to side,
+    // so the farm stays in view instead of cropping down to one wall.
+    const f = aspect >= 1 ? 1 / Math.tan(base / 2) : aspect / Math.tan(base / 2);
     const nf = 1 / (near - far);
     return new Float32Array([
         f / aspect, 0, 0, 0,
@@ -6474,7 +6533,10 @@ const WALL_CX = -0.5;
 const WALL_CZ = -4;
 const GATE_HALF = 1.8;
 const gateAnim = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]];
-let gateVisual = "";
+const gateWanted = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]];
+let gateScanAt = 0;
+let wallKey = "";
+let doorKey = "";
 
 function placeOf(village) {
     const place = places[village];
@@ -6755,17 +6817,41 @@ function onTower(x, z) {
     return false;
 }
 
-function gateWant(village, side) {
-    if (gateHealth(village, side) <= 0) return 0;
-    const owner = ownerOf(village);
-    const spot = gateCenter(village, side);
-    if (!flying && !angry(owner) && !onTower(cam.x, cam.z) && floorAt(cam.x, cam.z, cam.y - 1.62) < 2 && Math.hypot(cam.x - spot.x, cam.z - spot.z) < 7.5) return 1;
-    for (const man of men) {
-        if (man.dying || man.health <= 0 || man.archer || man.faction !== owner) continue;
-        if (onTower(man.x, man.z) || man.indoors || man.hidden || (man.floorY || 0) > 1) continue;
-        if (Math.hypot(man.x - spot.x, man.z - spot.z) < 7.5) return 1;
+function scanGates() {
+    const feet = floorAt(cam.x, cam.z, cam.y - 1.62);
+    const playerUp = onTower(cam.x, cam.z);
+    for (let village = 0; village < 4; village++) {
+        const place = places[village];
+        const owner = ownerOf(village);
+        const near = [];
+        for (let i = 0; i < men.length; i++) {
+            const man = men[i];
+            if (man.dying || man.health <= 0 || man.archer || man.faction !== owner) continue;
+            if (Math.abs(man.x - place.x) > 30 || Math.abs(man.z - place.z) > 30) continue;
+            if (man.indoors || man.hidden || (man.floorY || 0) > 1 || onTower(man.x, man.z)) continue;
+            near.push(man);
+        }
+        const playerHere = !flying && !playerUp && feet < 2 && !angry(owner);
+        for (let side = 0; side < 4; side++) {
+            if (gateHealth(village, side) <= 0) {
+                gateWanted[village][side] = 0;
+                continue;
+            }
+            const spot = gateCenter(village, side);
+            let open = 0;
+            if (playerHere && Math.hypot(cam.x - spot.x, cam.z - spot.z) < 7.5) open = 1;
+            else {
+                for (let i = 0; i < near.length; i++) {
+                    const man = near[i];
+                    if (Math.hypot(man.x - spot.x, man.z - spot.z) < 7.5) {
+                        open = 1;
+                        break;
+                    }
+                }
+            }
+            gateWanted[village][side] = open;
+        }
     }
-    return 0;
 }
 
 function gateInReach(ox, oz, fx, fy, fz, reach) {
@@ -6798,7 +6884,8 @@ function strikeGate(gate) {
     if (!row || row[gate.side] <= 0) return false;
     row[gate.side] -= 1;
     showStrike(row[gate.side] > 0 ? "Gate " + row[gate.side] : "Gate down");
-    gateVisual = "";
+    wallKey = "";
+    doorKey = "";
     pendingHit += 1;
     fetch("/api/campaign", {
         method: "POST",
@@ -7202,42 +7289,61 @@ function hitsSolid(x, z, feet) {
     return false;
 }
 
-function rebuildPalisade() {
+function rebuildWalls() {
     const list = [];
     const flat = [];
     for (let village = 0; village < 4; village++) {
         const box = palisadeBox(village);
-        // Same flat keep walls as Southwest for every major town.
         addFlatWall(flat, box.minX, box.minZ, box.maxX, box.minZ, box.cx, "x", 0.98);
         addFlatWall(flat, box.minX, box.maxZ, box.maxX, box.maxZ, box.cx, "x", 0.74);
         addFlatWall(flat, box.minX, box.minZ, box.minX, box.maxZ, box.cz, "z", 0.8);
         addFlatWall(flat, box.maxX, box.minZ, box.maxX, box.maxZ, box.cz, "z", 0.86);
-        for (let side = 0; side < 4; side++) {
-            addTower(list, towerLayout(village, side));
-            if (gateHealth(village, side) <= 0) continue;
-            addGateDoors(list, village, side, gateAnim[village][side]);
-        }
+        for (let side = 0; side < 4; side++) addTower(list, towerLayout(village, side));
     }
     uploadMesh("wood", list);
     uploadMesh("palisade", flat);
     mesh.palisade.cull = false;
 }
 
-function updatePalisade(dt) {
-    let key = "";
-    const step = Math.min(1, dt * 4.5);
+function rebuildDoors() {
+    const list = [];
     for (let village = 0; village < 4; village++) {
         for (let side = 0; side < 4; side++) {
-            const want = gateWant(village, side);
+            if (gateHealth(village, side) <= 0) continue;
+            addGateDoors(list, village, side, gateAnim[village][side]);
+        }
+    }
+    textures.gates = textures.wood;
+    uploadMesh("gates", list);
+}
+
+function updatePalisade(dt) {
+    const nowMs = performance.now();
+    if (nowMs - gateScanAt > 200) {
+        gateScanAt = nowMs;
+        scanGates();
+    }
+    const step = Math.min(1, dt * 4.5);
+    let healthKey = "";
+    let swingKey = "";
+    for (let village = 0; village < 4; village++) {
+        for (let side = 0; side < 4; side++) {
+            const want = gateWanted[village][side];
             const current = gateAnim[village][side];
             const next = Math.abs(want - current) < 0.02 ? want : current + (want - current) * step;
             gateAnim[village][side] = next;
-            key += gateHealth(village, side) + ":" + next.toFixed(2) + ",";
+            healthKey += gateHealth(village, side) + ",";
+            swingKey += (gateHealth(village, side) > 0 ? Math.round(next * 20) : "x") + ",";
         }
     }
-    if (key === gateVisual) return;
-    gateVisual = key;
-    rebuildPalisade();
+    if (healthKey !== wallKey) {
+        wallKey = healthKey;
+        rebuildWalls();
+    }
+    if (swingKey !== doorKey) {
+        doorKey = swingKey;
+        rebuildDoors();
+    }
 }
 
 function blocked(x, z, faction, feet) {

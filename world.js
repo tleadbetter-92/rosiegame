@@ -684,9 +684,32 @@
     const PAD_LIP = 1.5;
     const PAD_BANK = 0.7;
     let pads = [];
+    let padGrid = new Map();
+    const padCell = 64;
+    const noPads = [];
 
     function setPads(list) {
         pads = list || [];
+        padGrid = new Map();
+        for (let i = 0; i < pads.length; i++) {
+            const pad = pads[i];
+            const c0 = Math.floor((pad.minX - 40) / padCell);
+            const c1 = Math.floor((pad.minX + pad.w + 40) / padCell);
+            const r0 = Math.floor((pad.minZ - 40) / padCell);
+            const r1 = Math.floor((pad.minZ + pad.d + 40) / padCell);
+            for (let c = c0; c <= c1; c++) {
+                for (let r = r0; r <= r1; r++) {
+                    const key = c + "," + r;
+                    let cell = padGrid.get(key);
+                    if (!cell) padGrid.set(key, cell = []);
+                    cell.push(pad);
+                }
+            }
+        }
+    }
+
+    function padsNear(x, z) {
+        return padGrid.get(Math.floor(x / padCell) + "," + Math.floor(z / padCell)) || noPads;
     }
 
     // Where the goblins of the camp ringed by cones on the editor map stand: n dry spots spread evenly inside the ring,
@@ -732,8 +755,9 @@
 
     // Ground under a building pad is cleared of trees and bushes.
     function onPad(x, z, margin = 1) {
-        for (let i = 0; i < pads.length; i++) {
-            const p = pads[i];
+        const near = padsNear(x, z);
+        for (let i = 0; i < near.length; i++) {
+            const p = near[i];
             if (x > p.minX - margin && x < p.minX + p.w + margin && z > p.minZ - margin && z < p.minZ + p.d + margin) return true;
         }
         return false;
@@ -741,8 +765,9 @@
 
     function heightAt(x, z) {
         let h = bareHeight(x, z);
-        for (let i = 0; i < pads.length; i++) {
-            const p = pads[i];
+        const near = padsNear(x, z);
+        for (let i = 0; i < near.length; i++) {
+            const p = near[i];
             const dx = Math.max(p.minX - x, 0, x - p.minX - p.w);
             const dz = Math.max(p.minZ - z, 0, z - p.minZ - p.d);
             if (dx > 40 || dz > 40) continue;

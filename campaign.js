@@ -404,7 +404,7 @@ function take(data) {
 }
 
 async function refresh() {
-    const res = await fetch("/api/campaign", { cache: "no-store" });
+    const res = await fetch("/api/campaign?brief=1", { cache: "no-store" });
     if (!res.ok) throw new Error("unreachable");
     take(await res.json());
 }
