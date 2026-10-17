@@ -2,6 +2,7 @@ const World = require("../world");
 const Town = require("../town");
 const Clock = require("../clock");
 const Hero = require("../hero");
+const { getDb } = require("../lib/db");
 
 const TURN_MS = 10 * 60 * 1000;
 const BATTLE_MS = 2000;
@@ -232,9 +233,10 @@ function ensureGates(state) {
     return dirty;
 }
 
-// Campaign stays in RAM for the life of the server process — no disk/Mongo writes.
-// Closing the tab does not wipe it; restarting the server does. Idle clients stop polling.
+// One shared campaign. On the live site each refresh is a new process, so the world is stored
+// in the database. Without that database it stays in memory for this process only.
 let memoryState = null;
+const WORLD_KEY = "world";
 
 function blankState() {
     const now = Date.now();
@@ -243,13 +245,37 @@ function blankState() {
     return state;
 }
 
+function plainState(state) {
+    return JSON.parse(JSON.stringify(state));
+}
+
+async function campaignStore() {
+    if (!process.env.MONGODB_URI) return null;
+    const db = await getDb();
+    return db.collection("campaign");
+}
+
 async function readState() {
-    if (!memoryState) memoryState = blankState();
+    const store = await campaignStore();
+    if (store) {
+        const doc = await store.findOne({ _id: WORLD_KEY });
+        if (doc && doc.state && typeof doc.state === "object") {
+            memoryState = doc.state;
+            return memoryState;
+        }
+    } else if (memoryState) {
+        return memoryState;
+    }
+    memoryState = blankState();
+    if (store) await store.replaceOne({ _id: WORLD_KEY }, { _id: WORLD_KEY, state: plainState(memoryState), updatedAt: new Date() }, { upsert: true });
     return memoryState;
 }
 
 async function writeState(state) {
     memoryState = state;
+    const store = await campaignStore();
+    if (!store) return;
+    await store.replaceOne({ _id: WORLD_KEY }, { _id: WORLD_KEY, state: plainState(state), updatedAt: new Date() }, { upsert: true });
 }
 
 function turnOf(state, clock) {
@@ -3502,6 +3528,14 @@ function doorOf(house) {
     };
 }
 
+// Hay sits beside the door, not on the step, so the doorway stays clear.
+function hayBeside(door) {
+    return [
+        door.door.x + door.fx * 1.45 + door.fz * 2.35,
+        door.door.z + door.fz * 1.45 - door.fx * 2.35
+    ];
+}
+
 // The level pad a site stands on: the highest ground under it, so the slope score is how much earth it takes.
 // Without `land` only the height is checked (lumberyards stand beside trees on purpose).
 function padFor(rect, land, rise = FILL_MAX) {
@@ -3837,7 +3871,7 @@ function layoutKitFarm(state, village, cx, cz, blocked, home) {
         yaw: yaw,
         y: high,
         house: house,
-        hay: [door.out.x, door.out.z],
+        hay: hayBeside(door),
         out: door.out,
         inn: door.inn,
         door: door.door,
@@ -3907,7 +3941,7 @@ function layoutModelFarm(state, village, cx, cz, blocked, home) {
         yaw: house.yaw,
         y: high,
         house: house,
-        hay: [door.out.x, door.out.z],
+        hay: hayBeside(door),
         out: door.out,
         inn: door.inn,
         door: door.door,

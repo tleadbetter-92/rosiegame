@@ -2031,11 +2031,11 @@ function dressFarms() {
         }
     };
     const drawHay = (x, z) => {
-        const y = yAt(x, z);
+        const y = haySeat(x + 0.8, z + 0.62);
         addBox(batches.dirt, x, y, z, 1.6, 0.7, 1.25);
         addBox(batches.dirt, x + 0.28, y + 0.7, z + 0.22, 1.05, 0.5, 0.82);
         addBox(batches.dirt, x + 0.55, y + 1.15, z + 0.42, 0.5, 0.32, 0.42);
-        scenery.push({ x: x, z: z, w: 1.6, d: 1.25 });
+        scenery.push({ x: x, z: z, w: 1.6, d: 1.25, top: y + 1.5 });
     };
     const drawCart = (x, z) => {
         const y = yAt(x, z);
@@ -7387,6 +7387,59 @@ function bakeMini() {
     }
 }
 
+function hayClearOfDoor(hx, hz, door, yaw) {
+    if (!door || Math.hypot(hx - door.x, hz - door.z) > 2.2) return [hx, hz];
+    const fx = -Math.sin(yaw || 0);
+    const fz = -Math.cos(yaw || 0);
+    return [door.x + fx * 1.45 + fz * 2.35, door.z + fz * 1.45 - fx * 2.35];
+}
+
+function haySeat(x, z, floor) {
+    let y = 0;
+    for (const dx of [-0.8, 0.8]) {
+        for (const dz of [-0.65, 0.65]) y = Math.max(y, World.heightAt(x + dx, z + dz));
+    }
+    if (Number.isFinite(floor)) y = Math.max(y, floor);
+    return y + 0.08;
+}
+
+function stampHay(list, plot) {
+    const spot = hayClearOfDoor(plot.hay[0], plot.hay[1], plot.door, plot.yaw);
+    const y = haySeat(spot[0], spot[1], plot.house && plot.house.y);
+    const x = spot[0] - 0.75;
+    const z = spot[1] - 0.62;
+    addBox(list, x, y, z, 1.5, 0.7, 1.25);
+    addBox(list, x + 0.28, y + 0.7, z + 0.22, 1.05, 0.5, 0.82);
+    scenery.push({ x: x, z: z, w: 1.5, d: 1.25, raised: true, top: y + 1.5 });
+}
+
+function paintMinorFarms(ctx, body, scale) {
+    const plots = (typeof raisedData !== "undefined" && raisedData && raisedData.plots) || [];
+    const marked = [];
+    for (const plot of plots) {
+        if (!plot || plot.kind !== "farm" || !(plot.village >= 4) || !plot.house) continue;
+        marked.push({ x: plot.house.x, z: plot.house.z });
+    }
+    if (!marked.length) {
+        for (const hamlet of World.hamlets || []) marked.push(hamlet);
+    }
+    ctx.fillStyle = "#e6c56a";
+    ctx.strokeStyle = "#5c3e18";
+    ctx.lineWidth = 1.5;
+    for (const spot of marked) {
+        const sx = (spot.x - body.x) * scale;
+        const sy = (spot.z - body.z) * scale;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 3.5);
+        ctx.lineTo(sx + 3.5, sy);
+        ctx.lineTo(sx, sy + 3.5);
+        ctx.lineTo(sx - 3.5, sy);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+    }
+}
+
 function paintMini() {
     if (!miniBake) bakeMini();
     if (!miniMap || !miniBake) return;
@@ -7416,6 +7469,7 @@ function paintMini() {
         ctx.strokeRect(sx - 4, sy - 4, 8, 8);
         ctx.fillRect(sx - 4, sy - 4, 8, 8);
     });
+    paintMinorFarms(ctx, body, scale);
     ctx.restore();
     ctx.beginPath();
     ctx.moveTo(w / 2, h / 2 - 11);
@@ -8332,13 +8386,7 @@ function stampRaisedPlots() {
                 }
                 if (plot.kind === "farm") stampPlotFence(trunk, f, house);
             }
-            if (plot.hay && close) {
-                const hx = plot.hay[0];
-                const hz = plot.hay[1];
-                const y = Math.max(0, World.heightAt(hx, hz));
-                addBox(field, hx, y, hz, 1.5, 0.7, 1.15);
-                scenery.push({ x: hx, z: hz, w: 1.5, d: 1.15, raised: true });
-            }
+            if (plot.hay && close) stampHay(field, plot);
             continue;
         }
         const house = plot.house;
@@ -8373,14 +8421,7 @@ function stampRaisedPlots() {
             }
             if (plot.kind === "farm") stampPlotFence(trunk, f, house);
         }
-        if (plot.hay) {
-            const hx = plot.hay[0];
-            const hz = plot.hay[1];
-            const hy = Math.max(0, World.heightAt(hx, hz));
-            addBox(field, hx, hy, hz, 1.5, 0.7, 1.15);
-            addBox(field, hx + 0.25, hy + 0.7, hz + 0.18, 1, 0.45, 0.75);
-            scenery.push({ x: hx, z: hz, w: 1.5, d: 1.15, raised: true });
-        }
+        if (plot.hay) stampHay(field, plot);
     }
     for (const job of raising) {
         if (Math.hypot(job.x - cam.x, job.z - cam.z) > reach) continue;
