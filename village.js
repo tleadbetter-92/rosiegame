@@ -1168,8 +1168,42 @@ function addHouse(b) {
     );
 }
 
+function seatSwKeeps() {
+    if (typeof SwSquare === "undefined") return;
+    const fit = {
+        manor: { along: 5, back: 6, editor: "lord" },
+        barracks: { along: 5, back: 6, editor: "barracks" },
+        smith: { along: 5, back: 6, editor: "smith" },
+        shop: { along: 5, back: 5.5, editor: "vshop" },
+        stores: { along: 8, back: 5.5, editor: "stores" },
+        tavern: { along: 7, back: 5.5, editor: "inn" }
+    };
+    for (const house of houses) {
+        if (house.village !== 2) continue;
+        const spec = fit[house.kind];
+        const editor = spec && SwSquare.buildings.find((b) => b.t === spec.editor);
+        if (!editor) continue;
+        const anchor = SwSquare.world(editor.x, editor.z);
+        const fx = -Math.sin(editor.yaw);
+        const fz = Math.cos(editor.yaw);
+        if (Math.abs(fx) > Math.abs(fz)) {
+            house.entrance = fx > 0 ? "east" : "west";
+            house.w = spec.back;
+            house.d = spec.along;
+        } else {
+            house.entrance = fz > 0 ? "south" : "north";
+            house.w = spec.along;
+            house.d = spec.back;
+        }
+        house.x = anchor.x - house.w / 2;
+        house.z = anchor.z - house.d / 2;
+        house.door = house.entrance[0];
+    }
+}
+
+seatSwKeeps();
 houses.forEach((house) => {
-    if (!house.test && house.village !== 2) addHouse(house);
+    if (!house.test) addHouse(house);
 });
 
 function addYard(place) {
@@ -2694,78 +2728,6 @@ function placeStudyYard(yAt) {
     }
 }
 
-function placeSwSquare() {
-    if (typeof SwSquare === "undefined") return;
-    const wallH = 5.2;
-    const doorH = 2.2;
-    const doorW = 0.8;
-    const kinds = {
-        lord: { w: 6, d: 5, rise: 1.9, gable: true },
-        barracks: { w: 6, d: 5, rise: 1.5, gable: true },
-        smith: { w: 6, d: 5, rise: 1.35, gable: true },
-        vshop: { w: 5.5, d: 5, rise: 1.45, gable: true },
-        stores: { w: 8, d: 5.5, rise: 1.6, gable: false },
-        inn: { w: 7, d: 5.5, rise: 1.7, gable: false }
-    };
-    const scale = SwSquare.scale;
-    function vert(b, yBase, px, py, pz, u, v, shade) {
-        const c = Math.cos(b.yaw);
-        const s = Math.sin(b.yaw);
-        const spot = SwSquare.world(b.x + px * c - pz * s, b.z + px * s + pz * c);
-        return [spot.x, yBase + py * scale, spot.z, u, v, shade];
-    }
-    function sheet(list, a, b, c, d) {
-        list.push(...a, ...b, ...c, ...a, ...c, ...d, ...a, ...d, ...c, ...a, ...c, ...b);
-    }
-    for (const b of SwSquare.buildings) {
-        const spec = kinds[b.t];
-        if (!spec) continue;
-        const anchor = SwSquare.world(b.x, b.z);
-        const y0 = World.heightAt(anchor.x, anchor.z);
-        const hw = spec.w * 0.5;
-        const hd = spec.d * 0.5;
-        const V = (px, py, pz, u, v, shade) => vert(b, y0, px, py, pz, u, v, shade);
-        sheet(batches.plaster, V(-hw, 0, -hd, 0, 0, 0.7), V(hw, 0, -hd, 1, 0, 0.7), V(hw, wallH, -hd, 1, 1, 0.82), V(-hw, wallH, -hd, 0, 1, 0.82));
-        sheet(batches.plaster, V(-hw, 0, hd, 0, 0, 0.62), V(-hw, 0, -hd, 1, 0, 0.62), V(-hw, wallH, -hd, 1, 1, 0.75), V(-hw, wallH, hd, 0, 1, 0.75));
-        sheet(batches.plaster, V(hw, 0, -hd, 0, 0, 0.78), V(hw, 0, hd, 1, 0, 0.78), V(hw, wallH, hd, 1, 1, 0.9), V(hw, wallH, -hd, 0, 1, 0.9));
-        sheet(batches.plaster, V(-hw, 0, hd, 0, 0, 0.9), V(-doorW, 0, hd, 0.4, 0, 0.9), V(-doorW, wallH, hd, 0.4, 1, 1), V(-hw, wallH, hd, 0, 1, 1));
-        sheet(batches.plaster, V(doorW, 0, hd, 0.6, 0, 0.9), V(hw, 0, hd, 1, 0, 0.9), V(hw, wallH, hd, 1, 1, 1), V(doorW, wallH, hd, 0.6, 1, 1));
-        sheet(batches.plaster, V(-doorW, doorH, hd, 0.4, 0.5, 0.95), V(doorW, doorH, hd, 0.6, 0.5, 0.95), V(doorW, wallH, hd, 0.6, 1, 1), V(-doorW, wallH, hd, 0.4, 1, 1));
-        sheet(batches.trunk, V(-doorW, 0, hd - 0.06, 0, 0, 0.45), V(doorW, 0, hd - 0.06, 1, 0, 0.45), V(doorW, doorH, hd - 0.06, 1, 1, 0.55), V(-doorW, doorH, hd - 0.06, 0, 1, 0.55));
-        const peak = wallH + spec.rise;
-        const o = 0.35;
-        if (spec.gable) {
-            sheet(batches.roof, V(-hw - o, wallH, -hd - o, 0, 0, 0.42), V(0, peak, -hd - o, 0.5, 0, 0.55), V(0, peak, hd + o, 0.5, 1, 0.55), V(-hw - o, wallH, hd + o, 0, 1, 0.42));
-            sheet(batches.roof, V(hw + o, wallH, -hd - o, 0, 0, 0.38), V(hw + o, wallH, hd + o, 0, 1, 0.38), V(0, peak, hd + o, 0.5, 1, 0.5), V(0, peak, -hd - o, 0.5, 0, 0.5));
-            const front = [V(-hw, wallH, hd, 0, 0, 0.88), V(hw, wallH, hd, 1, 0, 0.88), V(0, peak, hd, 0.5, 1, 0.96)];
-            const back = [V(hw, wallH, -hd, 0, 0, 0.7), V(-hw, wallH, -hd, 1, 0, 0.7), V(0, peak, -hd, 0.5, 1, 0.8)];
-            batches.plaster.push(...front[0], ...front[1], ...front[2], ...front[0], ...front[2], ...front[1]);
-            batches.plaster.push(...back[0], ...back[1], ...back[2], ...back[0], ...back[2], ...back[1]);
-        } else {
-            sheet(batches.roof, V(-hw - o, wallH, -hd - o, 0, 0, 0.42), V(hw + o, wallH, -hd - o, 1, 0, 0.42), V(hw + o, peak, 0, 1, 0.5, 0.55), V(-hw - o, peak, 0, 0, 0.5, 0.55));
-            sheet(batches.roof, V(-hw - o, wallH, hd + o, 0, 1, 0.38), V(-hw - o, peak, 0, 0, 0.5, 0.5), V(hw + o, peak, 0, 1, 0.5, 0.5), V(hw + o, wallH, hd + o, 1, 1, 0.38));
-            const east = [V(hw, wallH, -hd, 0, 0, 0.8), V(hw, wallH, hd, 1, 0, 0.8), V(hw, peak, 0, 0.5, 1, 0.9)];
-            const west = [V(-hw, wallH, hd, 0, 0, 0.65), V(-hw, wallH, -hd, 1, 0, 0.65), V(-hw, peak, 0, 0.5, 1, 0.75)];
-            batches.plaster.push(...east[0], ...east[1], ...east[2], ...east[0], ...east[2], ...east[1]);
-            batches.plaster.push(...west[0], ...west[1], ...west[2], ...west[0], ...west[2], ...west[1]);
-        }
-        const c = Math.cos(b.yaw);
-        const s = Math.sin(b.yaw);
-        let minX = Infinity;
-        let maxX = -Infinity;
-        let minZ = Infinity;
-        let maxZ = -Infinity;
-        for (const corner of [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]]) {
-            const spot = SwSquare.world(b.x + corner[0] * c - corner[1] * s, b.z + corner[0] * s + corner[1] * c);
-            minX = Math.min(minX, spot.x);
-            maxX = Math.max(maxX, spot.x);
-            minZ = Math.min(minZ, spot.z);
-            maxZ = Math.max(maxZ, spot.z);
-        }
-        scenery.push({ x: minX, z: minZ, w: maxX - minX, d: maxZ - minZ, top: y0 + wallH * scale });
-    }
-}
-
 function dressFlatHouses() {
     textures.bill = flatWallTexture(false, false);
     textures.billFront = flatWallTexture(false, true);
@@ -2788,7 +2750,6 @@ function dressFlatHouses() {
 
 dressFlatHouses();
 placeStudyHouse();
-placeSwSquare();
 growScenery();
 raiseCliffs();
 dressSouthMeadow();
@@ -7908,7 +7869,6 @@ function hitsDoor(door, x, z, r) {
         addBox(floorGeom, b.minX + inset, floorY - 0.04, b.minZ + inset, Math.max(0.4, b.w - inset * 2), 0.06, Math.max(0.4, b.d - inset * 2));
     }
     for (const b of houses) {
-        if (b.village === 2) continue;
         if (!b.open || b.kind === "cottage" || !b.entrance) continue;
         const t = 0.28;
         let fx = 0;
