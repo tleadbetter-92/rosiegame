@@ -549,123 +549,25 @@ const batches = {
     townDirt: [], townCobble: [],
     bill: [], billFront: [], billBrick: [], billBrickFront: [],
     farTrunk: [], farLeaf: [],
-    crag: []
+    crag: [],
+    dfFront: [], dfSide: [], dfBack: [], dfRoof: [],
+    dfLong: [], dfThatch: [], dfYard: [],
+    dfPlaster: [], dfShop: []
 };
 
 // Ground laid over the base ground with a fade, so the edge between two kinds runs smoothly instead of in square steps.
 const blends = {};
 
-function groundTone(kind, x, z) {
-    if (kind === "grass") return World.turfShade(x, z);
-    return kind === "crag" ? 0.9 : kind === "dirt" ? 0.9 : 1;
-}
-
-function countryKind(kind) {
-    return kind === "rock" ? "crag" : kind;
-}
-
-// Corner kinds run 00, 10, 11, 01; the most common one is the base and each other kind fades in from its corners.
-function paintPatch(x, z, s, h00, h10, h11, h01, corners) {
-    const rise = Math.max(h00, h10, h11, h01) - Math.min(h00, h10, h11, h01);
-    const mid = (h00 + h10 + h11 + h01) * 0.25;
-    const cx = x + s * 0.5;
-    const cz = z + s * 0.5;
-    if (mid > -0.35) {
-        const kinds = (corners || Array(4).fill(landKind(cx, cz, rise, mid))).map(countryKind);
-        const count = (k) => kinds.filter((c) => c === k).length;
-        const kind = kinds.reduce((best, k) => (count(k) > count(best) ? k : best), kinds[0]);
-        const u = x / s;
-        const v = z / s;
-        const spots = [[x, h00, z, u, v], [x + s, h10, z, u + 1, v], [x + s, h11, z + s, u + 1, v + 1], [x, h01, z + s, u, v + 1]];
-        const at = (i, k, extra) => spots[i].concat(groundTone(k, spots[i][0], spots[i][2]), extra);
-        pushQuad(batches[kind] || batches.grass, at(0, kind, []), at(3, kind, []), at(2, kind, []), at(1, kind, []));
-        for (const other of new Set(kinds)) {
-            if (other === kind || !batches[other]) continue;
-            const list = blends[other] || (blends[other] = []);
-            const a = (i) => at(i, other, [kinds[i] === other ? 1 : 0]);
-            pushQuad(list, a(0), a(3), a(2), a(1));
-        }
-    }
-    const level = World.waterLevel(cx, cz);
-    if (level != null && level > 0.4 && Math.min(h00, h10, h11, h01) < level + 0.08) {
-        const u = x / 8;
-        const v = z / 8;
-        pushQuad(
-            batches.water,
-            [x, level, z, u, v, 0.72],
-            [x, level, z + s, u, v + s / 8, 0.72],
-            [x + s, level, z + s, u + s / 8, v + s / 8, 0.72],
-            [x + s, level, z, u + s / 8, v, 0.72]
-        );
-        return;
-    }
-    if (Math.min(h00, h10, h11, h01) > -0.04) return;
-    const y = 0.08;
-    const u = x / 8;
-    const v = z / 8;
-    pushQuad(
-        batches.water,
-        [x, y, z, u, v, 0.95],
-        [x, y, z + s, u, v + s / 8, 0.95],
-        [x + s, y, z + s, u + s / 8, v + s / 8, 0.95],
-        [x + s, y, z, u + s / 8, v, 0.95]
-    );
-}
-
 function landKind(x, z, rise, h) {
-    const home = World.places[2];
-    // Far enough to cover Southwest's north fields (fences around z 758–812).
-    if (Math.hypot(x - home.x, z - home.z) < 220) {
-        const pave = Town.groundAt(x, z);
-        if (pave) return pave;
-        return World.groundKind(x, z, rise, h);
-    }
-    if (Town.street(x, z)) return "dirt";
-    return World.groundKind(x, z, rise, h);
+    return LandMesh.landKind(x, z, rise, h);
 }
 
-function townBatch(kind) {
-    if (kind === "dirt") return "townDirt";
-    if (kind === "cobble") return "townCobble";
-    return kind;
-}
-
-function townTile(kind) {
-    if (kind === "cobble") return 9;
-    // Dirt used to repeat every 26 m and read as a flat beige sheet on the farm pads.
-    if (kind === "dirt") return 10;
-    return 8;
-}
-
-function paveShade(kind, x, z) {
-    const n = ((Math.imul(x | 0, 374761393) ^ Math.imul(z | 0, 668265263)) >>> 0) / 4294967296;
-    if (kind === "cobble") return 0.72 + n * 0.34;
-    if (kind === "dirt") return 0.86 + n * 0.16;
-    return 1;
-}
-
-// Open country between villages — fine enough that hillsides are not one big triangle pair.
 function countrySub() {
-    return 8;
+    return LandMesh.countrySub();
 }
 
-// Coarse town patch — fewer tiles than the old fine village carpet.
-// Southwest reaches farther north so the leveled farm fields are not 32 m dirt slabs.
 function townPatch(place) {
-    const min = -3616;
-    const cell = 32;
-    const down = (v) => min + Math.floor((v - min) / cell) * cell;
-    const up = (v) => min + Math.ceil((v - min) / cell) * cell;
-    const home = World.places[2];
-    if (place === home) {
-        return {
-            x0: down(place.x - 120),
-            x1: up(place.x + 120),
-            z0: down(place.z - 100),
-            z1: up(place.z + 220)
-        };
-    }
-    return { x0: down(place.x - 96), x1: up(place.x + 96), z0: down(place.z - 96), z1: up(place.z + 96) };
+    return LandMesh.townPatch(place);
 }
 
 const LAND_BATCHES = ["grass", "dirt", "cobble", "sand", "gravel", "marsh", "water", "townDirt", "townCobble", "crag"];
@@ -701,182 +603,29 @@ function uploadLandMeshes() {
     }
 }
 
-// Ground follows the player — not only the focused town — so walks between villages keep a floor.
+// Ground follows the player. Later walks rebuild it on a worker so the frame keeps drawing.
 let landMarkX = Infinity;
 let landMarkZ = Infinity;
 
+function copyLand(built) {
+    for (let i = 0; i < LAND_BATCHES.length; i++) {
+        const name = LAND_BATCHES[i];
+        const src = built.meshes[name];
+        const list = batches[name];
+        if (!src || !list) continue;
+        for (let n = 0; n < src.length; n++) list.push(src[n]);
+    }
+    for (const kind of Object.keys(built.blends)) {
+        const src = built.blends[kind];
+        const list = blends[kind] || (blends[kind] = []);
+        for (let n = 0; n < src.length; n++) list.push(src[n]);
+    }
+}
+
 function buildLand() {
     clearLandBatches();
-    const cell = 32;
-    const cx = cam.x;
-    const cz = cam.z;
-    // gfx() is defined later on first boot — fall back to the High draw distance.
     const drawFar = typeof gfx === "function" ? gfx().drawFar : 300;
-    const reach = Math.max(TOWN_VIEW, drawFar) + 48;
-    const x0 = Math.floor((cx - reach) / cell) * cell;
-    const z0 = Math.floor((cz - reach) / cell) * cell;
-    const x1 = Math.ceil((cx + reach) / cell) * cell;
-    const z1 = Math.ceil((cz + reach) / cell) * cell;
-    const nx = (x1 - x0) / cell;
-    const nz = (z1 - z0) / cell;
-    const heights = new Float32Array((nx + 1) * (nz + 1));
-    const sample = (ix, iz) => heights[iz * (nx + 1) + ix];
-    // Each corner height is looked up once and shared by the patches that meet there.
-    const subdivide = (x, z, sub, h00, h10, h11, h01) => {
-        const k = cell / sub + 1;
-        const grid = new Float32Array(k * k);
-        for (let j = 0; j < k; j++) {
-            for (let i = 0; i < k; i++) {
-                const last = k - 1;
-                if (i === 0 && j === 0) grid[0] = h00;
-                else if (i === last && j === 0) grid[i] = h10;
-                else if (i === last && j === last) grid[j * k + i] = h11;
-                else if (i === 0 && j === last) grid[j * k] = h01;
-                else grid[j * k + i] = World.heightAt(x + i * sub, z + j * sub);
-            }
-        }
-        const kinds = [];
-        for (let j = 0; j < k; j++) {
-            for (let i = 0; i < k; i++) {
-                const h = grid[j * k + i];
-                const near = (di, dj) => {
-                    const ni = Math.min(k - 1, Math.max(0, i + di));
-                    const nj = Math.min(k - 1, Math.max(0, j + dj));
-                    return Math.abs(grid[nj * k + ni] - h);
-                };
-                // Steepness is measured per 4 m whatever the cell size, so coarse cells on a hillside do not turn to rock.
-                const rise = Math.max(near(1, 0), near(-1, 0), near(0, 1), near(0, -1), near(1, 1), near(-1, -1)) * 4 / sub;
-                kinds.push(landKind(x + i * sub, z + j * sub, rise, h));
-            }
-        }
-        for (let i = 0; i < k - 1; i++) {
-            for (let j = 0; j < k - 1; j++) {
-                const c = j * k + i;
-                paintPatch(
-                    x + i * sub, z + j * sub, sub,
-                    grid[c],
-                    grid[c + 1],
-                    grid[c + k + 1],
-                    grid[c + k],
-                    [kinds[c], kinds[c + 1], kinds[c + k + 1], kinds[c + k]]
-                );
-            }
-        }
-        // A short skirt under the cell edge hides the cracks where it meets a coarser neighbour.
-        const edges = [];
-        for (let i = 0; i < k - 1; i++) edges.push([i, 0, i + 1, 0], [i, k - 1, i + 1, k - 1], [0, i, 0, i + 1], [k - 1, i, k - 1, i + 1]);
-        for (const [i0, j0, i1, j1] of edges) {
-            const a = j0 * k + i0;
-            const b = j1 * k + i1;
-            if (grid[a] < -0.35 && grid[b] < -0.35) continue;
-            const kind = countryKind(kinds[a]);
-            const list = batches[kind] || batches.grass;
-            const x0 = x + i0 * sub;
-            const z0 = z + j0 * sub;
-            const x1 = x + i1 * sub;
-            const z1 = z + j1 * sub;
-            const t0 = [x0, grid[a], z0, x0 / sub, z0 / sub, groundTone(kind, x0, z0)];
-            const t1 = [x1, grid[b], z1, x1 / sub, z1 / sub, groundTone(kind, x1, z1)];
-            const d0 = [x0, grid[a] - 1, z0, x0 / sub, z0 / sub + 0.25, groundTone(kind, x0, z0)];
-            const d1 = [x1, grid[b] - 1, z1, x1 / sub, z1 / sub + 0.25, groundTone(kind, x1, z1)];
-            pushQuad(list, t0, t1, d1, d0);
-            pushQuad(list, t0, d0, d1, t1);
-        }
-    };
-    for (let iz = 0; iz <= nz; iz++) {
-        for (let ix = 0; ix <= nx; ix++) {
-            heights[iz * (nx + 1) + ix] = World.heightAt(x0 + ix * cell, z0 + iz * cell);
-        }
-    }
-    // Fine streets only when standing near a town; between villages the whole bubble is country mesh.
-    let focusPlace = null;
-    let nearTown = Infinity;
-    for (let i = 0; i < World.places.length; i++) {
-        const p = World.places[i];
-        const d = Math.hypot(p.ox - cx, p.oz - cz);
-        if (d < nearTown) {
-            nearTown = d;
-            focusPlace = p;
-        }
-    }
-    if (nearTown > 220) focusPlace = null;
-    const home = World.places[2];
-    const homeFocus = focusPlace === home;
-    const finePatch = focusPlace
-        ? townPatch(focusPlace)
-        : { x0: 0, x1: 0, z0: 0, z1: 0 };
-    for (let iz = 0; iz < nz; iz++) {
-        for (let ix = 0; ix < nx; ix++) {
-            const x = x0 + ix * cell;
-            const z = z0 + iz * cell;
-            if (x >= finePatch.x0 && x < finePatch.x1 && z >= finePatch.z0 && z < finePatch.z1) continue;
-            const h00 = sample(ix, iz);
-            const h10 = sample(ix + 1, iz);
-            const h11 = sample(ix + 1, iz + 1);
-            const h01 = sample(ix, iz + 1);
-            // Always mesh — paintPatch lays water in the hollows so the sky never shows as a "floor".
-            subdivide(x, z, countrySub(), h00, h10, h11, h01);
-        }
-    }
-    // Outside the streets keep coarse tiles; Southwest streets stay fine so cobble/dirt do not stretch.
-    const fine = homeFocus ? 4 : 16;
-    const inner = 100;
-    for (let x = finePatch.x0; x < finePatch.x1; x += fine) {
-        for (let z = finePatch.z0; z < finePatch.z1; z += fine) {
-            if (homeFocus && x >= home.x - inner && x < home.x + inner && z >= home.z - inner && z < home.z + inner) continue;
-            const h00 = World.heightAt(x, z);
-            const h10 = World.heightAt(x + fine, z);
-            const h11 = World.heightAt(x + fine, z + fine);
-            const h01 = World.heightAt(x, z + fine);
-            const rise = Math.max(h00, h10, h11, h01) - Math.min(h00, h10, h11, h01);
-            const mx = x + fine * 0.5;
-            const mz = z + fine * 0.5;
-            const kind = landKind(mx, mz, rise);
-            const list = batches[homeFocus ? townBatch(kind) : kind] || batches.grass;
-            const tile = homeFocus ? townTile(kind) : 4;
-            const tone = (px, pz) => (kind === "grass" ? World.turfShade(px, pz) : 1);
-            const u = x / tile;
-            const v = z / tile;
-            const du = fine / tile;
-            const dv = fine / tile;
-            pushQuad(
-                list,
-                [x, h00, z, u, v, tone(x, z)],
-                [x, h01, z + fine, u, v + dv, tone(x, z + fine)],
-                [x + fine, h11, z + fine, u + du, v + dv, tone(x + fine, z + fine)],
-                [x + fine, h10, z, u + du, v, tone(x + fine, z)]
-            );
-        }
-    }
-    if (homeFocus) {
-        const pave = 2;
-        for (let x = home.x - inner; x < home.x + inner; x += pave) {
-            for (let z = home.z - inner; z < home.z + inner; z += pave) {
-                const h00 = World.heightAt(x, z);
-                const h10 = World.heightAt(x + pave, z);
-                const h11 = World.heightAt(x + pave, z + pave);
-                const h01 = World.heightAt(x, z + pave);
-                const rise = Math.max(h00, h10, h11, h01) - Math.min(h00, h10, h11, h01);
-                const kind = landKind(x + pave * 0.5, z + pave * 0.5, rise);
-                const list = batches[townBatch(kind)] || batches.grass;
-                const tile = townTile(kind);
-                const tone = (px, pz) => {
-                    if (kind === "grass") return World.turfShade(px, pz);
-                    return paveShade(kind, px, pz);
-                };
-                const u = x / tile;
-                const v = z / tile;
-                const step = pave / tile;
-                pushQuad(
-                    list,
-                    [x, h00, z, u, v, tone(x, z)],
-                    [x, h01, z + pave, u, v + step, tone(x, z + pave)],
-                    [x + pave, h11, z + pave, u + step, v + step, tone(x + pave, z + pave)],
-                    [x + pave, h10, z, u + step, v, tone(x + pave, z)]
-                );
-            }
-        }
-    }
+    copyLand(LandMesh.build(cam.x, cam.z, drawFar));
 }
 
 function addWater(x, z, w, d) {
@@ -892,6 +641,8 @@ function addWater(x, z, w, d) {
 }
 
 buildLand();
+landMarkX = cam.x;
+landMarkZ = cam.z;
 
 function facePoint(b, side, out) {
     const entrance = b.entrance || "south";
@@ -1418,7 +1169,7 @@ function addHouse(b) {
 }
 
 houses.forEach((house) => {
-    if (!house.test) addHouse(house);
+    if (!house.test && house.village !== 2) addHouse(house);
 });
 
 function addYard(place) {
@@ -1519,6 +1270,7 @@ uniform vec3 uTint;
 uniform float uFogNear;
 uniform float uFogSpan;
 uniform float uDrawFar;
+uniform float uStipple;
 void main() {
     vec2 uv = vUv;
     if (uFlow > 0.5) uv.y += uTime * 0.035;
@@ -1542,7 +1294,14 @@ void main() {
     } else {
         color *= mix(1.0, 0.2, uDark);
     }
-    gl_FragColor = vec4(mix(color, fogCol, fog), vAlpha);
+    float cover = vAlpha;
+    // Break a half-covered gravel or dirt edge into stones instead of one straight triangle.
+    if (uStipple > 0.5 && cover < 0.98) {
+        float n = fract(sin(dot(floor(vWorld * 1.4), vec2(12.9898, 78.233))) * 43758.5453);
+        if (cover < n) discard;
+        cover = 1.0;
+    }
+    gl_FragColor = vec4(mix(color, fogCol, fog), cover);
 }
 `));
 gl.bindAttribLocation(program, 0, "aPos");
@@ -1647,7 +1406,8 @@ const loc = {
     tint: gl.getUniformLocation(program, "uTint"),
     fogNear: gl.getUniformLocation(program, "uFogNear"),
     fogSpan: gl.getUniformLocation(program, "uFogSpan"),
-    drawFar: gl.getUniformLocation(program, "uDrawFar")
+    drawFar: gl.getUniformLocation(program, "uDrawFar"),
+    stipple: gl.getUniformLocation(program, "uStipple")
 };
 const identity = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 const peopleModels = {};
@@ -1818,19 +1578,16 @@ function plantFocusTrees() {
 }
 
 function remeshFocusLand() {
-    // Rebuild ground around the player; cliffs stamp again for the current view.
-    landMarkX = cam.x;
-    landMarkZ = cam.z;
-    buildLand();
+    // Ground rebuilds beside the frame. Cliffs stay here — they are a small stamp.
+    requestLand(cam.x, cam.z);
     if (batches.crag) batches.crag.length = 0;
     raiseCliffs();
-    uploadLandMeshes();
     if (batches.crag) uploadMesh("crag", batches.crag);
 }
 
 function maybeRemeshLand() {
     if (Math.hypot(cam.x - landMarkX, cam.z - landMarkZ) < 64) return;
-    remeshFocusLand();
+    requestLand(cam.x, cam.z);
 }
 
 function updateFocusTown() {
@@ -2539,6 +2296,476 @@ function stampFlatKitHouse(lists, b) {
     b.h = wallH + roofH;
 }
 
+// First Daggerfall house: one painted front, plain sides, a steep roof. Study model only.
+function daggerTex(paint, wrap) {
+    const c = document.createElement("canvas");
+    c.width = 256;
+    c.height = 256;
+    paint(c.getContext("2d"), 256);
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    const mode = wrap ? gl.REPEAT : gl.CLAMP_TO_EDGE;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, mode);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, mode);
+    return tex;
+}
+
+function daggerWall(g, s, face) {
+    g.fillStyle = "#d7c4a2";
+    g.fillRect(0, 0, s, s);
+    for (let i = 0; i < 500; i++) {
+        g.fillStyle = i % 2 ? "rgba(120,96,64,0.22)" : "rgba(255,244,220,0.28)";
+        g.fillRect((Math.random() * s) | 0, (Math.random() * s) | 0, 3, 2);
+    }
+    const beam = (x, y, w, h) => {
+        g.fillStyle = "#3c2a1c";
+        g.fillRect(x, y, w, h);
+        g.fillStyle = "#5a4030";
+        g.fillRect(x, y, Math.max(1, w * 0.25), h);
+    };
+    beam(0, 0, s, 14);
+    beam(0, s - 16, s, 16);
+    beam(0, 118, s, 12);
+    beam(0, 0, 12, s);
+    beam(s - 12, 0, 12, s);
+    if (face === "front" || face === "gable") beam(118, 0, 12, s);
+    const pane = (x, y, w, h) => {
+        g.fillStyle = "#2a2118";
+        g.fillRect(x - 4, y - 4, w + 8, h + 8);
+        g.fillStyle = "#152028";
+        g.fillRect(x, y, w, h);
+        g.fillStyle = "#d9e4ea";
+        g.fillRect(x + 2, y + 2, w * 0.35, h * 0.28);
+        g.fillStyle = "#cbb892";
+        g.fillRect(x + w * 0.48, y, 2, h);
+        g.fillRect(x, y + h * 0.48, w, 2);
+    };
+    if (face === "gable") {
+        for (let col = 0; col < 3; col++) {
+            pane(28 + col * 74, 150, 48, 36);
+            pane(28 + col * 74, 36, 48, 36);
+        }
+        beam(70, 118, 12, s - 118);
+        beam(160, 118, 12, s - 118);
+    } else if (face === "front") {
+        g.fillStyle = "#4a301c";
+        g.fillRect(28, 146, 62, 96);
+        g.fillStyle = "#6b4630";
+        for (let x = 32; x < 86; x += 10) g.fillRect(x, 150, 6, 88);
+        g.fillStyle = "#2a1c12";
+        g.fillRect(54, 168, 8, 12);
+        pane(156, 158, 52, 40);
+        pane(36, 42, 48, 40);
+        pane(164, 42, 48, 40);
+        beam(28, 130, 14, 28);
+        beam(150, 130, 14, 28);
+    } else if (face === "side") {
+        pane(96, 46, 52, 40);
+    } else {
+        pane(100, 52, 44, 34);
+    }
+}
+
+function placeStudyHouse() {
+    textures.dfFront = daggerTex((g, s) => daggerWall(g, s, "gable"));
+    textures.dfSide = daggerTex((g, s) => daggerWall(g, s, "side"));
+    textures.dfBack = daggerTex((g, s) => {
+        g.fillStyle = "#c4a36a";
+        g.fillRect(0, 0, s, s);
+        g.fillStyle = "#a68448";
+        for (let y = 8; y < s; y += 18) g.fillRect(0, y, s, 14);
+        g.fillStyle = "#6e542c";
+        for (let y = 8; y < s; y += 18) {
+            const shift = (y / 18) % 2 ? 16 : 0;
+            for (let x = shift; x < s; x += 32) g.fillRect(x, y, 2, 14);
+        }
+    });
+    textures.dfRoof = daggerTex((g, s) => {
+        g.fillStyle = "#5c3428";
+        g.fillRect(0, 0, s, s);
+        g.fillStyle = "#3e2218";
+        for (let y = 0; y < s; y += 14) g.fillRect(0, y, s, 4);
+    }, true);
+    textures.dfLong = daggerTex((g, s) => {
+        g.fillStyle = "#7a4030";
+        g.fillRect(0, 0, s, s);
+        g.fillStyle = "#c4a070";
+        for (let i = 0; i < 160; i++) g.fillRect((i * 13) % s, (i * 19) % s, 4, 3);
+        g.fillStyle = "#3a2418";
+        g.fillRect(0, 0, s, 18);
+        g.fillRect(0, 116, s, 16);
+        g.fillRect(0, s - 22, s, 22);
+        for (let x = 0; x < s; x += 64) g.fillRect(x, 0, 12, s);
+        g.fillRect(s - 12, 0, 12, s);
+        g.fillStyle = "#1a2830";
+        for (let x = 22; x < s - 16; x += 64) g.fillRect(x, 144, 28, 48);
+        g.fillStyle = "#d5e2ea";
+        for (let x = 22; x < s - 16; x += 64) g.fillRect(x + 4, 150, 8, 12);
+    }, true);
+    textures.dfThatch = daggerTex((g, s) => {
+        g.fillStyle = "#b08a48";
+        g.fillRect(0, 0, s, s);
+        g.fillStyle = "#8a6830";
+        for (let y = 0; y < s; y += 8) g.fillRect(0, y, s, 3);
+        g.fillStyle = "#d8bc78";
+        for (let y = 3; y < s; y += 8) {
+            for (let x = (y % 16); x < s; x += 7) g.fillRect(x, y, 2, 2);
+        }
+    }, true);
+    textures.dfPlaster = daggerTex((g, s) => {
+        g.fillStyle = "#c4a574";
+        g.fillRect(0, 0, s, s);
+        g.fillStyle = "#a88858";
+        for (let y = 0; y < s; y += 22) g.fillRect(0, y, s, 3);
+        g.fillStyle = "#6a5438";
+        g.fillRect(0, 0, s, 14);
+        g.fillRect(0, s - 16, s, 16);
+        g.fillStyle = "#1e3340";
+        g.fillRect(52, 136, 44, 58);
+        g.fillRect(160, 136, 44, 58);
+        g.fillStyle = "#d5e2ea";
+        g.fillRect(56, 142, 16, 22);
+        g.fillRect(164, 142, 16, 22);
+    });
+    textures.dfShop = daggerTex((g, s) => {
+        g.fillStyle = "#6a3e28";
+        g.fillRect(0, 0, s, s);
+        g.fillStyle = "#4a2c1c";
+        for (let x = 0; x < s; x += 22) g.fillRect(x, 0, 3, s);
+        g.fillStyle = "#2a241c";
+        g.fillRect(0, 0, s, 16);
+        g.fillRect(0, s - 18, s, 18);
+        g.fillStyle = "#2c5878";
+        for (let x = 18; x < s - 12; x += 40) g.fillRect(x, 92, 24, 64);
+        g.fillStyle = "#9ec4d8";
+        for (let x = 22; x < s - 12; x += 40) g.fillRect(x, 98, 8, 20);
+    }, true);
+    const yAt = (x0, z0, x1, z1) => Math.min(
+        World.heightAt(x0, z0), World.heightAt(x1, z0),
+        World.heightAt(x1, z1), World.heightAt(x0, z1)
+    );
+    // Tall street house: the gable faces east, stone below, timber and windows above.
+    {
+        const x1 = -2492;
+        const x0 = x1 - 7;
+        const z0 = 496;
+        const z1 = 504;
+        const y0 = yAt(x0, z0, x1, z1);
+        const stone = y0 + 2.7;
+        const wall = y0 + 6.1;
+        const peak = y0 + 9.3;
+        const midZ = (z0 + z1) * 0.5;
+        const o = 0.4;
+        const east = (yLo, yHi, list, shade) => pushQuad(list,
+            [x1, yLo, z0, 1, 0, shade], [x1, yHi, z0, 1, 1, shade],
+            [x1, yHi, z1, 0, 1, shade], [x1, yLo, z1, 0, 0, shade]
+        );
+        const west = (yLo, yHi, list, shade) => pushQuad(list,
+            [x0, yLo, z1, 1, 0, shade], [x0, yHi, z1, 1, 1, shade],
+            [x0, yHi, z0, 0, 1, shade], [x0, yLo, z0, 0, 0, shade]
+        );
+        east(y0, stone, batches.dfBack, 0.9);
+        east(stone, wall, batches.dfFront, 1);
+        west(y0, stone, batches.dfBack, 0.75);
+        west(stone, wall, batches.dfFront, 0.82);
+        pushQuad(batches.dfBack,
+            [x0, y0, z0, 1, 0, 0.8], [x0, stone, z0, 1, 0.45, 0.8],
+            [x1, stone, z0, 0, 0.45, 0.8], [x1, y0, z0, 0, 0, 0.8]
+        );
+        pushQuad(batches.dfSide,
+            [x0, stone, z0, 1, 0, 0.8], [x0, wall, z0, 1, 1, 0.8],
+            [x1, wall, z0, 0, 1, 0.8], [x1, stone, z0, 0, 0, 0.8]
+        );
+        pushQuad(batches.dfBack,
+            [x1, y0, z1, 1, 0, 0.92], [x1, stone, z1, 1, 0.45, 0.92],
+            [x0, stone, z1, 0, 0.45, 0.92], [x0, y0, z1, 0, 0, 0.92]
+        );
+        pushQuad(batches.dfSide,
+            [x1, stone, z1, 1, 0, 0.92], [x1, wall, z1, 1, 1, 0.92],
+            [x0, wall, z1, 0, 1, 0.92], [x0, stone, z1, 0, 0, 0.92]
+        );
+        pushTri(batches.dfFront,
+            [x1, wall, z0, 1, 0, 1], [x1, peak, midZ, 0.5, 1, 1], [x1, wall, z1, 0, 0, 1]
+        );
+        pushTri(batches.dfFront,
+            [x0, wall, z1, 1, 0, 0.82], [x0, peak, midZ, 0.5, 1, 0.82], [x0, wall, z0, 0, 0, 0.82]
+        );
+        pushQuad(batches.dfRoof,
+            [x0 - o, wall, z0 - o, 0, 0, 0.95], [x0 - o, peak, midZ, 0, 1, 1],
+            [x1 + o, peak, midZ, 3, 1, 1], [x1 + o, wall, z0 - o, 3, 0, 0.95]
+        );
+        pushQuad(batches.dfRoof,
+            [x1 + o, wall, z1 + o, 0, 0, 0.78], [x1 + o, peak, midZ, 0, 1, 0.9],
+            [x0 - o, peak, midZ, 3, 1, 0.9], [x0 - o, wall, z1 + o, 3, 0, 0.78]
+        );
+    }
+    // Timber hall: ridge runs the long way, gables on the short ends, steep thatch.
+    {
+        const x1 = -2492;
+        const x0 = x1 - 8;
+        const z0 = 516;
+        const z1 = 534;
+        const y0 = yAt(x0, z0, x1, z1);
+        const wall = y0 + 3.2;
+        const peak = y0 + 7.4;
+        const midX = (x0 + x1) * 0.5;
+        const o = 0.55;
+        pushQuad(batches.dfLong,
+            [x1, y0, z0, 0, 0, 1], [x1, wall, z0, 0, 1, 1],
+            [x1, wall, z1, 3, 1, 1], [x1, y0, z1, 3, 0, 1]
+        );
+        pushQuad(batches.dfLong,
+            [x0, y0, z1, 0, 0, 0.8], [x0, wall, z1, 0, 1, 0.8],
+            [x0, wall, z0, 3, 1, 0.8], [x0, y0, z0, 3, 0, 0.8]
+        );
+        pushQuad(batches.dfLong,
+            [x0, y0, z0, 0, 0, 0.86], [x0, wall, z0, 0, 1, 0.86],
+            [x1, wall, z0, 1, 1, 0.86], [x1, y0, z0, 1, 0, 0.86]
+        );
+        pushQuad(batches.dfLong,
+            [x1, y0, z1, 0, 0, 0.9], [x1, wall, z1, 0, 1, 0.9],
+            [x0, wall, z1, 1, 1, 0.9], [x0, y0, z1, 1, 0, 0.9]
+        );
+        pushTri(batches.dfLong,
+            [x0, wall, z0, 0, 0.7, 0.86], [midX, peak, z0, 0.5, 1, 0.92], [x1, wall, z0, 1, 0.7, 0.86]
+        );
+        pushTri(batches.dfLong,
+            [x1, wall, z1, 0, 0.7, 0.9], [midX, peak, z1, 0.5, 1, 0.96], [x0, wall, z1, 1, 0.7, 0.9]
+        );
+        pushQuad(batches.dfThatch,
+            [x0 - o, wall, z0 - o, 0, 0, 0.95], [x0 - o, wall, z1 + o, 4, 0, 0.95],
+            [midX, peak, z1 + o, 4, 1, 1], [midX, peak, z0 - o, 0, 1, 1]
+        );
+        pushQuad(batches.dfThatch,
+            [x1 + o, wall, z0 - o, 0, 0, 0.78], [midX, peak, z0 - o, 0, 1, 0.9],
+            [midX, peak, z1 + o, 4, 1, 0.9], [x1 + o, wall, z1 + o, 4, 0, 0.78]
+        );
+    }
+    // Variants from the modelling sheet, south of the tall house, gables facing east.
+    studyGable(batches.dfPlaster, batches.dfRoof, -2497, -2492, 478, 484, yAt(-2497, 478, -2492, 484), 2.5, 4.6);
+    studyShop(-2498, -2492, 456, 474, yAt(-2498, 456, -2492, 474), 3.3);
+    studyGable(batches.dfLong, batches.dfRoof, -2499, -2492, 432, 444, yAt(-2499, 432, -2492, 444), 3.6, 6.6);
+    placeStudyYard(yAt);
+}
+
+function studyGable(wallBatch, roofBatch, x0, x1, z0, z1, y0, wallH, peakH) {
+    const wall = y0 + wallH;
+    const peak = y0 + peakH;
+    const midZ = (z0 + z1) * 0.5;
+    const o = 0.35;
+    pushQuad(wallBatch,
+        [x1, y0, z0, 1, 0, 1], [x1, wall, z0, 1, 1, 1],
+        [x1, wall, z1, 0, 1, 1], [x1, y0, z1, 0, 0, 1]
+    );
+    pushQuad(wallBatch,
+        [x0, y0, z1, 1, 0, 0.82], [x0, wall, z1, 1, 1, 0.82],
+        [x0, wall, z0, 0, 1, 0.82], [x0, y0, z0, 0, 0, 0.82]
+    );
+    pushQuad(wallBatch,
+        [x0, y0, z0, 0, 0, 0.8], [x0, wall, z0, 0, 1, 0.8],
+        [x1, wall, z0, 1, 1, 0.8], [x1, y0, z0, 1, 0, 0.8]
+    );
+    pushQuad(wallBatch,
+        [x1, y0, z1, 0, 0, 0.9], [x1, wall, z1, 0, 1, 0.9],
+        [x0, wall, z1, 1, 1, 0.9], [x0, y0, z1, 1, 0, 0.9]
+    );
+    pushTri(wallBatch,
+        [x1, wall, z0, 1, 0, 1], [x1, peak, midZ, 0.5, 1, 1], [x1, wall, z1, 0, 0, 1]
+    );
+    pushTri(wallBatch,
+        [x0, wall, z1, 1, 0, 0.82], [x0, peak, midZ, 0.5, 1, 0.82], [x0, wall, z0, 0, 0, 0.82]
+    );
+    pushQuad(roofBatch,
+        [x0 - o, wall, z0 - o, 0, 0, 0.95], [x0 - o, peak, midZ, 0, 1, 1],
+        [x1 + o, peak, midZ, 2, 1, 1], [x1 + o, wall, z0 - o, 2, 0, 0.95]
+    );
+    pushQuad(roofBatch,
+        [x1 + o, wall, z1 + o, 0, 0, 0.78], [x1 + o, peak, midZ, 0, 1, 0.9],
+        [x0 - o, peak, midZ, 2, 1, 0.9], [x0 - o, wall, z1 + o, 2, 0, 0.78]
+    );
+}
+
+function studyShop(x0, x1, z0, z1, y0, h) {
+    const y1 = y0 + h;
+    const roofY = y1 + 0.12;
+    const o = 0.3;
+    pushQuad(batches.dfShop,
+        [x1, y0, z0, 0, 0, 1], [x1, y1, z0, 0, 1, 1],
+        [x1, y1, z1, 4, 1, 1], [x1, y0, z1, 4, 0, 1]
+    );
+    pushQuad(batches.dfShop,
+        [x0, y0, z1, 0, 0, 0.8], [x0, y1, z1, 0, 1, 0.8],
+        [x0, y1, z0, 4, 1, 0.8], [x0, y0, z0, 4, 0, 0.8]
+    );
+    pushQuad(batches.dfShop,
+        [x0, y0, z0, 0, 0, 0.86], [x0, y1, z0, 0, 1, 0.86],
+        [x1, y1, z0, 1, 1, 0.86], [x1, y0, z0, 1, 0, 0.86]
+    );
+    pushQuad(batches.dfShop,
+        [x1, y0, z1, 0, 0, 0.9], [x1, y1, z1, 0, 1, 0.9],
+        [x0, y1, z1, 1, 1, 0.9], [x0, y0, z1, 1, 0, 0.9]
+    );
+    pushQuad(batches.dfRoof,
+        [x0 - o, roofY, z0 - o, 0, 0, 0.7], [x1 + o, roofY, z0 - o, 2, 0, 0.7],
+        [x1 + o, roofY, z1 + o, 2, 3, 0.7], [x0 - o, roofY, z1 + o, 0, 3, 0.7]
+    );
+    pushQuad(batches.dfRoof,
+        [x0 - o, roofY, z1 + o, 0, 3, 0.55], [x1 + o, roofY, z1 + o, 2, 3, 0.55],
+        [x1 + o, roofY, z0 - o, 2, 0, 0.55], [x0 - o, roofY, z0 - o, 0, 0, 0.55]
+    );
+}
+
+// The converted lumber yard, one mesh, set down just north of the study hall.
+function placeStudyYard(yAt) {
+    const model = self.LumberyardModel;
+    if (!model || !model.parts) return;
+    const colors = model.palette;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, colors.length);
+    canvas.height = 1;
+    const g = canvas.getContext("2d");
+    colors.forEach((rgb, i) => {
+        g.fillStyle = "rgb(" + rgb.join(",") + ")";
+        g.fillRect(i, 0, 1, 1);
+    });
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    textures.dfYard = tex;
+    const ox = -2518;
+    const oz = 558;
+    const y0 = yAt(ox - 10, oz - 9, ox + 10, oz + 9);
+    const n = Math.max(1, colors.length);
+    const list = batches.dfYard;
+    const put = (x, y, z, shade, color) => [ox + x, y0 + y, oz + z, (color + 0.5) / n, 0.5, shade];
+    for (const part of model.parts) {
+        const sx = part[1], sy = part[2], sz = part[3];
+        const px = part[4], py = part[5], pz = part[6];
+        const r = part.slice(7, 16);
+        const color = part[16] || 0;
+        const xf = (lx, ly, lz) => put(
+            px + lx * r[0] + ly * r[1] + lz * r[2],
+            py + lx * r[3] + ly * r[4] + lz * r[5],
+            pz + lx * r[6] + ly * r[7] + lz * r[8],
+            1, color
+        );
+        if (part[0] === "cyl") {
+            const hx = sx / 2, ry = sy / 2, rz = sz / 2;
+            const sides = 8;
+            const ring = [];
+            for (let i = 0; i < sides; i++) {
+                const a = (i / sides) * Math.PI * 2;
+                ring.push([Math.cos(a) * ry, Math.sin(a) * rz]);
+            }
+            for (let i = 0; i < sides; i++) {
+                const a = ring[i];
+                const b = ring[(i + 1) % sides];
+                const shade = 0.55 + 0.4 * ((a[0] + b[0]) * 0.5 / (ry || 1) * 0.5 + 0.5);
+                const v = (x, y, z) => {
+                    const p = xf(x, y, z);
+                    p[5] = shade;
+                    return p;
+                };
+                pushQuad(list, v(-hx, a[0], a[1]), v(-hx, b[0], b[1]), v(hx, b[0], b[1]), v(hx, a[0], a[1]));
+            }
+        } else {
+            const hx = sx / 2, hy = sy / 2, hz = sz / 2;
+            const face = (pts, shade) => pushQuad(list, ...pts.map((p) => {
+                const v = xf(p[0], p[1], p[2]);
+                v[5] = shade;
+                return v;
+            }));
+            face([[-hx, hy, -hz], [-hx, hy, hz], [hx, hy, hz], [hx, hy, -hz]], 1);
+            face([[-hx, -hy, hz], [-hx, -hy, -hz], [hx, -hy, -hz], [hx, -hy, hz]], 0.42);
+            face([[hx, -hy, -hz], [hx, hy, -hz], [hx, hy, hz], [hx, -hy, hz]], 0.72);
+            face([[-hx, -hy, hz], [-hx, hy, hz], [-hx, hy, -hz], [-hx, -hy, -hz]], 0.62);
+            face([[-hx, -hy, hz], [hx, -hy, hz], [hx, hy, hz], [-hx, hy, hz]], 0.84);
+            face([[hx, -hy, -hz], [-hx, -hy, -hz], [-hx, hy, -hz], [hx, hy, -hz]], 0.55);
+        }
+    }
+}
+
+function placeSwSquare() {
+    if (typeof SwSquare === "undefined") return;
+    const wallH = 5.2;
+    const doorH = 2.2;
+    const doorW = 0.8;
+    const kinds = {
+        lord: { w: 6, d: 5, rise: 1.9, gable: true },
+        barracks: { w: 6, d: 5, rise: 1.5, gable: true },
+        smith: { w: 6, d: 5, rise: 1.35, gable: true },
+        vshop: { w: 5.5, d: 5, rise: 1.45, gable: true },
+        stores: { w: 8, d: 5.5, rise: 1.6, gable: false },
+        inn: { w: 7, d: 5.5, rise: 1.7, gable: false }
+    };
+    const scale = SwSquare.scale;
+    function vert(b, yBase, px, py, pz, u, v, shade) {
+        const c = Math.cos(b.yaw);
+        const s = Math.sin(b.yaw);
+        const spot = SwSquare.world(b.x + px * c - pz * s, b.z + px * s + pz * c);
+        return [spot.x, yBase + py * scale, spot.z, u, v, shade];
+    }
+    function sheet(list, a, b, c, d) {
+        list.push(...a, ...b, ...c, ...a, ...c, ...d, ...a, ...d, ...c, ...a, ...c, ...b);
+    }
+    for (const b of SwSquare.buildings) {
+        const spec = kinds[b.t];
+        if (!spec) continue;
+        const anchor = SwSquare.world(b.x, b.z);
+        const y0 = World.heightAt(anchor.x, anchor.z);
+        const hw = spec.w * 0.5;
+        const hd = spec.d * 0.5;
+        const V = (px, py, pz, u, v, shade) => vert(b, y0, px, py, pz, u, v, shade);
+        sheet(batches.plaster, V(-hw, 0, -hd, 0, 0, 0.7), V(hw, 0, -hd, 1, 0, 0.7), V(hw, wallH, -hd, 1, 1, 0.82), V(-hw, wallH, -hd, 0, 1, 0.82));
+        sheet(batches.plaster, V(-hw, 0, hd, 0, 0, 0.62), V(-hw, 0, -hd, 1, 0, 0.62), V(-hw, wallH, -hd, 1, 1, 0.75), V(-hw, wallH, hd, 0, 1, 0.75));
+        sheet(batches.plaster, V(hw, 0, -hd, 0, 0, 0.78), V(hw, 0, hd, 1, 0, 0.78), V(hw, wallH, hd, 1, 1, 0.9), V(hw, wallH, -hd, 0, 1, 0.9));
+        sheet(batches.plaster, V(-hw, 0, hd, 0, 0, 0.9), V(-doorW, 0, hd, 0.4, 0, 0.9), V(-doorW, wallH, hd, 0.4, 1, 1), V(-hw, wallH, hd, 0, 1, 1));
+        sheet(batches.plaster, V(doorW, 0, hd, 0.6, 0, 0.9), V(hw, 0, hd, 1, 0, 0.9), V(hw, wallH, hd, 1, 1, 1), V(doorW, wallH, hd, 0.6, 1, 1));
+        sheet(batches.plaster, V(-doorW, doorH, hd, 0.4, 0.5, 0.95), V(doorW, doorH, hd, 0.6, 0.5, 0.95), V(doorW, wallH, hd, 0.6, 1, 1), V(-doorW, wallH, hd, 0.4, 1, 1));
+        sheet(batches.trunk, V(-doorW, 0, hd - 0.06, 0, 0, 0.45), V(doorW, 0, hd - 0.06, 1, 0, 0.45), V(doorW, doorH, hd - 0.06, 1, 1, 0.55), V(-doorW, doorH, hd - 0.06, 0, 1, 0.55));
+        const peak = wallH + spec.rise;
+        const o = 0.35;
+        if (spec.gable) {
+            sheet(batches.roof, V(-hw - o, wallH, -hd - o, 0, 0, 0.42), V(0, peak, -hd - o, 0.5, 0, 0.55), V(0, peak, hd + o, 0.5, 1, 0.55), V(-hw - o, wallH, hd + o, 0, 1, 0.42));
+            sheet(batches.roof, V(hw + o, wallH, -hd - o, 0, 0, 0.38), V(hw + o, wallH, hd + o, 0, 1, 0.38), V(0, peak, hd + o, 0.5, 1, 0.5), V(0, peak, -hd - o, 0.5, 0, 0.5));
+            const front = [V(-hw, wallH, hd, 0, 0, 0.88), V(hw, wallH, hd, 1, 0, 0.88), V(0, peak, hd, 0.5, 1, 0.96)];
+            const back = [V(hw, wallH, -hd, 0, 0, 0.7), V(-hw, wallH, -hd, 1, 0, 0.7), V(0, peak, -hd, 0.5, 1, 0.8)];
+            batches.plaster.push(...front[0], ...front[1], ...front[2], ...front[0], ...front[2], ...front[1]);
+            batches.plaster.push(...back[0], ...back[1], ...back[2], ...back[0], ...back[2], ...back[1]);
+        } else {
+            sheet(batches.roof, V(-hw - o, wallH, -hd - o, 0, 0, 0.42), V(hw + o, wallH, -hd - o, 1, 0, 0.42), V(hw + o, peak, 0, 1, 0.5, 0.55), V(-hw - o, peak, 0, 0, 0.5, 0.55));
+            sheet(batches.roof, V(-hw - o, wallH, hd + o, 0, 1, 0.38), V(-hw - o, peak, 0, 0, 0.5, 0.5), V(hw + o, peak, 0, 1, 0.5, 0.5), V(hw + o, wallH, hd + o, 1, 1, 0.38));
+            const east = [V(hw, wallH, -hd, 0, 0, 0.8), V(hw, wallH, hd, 1, 0, 0.8), V(hw, peak, 0, 0.5, 1, 0.9)];
+            const west = [V(-hw, wallH, hd, 0, 0, 0.65), V(-hw, wallH, -hd, 1, 0, 0.65), V(-hw, peak, 0, 0.5, 1, 0.75)];
+            batches.plaster.push(...east[0], ...east[1], ...east[2], ...east[0], ...east[2], ...east[1]);
+            batches.plaster.push(...west[0], ...west[1], ...west[2], ...west[0], ...west[2], ...west[1]);
+        }
+        const c = Math.cos(b.yaw);
+        const s = Math.sin(b.yaw);
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minZ = Infinity;
+        let maxZ = -Infinity;
+        for (const corner of [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]]) {
+            const spot = SwSquare.world(b.x + corner[0] * c - corner[1] * s, b.z + corner[0] * s + corner[1] * c);
+            minX = Math.min(minX, spot.x);
+            maxX = Math.max(maxX, spot.x);
+            minZ = Math.min(minZ, spot.z);
+            maxZ = Math.max(maxZ, spot.z);
+        }
+        scenery.push({ x: minX, z: minZ, w: maxX - minX, d: maxZ - minZ, top: y0 + wallH * scale });
+    }
+}
+
 function dressFlatHouses() {
     textures.bill = flatWallTexture(false, false);
     textures.billFront = flatWallTexture(false, true);
@@ -2560,11 +2787,12 @@ function dressFlatHouses() {
 }
 
 dressFlatHouses();
+placeStudyHouse();
+placeSwSquare();
 growScenery();
 raiseCliffs();
 dressSouthMeadow();
 dressFarms();
-addYard(places[homeVillage]);
 
 const mesh = {};
 for (const name of Object.keys(batches)) {
@@ -2574,6 +2802,7 @@ for (const name of Object.keys(batches)) {
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
     mesh[name] = { buffer, count: data.length / 6 };
 }
+if (mesh.dfYard) mesh.dfYard.cull = false;
 const blendMesh = {};
 for (const kind of Object.keys(blends)) {
     const data = new Float32Array(blends[kind]);
@@ -2592,20 +2821,20 @@ const meadowSeen = new Set();
 const meadowProps = [];
 plantFocusTrees();
 
-// Always High — outdoor Roblox meshes are gone, so the quality toggle is no longer needed.
+// One step above the old High lock. The canvas was the soft part. The haze still hides the next town.
 function gfx() {
     return {
-        scale: 0.32,
-        far: 360,
-        fogNear: 180,
-        fogSpan: 160,
-        drawFar: 300,
-        treeNear: 140,
+        scale: 0.6,
+        far: 420,
+        fogNear: 230,
+        fogSpan: 170,
+        drawFar: 360,
+        treeNear: 180,
         treeFar: 0,
-        treeCap: 24,
-        meadowReach: 90,
-        meadowStep: 48,
-        meadowProps: false,
+        treeCap: 48,
+        meadowReach: 110,
+        meadowStep: 40,
+        meadowProps: true,
         personDraw: 70,
         personStep: 55,
         farEvery: 120,
@@ -2770,6 +2999,7 @@ const outdoorDrawList = [
     "townDirt", "townCobble",
     "wall", "door", "roof", "store", "plaster", "trunk", "leaf", "bloom", "rock", "linen", "glow",
     "bill", "billFront", "billBrick", "billBrickFront",
+    "dfFront", "dfSide", "dfBack", "dfRoof", "dfLong", "dfThatch", "dfYard", "dfPlaster", "dfShop",
     "bridge", "road", "wood", "palisade",
     "cotWall", "cotRoof", "cotDoor", "cotWood", "cotGlow", "cotFloor",
     "raisedfield", "raisedleaf", "raisedtrunk", "raisedfloor", "raisedpad",
@@ -2780,7 +3010,7 @@ const outdoorDrawList = [
 ];
 
 function uploadMesh(name, floats) {
-    const data = new Float32Array(floats);
+    const data = floats instanceof Float32Array ? floats : new Float32Array(floats);
     if (!mesh[name]) {
         const buffer = gl.createBuffer();
         mesh[name] = { buffer, count: 0 };
@@ -2788,6 +3018,83 @@ function uploadMesh(name, floats) {
     gl.bindBuffer(gl.ARRAY_BUFFER, mesh[name].buffer);
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
     mesh[name].count = data.length / 6;
+}
+
+// Ground maths runs off the page thread. The page only swaps the finished buffers in.
+let landWorker = null;
+let landBusy = false;
+let landPending = false;
+
+function applyLandGpu(built) {
+    const meshesIn = built.meshes || {};
+    for (let i = 0; i < LAND_BATCHES.length; i++) {
+        const name = LAND_BATCHES[i];
+        if (name === "crag") continue;
+        const data = meshesIn[name] || new Float32Array(0);
+        uploadMesh(name, data);
+        if (mesh[name] && (name === "water" || name.indexOf("town") === 0)) mesh[name].cull = false;
+    }
+    for (const kind of Object.keys(blendMesh)) {
+        if (kind === "trail") continue;
+        blendMesh[kind].count = 0;
+    }
+    const blendIn = built.blends || {};
+    for (const kind of Object.keys(blendIn)) {
+        const data = blendIn[kind];
+        if (!data || !data.length) continue;
+        if (!blendMesh[kind]) blendMesh[kind] = { buffer: gl.createBuffer(), count: 0 };
+        gl.bindBuffer(gl.ARRAY_BUFFER, blendMesh[kind].buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+        blendMesh[kind].count = data.length / 7;
+    }
+}
+
+function ensureLandWorker() {
+    if (landWorker) return landWorker;
+    if (typeof Worker === "undefined") return null;
+    try {
+        landWorker = new Worker("land-worker.js");
+    } catch (err) {
+        return null;
+    }
+    landWorker.onmessage = (e) => {
+        landBusy = false;
+        applyLandGpu(e.data);
+        landMarkX = e.data.x;
+        landMarkZ = e.data.z;
+        if (landPending || Math.hypot(cam.x - landMarkX, cam.z - landMarkZ) >= 64) {
+            landPending = false;
+            requestLand(cam.x, cam.z);
+        }
+    };
+    landWorker.onerror = () => {
+        landBusy = false;
+        if (landWorker) landWorker.terminate();
+        landWorker = null;
+        buildLand();
+        uploadLandMeshes();
+        landMarkX = cam.x;
+        landMarkZ = cam.z;
+    };
+    return landWorker;
+}
+
+function requestLand(x, z) {
+    const worker = ensureLandWorker();
+    if (!worker) {
+        buildLand();
+        uploadLandMeshes();
+        landMarkX = x;
+        landMarkZ = z;
+        return;
+    }
+    if (landBusy) {
+        landPending = true;
+        return;
+    }
+    landBusy = true;
+    const drawFar = typeof gfx === "function" ? gfx().drawFar : 300;
+    worker.postMessage({ x: x, z: z, drawFar: drawFar });
 }
 
 // Stone arch bridges from the map editor: a humped deck with parapets, arches springing from the water between piers.
@@ -5529,6 +5836,7 @@ function shotStop(x0, y0, z0, x1, y1, z1) {
     const dist = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
     const steps = Math.max(1, Math.ceil(dist / 0.16));
     for (const b of Town.buildings) {
+        if (swKeepClear(b)) continue;
         if (missesFlat(x0, z0, x1, z1, b.minX - 0.8, b.minZ - 0.8, b.minX + b.w + 0.8, b.minZ + b.d + 0.8)) continue;
         for (let s = 1; s <= steps; s++) {
             const t = s / steps;
@@ -6690,12 +6998,19 @@ function floorsNear(x, z) {
 let townBuildGrid = null;
 let doorGrid = null;
 
+function swKeepClear(b) {
+    if (!b || b.village !== 2) return false;
+    const place = World.places[2];
+    return Math.abs(b.x - (place.x - 0.5)) <= 17 && Math.abs(b.z - (place.z - 4)) <= 17;
+}
+
 function buildingsNear(x, z) {
     const list = Town.buildings;
     if (!townBuildGrid || townBuildGrid.count !== list.length) {
         const boxes = [];
         for (let i = 0; i < list.length; i++) {
             const b = list[i];
+            if (swKeepClear(b)) continue;
             if (!Number.isFinite(b.minX) || !Number.isFinite(b.minZ)) continue;
             boxes.push({ x: b.minX, z: b.minZ, w: b.w, d: b.d, building: b });
         }
@@ -7415,17 +7730,15 @@ function draw() {
         gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, 28, 20);
         gl.vertexAttribPointer(loc.alpha, 1, gl.FLOAT, false, 28, 24);
         gl.bindTexture(gl.TEXTURE_2D, textures[kind]);
-        if (kind === "trail") {
-            gl.disable(gl.CULL_FACE);
-            gl.enable(gl.POLYGON_OFFSET_FILL);
-            gl.polygonOffset(-1, -4);
-        }
+        gl.enable(gl.POLYGON_OFFSET_FILL);
+        gl.polygonOffset(-1, -4);
+        gl.uniform1f(loc.stipple, kind === "trail" ? 0 : 1);
+        if (kind === "trail") gl.disable(gl.CULL_FACE);
         gl.drawArrays(gl.TRIANGLES, 0, blend.count);
-        if (kind === "trail") {
-            gl.disable(gl.POLYGON_OFFSET_FILL);
-            gl.enable(gl.CULL_FACE);
-        }
+        gl.disable(gl.POLYGON_OFFSET_FILL);
+        if (kind === "trail") gl.enable(gl.CULL_FACE);
     }
+    gl.uniform1f(loc.stipple, 0);
     gl.disableVertexAttribArray(loc.alpha);
     gl.vertexAttrib1f(loc.alpha, 1);
     gl.depthMask(true);
@@ -7573,6 +7886,7 @@ function hitsDoor(door, x, z, r) {
     const counts = {};
     const floorGeom = [];
     for (const b of Town.buildings) {
+        if (swKeepClear(b)) continue;
         const kind = interiorKind(b.mesh, b.role);
         const key = b.village + ":" + (b.role || b.mesh);
         counts[key] = (counts[key] || 0) + 1;
@@ -7594,6 +7908,7 @@ function hitsDoor(door, x, z, r) {
         addBox(floorGeom, b.minX + inset, floorY - 0.04, b.minZ + inset, Math.max(0.4, b.w - inset * 2), 0.06, Math.max(0.4, b.d - inset * 2));
     }
     for (const b of houses) {
+        if (b.village === 2) continue;
         if (!b.open || b.kind === "cottage" || !b.entrance) continue;
         const t = 0.28;
         let fx = 0;
