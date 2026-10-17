@@ -2030,13 +2030,6 @@ function dressFarms() {
             pushQuad(batches.roof, [x + w + 0.1, yEave, z - 0.15, 1, 0, 0.78], [mid, ridge, z - 0.15, 0.5, 0, 1], [mid, ridge, z + d + 0.15, 0.5, 1, 1], [x + w + 0.1, yEave, z + d + 0.15, 1, 1, 0.78]);
         }
     };
-    const drawHay = (x, z) => {
-        const y = haySeat(x + 0.8, z + 0.62);
-        addBox(batches.dirt, x, y, z, 1.6, 0.7, 1.25);
-        addBox(batches.dirt, x + 0.28, y + 0.7, z + 0.22, 1.05, 0.5, 0.82);
-        addBox(batches.dirt, x + 0.55, y + 1.15, z + 0.42, 0.5, 0.32, 0.42);
-        scenery.push({ x: x, z: z, w: 1.6, d: 1.25, top: y + 1.5 });
-    };
     const drawCart = (x, z) => {
         const y = yAt(x, z);
         addBox(batches.trunk, x, y + 0.38, z, 1.9, 0.1, 0.95);
@@ -2086,7 +2079,6 @@ function dressFarms() {
             treeSpots.push({ x: spot[0], z: spot[1], y: y, pine: false });
             impostor(spot[0], spot[1], y, false);
         }
-        for (const spot of farm.hay || []) drawHay(spot[0], spot[1]);
         for (const spot of farm.cart || []) drawCart(spot[0], spot[1]);
         for (const track of farm.tracks || []) layTrack(track);
     }
@@ -7394,32 +7386,58 @@ function hayClearOfDoor(hx, hz, door, yaw) {
     return [door.x + fx * 1.45 + fz * 2.35, door.z + fz * 1.45 - fx * 2.35];
 }
 
+// Grass and filled earth are flat between samples, so a raise can lift the drawn corners above the point under the bale.
+function drawnGround(x, z) {
+    const plane = (originX, originZ, cell) => {
+        const x0 = originX + Math.floor((x - originX) / cell) * cell;
+        const z0 = originZ + Math.floor((z - originZ) / cell) * cell;
+        const tx = (x - x0) / cell;
+        const tz = (z - z0) / cell;
+        const h00 = World.heightAt(x0, z0);
+        const h10 = World.heightAt(x0 + cell, z0);
+        const h01 = World.heightAt(x0, z0 + cell);
+        const h11 = World.heightAt(x0 + cell, z0 + cell);
+        return (h00 * (1 - tx) + h10 * tx) * (1 - tz) + (h01 * (1 - tx) + h11 * tx) * tz;
+    };
+    const home = World.places[2];
+    const inner = 100;
+    const nearHome = x >= home.x - inner && x < home.x + inner && z >= home.z - inner && z < home.z + inner;
+    const grass = nearHome ? plane(home.x - inner, home.z - inner, 2) : plane(0, 0, 8);
+    return Math.max(grass, plane(0, 0, 4), World.heightAt(x, z));
+}
+
 function haySeat(x, z, floor) {
-    let y = 0;
+    let y = drawnGround(x, z);
     for (const dx of [-0.8, 0.8]) {
-        for (const dz of [-0.65, 0.65]) y = Math.max(y, World.heightAt(x + dx, z + dz));
+        for (const dz of [-0.62, 0.62]) y = Math.max(y, drawnGround(x + dx, z + dz));
     }
     if (Number.isFinite(floor)) y = Math.max(y, floor);
-    return y + 0.08;
+    return y + 0.1;
+}
+
+function placeFarmHay(list, x, z, floor) {
+    const y = haySeat(x + 0.8, z + 0.62, floor);
+    addBox(list, x, y, z, 1.6, 0.7, 1.25);
+    addBox(list, x + 0.28, y + 0.7, z + 0.22, 1.05, 0.5, 0.82);
+    addBox(list, x + 0.55, y + 1.15, z + 0.42, 0.5, 0.32, 0.42);
+    scenery.push({ x: x, z: z, w: 1.6, d: 1.25, raised: true, top: y + 1.5 });
 }
 
 function stampHay(list, plot) {
     const spot = hayClearOfDoor(plot.hay[0], plot.hay[1], plot.door, plot.yaw);
-    const y = haySeat(spot[0], spot[1], plot.house && plot.house.y);
-    const x = spot[0] - 0.75;
-    const z = spot[1] - 0.62;
-    addBox(list, x, y, z, 1.5, 0.7, 1.25);
-    addBox(list, x + 0.28, y + 0.7, z + 0.22, 1.05, 0.5, 0.82);
-    scenery.push({ x: x, z: z, w: 1.5, d: 1.25, raised: true, top: y + 1.5 });
+    placeFarmHay(list, spot[0] - 0.8, spot[1] - 0.62, plot.house && plot.house.y);
 }
 
 function paintMinorFarms(ctx, body, scale) {
     const plots = (typeof raisedData !== "undefined" && raisedData && raisedData.plots) || [];
-    const marked = [];
+    const byVillage = new Map();
     for (const plot of plots) {
         if (!plot || plot.kind !== "farm" || !(plot.village >= 4) || !plot.house) continue;
-        marked.push({ x: plot.house.x, z: plot.house.z });
+        // Later farms stay off the map. The starting farm is the one mark for that faction.
+        if (typeof plot.id !== "string" || !plot.id.endsWith("-farm")) continue;
+        if (!byVillage.has(plot.village)) byVillage.set(plot.village, { x: plot.house.x, z: plot.house.z });
     }
+    const marked = [...byVillage.values()];
     if (!marked.length) {
         for (const hamlet of World.hamlets || []) marked.push(hamlet);
     }
@@ -8297,6 +8315,10 @@ function stampRaisedPlots() {
     const roof = [];
     World.setPads(raisedData.pads || []);
     sceneryGrid = null;
+    for (const farm of Town.farms) {
+        if (farm.village == null || farm.village < 0 || farm.village > 3) continue;
+        for (const spot of farm.hay || []) placeFarmHay(field, spot[0], spot[1]);
+    }
     nearMarkX = 1e9;
     const nearPads = (raisedData.pads || []).filter((pad) => {
         const cx = pad.minX + pad.w * 0.5;
