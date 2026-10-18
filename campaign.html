@@ -11,6 +11,7 @@
         <nav>
             <a href="village.html">Village</a>
             <a href="village.html?fly=1">Survey</a>
+            <a href="board.html">Board</a>
         </nav>
         <div>
             <p class="eyebrow">Strategy</p>
@@ -19,7 +20,20 @@
         <p id="clock">Recruiting takes five minutes</p>
         <button id="restart" type="button">Restart</button>
     </header>
-    <p class="lead">The houses choose when to build, train, and march, and only march on those they are at war with. They gather about 40 soldiers before marching unless the enemy is weak, and build within 200 m of their last buildings, up to 500 m out. Rural communities keep no soldiers and ask the nearest friendly house for protection. You belong to no house: whoever you strike treats you as an enemy until you die.</p>
+    <p class="lead">You are the Southwest campaign player. Train a number of units, then choose how many to send and click a wood stand or an ore. Units are not drawn on the map. End your turn when you are finished.</p>
+    <section class="sheet place-sheet">
+        <h2>Place a building</h2>
+        <div class="kinds" id="kinds"></div>
+        <p id="hint"></p>
+        <p id="coords"></p>
+        <div class="place-layout">
+            <canvas id="place-land" width="680" height="640" aria-label="Southwest building spots"></canvas>
+            <aside>
+                <ul id="facts"></ul>
+                <button id="remove" type="button" hidden>Remove selected</button>
+            </aside>
+        </div>
+    </section>
     <section class="sheet">
         <h2>Factions</h2>
         <div class="scroll">
@@ -83,5 +97,6 @@
     <script src="world-edit.js"></script>
     <script src="world.js"></script>
     <script src="campaign.js"></script>
+    <script src="board.js"></script>
 </body>
 </html>

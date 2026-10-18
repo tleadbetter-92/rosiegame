@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strategy board</title>
+    <link rel="stylesheet" href="board.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <a href="campaign.html">Campaign</a>
+            <a href="village.html">Village</a>
+        </nav>
+        <div>
+            <p class="eyebrow">What the strategy side sees</p>
+            <h1>Board</h1>
+        </div>
+        <button id="refresh" type="button">Refresh</button>
+    </header>
+    <p class="lead">You are the Southwest campaign player. Train a number of units, then choose how many to send and click a wood stand or an ore. Units are not drawn on the map. End your turn when you are finished.</p>
+    <div class="kinds" id="kinds"></div>
+    <p id="hint"></p>
+    <p id="coords"></p>
+    <div class="layout">
+        <canvas id="place-land" width="680" height="640" aria-label="Southwest building spots"></canvas>
+        <aside id="detail">
+            <h2 id="title">Place a building</h2>
+            <ul id="facts"></ul>
+            <button id="remove" type="button" hidden>Remove selected</button>
+        </aside>
+    </div>
+    <p class="legend">Yellow spot: a house or a farm. Lumberyard: click a wood tick. Mine: click an ore. Those two can sit outside the village. Each 100 m from Southwest takes 1% off 120 a day, and that loss is rounded up. Square with numbers: a building you ordered. White circle: you. Pale square: the town walls. These orders stay on this page. They are not sent to the war.</p>
+    <script src="world-edit.js"></script>
+    <script src="world.js"></script>
+    <script src="board.js"></script>
+</body>
+</html>

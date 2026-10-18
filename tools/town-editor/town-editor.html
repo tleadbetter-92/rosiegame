@@ -42,6 +42,10 @@
         <label class="tool"><input type="radio" name="tool" value="stores"> Storehouse</label>
         <label class="tool"><input type="radio" name="tool" value="inn"> Inn</label>
         <label class="tool"><input type="radio" name="tool" value="yard"> Lumber yard</label>
+        <label class="tool"><input type="radio" name="tool" value="nwfarm"> Northwest farm</label>
+        <label class="tool"><input type="radio" name="tool" value="nefarm"> Northeast farm</label>
+        <label class="tool"><input type="radio" name="tool" value="swfarm"> Southwest farm</label>
+        <label class="tool"><input type="radio" name="tool" value="sefarm"> Southeast farm</label>
         <label class="tool"><input type="radio" name="tool" value="cobble"> Cobbles</label>
         <label class="tool"><input type="radio" name="tool" value="stone"> Stone floor</label>
         <label class="tool"><input type="radio" name="tool" value="gravel"> Gravel</label>
@@ -178,6 +182,11 @@
                 }
             }, true),
             grass: tex((g, s) => { g.fillStyle = "#4d7a3c"; g.fillRect(0, 0, s, s); }, true),
+            dirt: tex((g, s) => {
+                g.fillStyle = "#8a6840"; g.fillRect(0, 0, s, s);
+                g.fillStyle = "#6a4e30";
+                for (let i = 0; i < 60; i++) g.fillRect((i * 19) % s, (i * 13) % s, 7, 3);
+            }, true),
             field: tex((g, s) => { g.fillStyle = "#3a6234"; g.fillRect(0, 0, s, s); }, true),
             cobble: tex((g, s) => {
                 g.fillStyle = "#5a564e"; g.fillRect(0, 0, s, s);
@@ -525,6 +534,7 @@
             })
         };
         const civicTools = ["lord", "barracks", "smith", "vshop", "stores", "inn"];
+        const farmTools = ["nwfarm", "nefarm", "swfarm", "sefarm"];
 
         function turn(x, z, yaw, px, pz) {
             const c = Math.cos(yaw), s = Math.sin(yaw);
@@ -544,11 +554,167 @@
             put(bags.linen, piece.linen, x, z, yaw);
             put(bags.glow, piece.glow, x, z, yaw);
         }
+        function railLocal(wood, x0, z0, x1, z1) {
+            const len = Math.hypot(x1 - x0, z1 - z0) || 1;
+            const n = Math.max(1, Math.round(len / 5));
+            for (let i = 0; i <= n; i++) {
+                const x = x0 + (x1 - x0) * (i / n);
+                const z = z0 + (z1 - z0) * (i / n);
+                solid(wood, x - 0.07, 0, z - 0.07, 0.14, 0.92, 0.14, 0.85);
+                if (i === n) break;
+                const x2 = x0 + (x1 - x0) * ((i + 1) / n);
+                const z2 = z0 + (z1 - z0) * ((i + 1) / n);
+                const rx = Math.min(x, x2);
+                const rz = Math.min(z, z2);
+                const rw = Math.max(0.08, Math.abs(x2 - x));
+                const rd = Math.max(0.08, Math.abs(z2 - z));
+                solid(wood, rx, 0.36, rz, rw, 0.07, rd, 0.8);
+                solid(wood, rx, 0.68, rz, rw, 0.07, rd, 0.8);
+            }
+        }
+        function edgeLocal(wood, x0, z0, x1, z1, gap) {
+            const horizontal = Math.abs(z1 - z0) < 0.01;
+            if (!gap) {
+                railLocal(wood, x0, z0, x1, z1);
+                return;
+            }
+            const along0 = horizontal ? x0 : z0;
+            const along1 = horizontal ? x1 : z1;
+            const lo = Math.min(along0, along1);
+            const hi = Math.max(along0, along1);
+            const cut0 = Math.max(lo, gap.at - gap.width / 2);
+            const cut1 = Math.min(hi, gap.at + gap.width / 2);
+            const piece = (a, b) => {
+                if (b - a < 0.4) return;
+                if (horizontal) railLocal(wood, a, z0, b, z1);
+                else railLocal(wood, x0, a, x1, b);
+            };
+            piece(lo, cut0);
+            piece(cut1, hi);
+        }
+        function fenceLocal(wood, rect, ox, oz) {
+            const x = rect.x - ox;
+            const z = rect.z - oz;
+            const gap = rect.gap ? {
+                side: rect.gap.side,
+                at: rect.gap.side === "east" || rect.gap.side === "west" ? rect.gap.at - oz : rect.gap.at - ox,
+                width: rect.gap.width
+            } : null;
+            edgeLocal(wood, x, z, x + rect.w, z, gap && gap.side === "north" ? gap : null);
+            edgeLocal(wood, x, z + rect.d, x + rect.w, z + rect.d, gap && gap.side === "south" ? gap : null);
+            edgeLocal(wood, x, z, x, z + rect.d, gap && gap.side === "west" ? gap : null);
+            edgeLocal(wood, x + rect.w, z, x + rect.w, z + rect.d, gap && gap.side === "east" ? gap : null);
+        }
+        function farmMesh(farm) {
+            const yard = farm.yard;
+            const ox = yard.x + yard.w / 2;
+            const oz = yard.z + yard.d / 2;
+            const piece = { dirt: [], wood: [], keep: [], roof: [], stone: [], linen: [], glow: [], thatch: [] };
+            const x0 = -yard.w / 2;
+            const z0 = -yard.d / 2;
+            pushQuad(piece.dirt,
+                [x0, 0.05, z0, 0, 0, 1],
+                [x0, 0.05, z0 + yard.d, 0, yard.d / 4, 1],
+                [x0 + yard.w, 0.05, z0 + yard.d, yard.w / 4, yard.d / 4, 1],
+                [x0 + yard.w, 0.05, z0, yard.w / 4, 0, 1]
+            );
+            fenceLocal(piece.wood, yard, ox, oz);
+            if (farm.pen) fenceLocal(piece.wood, farm.pen, ox, oz);
+            if (farm.garden) fenceLocal(piece.wood, farm.garden, ox, oz);
+            const house = farm.buildings.find((b) => b.role === "farmhouse");
+            if (house) {
+                const body = civicMesh({ w: 4.7, d: 4.7, rise: 1.85, gable: false, dress: function () {} });
+                stampCivic(piece, body, house.x - ox, house.z - oz, house.yaw, stamp);
+            }
+            for (const b of farm.buildings) {
+                if (b.role === "farmhouse") continue;
+                const h = b.role === "shed" ? 2.35 : 3.15;
+                const x = b.minX - ox;
+                const z = b.minZ - oz;
+                solid(piece.wood, x, 0, z, b.w, h, b.d, 0.75);
+                const ridge = h + Math.min(b.w, b.d) * 0.34;
+                if (b.w >= b.d) {
+                    const mid = z + b.d / 2;
+                    pushQuad(piece.roof, [x - 0.15, h, z - 0.1, 0, 0, 0.9], [x - 0.15, ridge, mid, 0, 0.5, 1], [x + b.w + 0.15, ridge, mid, 1, 0.5, 1], [x + b.w + 0.15, h, z - 0.1, 1, 0, 0.9]);
+                    pushQuad(piece.roof, [x - 0.15, h, z + b.d + 0.1, 0, 0, 0.78], [x + b.w + 0.15, h, z + b.d + 0.1, 1, 0, 0.78], [x + b.w + 0.15, ridge, mid, 1, 0.5, 1], [x - 0.15, ridge, mid, 0, 0.5, 1]);
+                } else {
+                    const mid = x + b.w / 2;
+                    pushQuad(piece.roof, [x - 0.1, h, z - 0.15, 0, 0, 0.9], [x - 0.1, h, z + b.d + 0.15, 0, 1, 0.9], [mid, ridge, z + b.d + 0.15, 0.5, 1, 1], [mid, ridge, z - 0.15, 0.5, 0, 1]);
+                    pushQuad(piece.roof, [x + b.w + 0.1, h, z - 0.15, 1, 0, 0.78], [mid, ridge, z - 0.15, 0.5, 0, 1], [mid, ridge, z + b.d + 0.15, 0.5, 1, 1], [x + b.w + 0.1, h, z + b.d + 0.15, 1, 1, 0.78]);
+                }
+            }
+            for (const spot of farm.hay || []) solid(piece.thatch, spot[0] - ox - 0.6, 0, spot[1] - oz - 0.5, 1.2, 0.7, 1, 0.9);
+            for (const spot of farm.cart || []) solid(piece.wood, spot[0] - ox - 0.7, 0.35, spot[1] - oz - 0.4, 1.4, 0.7, 0.8, 0.7);
+            for (const spot of farm.orchard || []) {
+                solid(piece.wood, spot[0] - ox - 0.12, 0, spot[1] - oz - 0.12, 0.24, 1.6, 0.24, 0.6);
+                solid(piece.thatch, spot[0] - ox - 1.1, 1.5, spot[1] - oz - 1.1, 2.2, 1.6, 2.2, 0.85);
+            }
+            return piece;
+        }
+        function stampFarm(bags, piece, x, z, yaw, put) {
+            stampCivic(bags, piece, x, z, yaw, put);
+            put(bags.dirt, piece.dirt, x, z, yaw);
+            put(bags.thatch, piece.thatch, x, z, yaw);
+        }
+        const knownFarms = {
+            nwfarm: {
+                buildings: [
+                    { role: "farmhouse", x: -1475, z: -860, yaw: 0, w: 4.7, d: 4.7, minX: -1477.35, minZ: -862.35 },
+                    { role: "shed", x: -1454, z: -820, w: 3, d: 2.4, minX: -1455.5, minZ: -821.2 }
+                ],
+                yard: { x: -1504, z: -848, w: 58, d: 34, gap: { side: "east", at: -830, width: 2.4 } },
+                pen: { x: -1442, z: -846, w: 4.4, d: 3.6, gap: { side: "west", at: -844.2, width: 1.4 } },
+                garden: { x: -1498, z: -808, w: 6.5, d: 4 },
+                hay: [[-1462, -828]],
+                cart: [[-1436, -832]]
+            },
+            nefarm: {
+                buildings: [
+                    { role: "farmhouse", x: 1296, z: -1480, yaw: Math.PI, w: 4.7, d: 4.7, minX: 1293.65, minZ: -1482.35 },
+                    { role: "shed", x: 1318, z: -1448, w: 3, d: 2.4, minX: 1316.5, minZ: -1449.2 }
+                ],
+                yard: { x: 1278, z: -1468, w: 56, d: 36, gap: { side: "south", at: 1296, width: 2.4 } },
+                pen: { x: 1262, z: -1456, w: 4.2, d: 3.4, gap: { side: "east", at: -1454.3, width: 1.3 } },
+                garden: { x: 1324, z: -1464, w: 6, d: 4 },
+                hay: [[1306, -1460]],
+                cart: [[1284, -1428]]
+            },
+            swfarm: {
+                buildings: [
+                    { role: "farmhouse", x: -2372, z: 750, yaw: Math.PI / 2, w: 4.7, d: 4.7, minX: -2374.35, minZ: 747.65 },
+                    { role: "barn", x: -2356, z: 792, w: 6.6, d: 4.2, minX: -2359.3, minZ: 789.9 },
+                    { role: "shed", x: -2386, z: 780, w: 3.2, d: 2.6, minX: -2387.6, minZ: 778.7 }
+                ],
+                yard: { x: -2406, z: 762, w: 96, d: 42, gap: { side: "north", at: -2372, width: 2.8 } },
+                pen: { x: -2396, z: 746, w: 5.2, d: 4.4, gap: { side: "south", at: -2393.4, width: 1.6 } },
+                garden: { x: -2334, z: 768, w: 8, d: 6 },
+                hay: [[-2348, 786]],
+                orchard: [[-2382, 818], [-2368, 826], [-2354, 818], [-2340, 826]],
+                cart: [[-2374, 752]]
+            },
+            sefarm: {
+                buildings: [
+                    { role: "farmhouse", x: 640, z: 1384, yaw: -Math.PI / 2, w: 4.7, d: 4.7, minX: 637.65, minZ: 1381.65 },
+                    { role: "barn", x: 658, z: 1434, w: 5.4, d: 3.6, minX: 655.3, minZ: 1432.2 },
+                    { role: "shed", x: 612, z: 1424, w: 3, d: 2.4, minX: 610.5, minZ: 1422.8 }
+                ],
+                yard: { x: 598, z: 1396, w: 82, d: 52, gap: { side: "east", at: 1412, width: 2.6 } },
+                pen: { x: 600, z: 1452, w: 4.6, d: 3.6, gap: { side: "north", at: 602.3, width: 1.4 } },
+                garden: { x: 668, z: 1402, w: 7, d: 5 },
+                hay: [[646, 1422]],
+                orchard: [[670, 1456], [658, 1464], [682, 1460]],
+                cart: [[688, 1412]]
+            }
+        };
+        kit.nwfarm = farmMesh(knownFarms.nwfarm);
+        kit.nefarm = farmMesh(knownFarms.nefarm);
+        kit.swfarm = farmMesh(knownFarms.swfarm);
+        kit.sefarm = farmMesh(knownFarms.sefarm);
 
         const buckets = {};
         const meshes = {};
         function rebuild() {
-            const names = ["field", "stone", "timber", "roof", "red", "thatch", "plaster", "shop", "keep", "linen", "glow", "grass", "cobble", "gravel", "wood", "yard"];
+            const names = ["field", "dirt", "stone", "timber", "roof", "red", "thatch", "plaster", "shop", "keep", "linen", "glow", "grass", "cobble", "gravel", "wood", "yard"];
             for (const name of names) buckets[name] = [];
             const edge = HALF / 8;
             pushQuad(buckets.field,
@@ -582,6 +748,8 @@
                     stamp(buckets.roof, kit.gable.roof, b.x, b.z, b.yaw);
                 } else if (civicTools.indexOf(b.t) >= 0) {
                     stampCivic(buckets, kit[b.t], b.x, b.z, b.yaw, stamp);
+                } else if (farmTools.indexOf(b.t) >= 0) {
+                    stampFarm(buckets, kit[b.t], b.x, b.z, b.yaw, stamp);
                 } else {
                     stamp(buckets.red, kit.long.red, b.x, b.z, b.yaw);
                     stamp(buckets.thatch, kit.long.thatch, b.x, b.z, b.yaw);
@@ -606,7 +774,7 @@
             }
         }
         function rebuildGhost() {
-            const names = ["stone", "timber", "roof", "red", "thatch", "plaster", "shop", "keep", "linen", "glow", "wood", "yard", "mark"];
+            const names = ["stone", "timber", "roof", "red", "thatch", "plaster", "shop", "keep", "linen", "glow", "wood", "yard", "dirt", "mark"];
             const bags = {};
             for (const name of names) bags[name] = [];
             if (hover) {
@@ -632,6 +800,8 @@
                     stampGhost(bags.roof, kit.gable.roof, x, z, yaw);
                 } else if (civicTools.indexOf(tool) >= 0) {
                     stampCivic(bags, kit[tool], x, z, yaw, stampGhost);
+                } else if (farmTools.indexOf(tool) >= 0) {
+                    stampFarm(bags, kit[tool], x, z, yaw, stampGhost);
                 } else if (tool === "fence") {
                     stampGhost(bags.wood, kit.fence, x, z, yaw);
                 } else {
@@ -708,9 +878,9 @@
                 block.ground[x + "," + z] = tool;
             } else if (tool === "erase") {
                 delete block.ground[x + "," + z];
-                block.buildings = block.buildings.filter((b) => Math.hypot(b.x - p.x, b.z - p.z) > 3);
+                block.buildings = block.buildings.filter((b) => Math.hypot(b.x - p.x, b.z - p.z) > (farmTools.indexOf(b.t) >= 0 ? 54 : 3));
                 block.fences = block.fences.filter((f) => Math.hypot(f.x - p.x, f.z - p.z) > 2);
-            } else if (tool === "street" || tool === "long" || tool === "yard" || tool === "cot" || tool === "shop" || tool === "gable" || civicTools.indexOf(tool) >= 0) {
+            } else if (tool === "street" || tool === "long" || tool === "yard" || tool === "cot" || tool === "shop" || tool === "gable" || civicTools.indexOf(tool) >= 0 || farmTools.indexOf(tool) >= 0) {
                 block.buildings.push({ t: tool, x: x, z: z, yaw: yaw });
             } else if (tool === "fence") {
                 block.fences.push({ x: x, z: z, yaw: yaw });
@@ -765,7 +935,7 @@
             gl.useProgram(program);
             gl.uniformMatrix4fv(loc.view, false, lookAt(eye()));
             gl.uniformMatrix4fv(loc.proj, false, perspective());
-            const order = ["field", "grass", "cobble", "gravel", "stone", "timber", "plaster", "shop", "keep", "red", "roof", "thatch", "wood", "linen", "glow", "yard", "mark"];
+            const order = ["field", "dirt", "grass", "cobble", "gravel", "stone", "timber", "plaster", "shop", "keep", "red", "roof", "thatch", "wood", "linen", "glow", "yard", "mark"];
             for (const name of order) {
                 const mesh = meshes[name];
                 if (!mesh || !mesh.count || !textures[name]) continue;
