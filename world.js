@@ -688,8 +688,18 @@
     const padCell = 64;
     const noPads = [];
 
+    let padStamp = "";
     function setPads(list) {
-        pads = list || [];
+        const next = list || [];
+        let stamp = "";
+        for (let i = 0; i < next.length; i++) {
+            const pad = next[i];
+            stamp += pad.minX + "," + pad.minZ + "," + pad.w + "," + pad.d + "," + pad.y + ";";
+        }
+        if (stamp === padStamp) return;
+        padStamp = stamp;
+        heightCache.clear();
+        pads = next;
         padGrid = new Map();
         for (let i = 0; i < pads.length; i++) {
             const pad = pads[i];
@@ -763,14 +773,8 @@
         return false;
     }
 
-    const meshCorners = new Map();
     function meshSample(x, z) {
-        const key = x + "," + z;
-        if (meshCorners.has(key)) return meshCorners.get(key);
-        const h = heightAt(x, z);
-        if (meshCorners.size > 4096) meshCorners.clear();
-        meshCorners.set(key, h);
-        return h;
+        return heightAt(x, z);
     }
     // The drawn ground is flat between samples: 2 m inside Southwest, 8 m everywhere else.
     function meshHeight(x, z) {
@@ -787,7 +791,11 @@
         return (h00 * (1 - tx) + h10 * tx) * (1 - tz) + (h01 * (1 - tx) + h11 * tx) * tz;
     }
 
+    // The island shape is fixed. Remember each answer so the recipe runs once per spot, not every frame.
+    const heightCache = new Map();
     function heightAt(x, z) {
+        const key = x + "," + z;
+        if (heightCache.has(key)) return heightCache.get(key);
         let h = bareHeight(x, z);
         const near = padsNear(x, z);
         for (let i = 0; i < near.length; i++) {
@@ -798,6 +806,15 @@
             const top = p.y - Math.max(0, Math.hypot(dx, dz) - PAD_LIP) * PAD_BANK;
             if (top > h) h = top;
         }
+        if (heightCache.size >= 80000) {
+            const drop = heightCache.keys();
+            for (let n = 0; n < 20000; n++) {
+                const older = drop.next();
+                if (older.done) break;
+                heightCache.delete(older.value);
+            }
+        }
+        heightCache.set(key, h);
         return h;
     }
 

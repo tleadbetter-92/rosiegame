@@ -5999,7 +5999,7 @@ function stepArrows(dt) {
         }
         if (!hit && blockedAt != null) hit = true;
         if (!hit && arrow.range && Math.hypot(arrow.x - arrow.ox, arrow.z - arrow.oz) >= arrow.range - 0.05) hit = true;
-        if (!hit && arrow.y < World.heightAt(arrow.x, arrow.z) + 0.2) hit = true;
+        if (!hit && arrow.y < World.meshHeight(arrow.x, arrow.z) + 0.2) hit = true;
         if (hit || arrow.age > 1.5 || arrow.y < -4) {
             arrows.splice(i, 1);
         }
@@ -7790,7 +7790,7 @@ function movePlayer(dt) {
         const stepUp = (nx, nz) => {
             const next = floorAt(nx, nz, feet);
             // Open ground can be climbed however steep it is; only cliffs, peaks and raised floors stop the player.
-            if (next > feet + 0.52 && (next > Math.max(0, World.heightAt(nx, nz)) + 0.01 || World.tooSteep(nx, nz))) return false;
+            if (next > feet + 0.52 && (next > Math.max(0, World.meshHeight(nx, nz)) + 0.01 || World.tooSteep(nx, nz))) return false;
             if (next < feet - 0.52 && World.tooSteep(nx, nz)) return false;
             return true;
         };
