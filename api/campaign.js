@@ -138,7 +138,8 @@ const WILD_MAX = 50;
 const WILD_START = 45;
 const WILD_DAILY = 5;
 const WILD_AFTER = 20;
-const START_WOOD = 200;
+const START_FOOD = 1000;
+const START_WOOD = 1000;
 const WALL_HALF = 17;
 const WALL_CX = -0.5;
 const WALL_CZ = -4;
@@ -392,7 +393,7 @@ function seedSoldiers(state) {
 
 function restartCampaign(state, now) {
     state.owners = [0, 1, 2, 3];
-    state.food = [100, 100, 100, 100];
+    state.food = [START_FOOD, START_FOOD, START_FOOD, START_FOOD];
     state.wood = [START_WOOD, START_WOOD, START_WOOD, START_WOOD];
     state.stone = [0, 0, 0, 0];
     state.gold = [0, 0, 0, 0];
@@ -430,7 +431,7 @@ function restartCampaign(state, now) {
 }
 
 function freshMinors() {
-    return minors.map(() => ({ food: 100, wood: START_WOOD, stone: 0, gold: 0, owner: -1, protector: -1, declined: [], fedDay: -1, tributeDay: -1 }));
+    return minors.map(() => ({ food: START_FOOD, wood: START_WOOD, stone: 0, gold: 0, owner: -1, protector: -1, declined: [], fedDay: -1, tributeDay: -1 }));
 }
 
 function ensureHamlet(state, now) {
@@ -965,11 +966,11 @@ function dailyFood(state, faction) {
 function ensureEconomy(state, now) {
     let dirty = false;
     if (!Array.isArray(state.food) || state.food.length !== 4) {
-        state.food = [100, 100, 100, 100];
+        state.food = [START_FOOD, START_FOOD, START_FOOD, START_FOOD];
         dirty = true;
     }
     if (!Array.isArray(state.wood) || state.wood.length !== 4) {
-        state.wood = [0, 0, 0, 0];
+        state.wood = [START_WOOD, START_WOOD, START_WOOD, START_WOOD];
         dirty = true;
     }
     // Stone and gold come from miners digging ore placed on the map.

@@ -318,29 +318,16 @@
             village: 2,
             name: "southwest",
             buildings: [
-                kitBuilding(2, "house", -2372, 750, Math.PI / 2, "farmhouse"),
-                timberBuilding(2, "barn", -2356, 792, 6.6, 4.2, 0, "north"),
-                timberBuilding(2, "shed", -2386, 780, 3.2, 2.6, -Math.PI / 2, "east")
+                Object.assign(kitBuilding(2, "house", -2372, 750, 0, "farmhouse"), { doorSide: 0 })
             ],
-            yard: { x: -2406, z: 762, w: 96, d: 42, gap: { side: "north", at: -2372, width: 2.8 } },
-            pen: { x: -2396, z: 746, w: 5.2, d: 4.4, gap: { side: "south", at: -2393.4, width: 1.6 } },
-            garden: { x: -2334, z: 768, w: 8, d: 6 },
-            orchard: [[-2382, 818], [-2368, 826], [-2354, 818], [-2340, 826]],
-            hay: [[-2348, 786]],
-            cart: [[-2374, 752]],
-            props: [
-                { name: "Barrel", x: -2350, z: 786, yaw: 0.4 },
-                { name: "Barrel", x: -2344, z: 788, yaw: 1.2 },
-                { name: "Crate_Wooden", x: -2378, z: 786, yaw: 0.3 },
-                { name: "FarmCrate_Apple", x: -2342, z: 778, yaw: 0.6 },
-                { name: "Bag", x: -2358, z: 784, yaw: 0.2 },
-                { name: "Workbench", x: -2388, z: 796, yaw: 0 },
-                { name: "Bench", x: -2366, z: 778, yaw: Math.PI / 2 }
-            ],
-            tracks: [
-                [[-2372, 762], [-2372, 754], [-2482, 754], [-2482, 718]],
-                [[-2405, 762], [-2405, 804]]
-            ]
+            yard: null,
+            pen: null,
+            garden: null,
+            orchard: [],
+            hay: [],
+            cart: [],
+            props: [],
+            tracks: []
         },
         {
             village: 3,

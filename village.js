@@ -7,8 +7,8 @@ if (!gl) {
 
 const places = World.places;
 const flying = new URLSearchParams(location.search).get("fly") === "1";
-// Outside the Southwest kit farmhouse door (field centre -2407.2, 540.2 in campaign starts).
-const START_FARM = { x: -2376.6, z: 539.2, yaw: -Math.PI / 2 };
+// Just south of the designed Southwest farmhouse door, looking back at the house.
+const START_FARM = { x: -2372, z: 744.5, yaw: Math.PI };
 const OLD_TOWN_SPAWN = { x: places[2].ox, z: places[2].oz + 20 };
 function atStartFarm(x, z, yaw) {
     cam.x = x;
@@ -429,7 +429,106 @@ const textures = {
     cloth1: clothTexture("#3d6b8a"),
     cloth2: clothTexture("#6a7a3a"),
     cloth3: clothTexture("#8a5a7a"),
-    cloth4: clothTexture("#b0883a")
+    cloth4: clothTexture("#b0883a"),
+    folk: paintTexture(256, (g) => {
+        g.fillStyle = "#c9a07a";
+        g.fillRect(0, 0, 256, 256);
+        g.save();
+        g.beginPath();
+        g.rect(0, 0, 128, 128);
+        g.clip();
+        g.fillStyle = "#e7c4a6";
+        g.fillRect(0, 0, 128, 128);
+        g.fillStyle = "#3a2416";
+        g.fillRect(0, 0, 128, 30);
+        g.fillRect(0, 0, 16, 96);
+        g.fillRect(112, 0, 16, 96);
+        g.fillStyle = "rgba(70, 36, 24, 0.38)";
+        g.fillRect(0, 24, 20, 104);
+        g.fillRect(108, 24, 20, 104);
+        g.fillStyle = "#2a1c14";
+        g.fillRect(26, 38, 30, 5);
+        g.fillRect(74, 38, 30, 5);
+        g.fillStyle = "#f6f3ec";
+        g.beginPath();
+        g.ellipse(40, 56, 13, 8, 0, 0, Math.PI * 2);
+        g.ellipse(90, 56, 13, 8, 0, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = "#3d5c7a";
+        g.beginPath();
+        g.arc(42, 57, 5.5, 0, Math.PI * 2);
+        g.arc(92, 57, 5.5, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = "#14110e";
+        g.beginPath();
+        g.arc(43, 57, 2.6, 0, Math.PI * 2);
+        g.arc(93, 57, 2.6, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = "#ffffff";
+        g.fillRect(46, 53, 3, 3);
+        g.fillRect(96, 53, 3, 3);
+        g.fillStyle = "rgba(140, 80, 58, 0.55)";
+        g.fillRect(60, 58, 8, 24);
+        g.fillStyle = "#c48b72";
+        g.fillRect(56, 78, 16, 6);
+        g.fillStyle = "#9a4e48";
+        g.fillRect(46, 94, 36, 5);
+        g.fillStyle = "rgba(58, 36, 22, 0.5)";
+        g.fillRect(42, 98, 44, 16);
+        g.fillStyle = "rgba(80, 46, 34, 0.3)";
+        g.fillRect(34, 112, 60, 16);
+        g.restore();
+        g.fillStyle = "#e7c4a6";
+        g.fillRect(128, 0, 64, 128);
+        g.fillStyle = "#3a2416";
+        g.fillRect(128, 0, 64, 34);
+        g.fillRect(128, 0, 22, 108);
+        g.fillStyle = "#1c2430";
+        g.fillRect(158, 50, 8, 7);
+        g.fillStyle = "#c48b72";
+        g.fillRect(152, 72, 12, 18);
+        g.fillStyle = "rgba(58, 36, 22, 0.45)";
+        g.fillRect(146, 100, 28, 20);
+        g.fillStyle = "#3a2416";
+        g.fillRect(192, 0, 64, 64);
+        g.fillStyle = "#5a4030";
+        g.fillRect(192, 46, 64, 10);
+        g.fillStyle = "#3e527f";
+        g.fillRect(0, 128, 186, 128);
+        g.fillStyle = "#2c3c62";
+        g.fillRect(34, 156, 8, 88);
+        g.fillRect(86, 148, 7, 100);
+        g.fillRect(128, 160, 8, 76);
+        g.fillStyle = "#e0c27a";
+        g.fillRect(0, 128, 7, 128);
+        g.fillRect(143, 128, 7, 128);
+        g.fillStyle = "#e7c4a6";
+        g.fillRect(52, 128, 50, 18);
+        g.fillStyle = "#d8c4a4";
+        g.fillRect(42, 142, 70, 10);
+        g.fillStyle = "#3a2414";
+        g.fillRect(0, 214, 150, 16);
+        g.fillStyle = "#c9a45a";
+        g.fillRect(64, 216, 20, 12);
+        g.fillStyle = "#2c3c62";
+        g.fillRect(0, 238, 150, 18);
+        g.fillStyle = "#3e527f";
+        g.fillRect(156, 128, 30, 128);
+        g.fillStyle = "#e0c27a";
+        g.fillRect(156, 128, 5, 128);
+        g.fillStyle = "#3a2414";
+        g.fillRect(156, 214, 30, 16);
+        g.fillStyle = "#3e527f";
+        g.fillRect(190, 128, 28, 64);
+        g.fillStyle = "#e0c27a";
+        g.fillRect(190, 184, 28, 6);
+        g.fillStyle = "#e7c4a6";
+        g.fillRect(220, 128, 30, 36);
+        g.fillStyle = "#4a3428";
+        g.fillRect(190, 168, 66, 88);
+        g.fillStyle = "#2a1c14";
+        g.fillRect(190, 232, 66, 24);
+    })
 };
 
 // Bare rock out in the country: weathered and uneven, with nothing square that would show the tiling.
@@ -546,6 +645,7 @@ function pushTri(list, a, b, c) {
 
 const batches = {
     grass: [], dirt: [], cobble: [], sand: [], gravel: [], marsh: [], water: [], wall: [], door: [], roof: [], store: [], plaster: [], trunk: [], leaf: [], bloom: [], rock: [], linen: [], glow: [],
+    plow: [], yardgravel: [],
     townDirt: [], townCobble: [],
     bill: [], billFront: [], billBrick: [], billBrickFront: [],
     farTrunk: [], farLeaf: [],
@@ -1262,7 +1362,35 @@ function spawnGarrison() {
                 attackIn: 0.8,
                 striking: 0,
                 struck: false,
-                dying: false
+                dying: false,
+                fixed: true
+            });
+        }
+        for (let side = 0; side < 4; side++) {
+            const spot = archerSpot(village, side);
+            men.push({
+                archer: true,
+                fixed: true,
+                village: village,
+                side: side,
+                post: village,
+                faction: village,
+                index: 40 + side,
+                health: 3,
+                x: spot.x,
+                z: spot.z,
+                stand: spot.stand,
+                homeYaw: spot.yaw,
+                yaw: spot.yaw,
+                bob: 0,
+                down: 0,
+                swing: -1,
+                hostile: false,
+                attackIn: 0.8,
+                striking: 0,
+                struck: false,
+                dying: false,
+                mode: "guard"
             });
         }
     }
@@ -1271,8 +1399,8 @@ function spawnGarrison() {
         const hamlet = hamlets[i];
         for (let hand = 0; hand < 2; hand++) {
             const ang = hand * 1.4;
-            const x = hamlet.x + 8 + Math.cos(ang) * 1.5;
-            const z = hamlet.z + Math.sin(ang) * 1.5;
+            const x = hamlet.x + 6 + Math.cos(ang) * 2;
+            const z = hamlet.z + 8 + Math.sin(ang) * 2;
             men.push({
                 faction: 4,
                 index: 80 + i * 2 + hand,
@@ -1292,7 +1420,8 @@ function spawnGarrison() {
                 attackIn: 1,
                 striking: 0,
                 struck: false,
-                dying: false
+                dying: false,
+                fixed: true
             });
         }
     }
@@ -1879,19 +2008,7 @@ function dressSouthMeadow() {
     farmPlot(1192, -1426, 40, 18);
     farmPlot(694, 1398, 56, 40);
     farmPlot(814, 1398, 56, 40);
-    const westField = { x: -2570, z: 758, w: 74, d: 54 };
-    const eastField = { x: -2464, z: 764, w: 56, d: 48 };
-    const westGate = Town.fieldGate(westField, houseNear(-2533, 785));
-    const eastGate = Town.fieldGate(eastField, houseNear(-2436, 788));
-    const openSide = (gate, side) => gate.side === side ? gate : null;
-    fenceAt(-2570, 758, -2496, 758, openSide(westGate, "south"));
-    fenceAt(-2570, 758, -2570, 812, openSide(westGate, "west"));
-    fenceAt(-2570, 812, -2496, 812, openSide(westGate, "north"));
-    fenceAt(-2464, 764, -2408, 764, openSide(eastGate, "south"));
-    fenceAt(-2408, 764, -2408, 812, openSide(eastGate, "east"));
-    fenceAt(-2408, 812, -2464, 812, openSide(eastGate, "north"));
-    for (let z = 678; z <= 712; z += 8) crops(-2562, z, 60);
-    for (let z = 684; z <= 712; z += 8) crops(-2456, z, 42);
+    // The Southwest crop fields are the designed farm, stamped in dressDesignedFarm.
     [
         [-2596, 748], [-2622, 732], [-2578, 768, true], [-2644, 760],
         [-2610, 790], [-2660, 728], [-2588, 804], [-2636, 802, true],
@@ -2157,6 +2274,73 @@ function dressFarms() {
         for (const spot of farm.cart || []) drawCart(spot[0], spot[1]);
         for (const track of farm.tracks || []) layTrack(track);
     }
+    dressDesignedFarm(-2376, 776);
+}
+
+// A saved town-editor block. ox, oz is the world position of editor (0, 0).
+function stampEditorBlock(block, ox, oz) {
+    if (!block) return;
+    if (!textures.plow) {
+        textures.plow = paintTexture(64, (g, s) => {
+            g.fillStyle = "#7a5434";
+            g.fillRect(0, 0, s, s);
+            g.fillStyle = "#4e321c";
+            for (let y = 0; y < s; y += 8) g.fillRect(0, y, s, 2);
+            g.fillStyle = "#3c6e32";
+            for (let y = 3; y < s; y += 16) g.fillRect(0, y, s, 5);
+        });
+        textures.yardgravel = textures.gravel;
+    }
+    const plow = block.plow || [];
+    const gravel = block.gravel || [];
+    const fences = block.fences || [];
+    const yAt = (x, z) => Math.max(0, World.heightAt(x, z));
+    const patch = (list, cell) => {
+        const x = cell[0] + ox;
+        const z = cell[1] + oz;
+        const w = 2;
+        const d = 2;
+        pushQuad(list,
+            [x, yAt(x, z) + 0.06, z, x / 4, z / 4, 1],
+            [x, yAt(x, z + d) + 0.06, z + d, x / 4, (z + d) / 4, 1],
+            [x + w, yAt(x + w, z + d) + 0.06, z + d, (x + w) / 4, (z + d) / 4, 1],
+            [x + w, yAt(x + w, z) + 0.06, z, (x + w) / 4, z / 4, 1]
+        );
+    };
+    for (let i = 0; i < plow.length; i++) patch(batches.plow, plow[i]);
+    for (let i = 0; i < gravel.length; i++) patch(batches.yardgravel, gravel[i]);
+    const at = (x, z, yaw, px, pz) => {
+        const c = Math.cos(yaw);
+        const s = Math.sin(yaw);
+        return [x + px * c - pz * s, z + px * s + pz * c];
+    };
+    for (let i = 0; i < fences.length; i++) {
+        const piece = fences[i];
+        const yaw = piece[2];
+        const x = piece[0] + ox;
+        const z = piece[1] + oz;
+        for (let p = 0; p < 2; p++) {
+            const spot = at(x, z, yaw, p === 0 ? 0 : 3.84, 0);
+            const y = yAt(spot[0], spot[1]);
+            addBox(batches.trunk, spot[0] - 0.08, y, spot[1] - 0.08, 0.16, 1.15, 0.16);
+            scenery.push({ x: spot[0] - 0.08, z: spot[1] - 0.08, w: 0.16, d: 0.16, top: y + 1.15 });
+        }
+        const a = at(x, z, yaw, 0.1, 0);
+        const b = at(x, z, yaw, 3.9, 0);
+        const y = yAt((a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5);
+        const rx = Math.min(a[0], b[0]);
+        const rz = Math.min(a[1], b[1]);
+        const rw = Math.max(0.08, Math.abs(b[0] - a[0]));
+        const rd = Math.max(0.08, Math.abs(b[1] - a[1]));
+        addBox(batches.trunk, rx, y + 0.42, rz, rw, 0.1, rd);
+        addBox(batches.trunk, rx, y + 0.78, rz, rw, 0.1, rd);
+        scenery.push({ x: rx, z: rz, w: rw, d: rd, top: y + 0.88 });
+    }
+}
+
+function dressDesignedFarm(ox, oz) {
+    const block = (typeof EditorBlocks !== "undefined" && EditorBlocks.farm) || null;
+    stampEditorBlock(block, ox, oz);
 }
 
 function flatWallTexture(brick, front) {
@@ -2815,66 +2999,92 @@ function dressFlatHouses() {
     }
 }
 
+const hamletPads = [];
+
+// Editor door faces +Z. The live house uses the opposite yaw so the door ends up on the same side.
+function editorLiveYaw(yaw) {
+    let live = Math.PI - yaw;
+    if (live > Math.PI) live -= Math.PI * 2;
+    if (live < -Math.PI) live += Math.PI * 2;
+    return live;
+}
+
+function shutDoor(b) {
+    const yaw = b.yaw || 0;
+    const fx = -Math.sin(yaw);
+    const fz = -Math.cos(yaw);
+    const half = (Math.abs(fx) > Math.abs(fz) ? b.w : b.d) * 0.5;
+    const x = b.x + fx * (half - 0.08);
+    const z = b.z + fz * (half - 0.08);
+    const y = b.y || 0;
+    if (Math.abs(fx) > Math.abs(fz)) addBox(batches.trunk, x - 0.05, y, z - 0.58, 0.1, 2.1, 1.16);
+    else addBox(batches.trunk, x - 0.58, y, z - 0.05, 1.16, 2.1, 0.1);
+}
+
+function hamletFarmAt(hamlet) {
+    return { x: hamlet.x + 58, z: hamlet.z };
+}
+
 function dressHamlets() {
     const hamlets = World.hamlets || [];
+    const layout = (typeof EditorBlocks !== "undefined" && EditorBlocks.hamlet) || null;
     const lists = { wall: batches.bill, front: batches.billFront, plaster: batches.plaster, roof: batches.roof };
-    const size = 4.7;
+    const sizes = { farmhouse: [4.7, 4.7], vshop: [5.5, 5], stores: [8, 5.5] };
     hamlets.forEach((hamlet, index) => {
         const village = places.length + index;
-        const spots = [
-            [hamlet.x + 8, hamlet.z, 0, "farmhouse"],
-            [hamlet.x + 8, hamlet.z - 16, 0, "house"],
-            [hamlet.x + 21, hamlet.z - 4, Math.PI / 2, "house"]
-        ];
-        for (let s = 0; s < spots.length; s++) {
-            const spot = spots[s];
-            const y = Math.max(0, World.heightAt(spot[0], spot[1]));
-            const house = {
-                x: spot[0],
-                z: spot[1],
-                y: y,
-                yaw: spot[2],
-                w: size,
-                d: size,
-                minX: spot[0] - size / 2,
-                minZ: spot[1] - size / 2,
-                mesh: "house",
-                role: spot[3],
-                doorSide: 0,
-                village: village
-            };
-            Town.buildings.push(house);
-            stampFlatKitHouse(lists, house);
-        }
-        const field = { x: hamlet.x - 26, z: hamlet.z - 6, w: 18, d: 14 };
-        for (let z = field.z; z < field.z + field.d - 0.1; z += 2) {
-            for (let x = field.x; x < field.x + field.w - 0.1; x += 2) {
-                const w = Math.min(2, field.x + field.w - x);
-                const d = Math.min(2, field.z + field.d - z);
-                const y00 = Math.max(0, World.heightAt(x, z)) + 0.05;
-                const y10 = Math.max(0, World.heightAt(x + w, z)) + 0.05;
-                const y11 = Math.max(0, World.heightAt(x + w, z + d)) + 0.05;
-                const y01 = Math.max(0, World.heightAt(x, z + d)) + 0.05;
-                pushQuad(
-                    batches.dirt,
-                    [x, y00, z, x / 4, z / 4, 0.9],
-                    [x, y01, z + d, x / 4, (z + d) / 4, 0.9],
-                    [x + w, y11, z + d, (x + w) / 4, (z + d) / 4, 0.9],
-                    [x + w, y10, z, (x + w) / 4, z / 4, 0.9]
-                );
+        const ox = hamlet.x + 1;
+        const oz = hamlet.z + 25.5;
+        if (layout) {
+            stampEditorBlock(layout, ox, oz);
+            hamletPads.push({ x: ox - 22, z: oz - 46, w: 58, d: 56 });
+            for (let i = 0; i < layout.buildings.length; i++) {
+                const piece = layout.buildings[i];
+                const spec = sizes[piece.t] || sizes.farmhouse;
+                const yaw = editorLiveYaw(piece.yaw);
+                const turned = Math.abs(Math.sin(yaw)) > 0.9;
+                const w = turned ? spec[1] : spec[0];
+                const d = turned ? spec[0] : spec[1];
+                const x = piece.x + ox;
+                const z = piece.z + oz;
+                const house = {
+                    x: x,
+                    z: z,
+                    y: Math.max(0, World.heightAt(x, z)),
+                    yaw: yaw,
+                    w: w,
+                    d: d,
+                    minX: x - w / 2,
+                    minZ: z - d / 2,
+                    mesh: "house",
+                    role: "house",
+                    doorSide: 0,
+                    village: village,
+                    quiet: true
+                };
+                stampFlatKitHouse(lists, house);
+                shutDoor(house);
+                scenery.push({ x: house.minX, z: house.minZ, w: w, d: d, top: house.y + 4.2 });
             }
         }
-        for (let row = field.z + 2; row < field.z + field.d - 1; row += 4) {
-            addBox(batches.leaf, field.x + 1.1, Math.max(0, World.heightAt(field.x + field.w / 2, row)), row, Math.max(2, field.w - 2.2), 0.28, 0.4);
-        }
-        const edge = [[field.x, field.z, field.x + field.w, field.z], [field.x, field.z + field.d, field.x + field.w, field.z + field.d], [field.x, field.z, field.x, field.z + field.d], [field.x + field.w, field.z, field.x + field.w, field.z + field.d]];
-        for (let e = 0; e < edge.length; e++) {
-            const line = edge[e];
-            const y = Math.max(0, World.heightAt((line[0] + line[2]) / 2, (line[1] + line[3]) / 2));
-            addBox(batches.trunk, Math.min(line[0], line[2]) - 0.04, y + 0.36, Math.min(line[1], line[3]) - 0.04, Math.max(0.08, Math.abs(line[2] - line[0])), 0.07, Math.max(0.08, Math.abs(line[3] - line[1])));
-            addBox(batches.trunk, line[0] - 0.07, y, line[1] - 0.07, 0.14, 0.9, 0.14);
-            addBox(batches.trunk, line[2] - 0.07, y, line[3] - 0.07, 0.14, 0.9, 0.14);
-        }
+        const farm = hamletFarmAt(hamlet);
+        dressDesignedFarm(farm.x - 4, farm.z + 26);
+        const size = 4.7;
+        const house = {
+            x: farm.x,
+            z: farm.z,
+            y: Math.max(0, World.heightAt(farm.x, farm.z)),
+            yaw: 0,
+            w: size,
+            d: size,
+            minX: farm.x - size / 2,
+            minZ: farm.z - size / 2,
+            mesh: "house",
+            role: "farmhouse",
+            doorSide: 0,
+            village: village
+        };
+        Town.buildings.push(house);
+        stampFlatKitHouse(lists, house);
     });
 }
 
@@ -2895,6 +3105,8 @@ for (const name of Object.keys(batches)) {
     mesh[name] = { buffer, count: data.length / 6 };
 }
 if (mesh.dfYard) mesh.dfYard.cull = false;
+if (mesh.plow) mesh.plow.cull = false;
+if (mesh.yardgravel) mesh.yardgravel.cull = false;
 const blendMesh = {};
 for (const kind of Object.keys(blends)) {
     const data = new Float32Array(blends[kind]);
@@ -3085,9 +3297,85 @@ function addHead(list, x, y, z, w, h, d, xf) {
     pushQuad(list, p(x, y1, z, 0.8, 0.2, 0.95), p(x1, y1, z, 0.98, 0.2, 0.95), p(x1, y1, z1, 0.98, 0.8, 0.95), p(x, y1, z1, 0.8, 0.8, 0.95));
 }
 
+function folkBox(list, x, y, z, w, h, d, uv, front) {
+    const y1 = y + h;
+    const x1 = x + w;
+    const z1 = z + d;
+    const u0 = uv[0];
+    const v0 = uv[1];
+    const u1 = uv[2];
+    const v1 = uv[3];
+    const f = front || uv;
+    const p = (px, py, pz, u, v, s) => [px, py, pz, u, v, s];
+    pushQuad(list, p(x, y, z, u0, v0, 0.7), p(x, y1, z, u0, v1, 0.7), p(x1, y1, z, u1, v1, 0.7), p(x1, y, z, u1, v0, 0.7));
+    pushQuad(list, p(x1, y, z1, f[0], f[1], 1), p(x1, y1, z1, f[0], f[3], 1), p(x, y1, z1, f[2], f[3], 1), p(x, y, z1, f[2], f[1], 1));
+    pushQuad(list, p(x1, y, z, u0, v0, 0.82), p(x1, y1, z, u0, v1, 0.82), p(x1, y1, z1, u1, v1, 0.82), p(x1, y, z1, u1, v0, 0.82));
+    pushQuad(list, p(x, y, z1, u0, v0, 0.82), p(x, y1, z1, u0, v1, 0.82), p(x, y1, z, u1, v1, 0.82), p(x, y, z, u1, v0, 0.82));
+    pushQuad(list, p(x, y1, z, u0, v0, 0.92), p(x, y1, z1, u0, v1, 0.92), p(x1, y1, z1, u1, v1, 0.92), p(x1, y1, z, u1, v0, 0.92));
+    pushQuad(list, p(x, y, z1, u0, v0, 0.5), p(x, y, z, u0, v1, 0.5), p(x1, y, z, u1, v1, 0.5), p(x1, y, z1, u1, v0, 0.5));
+}
+
+function buildFolk() {
+    const px = 256;
+    const uv = (x, y, w, h) => [x / px, 1 - (y + h) / px, (x + w) / px, 1 - y / px];
+    const face = uv(0, 0, 128, 128);
+    const side = uv(128, 0, 64, 128);
+    const hair = uv(192, 0, 64, 64);
+    const chest = uv(0, 128, 150, 86);
+    const waist = uv(0, 190, 150, 66);
+    const clothSide = uv(156, 128, 30, 128);
+    const sleeve = uv(190, 128, 28, 62);
+    const hand = uv(220, 128, 30, 36);
+    const pants = uv(190, 168, 66, 88);
+    const list = [];
+    folkBox(list, -0.11, 0, -0.05, 0.09, 0.52, 0.11, pants);
+    folkBox(list, 0.02, 0, -0.05, 0.09, 0.52, 0.11, pants);
+    folkBox(list, -0.15, 0.5, -0.07, 0.3, 0.22, 0.14, clothSide, waist);
+    folkBox(list, -0.2, 0.7, -0.08, 0.4, 0.24, 0.16, clothSide, chest);
+    folkBox(list, -0.27, 0.62, -0.04, 0.08, 0.28, 0.09, sleeve);
+    folkBox(list, 0.19, 0.62, -0.04, 0.08, 0.28, 0.09, sleeve);
+    folkBox(list, -0.26, 0.46, -0.035, 0.07, 0.16, 0.08, hand);
+    folkBox(list, 0.19, 0.46, -0.035, 0.07, 0.16, 0.08, hand);
+    folkBox(list, -0.04, 0.92, 0.0, 0.08, 0.07, 0.08, side);
+    folkBox(list, -0.075, 0.98, 0.02, 0.15, 0.2, 0.14, side, face);
+    folkBox(list, -0.08, 1.15, 0.01, 0.16, 0.045, 0.15, hair);
+    uploadMesh("folk", list);
+    gl.bindTexture(gl.TEXTURE_2D, textures.folk);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.generateMipmap(gl.TEXTURE_2D);
+}
+
+function drawFolk(dark, proj) {
+    if (inside || !mesh.folk || !mesh.folk.count || !textures.folk) return;
+    const near = nearestMen(16, gfx().personDraw);
+    gl.enable(gl.CULL_FACE);
+    gl.bindBuffer(gl.ARRAY_BUFFER, mesh.folk.buffer);
+    gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 24, 0);
+    gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, 24, 12);
+    gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, 24, 20);
+    gl.bindTexture(gl.TEXTURE_2D, textures.folk);
+    gl.uniform1f(loc.dark, dark);
+    gl.uniform1f(loc.glow, 0);
+    gl.uniform1f(loc.band, 1);
+    gl.uniform1f(loc.flow, 0);
+    gl.uniformMatrix4fv(loc.proj, false, proj);
+    for (let i = 0; i < near.length; i++) {
+        const man = near[i].man;
+        if (man.hidden || man.dying || (man.health != null && man.health <= 0)) continue;
+        plant(man);
+        folkModel.set(personMatrix(man));
+        gl.uniformMatrix4fv(loc.model, false, folkModel);
+        gl.drawArrays(gl.TRIANGLES, 0, mesh.folk.count);
+    }
+    gl.uniformMatrix4fv(loc.model, false, identity);
+}
+
 // Explicit outdoor draw set — never Object.keys(mesh) (that pulled every town/prop buffer).
 const outdoorDrawList = [
-    "grass", "dirt", "cobble", "sand", "gravel", "marsh", "water", "crag",
+    "grass", "dirt", "cobble", "sand", "gravel", "marsh", "water", "crag", "plow", "yardgravel",
     "townDirt", "townCobble",
     "wall", "door", "roof", "store", "plaster", "trunk", "leaf", "bloom", "rock", "linen", "glow",
     "bill", "billFront", "billBrick", "billBrickFront",
@@ -3518,8 +3806,20 @@ function pathPose(points, dist) {
 }
 
 function homeOf(place, slot) {
-    const ang = slot * 0.85;
-    return { x: place.ox + Math.cos(ang) * 1.6, z: place.oz + Math.sin(ang) * 1.6 };
+    const village = places.indexOf(place);
+    if (village < 0) {
+        const ang = slot * 0.9;
+        return { x: place.ox + Math.cos(ang) * 6, z: place.oz + Math.sin(ang) * 6 };
+    }
+    const spot = gateSpot(village, slot % 4);
+    const box = palisadeBox(village);
+    const pull = 3.4;
+    const shift = slot < 4 ? -1.2 : 1.2;
+    let x = spot.x + Math.sign(box.cx - spot.x) * pull;
+    let z = spot.z + Math.sign(box.cz - spot.z) * pull;
+    if (slot % 4 === 0 || slot % 4 === 2) x += shift;
+    else z += shift;
+    return { x: x, z: z };
 }
 
 function personXf(man) {
@@ -3963,22 +4263,9 @@ function nearestMen(cap, range) {
 }
 
 let actorsRebuildAt = 0;
+const folkModel = new Float32Array(16);
 function rebuildMesh() {
-    // Tiny box people, nearest UNIT_CAP only — like an old RTS unit sprite budget.
-    const skin = [];
-    const pants = [];
-    const steel = [];
-    const cloth = [[], [], [], [], []];
-    const near = nearestMen(UNIT_CAP, gfx().personDraw);
-    for (let i = 0; i < near.length; i++) {
-        const man = near[i].man;
-        if (man.faction == null || !cloth[man.faction]) continue;
-        addPerson(cloth[man.faction], skin, pants, steel, man.x - 0.24, man.z - 0.14, personXf(man), man.swing, man.fisher || man.farmer);
-    }
-    for (let i = 0; i < cloth.length; i++) uploadMesh("cloth" + i, cloth[i]);
-    uploadMesh("skin", skin);
-    uploadMesh("pants", pants);
-    uploadMesh("steel", steel);
+    // People share one mesh and move with a matrix. Nothing is rebuilt when they shift.
     actorsDirty = false;
     actorsRebuildAt = performance.now();
 }
@@ -4050,7 +4337,7 @@ function mergeMen(data) {
             length: 0
         });
     });
-    const prev = new Map(men.filter((man) => !man.fisher && !man.farmer && !man.archer && !man.decor && !man.driver && !man.jack).map((man) => [man.faction + ":" + man.index, man]));
+    const prev = new Map(men.filter((man) => !man.fisher && !man.farmer && !man.archer && !man.decor && !man.driver && !man.jack && !man.fixed).map((man) => [man.faction + ":" + man.index, man]));
     const next = [];
     const keep = new Set();
     for (const item of wanted) {
@@ -4099,9 +4386,9 @@ function mergeMen(data) {
             });
         }
     }
-    const keptFish = men.filter((man) => man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board);
+    const keptFish = men.filter((man) => man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board || man.fixed);
     for (const man of men) {
-        if (man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board) continue;
+        if (man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board || man.fixed) continue;
         const key = man.faction + ":" + man.index;
         if (keep.has(key)) continue;
         man.dying = true;
@@ -4899,13 +5186,13 @@ function mergeArchers(data) {
         }
     }
     for (const man of men) {
-        if (!man.archer) continue;
+        if (!man.archer || man.fixed) continue;
         if (keep.has(man.village + ":" + man.side)) continue;
         man.dying = true;
         man.health = 0;
         next.push(man);
     }
-    const rest = men.filter((man) => !man.archer);
+    const rest = men.filter((man) => !man.archer || (man.fixed && !keep.has(man.village + ":" + man.side)));
     men.length = 0;
     men.push(...rest, ...next);
     actorsDirty = true;
@@ -5834,18 +6121,68 @@ function stepFisher(man, dt) {
     }
     const workX = Number.isFinite(man.toX) ? man.toX : man.fromX;
     const workZ = Number.isFinite(man.toZ) ? man.toZ : man.fromZ;
+    if (!Number.isFinite(workX) || !Number.isFinite(workZ)) {
+        plant(man);
+        return false;
+    }
+    let awayX = Number.isFinite(man.fromX) ? man.fromX : workX + 4;
+    let awayZ = Number.isFinite(man.fromZ) ? man.fromZ : workZ;
+    if (Math.hypot(awayX - workX, awayZ - workZ) < 2) {
+        awayX = workX + 4;
+        awayZ = workZ + 1.5;
+    }
+    if (man.jobAt !== "away") man.jobAt = "work";
     const slot = man.slot || 0;
-    man.x = workX + Math.cos(slot) * 1.2;
-    man.z = workZ + Math.sin(slot) * 1.2;
+    const gx = (man.jobAt === "away" ? awayX : workX) + Math.cos(slot) * 0.7;
+    const gz = (man.jobAt === "away" ? awayZ : workZ) + Math.sin(slot) * 0.7;
+    const moving = moveToward(man, gx, gz, dt, 1.7);
+    if (!moving) {
+        man.jobWait = (man.jobWait || 0) + dt;
+        man.swing = man.jobAt === "work" && (performance.now() / 1000 + slot) % 1.2 < 0.35 ? 0.4 : -1;
+        if (man.jobWait > (man.jobAt === "work" ? 2.2 : 0.8)) {
+            man.jobWait = 0;
+            man.jobAt = man.jobAt === "work" ? "away" : "work";
+            man.swing = -1;
+        }
+    } else {
+        man.jobWait = 0;
+        man.swing = -1;
+    }
     man.floorY = null;
-    man.yaw = slot;
-    man.walking = false;
-    man.bob = Math.sin(performance.now() * 0.004) * 0.02;
-    man.swing = -1;
+    man.walking = Boolean(moving);
+    man.bob = moving ? Math.sin(performance.now() * 0.012 + slot) * 0.045 : 0;
     man.hostile = false;
     man.mode = "fish";
     plant(man);
-    actorsDirty = true;
+    return false;
+}
+
+function stepWork(man, dt) {
+    const spots = man.spots;
+    if (!spots || !spots.length) {
+        plant(man);
+        return false;
+    }
+    if (man.spot == null || man.spot >= spots.length) man.spot = 0;
+    const goal = spots[man.spot];
+    const moving = moveToward(man, goal.x, goal.z, dt, 1.55);
+    if (!moving) {
+        man.jobWait = (man.jobWait || 0) + dt;
+        const chopping = man.job === "yard" || man.job === "mine";
+        man.swing = chopping && (performance.now() / 1000 + man.spot) % 1.1 < 0.34 ? 0.5 : -1;
+        if (man.jobWait > (chopping ? 1.4 : 0.9)) {
+            man.jobWait = 0;
+            man.spot = (man.spot + 1) % spots.length;
+            man.swing = -1;
+        }
+    } else {
+        man.jobWait = 0;
+        man.swing = -1;
+    }
+    man.walking = Boolean(moving);
+    man.bob = moving ? Math.sin(performance.now() * 0.012 + (man.index || 0)) * 0.045 : 0;
+    man.floorY = null;
+    plant(man);
     return false;
 }
 
@@ -6259,8 +6596,18 @@ function nearestPatrol(man, points) {
     return best;
 }
 
-function shouldPatrol() {
-    return false;
+function shouldPatrol(man) {
+    return !man || (man.post >= 0 && man.post < places.length);
+}
+
+function stepHamletPace(man, dt) {
+    man.pace = (man.pace || man.slot || 0) + dt * 0.45;
+    const moving = moveToward(man, man.homeX + Math.cos(man.pace) * 3.2, man.homeZ + Math.sin(man.pace) * 3.2, dt, 1.25);
+    man.walking = Boolean(moving);
+    man.swing = -1;
+    man.bob = moving ? Math.sin(performance.now() * 0.012 + (man.index || 0)) * 0.04 : 0;
+    man.floorY = null;
+    plant(man);
 }
 
 function patrolToward(man, x, z, dt, speed) {
@@ -6433,7 +6780,7 @@ function stepMan(man, dt) {
     if (man.decor) return stepKeeper(man, dt);
     if (man.fisher) return stepFisher(man, dt);
     if (man.farmer) return stepFarmer(man, dt);
-    if (stepSoldierRest(man, dt)) return false;
+    // Soldiers stay on the wall. Sending them to bed at night hid the garrison.
     if (man.mode === "march" && man.path && man.length) {
         const attack = marchAttack(man);
         const travel = Math.max(1, man.arriveAt - man.startedAt);
@@ -6514,6 +6861,9 @@ function stepMan(man, dt) {
         }
     } else if (shouldPatrol(man)) {
         stepPatrol(man, dt);
+        return false;
+    } else if (man.homeX != null) {
+        stepHamletPace(man, dt);
         return false;
     } else {
         const hx = man.homeX - man.x;
@@ -6626,7 +6976,7 @@ function updateFight(dt) {
             continue;
         }
         if (man.board) {
-            if (activeSet.has(man)) plant(man);
+            if (activeSet.has(man)) stepWork(man, dt);
             continue;
         }
         if (!activeSet.has(man)) {
@@ -8046,6 +8396,7 @@ function draw() {
     };
     gl.clear(gl.DEPTH_BUFFER_BIT);
     for (let i = 0; i < outdoorDrawList.length; i++) drawMesh(outdoorDrawList[i], 1);
+    drawFolk(dark, proj);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthFunc(gl.LEQUAL);
@@ -8612,7 +8963,41 @@ function loadCpu() {
     } catch (err) {
         cpuMem = { nextAt: null, sites: [] };
     }
+    seedHamletFarms(cpuMem);
     return cpuMem;
+}
+
+function seedHamletFarms(state) {
+    const hamlets = World.hamlets || [];
+    let changed = false;
+    for (let i = 0; i < hamlets.length; i++) {
+        const owner = places.length + i;
+        const at = hamletFarmAt(hamlets[i]);
+        const field = { x: at.x + 10, z: at.z - 18, w: 20, d: 14 };
+        let site = null;
+        for (let n = 0; n < state.sites.length; n++) {
+            if (state.sites[n] && state.sites[n].owner === owner && state.sites[n].kind === "farm") {
+                site = state.sites[n];
+                break;
+            }
+        }
+        if (!site) {
+            site = { id: "hamlet-farm-" + i, kind: "farm", owner: owner, crew: 4, placed: true };
+            state.sites.push(site);
+            changed = true;
+        } else if (!site.placed) {
+            site.crew = Math.max(4, site.crew || 0);
+            site.placed = true;
+            changed = true;
+        } else continue;
+        site.x = at.x;
+        site.z = at.z;
+        site.yaw = 0;
+        site.field = field;
+        site.house = null;
+        site.readyAt = 0;
+    }
+    if (changed) saveCpu();
 }
 
 function saveCpu() {
@@ -8646,6 +9031,10 @@ function cpuBusy(x, z, sites) {
     for (let i = 0; i < plots.length; i++) {
         const at = plots[i].house || plots[i];
         if (at && Math.hypot((at.x || 0) - x, (at.z || 0) - z) < 40) return true;
+    }
+    for (let i = 0; i < hamletPads.length; i++) {
+        const pad = hamletPads[i];
+        if (x > pad.x && x < pad.x + pad.w && z > pad.z && z < pad.z + pad.d) return true;
     }
     return false;
 }
@@ -8856,6 +9245,25 @@ function stepCpuWork() {
     paintCpuNote();
 }
 
+function workSpots(order) {
+    if (order.kind === "farm" && order.field) {
+        const field = order.field;
+        const m = 4;
+        return [
+            { x: field.x + m, z: field.z + m },
+            { x: field.x + field.w - m, z: field.z + m },
+            { x: field.x + field.w - m, z: field.z + field.d - m },
+            { x: field.x + m, z: field.z + field.d - m }
+        ];
+    }
+    const spots = [];
+    for (let i = 0; i < 4; i++) {
+        const ang = i * Math.PI / 2 + 0.5;
+        spots.push({ x: order.x + Math.cos(ang) * 3.4, z: order.z + Math.sin(ang) * 3.4 });
+    }
+    return spots;
+}
+
 function syncCpuCrews() {
     const orders = cpuWorkplaces();
     const want = new Set();
@@ -8863,6 +9271,7 @@ function syncCpuCrews() {
         const order = orders[index];
         if (!placeSeen(order.x, order.z)) continue;
         const count = Math.max(0, Math.min(4, Math.floor(order.crew)));
+        const spots = workSpots(order);
         for (let hand = 0; hand < count; hand++) {
             const id = "c:" + order.id + ":" + hand;
             want.add(id);
@@ -8870,23 +9279,24 @@ function syncCpuCrews() {
             for (let i = 0; i < men.length; i++) {
                 if (men[i].cpu && men[i].boardId === id) man = men[i];
             }
-            const ang = hand * 0.9;
-            const x = order.x + Math.cos(ang) * 1.4;
-            const z = order.z + Math.sin(ang) * 1.4;
             if (!man) {
+                const spot = spots[hand % spots.length];
                 men.push({
                     board: true,
                     cpu: true,
                     cpuId: order.id,
                     boardId: id,
+                    job: order.kind,
+                    spots: spots,
+                    spot: hand % spots.length,
                     fisher: false,
                     farmer: false,
                     faction: order.owner,
                     index: -900 - index * 8 - hand,
                     health: 3,
-                    x: x,
-                    z: z,
-                    yaw: ang,
+                    x: spot.x,
+                    z: spot.z,
+                    yaw: hand,
                     bob: 0,
                     down: 0,
                     swing: -1,
@@ -8900,9 +9310,9 @@ function syncCpuCrews() {
                 });
                 actorsDirty = true;
             } else if (!man.dying) {
-                man.x = x;
-                man.z = z;
                 man.faction = order.owner;
+                man.job = order.kind;
+                man.spots = spots;
             }
         }
     }
@@ -9873,6 +10283,7 @@ if (gl) {
     loadClock();
     prepareTowers();
     spawnGarrison();
+    buildFolk();
     spawnKeepers();
     prepareBow();
     buildHorse();

@@ -51,6 +51,8 @@
         <label class="tool"><input type="radio" name="tool" value="gravel"> Gravel</label>
         <label class="tool"><input type="radio" name="tool" value="grass"> Grass</label>
         <label class="tool"><input type="radio" name="tool" value="fence"> Fence</label>
+        <label class="tool"><input type="radio" name="tool" value="plow"> Plowed field</label>
+        <label class="tool"><input type="radio" name="tool" value="farmhouse"> Farmhouse</label>
         <label class="tool"><input type="radio" name="tool" value="erase"> Erase</label>
         <button type="button" id="save">Save in this browser</button>
         <button type="button" id="export">Download block</button>
@@ -221,7 +223,15 @@
                 for (let y = 0; y < s; y += 16) g.fillRect(0, y, s, 1);
             }, true),
             mark: tex((g, s) => { g.fillStyle = "#f2d48a"; g.fillRect(0, 0, s, s); }),
-            wood: tex((g, s) => { g.fillStyle = "#6a4324"; g.fillRect(0, 0, s, s); g.fillStyle = "#3e2614"; g.fillRect(0, 0, 4, s); })
+            wood: tex((g, s) => { g.fillStyle = "#6a4324"; g.fillRect(0, 0, s, s); g.fillStyle = "#3e2614"; g.fillRect(0, 0, 4, s); }),
+            plow: tex((g, s) => {
+                g.fillStyle = "#7a5434";
+                g.fillRect(0, 0, s, s);
+                g.fillStyle = "#4e321c";
+                for (let y = 0; y < s; y += 8) g.fillRect(0, y, s, 2);
+                g.fillStyle = "#3c6e32";
+                for (let y = 3; y < s; y += 16) g.fillRect(0, y, s, 5);
+            }, true)
         };
 
         const vs = `
@@ -471,8 +481,37 @@
             rail(0.42); rail(0.78);
             return wood;
         }
+        function farmhouseMesh() {
+            const stone = [], plaster = [], roof = [], wood = [], glow = [];
+            const x0 = -2.35, x1 = 2.35, z0 = -2.35, z1 = 2.35;
+            const base = 1.15, wall = 4.15, peak = 5.6;
+            const door = 0.58, doorH = 2.15;
+            pushQuad(stone, [x1, 0, z1, 1, 0, 1], [x1, base, z1, 1, 0.4, 1], [door, base, z1, 0.62, 0.4, 1], [door, 0, z1, 0.62, 0, 1]);
+            pushQuad(stone, [-door, 0, z1, 0.38, 0, 1], [-door, base, z1, 0.38, 0.4, 1], [x0, base, z1, 0, 0.4, 1], [x0, 0, z1, 0, 0, 1]);
+            pushQuad(plaster, [x1, base, z1, 1, 0.28, 1], [x1, wall, z1, 1, 1, 1], [door, wall, z1, 0.62, 1, 1], [door, base, z1, 0.62, 0.28, 1]);
+            pushQuad(plaster, [-door, base, z1, 0.38, 0.28, 1], [-door, wall, z1, 0.38, 1, 1], [x0, wall, z1, 0, 1, 1], [x0, base, z1, 0, 0.28, 1]);
+            pushQuad(plaster, [door, doorH, z1, 0.62, 0.55, 1], [door, wall, z1, 0.62, 1, 1], [-door, wall, z1, 0.38, 1, 1], [-door, doorH, z1, 0.38, 0.55, 1]);
+            solid(wood, -door + 0.06, 0, z1 - 0.04, door * 2 - 0.12, doorH - 0.04, 0.1, 0.9);
+            pushQuad(stone, [x0, 0, z0, 1, 0, 0.75], [x0, base, z0, 1, 0.4, 0.75], [x1, base, z0, 0, 0.4, 0.75], [x1, 0, z0, 0, 0, 0.75]);
+            pushQuad(plaster, [x0, base, z0, 1, 0.28, 0.82], [x0, wall, z0, 1, 1, 0.82], [x1, wall, z0, 0, 1, 0.82], [x1, base, z0, 0, 0.28, 0.82]);
+            pushQuad(stone, [x0, 0, z1, 0, 0, 0.8], [x0, base, z1, 0, 0.4, 0.8], [x0, base, z0, 1, 0.4, 0.8], [x0, 0, z0, 1, 0, 0.8]);
+            pushQuad(plaster, [x0, base, z1, 0, 0.28, 0.9], [x0, wall, z1, 0, 1, 0.9], [x0, wall, z0, 1, 1, 0.9], [x0, base, z0, 1, 0.28, 0.9]);
+            const wz0 = -0.5, wz1 = 0.5, wy0 = 1.7, wy1 = 2.7;
+            pushQuad(stone, [x1, 0, z0, 0, 0, 0.85], [x1, base, z0, 0, 0.4, 0.85], [x1, base, z1, 1, 0.4, 0.85], [x1, 0, z1, 1, 0, 0.85]);
+            pushQuad(plaster, [x1, base, z0, 0, 0.28, 0.86], [x1, wall, z0, 0, 1, 0.86], [x1, wall, wz0, 0.35, 1, 0.86], [x1, base, wz0, 0.35, 0.28, 0.86]);
+            pushQuad(plaster, [x1, base, wz1, 0.65, 0.28, 0.86], [x1, wall, wz1, 0.65, 1, 0.86], [x1, wall, z1, 1, 1, 0.86], [x1, base, z1, 1, 0.28, 0.86]);
+            pushQuad(plaster, [x1, base, wz0, 0.35, 0.28, 0.86], [x1, wy0, wz0, 0.35, 0.42, 0.86], [x1, wy0, wz1, 0.65, 0.42, 0.86], [x1, base, wz1, 0.65, 0.28, 0.86]);
+            pushQuad(plaster, [x1, wy1, wz0, 0.35, 0.62, 0.86], [x1, wall, wz0, 0.35, 1, 0.86], [x1, wall, wz1, 0.65, 1, 0.86], [x1, wy1, wz1, 0.65, 0.62, 0.86]);
+            solid(glow, x1 - 0.05, wy0 + 0.06, wz0 + 0.1, 0.08, wy1 - wy0 - 0.12, wz1 - wz0 - 0.2, 1);
+            const o = 0.28;
+            pushTri(plaster, [x1, wall, z0, 0, 0.7, 0.78], [x1, peak, 0, 0.5, 1, 0.9], [x1, wall, z1, 1, 0.7, 0.78]);
+            pushTri(plaster, [x0, wall, z1, 0, 0.7, 0.9], [x0, peak, 0, 0.5, 1, 0.9], [x0, wall, z0, 1, 0.7, 0.9]);
+            pushQuad(roof, [x0 - o, wall, z1 + o, 0, 0, 0.95], [x0 - o, peak, 0, 0, 1, 1], [x1 + o, peak, 0, 2, 1, 1], [x1 + o, wall, z1 + o, 2, 0, 0.95]);
+            pushQuad(roof, [x1 + o, wall, z0 - o, 0, 0, 0.78], [x1 + o, peak, 0, 0, 1, 0.9], [x0 - o, peak, 0, 2, 1, 0.9], [x0 - o, wall, z0 - o, 2, 0, 0.78]);
+            return { stone, plaster, roof, wood, glow };
+        }
         const kit = {
-            street: streetMesh(), long: longMesh(), fence: fenceMesh(), yard: { parts: [] },
+            street: streetMesh(), long: longMesh(), fence: fenceMesh(), farmhouse: farmhouseMesh(), yard: { parts: [] },
             cot: gableMesh(-2.6, 2.6, -2, 2, 2.5, 4.5, 0.3),
             shop: shopMesh(),
             gable: gableMesh(-3.4, 3.4, -5.5, 5.5, 3.5, 6.4, 0.4),
@@ -714,7 +753,7 @@
         const buckets = {};
         const meshes = {};
         function rebuild() {
-            const names = ["field", "dirt", "stone", "timber", "roof", "red", "thatch", "plaster", "shop", "keep", "linen", "glow", "grass", "cobble", "gravel", "wood", "yard"];
+            const names = ["field", "dirt", "stone", "timber", "roof", "red", "thatch", "plaster", "shop", "keep", "linen", "glow", "grass", "cobble", "gravel", "plow", "wood", "yard"];
             for (const name of names) buckets[name] = [];
             const edge = HALF / 8;
             pushQuad(buckets.field,
@@ -746,6 +785,12 @@
                 } else if (b.t === "gable") {
                     stamp(buckets.red, kit.gable.walls, b.x, b.z, b.yaw);
                     stamp(buckets.roof, kit.gable.roof, b.x, b.z, b.yaw);
+                } else if (b.t === "farmhouse") {
+                    stamp(buckets.stone, kit.farmhouse.stone, b.x, b.z, b.yaw);
+                    stamp(buckets.plaster, kit.farmhouse.plaster, b.x, b.z, b.yaw);
+                    stamp(buckets.roof, kit.farmhouse.roof, b.x, b.z, b.yaw);
+                    stamp(buckets.wood, kit.farmhouse.wood, b.x, b.z, b.yaw);
+                    stamp(buckets.glow, kit.farmhouse.glow, b.x, b.z, b.yaw);
                 } else if (civicTools.indexOf(b.t) >= 0) {
                     stampCivic(buckets, kit[b.t], b.x, b.z, b.yaw, stamp);
                 } else if (farmTools.indexOf(b.t) >= 0) {
@@ -798,6 +843,12 @@
                 } else if (tool === "gable") {
                     stampGhost(bags.red, kit.gable.walls, x, z, yaw);
                     stampGhost(bags.roof, kit.gable.roof, x, z, yaw);
+                } else if (tool === "farmhouse") {
+                    stampGhost(bags.stone, kit.farmhouse.stone, x, z, yaw);
+                    stampGhost(bags.plaster, kit.farmhouse.plaster, x, z, yaw);
+                    stampGhost(bags.roof, kit.farmhouse.roof, x, z, yaw);
+                    stampGhost(bags.wood, kit.farmhouse.wood, x, z, yaw);
+                    stampGhost(bags.glow, kit.farmhouse.glow, x, z, yaw);
                 } else if (civicTools.indexOf(tool) >= 0) {
                     stampCivic(bags, kit[tool], x, z, yaw, stampGhost);
                 } else if (farmTools.indexOf(tool) >= 0) {
@@ -874,13 +925,13 @@
             if (!p) return;
             const x = snap(p.x), z = snap(p.z);
             if (x < -HALF || x >= HALF || z < -HALF || z >= HALF) return;
-            if (tool === "grass" || tool === "cobble" || tool === "gravel" || tool === "stone") {
+            if (tool === "grass" || tool === "cobble" || tool === "gravel" || tool === "stone" || tool === "plow") {
                 block.ground[x + "," + z] = tool;
             } else if (tool === "erase") {
                 delete block.ground[x + "," + z];
                 block.buildings = block.buildings.filter((b) => Math.hypot(b.x - p.x, b.z - p.z) > (farmTools.indexOf(b.t) >= 0 ? 54 : 3));
                 block.fences = block.fences.filter((f) => Math.hypot(f.x - p.x, f.z - p.z) > 2);
-            } else if (tool === "street" || tool === "long" || tool === "yard" || tool === "cot" || tool === "shop" || tool === "gable" || civicTools.indexOf(tool) >= 0 || farmTools.indexOf(tool) >= 0) {
+            } else if (tool === "street" || tool === "long" || tool === "yard" || tool === "cot" || tool === "shop" || tool === "gable" || tool === "farmhouse" || civicTools.indexOf(tool) >= 0 || farmTools.indexOf(tool) >= 0) {
                 block.buildings.push({ t: tool, x: x, z: z, yaw: yaw });
             } else if (tool === "fence") {
                 block.fences.push({ x: x, z: z, yaw: yaw });
@@ -935,7 +986,7 @@
             gl.useProgram(program);
             gl.uniformMatrix4fv(loc.view, false, lookAt(eye()));
             gl.uniformMatrix4fv(loc.proj, false, perspective());
-            const order = ["field", "dirt", "grass", "cobble", "gravel", "stone", "timber", "plaster", "shop", "keep", "red", "roof", "thatch", "wood", "linen", "glow", "yard", "mark"];
+            const order = ["field", "dirt", "grass", "cobble", "gravel", "stone", "plow", "timber", "plaster", "shop", "keep", "red", "roof", "thatch", "wood", "linen", "glow", "yard", "mark"];
             for (const name of order) {
                 const mesh = meshes[name];
                 if (!mesh || !mesh.count || !textures[name]) continue;
@@ -990,7 +1041,7 @@
             }
             hover = hit(e.clientX, e.clientY);
             rebuildGhost();
-            if (painting && (tool === "grass" || tool === "cobble" || tool === "gravel" || tool === "stone" || tool === "erase")) {
+            if (painting && (tool === "grass" || tool === "cobble" || tool === "gravel" || tool === "stone" || tool === "plow" || tool === "erase")) {
                 paintAt(hover);
             }
             const status = document.getElementById("status");
