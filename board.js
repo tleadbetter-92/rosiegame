@@ -16,11 +16,15 @@ const kinds = [
     { id: "mine", name: "Mine" }
 ];
 const BUILD_HOURS = 1;
-const TRAIN_HOURS = 2;
-const TRAIN_CAP = 6;
 const ORDER_KEY = "sw-build-orders";
 const home = World.places[2];
-const you = { x: -2376.6, z: 539.2, workers: 10, training: 0, jobs: [] };
+const you = { x: -2376.6, z: 539.2 };
+
+function crewCap(kind) {
+    if (kind === "farm") return 4;
+    if (kind === "yard" || kind === "mine") return 100;
+    return 0;
+}
 
 let chosenKind = "house";
 let orders = [];
@@ -95,7 +99,9 @@ settlements.forEach((place) => {
 function readOrder(order) {
     if (!order || !kinds.some((kind) => kind.id === order.kind) || !Number.isFinite(order.x) || !Number.isFinite(order.z)) return null;
     const owner = order.owner == null ? 2 : order.owner;
-    return { kind: order.kind, x: Math.round(order.x), z: Math.round(order.z), hours: BUILD_HOURS, owner };
+    const cap = crewCap(order.kind);
+    const crew = cap ? Math.max(0, Math.min(cap, Math.floor(Number(order.crew) || 0))) : 0;
+    return { kind: order.kind, x: Math.round(order.x), z: Math.round(order.z), hours: BUILD_HOURS, owner, crew };
 }
 
 function loadOrders() {
@@ -105,17 +111,6 @@ function loadOrders() {
         orders = list.map(readOrder).filter(Boolean);
         phase = raw && raw.phase === "wait" ? "wait" : "you";
         turnLog = raw && Array.isArray(raw.log) ? raw.log.slice(-24) : [];
-        const saved = raw && raw.you;
-        if (saved) {
-            you.training = Math.max(0, Math.min(TRAIN_CAP, Math.floor(Number(saved.training) || 0)));
-            you.jobs = Array.isArray(saved.jobs) ? saved.jobs.filter((job) => job && (job.kind === "wood" || job.kind === "ore") && Number.isFinite(job.x) && Number.isFinite(job.z) && job.count > 0).map((job) => ({
-                kind: job.kind,
-                name: job.kind,
-                x: job.x,
-                z: job.z,
-                count: Math.floor(job.count)
-            })) : [];
-        }
     } catch (err) {
         orders = [];
     }
@@ -123,7 +118,7 @@ function loadOrders() {
 
 function saveOrders() {
     try {
-        localStorage.setItem(ORDER_KEY, JSON.stringify({ phase, log: turnLog, orders, you: { training: you.training, jobs: you.jobs } }));
+        localStorage.setItem(ORDER_KEY, JSON.stringify({ phase, log: turnLog, orders }));
     } catch (err) { /* the list on the page is still the order */ }
 }
 
@@ -170,22 +165,6 @@ function dayTake(count, metres) {
     const base = count * 12;
     const lost = Math.ceil(base * metres / 10000);
     return Math.max(0, base - lost);
-}
-
-function servingMetres(job) {
-    const kind = job.kind === "ore" ? "mine" : "yard";
-    let best = null;
-    let bestD = Infinity;
-    orders.forEach((order) => {
-        if (order.kind !== kind || !yours(order)) return;
-        const d = Math.hypot(order.x - job.x, order.z - job.z);
-        if (d < bestD) {
-            best = order;
-            bestD = d;
-        }
-    });
-    const point = best || job;
-    return villageMetres(point.x, point.z);
 }
 
 function closestResource(place, kindId) {
@@ -259,10 +238,9 @@ function draw() {
     stands.forEach((stand) => {
         if (!inView(stand.x, stand.z, 0)) return;
         const p = mapPoint(stand.x, stand.z);
-        const chosen = you.jobs.some((job) => job.kind === "wood" && Math.hypot(job.x - stand.x, job.z - stand.z) < 1);
         const site = chosenKind === "yard" && !taken(stand);
-        ctx.strokeStyle = site ? "#f2d15a" : (chosen ? "#f4efe4" : "#173812");
-        ctx.lineWidth = site || chosen ? 3 : 2;
+        ctx.strokeStyle = site ? "#f2d15a" : "#173812";
+        ctx.lineWidth = site ? 3 : 2;
         ctx.beginPath();
         ctx.moveTo(p.x, p.y - 6);
         ctx.lineTo(p.x, p.y + 4);
@@ -273,9 +251,8 @@ function draw() {
     ores.forEach((ore) => {
         if (!inView(ore.x, ore.z, 0)) return;
         const p = mapPoint(ore.x, ore.z);
-        const chosen = you.jobs.some((job) => job.kind === "ore" && Math.hypot(job.x - ore.x, job.z - ore.z) < 1);
         const site = chosenKind === "mine" && !taken(ore);
-        ctx.fillStyle = site ? "#f2d15a" : (chosen ? "#f0d2b4" : "#6a4a28");
+        ctx.fillStyle = site ? "#f2d15a" : "#6a4a28";
         ctx.beginPath();
         ctx.moveTo(p.x, p.y - 6);
         ctx.lineTo(p.x + 5, p.y);
@@ -309,7 +286,9 @@ function draw() {
         ctx.strokeRect(p.x - 8, p.y - 8, 16, 16);
         ctx.font = "12px Segoe UI, system-ui, sans-serif";
         ctx.fillStyle = "#241c14";
-        ctx.fillText(kindName(order.kind), p.x + 12, p.y - 2);
+        const cap = crewCap(order.kind);
+        const label = cap ? kindName(order.kind) + "  " + (order.crew || 0) : kindName(order.kind);
+        ctx.fillText(label, p.x + 12, p.y - 2);
         ctx.fillText(order.x + ", " + order.z, p.x + 12, p.y + 12);
     });
     const p = mapPoint(you.x, you.z);
@@ -346,12 +325,14 @@ function paint() {
         button.classList.toggle("on", open && kind.id === chosenKind);
     });
     if (endButton) endButton.disabled = !open;
-    const trainButton = document.getElementById("train");
-    const trainInput = document.getElementById("train-count");
-    const sendInput = document.getElementById("send-count");
-    if (trainButton) trainButton.disabled = !open;
-    if (trainInput) trainInput.disabled = !open;
-    if (sendInput) sendInput.disabled = !open;
+    const growButton = document.getElementById("grow");
+    const growInput = document.getElementById("grow-count");
+    const workplace = selectedWorkplace();
+    if (growButton) growButton.disabled = !open || !workplace;
+    if (growInput) {
+        growInput.disabled = !open || !workplace;
+        growInput.max = workplace ? String(crewCap(workplace.kind)) : "100";
+    }
     if (!open) {
         hint.textContent = phase === "wait"
             ? "Waiting. The next round starts when 12 hours have passed on your clock."
@@ -367,7 +348,7 @@ function paint() {
         hint.textContent = kindName(chosenKind) + " is selected. Click a yellow spot. Each one takes " + BUILD_HOURS + " hour, and they are all built together when the 12 hours have passed. End your turn when you are finished.";
         placeLand.style.cursor = "crosshair";
     } else {
-        hint.textContent = "House and Farm go on a yellow spot. Lumberyard goes on a wood stand. Mine goes on an ore.";
+        hint.textContent = "House and Farm go on a yellow spot. Lumberyard goes on a wood stand. Mine goes on an ore. Select one of those workplaces and grow its workers. They stay there. A farm holds 4. A mine or lumberyard holds 100.";
         placeLand.style.cursor = "grab";
     }
     const order = orders[selected];
@@ -384,25 +365,18 @@ function paint() {
         const mark = index === selected ? "selected  " : "";
         const who = item.owner == null || item.owner === 2 ? "" : placeNames[item.owner] + "  ";
         let extra = "";
-        if (resourceKind(item.kind) && yours(item)) {
-            const metres = villageMetres(item.x, item.z);
-            extra = "   " + Math.round(metres) + " m from Southwest, " + dayTake(10, metres) + " a day";
+        const cap = crewCap(item.kind);
+        if (cap) {
+            const owner = item.owner == null ? 2 : item.owner;
+            const place = settlements[owner] || settlements[2];
+            const metres = Math.hypot(item.x - place.x, item.z - place.z);
+            extra = "   " + (item.crew || 0) + "/" + cap + " workers";
+            if (resourceKind(item.kind)) extra += ", " + Math.round(metres) + " m from " + place.name + ", " + dayTake(item.crew || 0, metres) + " a day";
         }
         line(mark + who + kindName(item.kind) + "   " + item.x + "   " + item.z + extra);
     });
     line("The two numbers are x and z in the 3D world.");
-    const used = you.jobs.reduce((sum, job) => sum + job.count, 0);
-    const free = Math.max(0, you.workers - used);
-    if (!you.training) line("No units training. A unit takes " + TRAIN_HOURS + " hours, so " + TRAIN_CAP + " is the most. They are ready when the 12 hours have passed.");
-    else line("Training " + you.training + ". Each takes " + TRAIN_HOURS + " hours. They are ready when the 12 hours have passed.");
-    line(free + " workers not yet sent. " + you.workers + " can work this turn. They are not drawn on the map.");
-    you.jobs.forEach((job) => {
-        const metres = servingMetres(job);
-        const base = job.count * 12;
-        const paid = dayTake(job.count, metres);
-        const where = job.kind === "ore" ? "mine" : "lumberyard";
-        line(job.count + " sent to " + job.kind + " at " + Math.round(job.x) + ", " + Math.round(job.z) + ". The " + where + " is " + Math.round(metres) + " m from Southwest, so they bring " + paid + " when 12 hours pass, from a base of " + base + ".");
-    });
+    line("Every town's workers belong to the workplace. They are not moved. A farm holds 4. A mine or lumberyard holds 100.");
     line("Wheel zooms. Drag moves the map.");
 }
 
@@ -412,13 +386,11 @@ function factionOrder(index) {
     const spot = resourceKind(kind.id) ? closestResource(place, kind.id) : (place.slots || []).find((item) => !taken(item));
     if (!spot) turnLog.push(place.name + " passes.");
     else {
-        const order = { kind: kind.id, x: Math.round(spot.x), z: Math.round(spot.z), hours: BUILD_HOURS, owner: index };
+        const cap = crewCap(kind.id);
+        const order = { kind: kind.id, x: Math.round(spot.x), z: Math.round(spot.z), hours: BUILD_HOURS, owner: index, crew: cap ? Math.min(cap, 4) : 0 };
         orders.push(order);
         turnLog.push(place.name + " ordered a " + kind.name + " at " + order.x + ", " + order.z + ".");
     }
-    const stand = woodStand(place, 0);
-    turnLog.push(place.name + " trains 2. They are ready when the 12 hours have passed.");
-    turnLog.push(place.name + " sends 4 to wood at " + Math.round(stand.x) + ", " + Math.round(stand.z) + ".");
 }
 
 function endTurn() {
@@ -481,13 +453,6 @@ function clickAt(px, py) {
             return;
         }
     }
-    const resource = phase === "you" && !resourceKind(chosenKind) ? nearest(stands.concat(ores), at, reach) : null;
-    const hitD = hit ? Math.hypot(hit.x - at.x, hit.z - at.z) : Infinity;
-    const resourceD = resource ? Math.hypot(resource.x - at.x, resource.z - at.z) : Infinity;
-    if (resource && resourceD <= hitD) {
-        assignWorkers(resource);
-        return;
-    }
     if (hit) {
         selected = orders.indexOf(hit);
         draw();
@@ -511,24 +476,21 @@ function fieldNumber(id, max) {
     return Math.max(1, Math.min(max, n));
 }
 
-function assignWorkers(resource) {
-    you.jobs = you.jobs.filter((job) => !(job.kind === resource.kind && Math.hypot(job.x - resource.x, job.z - resource.z) < 1));
-    const used = you.jobs.reduce((sum, job) => sum + job.count, 0);
-    const count = Math.min(fieldNumber("send-count", you.workers), you.workers - used);
-    if (count < 1) {
-        paint();
-        return;
-    }
-    you.jobs.push({ kind: resource.kind, name: resource.name, x: resource.x, z: resource.z, count });
-    saveOrders();
-    draw();
-    paint();
+function selectedWorkplace() {
+    const order = orders[selected];
+    if (!order || !yours(order) || !crewCap(order.kind)) return null;
+    return order;
 }
 
-function trainUnits() {
+function growWorkers() {
     if (phase !== "you") return;
-    you.training = fieldNumber("train-count", TRAIN_CAP);
+    const order = selectedWorkplace();
+    if (!order) return;
+    const cap = crewCap(order.kind);
+    const add = fieldNumber("grow-count", cap - (order.crew || 0));
+    order.crew = Math.min(cap, (order.crew || 0) + add);
     saveOrders();
+    draw();
     paint();
 }
 
@@ -545,9 +507,9 @@ let drag = null;
 function bind() {
     const work = document.createElement("div");
     work.id = "work";
-    work.innerHTML = '<label>Train <input id="train-count" type="number" min="1" max="6" step="1" value="1"> </label><button id="train" type="button">Train</button><label>Send <input id="send-count" type="number" min="1" max="10" step="1" value="4"> to a wood stand or an ore</label>';
+    work.innerHTML = '<label>Grow <input id="grow-count" type="number" min="1" max="100" step="1" value="1"> workers at the selected workplace</label><button id="grow" type="button">Grow</button>';
     kindsBox.parentNode.insertBefore(work, kindsBox);
-    document.getElementById("train").addEventListener("click", trainUnits);
+    document.getElementById("grow").addEventListener("click", growWorkers);
     kinds.forEach((kind) => {
         const button = document.createElement("button");
         button.type = "button";

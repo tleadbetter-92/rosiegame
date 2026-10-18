@@ -54,10 +54,10 @@ const mineModel = robloxModel(() => require("../models/roblox/mine.json"));
 const yardModel = robloxModel(() => require("../models/roblox/lumberyard.json"));
 // Town kit house size — player builds and faction “five houses” use these, not Roblox meshes.
 // Same footprint/look as the tall outside-village houses with doors (e.g. SW farmhouse at -2366, 770).
-const KIT_HOUSE = Town.MESH.tall;
-const KIT_HOUSE_H = 6.35 + 1.85;
+const KIT_HOUSE = Town.MESH.house;
+const KIT_HOUSE_H = 4.15 + 1.45;
 const KIT_HOUSE_GAP = 1.4;
-const KIT_HOUSE_MESH = "tall";
+const KIT_HOUSE_MESH = "house";
 // Southwest farm: fenced dirt enclosure (like the town field plots) plus one kit farmhouse beside it.
 const KIT_FIELD_W = 56;
 const KIT_FIELD_D = 40;
@@ -641,6 +641,11 @@ function maybeAttack(state, faction, turn, now) {
     return true;
 }
 
+// Southwest still walks and carts in the 3D world. The trip does not decide when goods are in the store.
+function showTrip(village) {
+    return village === 2;
+}
+
 function storeExit(village) {
     const place = places[village];
     const x = place.x + storePlan.x;
@@ -1128,15 +1133,24 @@ function yardPoint(yard) {
 }
 
 function creditJacks(state, yard, now) {
-    const hauling = yard.haul && (yard.haul.phase === "out" || yard.haul.phase === "back");
+    const show = showTrip(yard.village);
     let dirty = false;
+    if (show && !yard.loose) {
+        const pending = (yard.stock || 0) + ((yard.haul && yard.haul.cargo) || 0);
+        if (pending > 0) state.wood[yard.owner] = (state.wood[yard.owner] || 0) + pending;
+        yard.loose = true;
+        dirty = true;
+    }
+    const hauling = !show && yard.haul && (yard.haul.phase === "out" || yard.haul.phase === "back");
     (yard.jacks || []).forEach((man, index) => {
         if (man.health <= 0) return;
         if (hauling && index === 0) return;
         const done = Math.floor(Math.max(0, now - (man.cycleStart || now)) / JACK_MS);
         const paid = man.delivered || 0;
         if (done <= paid) return;
-        yard.stock = (yard.stock || 0) + (done - paid) * WOOD_YIELD;
+        const gained = (done - paid) * WOOD_YIELD;
+        yard.stock = (yard.stock || 0) + gained;
+        if (show) state.wood[yard.owner] = (state.wood[yard.owner] || 0) + gained;
         man.delivered = done;
         dirty = true;
     });
@@ -1149,8 +1163,10 @@ function stepOneYard(state, yard, now) {
     const haul = yard.haul;
     if (haul && (haul.phase === "out" || haul.phase === "back") && now >= haul.arriveAt) {
         if (haul.phase === "out") {
-            state.wood[yard.owner] = (state.wood[yard.owner] || 0) + (haul.cargo || 0);
-            note(state, factions[yard.owner].name + " carts " + (haul.cargo || 0) + " wood to the storehouse.");
+            if (!showTrip(yard.village)) {
+                state.wood[yard.owner] = (state.wood[yard.owner] || 0) + (haul.cargo || 0);
+                note(state, factions[yard.owner].name + " carts " + (haul.cargo || 0) + " wood to the storehouse.");
+            }
             const back = (haul.path || []).slice().reverse();
             const length = pathLength(back);
             yard.haul = {
@@ -1644,6 +1660,21 @@ function startCart(cart, path, now, phase) {
     cart.driver = cart.driver > 0 ? cart.driver : DRIVER_HP;
 }
 
+function releaseShownLodges(state) {
+    let dirty = false;
+    for (const lodge of state.lodges || []) {
+        if (!showTrip(lodge.village) || lodge.loose) continue;
+        const pending = (lodge.stock || 0) + ((lodge.cart && lodge.cart.cargo) || 0);
+        if (pending > 0) {
+            const owner = state.owners[lodge.village];
+            state.food[owner] = (state.food[owner] || 0) + pending;
+        }
+        lodge.loose = true;
+        dirty = true;
+    }
+    return dirty;
+}
+
 function moveCarts(state, now) {
     if (!Array.isArray(state.lodges)) return false;
     let dirty = false;
@@ -1685,8 +1716,10 @@ function moveCarts(state, now) {
         }
         if ((cart.phase === "out" || cart.phase === "back") && now >= cart.arriveAt) {
             if (cart.phase === "out") {
-                state.food[owner] = (state.food[owner] || 0) + (cart.cargo || 0);
-                note(state, factions[owner].name + " carts in " + (cart.cargo || 0) + " food.");
+                if (!showTrip(lodge.village)) {
+                    state.food[owner] = (state.food[owner] || 0) + (cart.cargo || 0);
+                    note(state, factions[owner].name + " carts in " + (cart.cargo || 0) + " food.");
+                }
                 cart.cargo = 0;
                 cart.goal = "back";
                 startCart(cart, villagerPath(lodge.village, parkPoint(cart)), now, "back");
@@ -1748,7 +1781,8 @@ function creditFish(state, now) {
         const lodge = fishLodge(state, man.village);
         if (lodge) {
             lodge.stock = (lodge.stock || 0) + trips * FISH_FOOD;
-            note(state, factions[owner].name + " lands " + (trips * FISH_FOOD) + " fish at a cottage.");
+            if (showTrip(man.village)) state.food[owner] = (state.food[owner] || 0) + trips * FISH_FOOD;
+            else note(state, factions[owner].name + " lands " + (trips * FISH_FOOD) + " fish at a cottage.");
         } else {
             state.food[owner] += trips * FISH_FOOD;
             note(state, factions[owner].name + " stores " + (trips * FISH_FOOD) + " food.");
@@ -4826,6 +4860,17 @@ function stepFarms(state, now) {
             }
             continue;
         }
+        const show = showTrip(farm.village);
+        if (show && !farm.loose) {
+            const owner = farmOwner(state, farm.village);
+            const pending = (farm.stock || 0) + (farm.carry || 0);
+            if (pending > 0 && owner >= MINOR_BASE) {
+                const minor = state.minors[owner - MINOR_BASE];
+                minor.food = (minor.food || 0) + pending;
+            } else if (pending > 0) state.food[owner] = (state.food[owner] || 0) + pending;
+            farm.loose = true;
+            dirty = true;
+        }
         if (asleep && farm.phase === "haul") {
             walkHome(farm, site);
             dirty = true;
@@ -4849,11 +4894,11 @@ function stepFarms(state, now) {
                     const owner = farmOwner(state, farm.village);
                     const load = farm.carry || 0;
                     farm.carry = 0;
-                    if (load > 0 && owner >= MINOR_BASE) {
+                    if (!show && load > 0 && owner >= MINOR_BASE) {
                         const minor = state.minors[owner - MINOR_BASE];
                         minor.food = (minor.food || 0) + load;
                         note(state, nameOf(owner) + " brings " + load + " food to the farmhouse.");
-                    } else if (load > 0) {
+                    } else if (!show && load > 0) {
                         state.food[owner] = (state.food[owner] || 0) + load;
                         note(state, nameOf(owner) + " brings " + load + " food to the store.");
                     }
@@ -4867,9 +4912,9 @@ function stepFarms(state, now) {
                     farm.length = 0;
                 }
             }
-            continue;
+            if (!show) continue;
         }
-        if (farm.phase !== "work") continue;
+        if (farm.phase !== "work" && !(show && (farm.phase === "haul" || farm.phase === "back"))) continue;
         const hamlet = farm.village >= MINOR_BASE ? farm.village - MINOR_BASE : -1;
         const cutting = hamlet >= 0 && hamlets[hamlet].farm.id === farm.id && state.minors[hamlet] && state.minors[hamlet].cutting;
         farm.grown = (farm.grown || 0) + rate * step * (cutting ? 0.5 : 1);
@@ -4877,8 +4922,13 @@ function stepFarms(state, now) {
         if (whole > 0) {
             farm.stock += whole;
             farm.grown -= whole;
+            if (show) {
+                const owner = farmOwner(state, farm.village);
+                state.food[owner] = (state.food[owner] || 0) + whole;
+            }
             dirty = true;
         }
+        if (farm.phase !== "work") continue;
         if (!deliveryDue(farm, play) || play < (farm.retryAt || 0)) continue;
         if ((farm.stock || 0) < 1) {
             markDelivery(farm, play);
@@ -4957,6 +5007,7 @@ function syncWorld(state, now) {
     if (orderTraining(state, now)) dirty = true;
     if (considerAttacks(state, now)) dirty = true;
     if (considerMinors(state, now)) dirty = true;
+    if (releaseShownLodges(state)) dirty = true;
     if (creditFish(state, now)) dirty = true;
     if (moveCarts(state, now)) dirty = true;
     if (consumeFood(state)) dirty = true;

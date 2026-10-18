@@ -760,7 +760,7 @@ function dressCivic(b, furn) {
 }
 
 function addOpenRoom(b) {
-    const sealed = b.village === homeVillage;
+    const sealed = true;
     const held = { trunk: [], plaster: [], linen: [], rock: [], glow: [], door: [], roof: [] };
     const room = sealed ? held : batches;
     const { x, z, w, d, h, rise } = b;
@@ -3394,16 +3394,8 @@ function pathPose(points, dist) {
 }
 
 function homeOf(place, slot) {
-    if (place === places[homeVillage]) {
-        const ang = slot * 0.85;
-        return { x: place.ox + Math.cos(ang) * 1.6, z: place.oz + Math.sin(ang) * 1.6 };
-    }
-    const col = slot % 4;
-    const row = Math.floor(slot / 4);
-    return {
-        x: place.ox + (-1.7 + col * 1.15) + 0.24,
-        z: place.oz + (-9 + row * 1.15) + 0.14
-    };
+    const ang = slot * 0.85;
+    return { x: place.ox + Math.cos(ang) * 1.6, z: place.oz + Math.sin(ang) * 1.6 };
 }
 
 function personXf(man) {
@@ -3983,9 +3975,9 @@ function mergeMen(data) {
             });
         }
     }
-    const keptFish = men.filter((man) => man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack);
+    const keptFish = men.filter((man) => man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board);
     for (const man of men) {
-        if (man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack) continue;
+        if (man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board) continue;
         const key = man.faction + ":" + man.index;
         if (keep.has(key)) continue;
         man.dying = true;
@@ -4094,6 +4086,130 @@ function applyCampaign(data) {
     raisePlots(data);
 }
 
+function placeSeen(x, z) {
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return false;
+    return Math.hypot(cam.x - x, cam.z - z) <= gfx().personDraw;
+}
+
+// A workplace crew stays a count until the player can see the place.
+function homeWorkersHidden(village, points) {
+    for (let i = 0; i < points.length; i++) {
+        const p = points[i];
+        if (p && placeSeen(p.x, p.z)) return false;
+    }
+    return true;
+}
+
+function seenCrewKey() {
+    if (!campaign) return "";
+    const bits = [];
+    for (const farm of campaign.farms || []) {
+        const home = (farm.nap && farm.nap[0]) || farm;
+        if (!homeWorkersHidden(farm.village, [farm, home])) bits.push("f" + farm.id);
+    }
+    for (const man of (campaign.fishermen || []).concat(campaign.woodcutters || [], campaign.lumberjacks || [])) {
+        if (!homeWorkersHidden(man.village, [man.from, man.to, man])) bits.push("w" + man.village + ":" + (man.id != null ? man.id : man.slot));
+    }
+    return bits.join(",");
+}
+
+let seenCrewStamp = "";
+
+function boardWorkplaces() {
+    try {
+        const raw = JSON.parse(localStorage.getItem("sw-build-orders") || "[]");
+        const list = Array.isArray(raw) ? raw : (raw && raw.orders) || [];
+        return list.filter((order) => order && (order.kind === "farm" || order.kind === "yard" || order.kind === "mine") && order.crew > 0 && Number.isFinite(order.x) && Number.isFinite(order.z));
+    } catch (err) {
+        return [];
+    }
+}
+
+function shrinkBoardCrew(index) {
+    if (!Number.isInteger(index)) return;
+    try {
+        const raw = JSON.parse(localStorage.getItem("sw-build-orders") || "[]");
+        const list = Array.isArray(raw) ? raw : (raw && raw.orders) || [];
+        const order = list[index];
+        if (!order || !(order.crew > 0)) return;
+        order.crew -= 1;
+        const saved = Array.isArray(raw) ? list : Object.assign({}, raw, { orders: list });
+        localStorage.setItem("sw-build-orders", JSON.stringify(saved));
+    } catch (err) { /* the people on screen already fell */ }
+}
+
+function syncBoardCrews() {
+    const orders = boardWorkplaces();
+    const want = new Set();
+    orders.forEach((order, index) => {
+        if (!placeSeen(order.x, order.z)) return;
+        const cap = order.kind === "farm" ? 4 : 8;
+        const count = Math.max(0, Math.min(cap, Math.floor(order.crew)));
+        for (let hand = 0; hand < count; hand++) {
+            const id = index + ":" + hand;
+            want.add(id);
+            let man = null;
+            for (let i = 0; i < men.length; i++) {
+                if (men[i].board && men[i].boardId === id) man = men[i];
+            }
+            const ang = hand * 0.9;
+            const x = order.x + Math.cos(ang) * 1.4;
+            const z = order.z + Math.sin(ang) * 1.4;
+            if (!man) {
+                men.push({
+                    board: true,
+                    boardId: id,
+                    boardOrder: index,
+                    fisher: false,
+                    farmer: false,
+                    faction: order.owner == null ? 2 : order.owner,
+                    index: -800 - index * 8 - hand,
+                    health: 3,
+                    x: x,
+                    z: z,
+                    yaw: ang,
+                    bob: 0,
+                    down: 0,
+                    swing: -1,
+                    hostile: false,
+                    attackIn: 0,
+                    striking: 0,
+                    struck: false,
+                    dying: false,
+                    walking: false,
+                    mode: "work"
+                });
+                actorsDirty = true;
+            } else if (!man.dying) {
+                man.x = x;
+                man.z = z;
+                man.faction = order.owner == null ? 2 : order.owner;
+                man.boardOrder = index;
+            }
+        }
+    });
+    for (let i = men.length - 1; i >= 0; i--) {
+        const man = men[i];
+        if (!man.board || man.dying || want.has(man.boardId)) continue;
+        men.splice(i, 1);
+        actorsDirty = true;
+    }
+}
+
+function refreshSeenCrews() {
+    const boardKey = boardWorkplaces().map((order, index) => index + ":" + (placeSeen(order.x, order.z) ? "1" : "0") + ":" + order.crew).join(",");
+    const cpuKey = cpuWorkplaces().map((order) => order.id + ":" + (placeSeen(order.x, order.z) ? "1" : "0") + ":" + order.crew).join(",");
+    const key = seenCrewKey() + "|" + boardKey + "|" + cpuKey;
+    if (key === seenCrewStamp) return;
+    seenCrewStamp = key;
+    if (campaign) {
+        mergeFishermen(campaign);
+        mergeFarmers(campaign);
+    }
+    syncBoardCrews();
+    syncCpuCrews();
+}
+
 function villagerKey(man) {
     if (man.jack) return "j:" + (man.slot || 0);
     return man.village + ":" + (man.wood ? "w" : "f") + ":" + (man.slot || 0);
@@ -4109,6 +4225,7 @@ function mergeFishermen(data) {
     const nextFish = [];
     for (const item of wanted) {
         if (item.health <= 0) continue;
+        if (homeWorkersHidden(item.village, [item.from, item.to, item])) continue;
         const key = villagerKey(item);
         keep.add(key);
         const old = prev.get(key);
@@ -4178,6 +4295,7 @@ function mergeFishermen(data) {
     }
     for (const man of men) {
         if (!man.fisher || keep.has(villagerKey(man))) continue;
+        if (homeWorkersHidden(man.village, [man, { x: man.fromX, z: man.fromZ }, { x: man.toX, z: man.toZ }])) continue;
         man.dying = true;
         man.health = 0;
         nextFish.push(man);
@@ -4218,6 +4336,8 @@ function mergeFarmers(data) {
     const next = [];
     wanted.forEach((item, farmIndex) => {
         if (item.health <= 0) return;
+        const home = (item.nap && item.nap[0]) || item;
+        if (homeWorkersHidden(item.village, [item, home])) return;
         const crew = item.crew || 1;
         for (let hand = 0; hand < crew; hand++) {
             const key = item.id + ":" + hand;
@@ -4275,6 +4395,7 @@ function mergeFarmers(data) {
     });
     for (const man of men) {
         if (!man.farmer || keep.has(man.farmId + ":" + (man.hand || 0))) continue;
+        if (homeWorkersHidden(man.village, [man].concat(man.nap || []))) continue;
         man.dying = true;
         man.health = 0;
         next.push(man);
@@ -4481,8 +4602,8 @@ function buildCottage(lodge) {
         fz: fz,
         yaw: 0,
         half: 0.7,
-        swing: lodge.village === homeVillage ? 0 : 1,
-        want: lodge.village !== homeVillage,
+        swing: 0,
+        want: false,
         cottage: true
     });
     cottageProps.push(...cottageGoods(lodge));
@@ -4707,46 +4828,27 @@ function rememberPlay(data) {
     if (playBase == null || next >= playBase) playBase = next;
 }
 
-function syncCampaign() {
-    if (pendingHit) return;
-    // Do not poll the campaign while the tab is hidden — nothing to update until you come back.
-    if (document.visibilityState !== "visible") return;
-    const sent = pullPlay();
-    const url = campaignQuery(sent);
-    fetch(url, { cache: "no-store" }).then((res) => res.json()).then((data) => {
-        if (sent) pendingSend = Math.max(0, pendingSend - sent);
-        applyCampaign(data);
+// The clock and the character sheet, once. The old war is not fetched again.
+function loadClock() {
+    fetch("/api/campaign?brief=1", { cache: "no-store" }).then((res) => res.json()).then((data) => {
+        rememberPlay(data);
+        adoptHero(data && data.hero);
+        if (playBase == null) playBase = MORNING_MS;
     }).catch(() => {
-        if (sent) {
-            accrued += sent;
-            pendingSend = Math.max(0, pendingSend - sent);
-        }
+        if (playBase == null) playBase = MORNING_MS;
     });
 }
 
 function flushPlay() {
-    const nowMs = Date.now();
     if (accrueAt) {
-        accrued += Math.min(1000, Math.max(0, nowMs - accrueAt));
+        accrued += Math.min(1000, Math.max(0, Date.now() - accrueAt));
         accrueAt = 0;
     }
-    const sent = Math.min(4000, Math.round(accrued));
-    if (sent <= 0) return;
-    accrued -= sent;
-    pendingSend += sent;
-    fetch(campaignQuery(sent), { cache: "no-store", keepalive: true }).then((res) => res.json()).then((data) => {
-        pendingSend = Math.max(0, pendingSend - sent);
-        applyCampaign(data);
-    }).catch(() => {
-        accrued += sent;
-        pendingSend = Math.max(0, pendingSend - sent);
-    });
 }
 
 document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
         accrueAt = Date.now();
-        syncCampaign();
         return;
     }
     flushPlay();
@@ -5162,6 +5264,15 @@ function wound(man, label, quiet, knockX, knockZ) {
     if (!man || man.dying || man.health <= 0 || man.jack) return false;
     // Archers' arrows only count against goblins; the campaign settles fights between factions itself.
     if (quiet && !man.goblin) return false;
+    if (man.board) {
+        man.health = 0;
+        man.dying = true;
+        if (!quiet) showStrike("Slain");
+        actorsDirty = true;
+        if (man.cpu) shrinkCpuCrew(man.cpuId);
+        else shrinkBoardCrew(man.boardOrder);
+        return true;
+    }
     if (!man.goblin) provoke(man.faction);
     const word = label || "Hit";
     if (man.goblin) {
@@ -5541,23 +5652,6 @@ function stepFarmer(man, dt) {
         actorsDirty = true;
         return false;
     }
-    if ((man.phase === "haul" || man.phase === "back") && man.path && man.path.length > 1) {
-        const extra = Math.max(0, (gameMs() - (man.playAt || 0)) / 1000) * 2.2;
-        const dist = Math.min(man.length || 0, (man.along || 0) + extra);
-        const route = routeAround(man.path, man.faction);
-        const pose = pathPose(route.points, dist / Math.max(1, man.length || 1) * route.length);
-        man.x = pose.x + (man.hand ? 0.8 : 0);
-        man.z = pose.z;
-        man.yaw = pose.yaw;
-        man.floorY = null;
-        man.walking = dist + 0.2 < (man.length || 0);
-        man.bob = Math.sin(performance.now() * 0.01) * 0.04;
-        man.swing = -1;
-        man.mode = "farm";
-        plant(man);
-        actorsDirty = true;
-        return false;
-    }
     const spots = man.spots || [];
     if (!spots.length) {
         man.walking = false;
@@ -5589,23 +5683,6 @@ function stepFarmer(man, dt) {
 }
 
 function stepJack(man, dt) {
-    const yards = [];
-    if (campaign && campaign.yard) yards.push(campaign.yard);
-    if (campaign && campaign.yards) yards.push(...campaign.yards);
-    const yard = yards.find((item) => item.id === man.yardId) || (campaign && campaign.yard);
-    const haul = yard && yard.haul;
-    if (man.hauling && haul && haul.path && haul.path.length > 1) {
-        const pose = clientCartPose(haul);
-        man.x = pose.x + 1.2;
-        man.z = pose.z;
-        man.yaw = pose.yaw || 0;
-        man.walking = haul.phase === "out" || haul.phase === "back";
-        man.swing = -1;
-        man.hostile = false;
-        man.floorY = null;
-        plant(man);
-        return false;
-    }
     return stepFisher(man, dt);
 }
 
@@ -5631,46 +5708,15 @@ function stepFisher(man, dt) {
         }
         man.rejoin = true;
     }
-    const fishMs = 30000;
-    const walkMs = Math.max(1, man.walkMs || 1);
-    const period = walkMs * 2 + fishMs;
-    let t = (Date.now() - man.cycleStart) % period;
-    if (t < 0) t = 0;
-    let along = 0;
-    let outward = true;
-    if (t < walkMs) along = t / walkMs;
-    else if (t < walkMs + fishMs) along = 1;
-    else {
-        outward = false;
-        along = 1 - (t - walkMs - fishMs) / walkMs;
-    }
-    const spot = fisherSpot(man, along);
-    if (man.rejoin) {
-        const dx = spot.x - man.x;
-        const dz = spot.z - man.z;
-        const dist = Math.hypot(dx, dz);
-        if (dist < 1.4) man.rejoin = false;
-        else {
-            const step = Math.min(2.2 * dt, dist);
-            man.x += dx / dist * step;
-            man.z += dz / dist * step;
-            man.yaw = Math.atan2(-dx, -dz);
-            man.floorY = null;
-            man.walking = true;
-            plant(man);
-            man.swing = -1;
-            man.hostile = false;
-            return false;
-        }
-    }
-    man.x = spot.x;
-    man.z = spot.z;
+    const workX = Number.isFinite(man.toX) ? man.toX : man.fromX;
+    const workZ = Number.isFinite(man.toZ) ? man.toZ : man.fromZ;
+    const slot = man.slot || 0;
+    man.x = workX + Math.cos(slot) * 1.2;
+    man.z = workZ + Math.sin(slot) * 1.2;
     man.floorY = null;
-    const face = outward ? 1 : -1;
-    man.yaw = Math.atan2(-spot.dx * face, -spot.dz * face);
-    const walking = t < walkMs || t >= walkMs + fishMs;
-    man.walking = walking;
-    man.bob = Math.sin(performance.now() * (walking ? 0.01 : 0.004)) * (walking ? 0.04 : 0.02);
+    man.yaw = slot;
+    man.walking = false;
+    man.bob = Math.sin(performance.now() * 0.004) * 0.02;
     man.swing = -1;
     man.hostile = false;
     man.mode = "fish";
@@ -6089,10 +6135,8 @@ function nearestPatrol(man, points) {
     return best;
 }
 
-function shouldPatrol(man) {
-    if (man.post === homeVillage) return false;
-    const roster = guardsAt(man.post);
-    return roster.length > 1 && roster[roster.length - 1] === man;
+function shouldPatrol() {
+    return false;
 }
 
 function patrolToward(man, x, z, dt, speed) {
@@ -6441,6 +6485,8 @@ function updateFight(dt) {
         }
         if (swing.age >= 0.36) swing = null;
     }
+    stepCpuWork();
+    refreshSeenCrews();
     const quality = gfx();
     // Only the nearest UNIT_CAP people step in 3D; everyone else is campaign-map state.
     const active = nearestMen(UNIT_CAP, Math.max(quality.personStep, 36));
@@ -6453,6 +6499,10 @@ function updateFight(dt) {
                 men.splice(i, 1);
                 actorsDirty = true;
             }
+            continue;
+        }
+        if (man.board) {
+            if (activeSet.has(man)) plant(man);
             continue;
         }
         if (!activeSet.has(man)) {
@@ -6833,7 +6883,7 @@ function onTower(x, z) {
 }
 
 function pinsGatesOpen(village) {
-    return village === homeVillage && !postAttacked(village);
+    return !postAttacked(village);
 }
 
 function scanGates() {
@@ -8061,8 +8111,7 @@ function hitsDoor(door, x, z, r) {
         const x = b.x + fx * (half - 0.06) - c * side;
         const z = b.z + fz * (half - 0.06) + s * side;
         const gy = b.y || 0;
-        const shut = b.village === homeVillage;
-        const door = { id: key + ":" + counts[key], kind, role: b.role || "", x, z, y: gy, fx, fz, yaw: b.yaw, half, swing: shut ? 0 : 1, want: !shut };
+        const door = { id: key + ":" + counts[key], kind, role: b.role || "", x, z, y: gy, fx, fz, yaw: b.yaw, half, swing: 0, want: false };
         b.entry = door;
         doors.push(door);
         const inset = 0.55;
@@ -8093,8 +8142,8 @@ function hitsDoor(door, x, z, r) {
             yaw: 0,
             half: 0.85,
             wide: 0.95,
-            swing: b.village === homeVillage ? 0 : 1,
-            want: b.village !== homeVillage,
+            swing: 0,
+            want: false,
             cottage: true,
             house: b
         });
@@ -8423,16 +8472,335 @@ function stampPads(list, pads) {
     }
 }
 
+// The four factions raise workplaces on the shared clock. The campaign page stays a picture of a turn.
+const CPU_KEY = "cpu-work";
+const CPU_KINDS = ["farm", "yard", "mine"];
+const CPU_HOUR = Clock.DAY_MS / 24;
+let cpuMem = null;
+let cpuNote = "";
+let cpuTick = 0;
+
+function loadCpu() {
+    if (cpuMem) return cpuMem;
+    try {
+        const raw = JSON.parse(localStorage.getItem(CPU_KEY) || "null");
+        cpuMem = raw && Array.isArray(raw.sites) ? raw : { nextAt: null, sites: [] };
+    } catch (err) {
+        cpuMem = { nextAt: null, sites: [] };
+    }
+    return cpuMem;
+}
+
+function saveCpu() {
+    try {
+        localStorage.setItem(CPU_KEY, JSON.stringify({ nextAt: cpuMem.nextAt, sites: cpuMem.sites }));
+    } catch (err) { /* the workplaces already standing stay for this visit */ }
+}
+
+function cpuWorkplaces() {
+    const now = gameMs();
+    return loadCpu().sites.filter((site) => site && site.readyAt <= now && site.crew > 0 && Number.isFinite(site.x) && Number.isFinite(site.z));
+}
+
+function shrinkCpuCrew(id) {
+    const site = loadCpu().sites.find((item) => item.id === id);
+    if (!site || !(site.crew > 0)) return;
+    site.crew -= 1;
+    saveCpu();
+}
+
+function cpuBusy(x, z, sites) {
+    for (let i = 0; i < sites.length; i++) {
+        if (Math.hypot(sites[i].x - x, sites[i].z - z) < 36) return true;
+    }
+    for (const farm of Town.farms) {
+        for (const building of farm.buildings || []) {
+            if (Math.hypot(building.x - x, building.z - z) < 70) return true;
+        }
+    }
+    const plots = (raisedData && raisedData.plots) || [];
+    for (let i = 0; i < plots.length; i++) {
+        const at = plots[i].house || plots[i];
+        if (at && Math.hypot((at.x || 0) - x, (at.z || 0) - z) < 40) return true;
+    }
+    return false;
+}
+
+function cpuDry(x, z) {
+    return !World.wet(x, z) && World.heightAt(x, z) >= 0.4;
+}
+
+function cpuYaw(dx, dz) {
+    if (Math.abs(dx) > Math.abs(dz)) return dx > 0 ? -Math.PI / 2 : Math.PI / 2;
+    return dz > 0 ? Math.PI : 0;
+}
+
+function cpuFarm(place, village, cx, cz) {
+    const fw = 40;
+    const fd = 28;
+    const field = { x: cx - fw / 2, z: cz - fd / 2, w: fw, d: fd };
+    const corners = [[field.x, field.z], [field.x + fw, field.z], [field.x, field.z + fd], [field.x + fw, field.z + fd]];
+    for (let i = 0; i < corners.length; i++) {
+        if (!cpuDry(corners[i][0], corners[i][1])) return null;
+    }
+    const dx = place.x - cx;
+    const dz = place.z - cz;
+    const len = Math.hypot(dx, dz) || 1;
+    const ux = dx / len;
+    const uz = dz / len;
+    let edge = Infinity;
+    if (ux > 1e-6) edge = Math.min(edge, (field.x + field.w - cx) / ux);
+    if (ux < -1e-6) edge = Math.min(edge, (field.x - cx) / ux);
+    if (uz > 1e-6) edge = Math.min(edge, (field.z + field.d - cz) / uz);
+    if (uz < -1e-6) edge = Math.min(edge, (field.z - cz) / uz);
+    if (!Number.isFinite(edge) || edge < 1) edge = Math.max(fw, fd) * 0.5;
+    const hx = cx + ux * (edge + 8 + 2.35);
+    const hz = cz + uz * (edge + 8 + 2.35);
+    if (!cpuDry(hx, hz)) return null;
+    const size = 4.7;
+    const yaw = cpuYaw(place.x - hx, place.z - hz);
+    const house = {
+        x: hx,
+        z: hz,
+        y: Math.max(0, World.heightAt(hx, hz)),
+        yaw: yaw,
+        w: size,
+        d: size,
+        minX: hx - size / 2,
+        minZ: hz - size / 2,
+        mesh: "house",
+        role: "farmhouse",
+        doorSide: 0,
+        village: village
+    };
+    return { x: Math.round(hx), z: Math.round(hz), yaw: yaw, house: house, field: field };
+}
+
+function cpuPlayers() {
+    const list = [];
+    for (let i = 0; i < places.length; i++) list.push({ index: i, place: places[i], hamlet: false });
+    const hamlets = World.hamlets || [];
+    for (let i = 0; i < hamlets.length; i++) list.push({ index: places.length + i, place: hamlets[i], hamlet: true });
+    return list;
+}
+
+function cpuSpot(place, village, kind, sites, hamlet) {
+    if (kind === "farm") {
+        const rings = hamlet ? [72, 104, 140, 180, 220, 260] : [110, 150, 195];
+        for (let r = 0; r < rings.length; r++) {
+            const dist = rings[r];
+            for (let i = 0; i < 12; i++) {
+                const ang = (i / 12) * Math.PI * 2 + dist * 0.01;
+                const built = cpuFarm(place, village, place.x + Math.cos(ang) * dist, place.z + Math.sin(ang) * dist);
+                if (!built || cpuBusy(built.x, built.z, sites) || cpuBusy(built.field.x + built.field.w / 2, built.field.z + built.field.d / 2, sites)) continue;
+                return built;
+            }
+        }
+        return null;
+    }
+    if (kind === "yard") {
+        for (let n = 0; n < 8; n++) {
+            const ang = n * (Math.PI / 4) + 0.35;
+            const radius = hamlet ? 34 + (n % 3) * 4 : 48 + (n % 3) * 5;
+            const x = Math.round(place.x + Math.cos(ang) * radius);
+            const z = Math.round(place.z + Math.sin(ang) * radius);
+            if (!cpuDry(x, z) || cpuBusy(x, z, sites)) continue;
+            return { x: x, z: z, w: 9, d: 5.6 };
+        }
+        return null;
+    }
+    let best = null;
+    let bestD = 280;
+    for (const pair of World.ores || []) {
+        if (cpuBusy(pair[0], pair[1], sites)) continue;
+        const dist = Math.hypot(pair[0] - place.x, pair[1] - place.z);
+        if (dist < bestD) {
+            best = { x: Math.round(pair[0]), z: Math.round(pair[1]), w: 7, d: 7 };
+            bestD = dist;
+        }
+    }
+    return best;
+}
+
+function cpuOrder(player, sites) {
+    const owned = sites.filter((site) => site.owner === player.index);
+    if (owned.length >= CPU_KINDS.length) return null;
+    const kind = CPU_KINDS[owned.length];
+    const spot = cpuSpot(player.place, player.index, kind, sites, player.hamlet);
+    if (!spot) return null;
+    return {
+        id: "cpu-" + player.index + "-" + owned.length,
+        kind: kind,
+        owner: player.index,
+        x: spot.x,
+        z: spot.z,
+        yaw: spot.yaw || 0,
+        w: spot.w || 0,
+        d: spot.d || 0,
+        house: spot.house || null,
+        field: spot.field || null,
+        crew: 4,
+        readyAt: gameMs() + CPU_HOUR
+    };
+}
+
+function cpuReadyPlots() {
+    const now = gameMs();
+    const plots = [];
+    for (const site of loadCpu().sites) {
+        if (!site || site.readyAt > now) continue;
+        if (site.kind === "farm" && site.house && site.field) {
+            plots.push({
+                id: site.id,
+                village: site.owner,
+                kind: "farm",
+                yaw: site.yaw,
+                house: site.house,
+                field: site.field
+            });
+        } else if (site.kind === "yard" || site.kind === "mine") {
+            plots.push({
+                id: site.id,
+                village: site.owner,
+                kind: site.kind === "mine" ? "mine" : "yard",
+                x: site.x,
+                z: site.z,
+                y: Math.max(0, World.heightAt(site.x, site.z)),
+                w: site.w || 9,
+                d: site.d || 5.6
+            });
+        }
+    }
+    return plots;
+}
+
+function paintCpuNote() {
+    const state = loadCpu();
+    const now = gameMs();
+    const pending = state.sites.filter((site) => site.readyAt > now);
+    let text = "";
+    if (pending.length) {
+        const left = Math.max(0, Math.ceil((Math.min.apply(null, pending.map((site) => site.readyAt)) - now) / 1000));
+        text = "Factions are raising " + pending.length + (pending.length === 1 ? " workplace" : " workplaces") + " · " + left + "s";
+    } else if (state.nextAt > now) {
+        const left = Math.max(0, Math.round((state.nextAt - now) / 60000));
+        text = state.sites.length + " workplaces standing · next orders in " + left + " min";
+    }
+    if (text === cpuNote) return;
+    cpuNote = text;
+    let note = document.getElementById("cpu-note");
+    if (!note) {
+        note = document.createElement("div");
+        note.id = "cpu-note";
+        const clock = document.getElementById("clock");
+        if (clock && clock.parentNode) clock.parentNode.insertBefore(note, clock.nextSibling);
+    }
+    note.textContent = text;
+}
+
+function stepCpuWork() {
+    if (playBase == null) return;
+    cpuTick += 1;
+    const state = loadCpu();
+    if (cpuTick % 20 !== 0 && state.nextAt != null) {
+        paintCpuNote();
+        return;
+    }
+    const now = gameMs();
+    let changed = false;
+    const due = state.nextAt == null || now >= state.nextAt;
+    if (due) state.nextAt = now + 12 * CPU_HOUR;
+    for (const player of cpuPlayers()) {
+        const owned = state.sites.filter((site) => site.owner === player.index);
+        if (!due && owned.length > 0) continue;
+        const order = cpuOrder(player, state.sites);
+        if (!order) continue;
+        state.sites.push(order);
+        changed = true;
+    }
+    if (due) changed = true;
+    const ready = state.sites.filter((site) => site.readyAt <= now).map((site) => site.id).join(",");
+    if (ready !== state.shown) {
+        state.shown = ready;
+        changed = true;
+    }
+    if (changed) {
+        saveCpu();
+        raisedKey = "";
+        if (raisedData) stampRaisedPlots();
+    }
+    paintCpuNote();
+}
+
+function syncCpuCrews() {
+    const orders = cpuWorkplaces();
+    const want = new Set();
+    for (let index = 0; index < orders.length; index++) {
+        const order = orders[index];
+        if (!placeSeen(order.x, order.z)) continue;
+        const count = Math.max(0, Math.min(4, Math.floor(order.crew)));
+        for (let hand = 0; hand < count; hand++) {
+            const id = "c:" + order.id + ":" + hand;
+            want.add(id);
+            let man = null;
+            for (let i = 0; i < men.length; i++) {
+                if (men[i].cpu && men[i].boardId === id) man = men[i];
+            }
+            const ang = hand * 0.9;
+            const x = order.x + Math.cos(ang) * 1.4;
+            const z = order.z + Math.sin(ang) * 1.4;
+            if (!man) {
+                men.push({
+                    board: true,
+                    cpu: true,
+                    cpuId: order.id,
+                    boardId: id,
+                    fisher: false,
+                    farmer: false,
+                    faction: order.owner,
+                    index: -900 - index * 8 - hand,
+                    health: 3,
+                    x: x,
+                    z: z,
+                    yaw: ang,
+                    bob: 0,
+                    down: 0,
+                    swing: -1,
+                    hostile: false,
+                    attackIn: 0,
+                    striking: 0,
+                    struck: false,
+                    dying: false,
+                    walking: false,
+                    mode: "work"
+                });
+                actorsDirty = true;
+            } else if (!man.dying) {
+                man.x = x;
+                man.z = z;
+                man.faction = order.owner;
+            }
+        }
+    }
+    for (let i = men.length - 1; i >= 0; i--) {
+        const man = men[i];
+        if (!man.cpu || man.dying || want.has(man.boardId)) continue;
+        men.splice(i, 1);
+        actorsDirty = true;
+    }
+}
+
 function stampRaisedPlots() {
     if (!raisedData) return;
-    const plots = raisedData.plots || [];
+    const cpuPlots = cpuReadyPlots();
+    const plots = (raisedData.plots || []).concat(cpuPlots);
     const raising = raisedData.raising || [];
     const reach = raisedDetailReach();
     const useReach = raisedUseReach();
     if (!raisedContentKey) {
-        raisedContentKey = (raisedData.restartedAt || 0) + "|" + plots.map((plot) => plot.id).join(",") + "|" + raising.map((job) => job.id).join(",");
+        raisedContentKey = (raisedData.restartedAt || 0) + "|" + (raisedData.plots || []).map((plot) => plot.id).join(",") + "|" + raising.map((job) => job.id).join(",");
     }
-    const key = raisedContentKey + "|" + raisedViewKey();
+    const key = raisedContentKey + "|" + raisedViewKey() + "|cpu:" + cpuPlots.map((plot) => plot.id).join(",");
     if (key === raisedKey) return;
     raisedKey = key;
     clearRaised();
@@ -8491,14 +8859,15 @@ function stampRaisedPlots() {
         if (!plotInView(plot, reach)) continue;
         const dist = plotDist(plot);
         const close = dist <= useReach;
-        if (plot.kind === "yard" && !plot.model) {
+        if ((plot.kind === "yard" || plot.kind === "mine") && !plot.model) {
             const x = plot.x;
             const z = plot.z;
             const y = Math.max(0, plot.y || World.heightAt(x, z));
             const w = plot.w || 9;
             const d = plot.d || 5.6;
-            addBox(trunk, x - w / 2, y, z - d / 2, w, 3.2, d);
-            addBox(trunk, x - w / 2 - 0.2, y + 3.2, z - d / 2 - 0.2, w + 0.4, 0.35, d + 0.4);
+            const h = plot.kind === "mine" ? 2.2 : 3.2;
+            addBox(trunk, x - w / 2, y, z - d / 2, w, h, d);
+            addBox(trunk, x - w / 2 - 0.2, y + h, z - d / 2 - 0.2, w + 0.4, 0.35, d + 0.4);
             scenery.push({ x: x - w / 2, z: z - d / 2, w: w, d: d, raised: true });
             continue;
         }
@@ -8511,15 +8880,15 @@ function stampRaisedPlots() {
             scenery.push({ x: x, z: z, w: plot.w, d: plot.d, raised: true });
             continue;
         }
-        if (plot.model && plot.at) {
+        if (plot.model && plot.at && plot.kind !== "farm") {
             const house = plot.house;
-            const enterable = house && (plot.kind === "house" || plot.kind === "farm");
+            const enterable = house && plot.kind === "house";
             // Box buildings only — Roblox part meshes are not drawn.
             stampBuildingProxy(trunk, plot, { noCollide: enterable && close, detail: close });
             if (enterable && close) {
                 house.village = plot.village;
                 house.mesh = "house";
-                house.role = plot.kind === "house" ? "house" : "farmhouse";
+                house.role = "house";
                 house.raised = true;
                 const side = house.doorSide;
                 house.doorSide = 0;
@@ -8527,35 +8896,21 @@ function stampRaisedPlots() {
                 house.doorSide = side;
                 Town.buildings.push(house);
             }
-            const f = plot.field;
-            if (f && close) {
-                for (let z = f.z; z < f.z + f.d - 0.1; z += 4) {
-                    for (let x = f.x; x < f.x + f.w - 0.1; x += 4) {
-                        cell(field, x, z, Math.min(4, f.x + f.w - x), Math.min(4, f.z + f.d - z));
-                    }
-                }
-                for (let row = f.z + 2; row < f.z + f.d - 1; row += 5) {
-                    const y = Math.max(0, World.heightAt(f.x + f.w / 2, row));
-                    addBox(leaf, f.x + 1.2, y, row, Math.max(2, f.w - 2.4), 0.28, 0.45);
-                }
-                if (plot.kind === "farm") stampPlotFence(trunk, f, house);
-            }
             if (plot.hay && close) stampHay(field, plot);
             continue;
         }
         const house = plot.house;
         if (!house) continue;
-        if (!close) {
+        if (!close && plot.kind !== "farm") {
             const y = house.y || Math.max(0, World.heightAt(house.x, house.z));
             addBox(trunk, house.minX, y, house.minZ, house.w, (house.h || 3.5) * 0.7, house.d);
             addBox(trunk, house.minX - 0.15, y + (house.h || 3.5) * 0.7, house.minZ - 0.15, house.w + 0.3, (house.h || 3.5) * 0.3, house.d + 0.3);
             solids.push({ x: house.minX, z: house.minZ, w: house.w, d: house.d, y0: y, y1: y + (house.h || 3.5), raised: true });
-            if (plot.kind === "farm" && plot.field) stampPlotFence(trunk, plot.field, house);
             continue;
         }
-        // Same tall outside-village kit house as the SW farmhouse at -2366,770 (door + bill walls).
+        // The original two-storey house: stone base, plaster, tiled roof. Farms use that, not a wooden box.
         house.village = plot.village == null ? -1 : plot.village;
-        house.mesh = "tall";
+        house.mesh = plot.kind === "farm" ? "house" : "tall";
         house.role = plot.kind === "house" ? "house" : "farmhouse";
         house.raised = true;
         house.y = house.y != null ? house.y : Math.max(0, World.heightAt(house.x, house.z));
@@ -9391,8 +9746,7 @@ canvas.addEventListener("touchcancel", endTouch);
 if (gl) {
     gl.clearColor(0.55, 0.66, 0.74, 1);
     resize();
-    syncCampaign();
-    setInterval(syncCampaign, 1500);
+    loadClock();
     prepareTowers();
     spawnKeepers();
     prepareBow();

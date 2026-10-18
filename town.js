@@ -278,7 +278,7 @@
             name: "northwest",
             buildings: [
                 // Tall kit farmhouse beside the yard, not inside the fence.
-                kitBuilding(0, "tall", -1475, -860, 0, "farmhouse"),
+                kitBuilding(0, "house", -1475, -860, 0, "farmhouse"),
                 timberBuilding(0, "shed", -1454, -820, 3, 2.4, Math.PI, "south")
             ],
             yard: { x: -1504, z: -848, w: 58, d: 34, gap: { side: "east", at: -830, width: 2.4 } },
@@ -298,7 +298,7 @@
             village: 1,
             name: "northeast",
             buildings: [
-                kitBuilding(1, "tall", 1296, -1480, Math.PI, "farmhouse"),
+                kitBuilding(1, "house", 1296, -1480, Math.PI, "farmhouse"),
                 timberBuilding(1, "shed", 1318, -1448, 3, 2.4, Math.PI / 2, "west")
             ],
             yard: { x: 1278, z: -1468, w: 56, d: 36, gap: { side: "south", at: 1296, width: 2.4 } },
@@ -318,7 +318,7 @@
             village: 2,
             name: "southwest",
             buildings: [
-                kitBuilding(2, "tall", -2372, 750, Math.PI / 2, "farmhouse"),
+                kitBuilding(2, "house", -2372, 750, Math.PI / 2, "farmhouse"),
                 timberBuilding(2, "barn", -2356, 792, 6.6, 4.2, 0, "north"),
                 timberBuilding(2, "shed", -2386, 780, 3.2, 2.6, -Math.PI / 2, "east")
             ],
@@ -346,7 +346,7 @@
             village: 3,
             name: "southeast",
             buildings: [
-                kitBuilding(3, "tall", 640, 1384, -Math.PI / 2, "farmhouse"),
+                kitBuilding(3, "house", 640, 1384, -Math.PI / 2, "farmhouse"),
                 timberBuilding(3, "barn", 658, 1434, 5.4, 3.6, 0, "north"),
                 timberBuilding(3, "shed", 612, 1424, 3, 2.4, -Math.PI / 2, "east")
             ],
