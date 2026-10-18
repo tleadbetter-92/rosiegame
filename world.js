@@ -763,6 +763,30 @@
         return false;
     }
 
+    const meshCorners = new Map();
+    function meshSample(x, z) {
+        const key = x + "," + z;
+        if (meshCorners.has(key)) return meshCorners.get(key);
+        const h = heightAt(x, z);
+        if (meshCorners.size > 4096) meshCorners.clear();
+        meshCorners.set(key, h);
+        return h;
+    }
+    // The drawn ground is flat between samples: 2 m inside Southwest, 8 m everywhere else.
+    function meshHeight(x, z) {
+        const home = places[2];
+        const sub = Math.abs(x - home.x) < 100 && Math.abs(z - home.z) < 100 ? 2 : 8;
+        const x0 = Math.floor(x / sub) * sub;
+        const z0 = Math.floor(z / sub) * sub;
+        const tx = (x - x0) / sub;
+        const tz = (z - z0) / sub;
+        const h00 = meshSample(x0, z0);
+        const h10 = meshSample(x0 + sub, z0);
+        const h01 = meshSample(x0, z0 + sub);
+        const h11 = meshSample(x0 + sub, z0 + sub);
+        return (h00 * (1 - tx) + h10 * tx) * (1 - tz) + (h01 * (1 - tx) + h11 * tx) * tz;
+    }
+
     function heightAt(x, z) {
         let h = bareHeight(x, z);
         const near = padsNear(x, z);
@@ -1402,6 +1426,7 @@
         bridgeWall,
         deckY,
         heightAt,
+        meshHeight,
         bareHeight,
         setPads,
         onPad,

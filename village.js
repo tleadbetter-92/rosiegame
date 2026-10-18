@@ -760,6 +760,9 @@ function dressCivic(b, furn) {
 }
 
 function addOpenRoom(b) {
+    const sealed = b.village === homeVillage;
+    const held = { trunk: [], plaster: [], linen: [], rock: [], glow: [], door: [], roof: [] };
+    const room = sealed ? held : batches;
     const { x, z, w, d, h, rise } = b;
     const t = 0.28;
     const doorW = 2.2;
@@ -771,7 +774,7 @@ function addOpenRoom(b) {
     const windowSide = entrance === "east" || entrance === "west" ? "south" : "east";
     const holeOn = (side, along) => {
         if (side === entrance) return { at: (along - doorW) / 2, size: doorW, y0: 0, y1: doorH };
-        if (side === windowSide) return { at: (along - winW) / 2, size: winW, y0: winY, y1: winY + winH };
+        if (!sealed && side === windowSide) return { at: (along - winW) / 2, size: winW, y0: winY, y1: winY + winH };
         return null;
     };
     const span = (ox, oz, len, depth, axis, hole) => {
@@ -827,7 +830,7 @@ function addOpenRoom(b) {
         }
     };
     trim(entrance, entrance === "east" || entrance === "west" ? d : w, holeOn(entrance, entrance === "east" || entrance === "west" ? d : w), 0.16);
-    trim(windowSide, windowSide === "east" || windowSide === "west" ? d : w, holeOn(windowSide, windowSide === "east" || windowSide === "west" ? d : w), 0.08);
+    if (!sealed) trim(windowSide, windowSide === "east" || windowSide === "west" ? d : w, holeOn(windowSide, windowSide === "east" || windowSide === "west" ? d : w), 0.08);
     const glowPane = (side, y0) => {
         const paneW = 0.7;
         const paneH = 0.55;
@@ -836,30 +839,34 @@ function addOpenRoom(b) {
         else if (side === "east") addBox(batches.glow, x + w - 0.04, y0, z + d / 2 - paneW / 2, 0.08, paneH, paneW);
         else addBox(batches.glow, x - 0.04, y0, z + d / 2 - paneW / 2, 0.08, paneH, paneW);
     };
-    glowPane(windowSide, 1.2);
-    glowPane(windowSide, 3.45);
-    const flame = (px, py, pz, w, h, d) => {
-        addBox(batches.glow, px, py, pz, w, h * 0.42, d);
-        addBox(batches.glow, px + w * 0.22, py + h * 0.3, pz + d * 0.2, w * 0.56, h * 0.4, d * 0.6);
-        addBox(batches.glow, px + w * 0.38, py + h * 0.58, pz + d * 0.36, w * 0.24, h * 0.44, d * 0.28);
+    if (!sealed) {
+        glowPane(windowSide, 1.2);
+        glowPane(windowSide, 3.45);
+    }
+    const flameInto = (list, px, py, pz, w, h, d) => {
+        addBox(list, px, py, pz, w, h * 0.42, d);
+        addBox(list, px + w * 0.22, py + h * 0.3, pz + d * 0.2, w * 0.56, h * 0.4, d * 0.6);
+        addBox(list, px + w * 0.38, py + h * 0.58, pz + d * 0.36, w * 0.24, h * 0.44, d * 0.28);
     };
+    const flame = (px, py, pz, w, h, d) => flameInto(room.glow, px, py, pz, w, h, d);
     const torchAt = (px, pz) => {
         addBox(batches.trunk, px, 0, pz, 0.08, 1.35, 0.08);
-        flame(px - 0.08, 1.16, pz - 0.08, 0.22, 0.48, 0.22);
+        flameInto(batches.glow, px - 0.08, 1.16, pz - 0.08, 0.22, 0.48, 0.22);
     };
     const outside = entrance === "south" ? [x + w * 0.72, z + d + 0.35]
         : entrance === "north" ? [x + w * 0.28, z - 0.45]
         : entrance === "east" ? [x + w + 0.35, z + d * 0.72]
         : [x - 0.45, z + d * 0.28];
     torchAt(outside[0], outside[1]);
+    // interior-hold-start
     pushQuad(
-        batches.trunk,
+        room.trunk,
         [x + t, 0.04, z + t, 0, 0, 0.62],
         [x + t, 0.04, z + d - t, 0, 2, 0.62],
         [x + w - t, 0.04, z + d - t, 2, 2, 0.62],
         [x + w - t, 0.04, z + t, 2, 0, 0.62]
     );
-    addBox(batches.trunk, x + t + 0.08, h - 0.14, z + t + 0.08, w - t * 2 - 0.16, 0.08, d - t * 2 - 0.16);
+    addBox(room.trunk, x + t + 0.08, h - 0.14, z + t + 0.08, w - t * 2 - 0.16, 0.08, d - t * 2 - 0.16);
     const ix = x + t;
     const iz = z + t;
     const iw = w - t * 2;
@@ -869,50 +876,50 @@ function addOpenRoom(b) {
         furn.push({ x: px, z: pz, w: ww, d: dd, y0: 0, y1: top });
     };
     const tableAt = (px, pz, ww, dd) => {
-        addBox(batches.trunk, px, 0.66, pz, ww, 0.08, dd);
-        addBox(batches.trunk, px + 0.06, 0, pz + 0.06, 0.08, 0.66, 0.08);
-        addBox(batches.trunk, px + ww - 0.14, 0, pz + 0.06, 0.08, 0.66, 0.08);
-        addBox(batches.trunk, px + 0.06, 0, pz + dd - 0.14, 0.08, 0.66, 0.08);
-        addBox(batches.trunk, px + ww - 0.14, 0, pz + dd - 0.14, 0.08, 0.66, 0.08);
+        addBox(room.trunk, px, 0.66, pz, ww, 0.08, dd);
+        addBox(room.trunk, px + 0.06, 0, pz + 0.06, 0.08, 0.66, 0.08);
+        addBox(room.trunk, px + ww - 0.14, 0, pz + 0.06, 0.08, 0.66, 0.08);
+        addBox(room.trunk, px + 0.06, 0, pz + dd - 0.14, 0.08, 0.66, 0.08);
+        addBox(room.trunk, px + ww - 0.14, 0, pz + dd - 0.14, 0.08, 0.66, 0.08);
         use(px, pz, ww, dd, 0.74);
     };
     const stoolAt = (px, pz) => {
-        addBox(batches.trunk, px, 0.32, pz, 0.38, 0.08, 0.38);
-        addBox(batches.trunk, px + 0.06, 0, pz + 0.06, 0.08, 0.32, 0.08);
-        addBox(batches.trunk, px + 0.24, 0, pz + 0.24, 0.08, 0.32, 0.08);
+        addBox(room.trunk, px, 0.32, pz, 0.38, 0.08, 0.38);
+        addBox(room.trunk, px + 0.06, 0, pz + 0.06, 0.08, 0.32, 0.08);
+        addBox(room.trunk, px + 0.24, 0, pz + 0.24, 0.08, 0.32, 0.08);
         use(px, pz, 0.38, 0.38, 0.46);
     };
     const chestAt = (px, pz, ww, dd) => {
-        addBox(batches.trunk, px, 0, pz, ww, 0.36, dd);
-        addBox(batches.trunk, px + 0.04, 0.36, pz + 0.02, ww - 0.08, 0.06, dd - 0.04);
+        addBox(room.trunk, px, 0, pz, ww, 0.36, dd);
+        addBox(room.trunk, px + 0.04, 0.36, pz + 0.02, ww - 0.08, 0.06, dd - 0.04);
         use(px, pz, ww, dd, 0.42);
     };
     const bedAt = (px, pz, ww, dd) => {
-        addBox(batches.trunk, px, 0.2, pz, ww, 0.1, dd);
-        addBox(batches.trunk, px, 0, pz, 0.08, 0.2, 0.08);
-        addBox(batches.trunk, px + ww - 0.08, 0, pz + dd - 0.08, 0.08, 0.2, 0.08);
-        addBox(batches.linen, px + 0.08, 0.3, pz + 0.08, ww - 0.16, 0.1, dd - 0.16);
-        addBox(batches.linen, px + 0.1, 0.4, pz + 0.1, ww - 0.2, 0.14, 0.32);
+        addBox(room.trunk, px, 0.2, pz, ww, 0.1, dd);
+        addBox(room.trunk, px, 0, pz, 0.08, 0.2, 0.08);
+        addBox(room.trunk, px + ww - 0.08, 0, pz + dd - 0.08, 0.08, 0.2, 0.08);
+        addBox(room.linen, px + 0.08, 0.3, pz + 0.08, ww - 0.16, 0.1, dd - 0.16);
+        addBox(room.linen, px + 0.1, 0.4, pz + 0.1, ww - 0.2, 0.14, 0.32);
         use(px, pz, ww, dd, 0.5);
     };
     const hearthAt = (px, pz, ww, dd) => {
-        addBox(batches.rock, px, 0, pz, ww, 0.48, dd);
-        addBox(batches.rock, px + ww * 0.22, 0.48, pz + 0.12, ww * 0.32, 0.16, dd * 0.45);
+        addBox(room.rock, px, 0, pz, ww, 0.48, dd);
+        addBox(room.rock, px + ww * 0.22, 0.48, pz + 0.12, ww * 0.32, 0.16, dd * 0.45);
         use(px, pz, ww, dd, 0.64);
     };
     const crateAt = (px, pz, s) => {
-        addBox(batches.trunk, px, 0, pz, s, s * 0.82, s);
+        addBox(room.trunk, px, 0, pz, s, s * 0.82, s);
         use(px, pz, s, s, s * 0.82);
     };
     const barrelAt = (px, pz) => {
-        addBox(batches.trunk, px, 0, pz, 0.48, 0.64, 0.48);
-        addBox(batches.trunk, px - 0.03, 0.2, pz - 0.03, 0.54, 0.08, 0.54);
-        addBox(batches.trunk, px - 0.03, 0.42, pz - 0.03, 0.54, 0.08, 0.54);
+        addBox(room.trunk, px, 0, pz, 0.48, 0.64, 0.48);
+        addBox(room.trunk, px - 0.03, 0.2, pz - 0.03, 0.54, 0.08, 0.54);
+        addBox(room.trunk, px - 0.03, 0.42, pz - 0.03, 0.54, 0.08, 0.54);
         use(px, pz, 0.48, 0.48, 0.64);
     };
     const rugAt = (px, pz, ww, dd) => {
         pushQuad(
-            batches.linen,
+            room.linen,
             [px, 0.055, pz, 0, 0, 0.92],
             [px, 0.055, pz + dd, 0, 1, 0.92],
             [px + ww, 0.055, pz + dd, 1, 1, 0.92],
@@ -921,38 +928,38 @@ function addOpenRoom(b) {
     };
     const shelfAt = (px, pz, len, axis) => {
         if (axis === "x") {
-            addBox(batches.trunk, px, 1.18, pz, len, 0.08, 0.26);
-            addBox(batches.rock, px + 0.1, 1.26, pz + 0.05, 0.16, 0.18, 0.16);
-            addBox(batches.linen, px + len * 0.45, 1.26, pz + 0.04, 0.28, 0.12, 0.16);
-            addBox(batches.trunk, px + len - 0.32, 1.26, pz + 0.04, 0.18, 0.22, 0.16);
+            addBox(room.trunk, px, 1.18, pz, len, 0.08, 0.26);
+            addBox(room.rock, px + 0.1, 1.26, pz + 0.05, 0.16, 0.18, 0.16);
+            addBox(room.linen, px + len * 0.45, 1.26, pz + 0.04, 0.28, 0.12, 0.16);
+            addBox(room.trunk, px + len - 0.32, 1.26, pz + 0.04, 0.18, 0.22, 0.16);
             use(px, pz, len, 0.26, 1.48);
         } else {
-            addBox(batches.trunk, px, 1.18, pz, 0.26, 0.08, len);
-            addBox(batches.rock, px + 0.05, 1.26, pz + 0.1, 0.16, 0.18, 0.16);
-            addBox(batches.linen, px + 0.04, 1.26, pz + len * 0.45, 0.16, 0.12, 0.28);
+            addBox(room.trunk, px, 1.18, pz, 0.26, 0.08, len);
+            addBox(room.rock, px + 0.05, 1.26, pz + 0.1, 0.16, 0.18, 0.16);
+            addBox(room.linen, px + 0.04, 1.26, pz + len * 0.45, 0.16, 0.12, 0.28);
             use(px, pz, 0.26, len, 1.48);
         }
     };
     const benchAt = (px, pz, len, axis) => {
         if (axis === "x") {
-            addBox(batches.trunk, px, 0.38, pz, len, 0.08, 0.36);
-            addBox(batches.trunk, px + 0.06, 0, pz + 0.06, 0.08, 0.38, 0.1);
-            addBox(batches.trunk, px + len - 0.14, 0, pz + 0.2, 0.08, 0.38, 0.1);
+            addBox(room.trunk, px, 0.38, pz, len, 0.08, 0.36);
+            addBox(room.trunk, px + 0.06, 0, pz + 0.06, 0.08, 0.38, 0.1);
+            addBox(room.trunk, px + len - 0.14, 0, pz + 0.2, 0.08, 0.38, 0.1);
             use(px, pz, len, 0.36, 0.46);
         } else {
-            addBox(batches.trunk, px, 0.38, pz, 0.36, 0.08, len);
-            addBox(batches.trunk, px + 0.06, 0, pz + 0.06, 0.1, 0.38, 0.08);
-            addBox(batches.trunk, px + 0.2, 0, pz + len - 0.14, 0.1, 0.38, 0.08);
+            addBox(room.trunk, px, 0.38, pz, 0.36, 0.08, len);
+            addBox(room.trunk, px + 0.06, 0, pz + 0.06, 0.1, 0.38, 0.08);
+            addBox(room.trunk, px + 0.2, 0, pz + len - 0.14, 0.1, 0.38, 0.08);
             use(px, pz, 0.36, len, 0.46);
         }
     };
     const sackAt = (px, pz) => {
-        addBox(batches.linen, px, 0, pz, 0.42, 0.28, 0.34);
+        addBox(room.linen, px, 0, pz, 0.42, 0.28, 0.34);
         use(px, pz, 0.42, 0.34, 0.28);
     };
     const dishes = (px, pz) => {
-        addBox(batches.rock, px, 0.74, pz, 0.16, 0.06, 0.16);
-        addBox(batches.linen, px + 0.22, 0.74, pz + 0.04, 0.12, 0.1, 0.12);
+        addBox(room.rock, px, 0.74, pz, 0.16, 0.06, 0.16);
+        addBox(room.linen, px + 0.22, 0.74, pz + 0.04, 0.12, 0.1, 0.12);
     };
     const stairLow = entrance === "north" || entrance === "west";
     const stairEast = entrance === "west";
@@ -984,7 +991,7 @@ function addOpenRoom(b) {
         const pz = stairLow ? stairZ + stairL - along * stairL : stairZ + along * stairL;
         const run = stairL / stepN;
         const sz = stairLow ? stairZ + stairL - (i + 1) * run : stairZ + i * run;
-        addBox(batches.trunk, stairX, 0, sz, stairW, py, run + 0.02);
+        addBox(room.trunk, stairX, 0, sz, stairW, py, run + 0.02);
         pushNap(stairCx, pz, py);
         b.decks.push({ x: stairX, z: sz, w: stairW, d: run + 0.02, y: py });
     }
@@ -995,20 +1002,20 @@ function addOpenRoom(b) {
     else b.decks.push({ x: stairX, z: iz + 0.06, w: stairW, d: stairZ - iz - 0.08, y: topY });
     for (const deck of b.decks.slice(-2)) {
         if (deck.d < 0.2 || deck.w < 0.2) continue;
-        pushQuad(batches.trunk, [deck.x, deck.y, deck.z, 0, 0, 0.62], [deck.x, deck.y, deck.z + deck.d, 0, 1, 0.62], [deck.x + deck.w, deck.y, deck.z + deck.d, 1, 1, 0.62], [deck.x + deck.w, deck.y, deck.z, 1, 0, 0.62]);
-        pushQuad(batches.trunk, [deck.x, deck.y - 0.08, deck.z + deck.d, 0, 0, 0.45], [deck.x, deck.y - 0.08, deck.z, 0, 1, 0.45], [deck.x + deck.w, deck.y - 0.08, deck.z, 1, 1, 0.45], [deck.x + deck.w, deck.y - 0.08, deck.z + deck.d, 1, 0, 0.45]);
+        pushQuad(room.trunk, [deck.x, deck.y, deck.z, 0, 0, 0.62], [deck.x, deck.y, deck.z + deck.d, 0, 1, 0.62], [deck.x + deck.w, deck.y, deck.z + deck.d, 1, 1, 0.62], [deck.x + deck.w, deck.y, deck.z, 1, 0, 0.62]);
+        pushQuad(room.trunk, [deck.x, deck.y - 0.08, deck.z + deck.d, 0, 0, 0.45], [deck.x, deck.y - 0.08, deck.z, 0, 1, 0.45], [deck.x + deck.w, deck.y - 0.08, deck.z, 1, 1, 0.45], [deck.x + deck.w, deck.y - 0.08, deck.z + deck.d, 1, 0, 0.45]);
     }
     const sleepZ = stairLow ? iz + 0.55 : iz + id - 0.85;
     const gap = 0.86;
     const gapX = ix + iw / 2 - gap / 2;
     const wallH = 2.05;
-    addBox(batches.plaster, ix + 0.05, topY, sleepZ, gapX - ix - 0.05, wallH, 0.12);
-    addBox(batches.plaster, gapX + gap, topY, sleepZ, ix + iw - (gapX + gap) - 0.05, wallH, 0.12);
+    addBox(room.plaster, ix + 0.05, topY, sleepZ, gapX - ix - 0.05, wallH, 0.12);
+    addBox(room.plaster, gapX + gap, topY, sleepZ, ix + iw - (gapX + gap) - 0.05, wallH, 0.12);
     furn.push({ x: ix + 0.05, z: sleepZ, w: gapX - ix - 0.05, d: 0.12, y0: topY, y1: topY + wallH });
     furn.push({ x: gapX + gap, z: sleepZ, w: ix + iw - (gapX + gap) - 0.05, d: 0.12, y0: topY, y1: topY + wallH });
-    addBox(batches.trunk, gapX - 0.06, topY, sleepZ - 0.04, 0.08, wallH, 0.2);
-    addBox(batches.trunk, gapX + gap - 0.02, topY, sleepZ - 0.04, 0.08, wallH, 0.2);
-    addBox(batches.door, gapX + 0.08, topY, sleepZ - 0.02, gap - 0.16, wallH * 0.92, 0.06);
+    addBox(room.trunk, gapX - 0.06, topY, sleepZ - 0.04, 0.08, wallH, 0.2);
+    addBox(room.trunk, gapX + gap - 0.02, topY, sleepZ - 0.04, 0.08, wallH, 0.2);
+    addBox(room.door, gapX + 0.08, topY, sleepZ - 0.02, gap - 0.16, wallH * 0.92, 0.06);
     pushNap(gapX + gap / 2, sleepZ + (stairLow ? 0.35 : -0.15), topY);
     b.nap = nap;
     b.keeper = { x: doorIn.x, z: doorIn.z + (entrance === "north" ? 1.15 : entrance === "south" ? -1.15 : 0), yaw: doorOut.yaw };
@@ -1023,33 +1030,33 @@ function addOpenRoom(b) {
         barrelAt(ix + iw - 0.68, iz + 0.85);
         sackAt(ix + iw - 1.25, iz + 0.25);
         sackAt(ix + iw - 1.2, iz + 0.7);
-        addBox(batches.trunk, ix + 1.3, 0, backZ, 1.4, 0.28, 0.34);
+        addBox(room.trunk, ix + 1.3, 0, backZ, 1.4, 0.28, 0.34);
         use(ix + 1.3, backZ, 1.4, 0.34, 0.28);
     } else if (b.kind === "barracks") {
         tableAt(ix + stairW + 0.35, iz + 1.15, 1.35, 0.7);
         benchAt(ix + stairW + 0.4, iz + 1.95, 1.2, "x");
-        addBox(batches.trunk, ix + iw - 0.42, 0, iz + 0.2, 0.16, 1.5, 1.3);
-        addBox(batches.rock, ix + iw - 0.5, 0.45, iz + 0.35, 0.08, 0.7, 0.08);
-        addBox(batches.rock, ix + iw - 0.5, 0.85, iz + 0.7, 0.08, 0.55, 0.08);
-        addBox(batches.door, ix + iw - 0.28, 0.7, iz + 1.15, 0.08, 0.55, 0.4);
+        addBox(room.trunk, ix + iw - 0.42, 0, iz + 0.2, 0.16, 1.5, 1.3);
+        addBox(room.rock, ix + iw - 0.5, 0.45, iz + 0.35, 0.08, 0.7, 0.08);
+        addBox(room.rock, ix + iw - 0.5, 0.85, iz + 0.7, 0.08, 0.55, 0.08);
+        addBox(room.door, ix + iw - 0.28, 0.7, iz + 1.15, 0.08, 0.55, 0.4);
         use(ix + iw - 0.5, iz + 0.2, 0.28, 1.3, 1.5);
         chestAt(ix + stairW + 0.3, iz + 0.2, 0.55, 0.4);
     } else if (b.kind === "smith") {
         hearthAt(stairGap, iz + 0.12, 1.15, 0.7);
         flame(stairGap + 0.28, 0.48, iz + 0.22, 0.5, 0.46, 0.34);
-        addBox(batches.rock, ix + iw - 1.15, 0.55, iz + 1.15, 0.42, 0.28, 0.55);
-        addBox(batches.trunk, ix + iw - 1.22, 0, iz + 1.22, 0.1, 0.55, 0.1);
-        addBox(batches.trunk, ix + iw - 0.8, 0, iz + 1.55, 0.1, 0.55, 0.1);
+        addBox(room.rock, ix + iw - 1.15, 0.55, iz + 1.15, 0.42, 0.28, 0.55);
+        addBox(room.trunk, ix + iw - 1.22, 0, iz + 1.22, 0.1, 0.55, 0.1);
+        addBox(room.trunk, ix + iw - 0.8, 0, iz + 1.55, 0.1, 0.55, 0.1);
         use(ix + iw - 1.22, iz + 1.15, 0.55, 0.6, 0.85);
-        addBox(batches.trunk, ix + 0.2, 0.7, iz + id - 0.55, 1.3, 0.1, 0.38);
+        addBox(room.trunk, ix + 0.2, 0.7, iz + id - 0.55, 1.3, 0.1, 0.38);
         use(ix + 0.2, iz + id - 0.55, 1.3, 0.38, 0.85);
-        addBox(batches.rock, x + w * 0.35, h, z + d * 0.25, 0.55, 1.15, 0.55);
+        addBox(room.rock, x + w * 0.35, h, z + d * 0.25, 0.55, 1.15, 0.55);
     } else if (b.kind === "shop") {
         const fx = stairEast ? ix + 0.22 : stairGap;
         const stop = stairEast ? stairX - 0.62 : ix + iw - 0.22;
         const span = Math.max(1, stop - fx);
-        addBox(batches.trunk, fx, 0.9, iz + 1.35, span, 0.1, 0.5);
-        addBox(batches.plaster, fx + 0.08, 0, iz + 1.42, Math.max(0.7, span - 0.16), 0.9, 0.34);
+        addBox(room.trunk, fx, 0.9, iz + 1.35, span, 0.1, 0.5);
+        addBox(room.plaster, fx + 0.08, 0, iz + 1.42, Math.max(0.7, span - 0.16), 0.9, 0.34);
         use(fx, iz + 1.35, span, 0.5, 1);
         shelfAt(fx, iz + 0.06, Math.max(0.9, span - 0.08), "x");
         barrelAt(stop - 0.7, iz + id - 0.7);
@@ -1059,8 +1066,8 @@ function addOpenRoom(b) {
         const fx = stairEast ? ix + 0.2 : stairGap;
         hearthAt(ix + iw - 1.35, iz + 0.12, 1.05, 0.55);
         flame(ix + iw - 1.12, 0.46, iz + 0.2, 0.42, 0.42, 0.28);
-        addBox(batches.trunk, fx, 0.92, iz + 0.85, 0.5, 0.1, 1.4);
-        addBox(batches.plaster, fx + 0.06, 0, iz + 0.92, 0.36, 0.92, 1.25);
+        addBox(room.trunk, fx, 0.92, iz + 0.85, 0.5, 0.1, 1.4);
+        addBox(room.plaster, fx + 0.06, 0, iz + 0.92, 0.36, 0.92, 1.25);
         use(fx, iz + 0.85, 0.5, 1.4, 1.05);
         tableAt(fx + 0.7, iz + 1.15, 0.8, 0.65);
         stoolAt(fx + 0.85, iz + 1.95);
@@ -1074,6 +1081,8 @@ function addOpenRoom(b) {
         shelfAt(stairGap, iz + 0.08, Math.max(0.9, ix + iw - 1.55 - stairGap), "x");
         chestAt(ix + iw - 0.75, iz + id - 0.7, 0.5, 0.38);
     }
+    // interior-hold-end
+    if (sealed) b.inside = held;
     dressCivic(b, furn);
     b.parts = parts.concat(furn);
     const ridge = h + rise;
@@ -2965,7 +2974,8 @@ const outdoorDrawList = [
     "raisedbill", "raisedbillFront", "raisedplaster", "raisedroof",
     "housedoor", "cart", "meadowBush", "meadowRock",
     "cloth0", "cloth1", "cloth2", "cloth3", "cloth4", "skin", "pants", "steel",
-    "placeGhost"
+    "placeGhost",
+    "swintrunk", "swinplaster", "swinlinen", "swinrock", "swinglow", "swindoor", "swinroof"
 ];
 
 function uploadMesh(name, floats) {
@@ -3384,6 +3394,10 @@ function pathPose(points, dist) {
 }
 
 function homeOf(place, slot) {
+    if (place === places[homeVillage]) {
+        const ang = slot * 0.85;
+        return { x: place.ox + Math.cos(ang) * 1.6, z: place.oz + Math.sin(ang) * 1.6 };
+    }
     const col = slot % 4;
     const row = Math.floor(slot / 4);
     return {
@@ -3448,7 +3462,7 @@ function plant(man) {
         man.stand = man.floorY;
         return;
     }
-    man.stand = Math.max(0, World.heightAt(man.x, man.z), World.bridgeDeck(man.x, man.z) ?? 0);
+    man.stand = Math.max(0, World.meshHeight(man.x, man.z), World.bridgeDeck(man.x, man.z) ?? 0);
 }
 
 function personMatrix(man) {
@@ -3481,7 +3495,7 @@ const horse = {
     phase: 0,
     side: 1
 };
-horse.stand = Math.max(0, World.heightAt(horse.x, horse.z));
+horse.stand = Math.max(0, World.meshHeight(horse.x, horse.z));
 
 const study = {
     x: cam.x + Math.sin(cam.yaw) * 3.2,
@@ -3666,7 +3680,7 @@ function horseAnchor() {
 }
 
 function horseGround(x, z) {
-    const ground = Math.max(0, World.heightAt(x, z));
+    const ground = Math.max(0, World.meshHeight(x, z));
     if (inside) return ground;
     let height = ground;
     const cap = horse.stand + 0.55;
@@ -4467,8 +4481,8 @@ function buildCottage(lodge) {
         fz: fz,
         yaw: 0,
         half: 0.7,
-        swing: 1,
-        want: true,
+        swing: lodge.village === homeVillage ? 0 : 1,
+        want: lodge.village !== homeVillage,
         cottage: true
     });
     cottageProps.push(...cottageGoods(lodge));
@@ -6076,6 +6090,7 @@ function nearestPatrol(man, points) {
 }
 
 function shouldPatrol(man) {
+    if (man.post === homeVillage) return false;
     const roster = guardsAt(man.post);
     return roster.length > 1 && roster[roster.length - 1] === man;
 }
@@ -6817,10 +6832,18 @@ function onTower(x, z) {
     return false;
 }
 
+function pinsGatesOpen(village) {
+    return village === homeVillage && !postAttacked(village);
+}
+
 function scanGates() {
     const feet = floorAt(cam.x, cam.z, cam.y - 1.62);
     const playerUp = onTower(cam.x, cam.z);
     for (let village = 0; village < 4; village++) {
+        if (pinsGatesOpen(village)) {
+            for (let side = 0; side < 4; side++) gateWanted[village][side] = gateHealth(village, side) <= 0 ? 0 : 1;
+            continue;
+        }
         const place = places[village];
         const owner = ownerOf(village);
         const near = [];
@@ -7261,7 +7284,7 @@ function floorAt(x, z, feet) {
         }
         return height;
     }
-    const ground = Math.max(0, World.heightAt(x, z));
+    const ground = Math.max(0, World.meshHeight(x, z));
     let height = ground;
     const cap = feet == null ? ground + 0.6 : feet + 0.55;
     const deck = World.bridgeDeck(x, z);
@@ -8038,7 +8061,8 @@ function hitsDoor(door, x, z, r) {
         const x = b.x + fx * (half - 0.06) - c * side;
         const z = b.z + fz * (half - 0.06) + s * side;
         const gy = b.y || 0;
-        const door = { id: key + ":" + counts[key], kind, role: b.role || "", x, z, y: gy, fx, fz, yaw: b.yaw, half, swing: 1, want: true };
+        const shut = b.village === homeVillage;
+        const door = { id: key + ":" + counts[key], kind, role: b.role || "", x, z, y: gy, fx, fz, yaw: b.yaw, half, swing: shut ? 0 : 1, want: !shut };
         b.entry = door;
         doors.push(door);
         const inset = 0.55;
@@ -8069,14 +8093,16 @@ function hitsDoor(door, x, z, r) {
             yaw: 0,
             half: 0.85,
             wide: 0.95,
-            swing: 1,
-            want: true,
-            cottage: true
+            swing: b.village === homeVillage ? 0 : 1,
+            want: b.village !== homeVillage,
+            cottage: true,
+            house: b
         });
     }
     textures.housedoor = textures.wood;
     textures.housefloor = textures.wood;
     poseDoors();
+    refreshSwInside();
     uploadMesh("housefloor", floorGeom);
 })();
 
@@ -8913,10 +8939,30 @@ function leaveInterior() {
     inside = null;
 }
 
+function refreshSwInside() {
+    const merged = { trunk: [], plaster: [], linen: [], rock: [], glow: [], door: [], roof: [] };
+    for (let i = 0; i < houses.length; i++) {
+        const house = houses[i];
+        if (!house.inside) continue;
+        const door = doors.find((item) => item.house === house);
+        if (!door || !door.want) continue;
+        for (const key of Object.keys(merged)) {
+            const src = house.inside[key];
+            if (src && src.length) merged[key].push(...src);
+        }
+    }
+    for (const key of Object.keys(merged)) {
+        const name = "swin" + key;
+        uploadMesh(name, merged[key]);
+        if (textures[key]) textures[name] = textures[key];
+    }
+}
+
 function toggleDoor(door) {
     if (!door || flying || player.dead) return;
     if (door.want && hitsDoor({ swing: 0, fx: door.fx, fz: door.fz, x: door.x, z: door.z }, cam.x, cam.z, 0.35)) return;
     door.want = !door.want;
+    if (door.house && door.house.inside) refreshSwInside();
 }
 
 function useDoor() {
