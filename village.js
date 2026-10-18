@@ -1238,6 +1238,66 @@ function addYard(place) {
     barrel(-2.7, -9.5);
     cart(0.6, -8.2);
 }
+function spawnGarrison() {
+    for (let village = 0; village < places.length; village++) {
+        const place = places[village];
+        for (let slot = 0; slot < 6; slot++) {
+            const home = homeOf(place, slot);
+            men.push({
+                faction: village,
+                index: slot,
+                health: 3,
+                post: village,
+                mode: "guard",
+                slot: slot,
+                x: home.x,
+                z: home.z,
+                homeX: home.x,
+                homeZ: home.z,
+                yaw: slot * 0.5,
+                bob: 0,
+                down: 0,
+                swing: -1,
+                hostile: false,
+                attackIn: 0.8,
+                striking: 0,
+                struck: false,
+                dying: false
+            });
+        }
+    }
+    const hamlets = World.hamlets || [];
+    for (let i = 0; i < hamlets.length; i++) {
+        const hamlet = hamlets[i];
+        for (let hand = 0; hand < 2; hand++) {
+            const ang = hand * 1.4;
+            const x = hamlet.x + 8 + Math.cos(ang) * 1.5;
+            const z = hamlet.z + Math.sin(ang) * 1.5;
+            men.push({
+                faction: 4,
+                index: 80 + i * 2 + hand,
+                health: 3,
+                post: places.length + i,
+                mode: "guard",
+                slot: hand,
+                x: x,
+                z: z,
+                homeX: x,
+                homeZ: z,
+                yaw: ang,
+                bob: 0,
+                down: 0,
+                swing: -1,
+                hostile: false,
+                attackIn: 1,
+                striking: 0,
+                struck: false,
+                dying: false
+            });
+        }
+    }
+}
+
 function spawnKeepers() {
     for (const house of houses) {
         if (house.kind !== "shop" || !house.keeper) continue;
@@ -2755,6 +2815,70 @@ function dressFlatHouses() {
     }
 }
 
+function dressHamlets() {
+    const hamlets = World.hamlets || [];
+    const lists = { wall: batches.bill, front: batches.billFront, plaster: batches.plaster, roof: batches.roof };
+    const size = 4.7;
+    hamlets.forEach((hamlet, index) => {
+        const village = places.length + index;
+        const spots = [
+            [hamlet.x + 8, hamlet.z, 0, "farmhouse"],
+            [hamlet.x + 8, hamlet.z - 16, 0, "house"],
+            [hamlet.x + 21, hamlet.z - 4, Math.PI / 2, "house"]
+        ];
+        for (let s = 0; s < spots.length; s++) {
+            const spot = spots[s];
+            const y = Math.max(0, World.heightAt(spot[0], spot[1]));
+            const house = {
+                x: spot[0],
+                z: spot[1],
+                y: y,
+                yaw: spot[2],
+                w: size,
+                d: size,
+                minX: spot[0] - size / 2,
+                minZ: spot[1] - size / 2,
+                mesh: "house",
+                role: spot[3],
+                doorSide: 0,
+                village: village
+            };
+            Town.buildings.push(house);
+            stampFlatKitHouse(lists, house);
+        }
+        const field = { x: hamlet.x - 26, z: hamlet.z - 6, w: 18, d: 14 };
+        for (let z = field.z; z < field.z + field.d - 0.1; z += 2) {
+            for (let x = field.x; x < field.x + field.w - 0.1; x += 2) {
+                const w = Math.min(2, field.x + field.w - x);
+                const d = Math.min(2, field.z + field.d - z);
+                const y00 = Math.max(0, World.heightAt(x, z)) + 0.05;
+                const y10 = Math.max(0, World.heightAt(x + w, z)) + 0.05;
+                const y11 = Math.max(0, World.heightAt(x + w, z + d)) + 0.05;
+                const y01 = Math.max(0, World.heightAt(x, z + d)) + 0.05;
+                pushQuad(
+                    batches.dirt,
+                    [x, y00, z, x / 4, z / 4, 0.9],
+                    [x, y01, z + d, x / 4, (z + d) / 4, 0.9],
+                    [x + w, y11, z + d, (x + w) / 4, (z + d) / 4, 0.9],
+                    [x + w, y10, z, (x + w) / 4, z / 4, 0.9]
+                );
+            }
+        }
+        for (let row = field.z + 2; row < field.z + field.d - 1; row += 4) {
+            addBox(batches.leaf, field.x + 1.1, Math.max(0, World.heightAt(field.x + field.w / 2, row)), row, Math.max(2, field.w - 2.2), 0.28, 0.4);
+        }
+        const edge = [[field.x, field.z, field.x + field.w, field.z], [field.x, field.z + field.d, field.x + field.w, field.z + field.d], [field.x, field.z, field.x, field.z + field.d], [field.x + field.w, field.z, field.x + field.w, field.z + field.d]];
+        for (let e = 0; e < edge.length; e++) {
+            const line = edge[e];
+            const y = Math.max(0, World.heightAt((line[0] + line[2]) / 2, (line[1] + line[3]) / 2));
+            addBox(batches.trunk, Math.min(line[0], line[2]) - 0.04, y + 0.36, Math.min(line[1], line[3]) - 0.04, Math.max(0.08, Math.abs(line[2] - line[0])), 0.07, Math.max(0.08, Math.abs(line[3] - line[1])));
+            addBox(batches.trunk, line[0] - 0.07, y, line[1] - 0.07, 0.14, 0.9, 0.14);
+            addBox(batches.trunk, line[2] - 0.07, y, line[3] - 0.07, 0.14, 0.9, 0.14);
+        }
+    });
+}
+
+dressHamlets();
 dressFlatHouses();
 placeStudyHouse();
 growScenery();
@@ -9748,6 +9872,7 @@ if (gl) {
     resize();
     loadClock();
     prepareTowers();
+    spawnGarrison();
     spawnKeepers();
     prepareBow();
     buildHorse();

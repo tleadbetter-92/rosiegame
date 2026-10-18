@@ -452,6 +452,10 @@ document.getElementById("restart").addEventListener("click", async () => {
     take(data);
 });
 
-refresh().catch(() => {
-    clock.textContent = "The campaign is not reachable.";
+holds.forEach((hold, index) => {
+    const count = hold.querySelector("[data-count]");
+    if (count) count.textContent = "6";
+    const box = hold.querySelector("[data-men]");
+    if (box) box.innerHTML = men(6, homeColors[index]);
 });
+clock.textContent = "Six soldiers stand in each village.";
