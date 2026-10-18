@@ -67,6 +67,7 @@ function activeCam() {
     return inside ? inside.view : cam;
 }
 const townLeash = 30;
+const chaseLeash = townLeash * 3;
 // 3D view is one town (or hamlet) at a time — the rest stays on the campaign map.
 // Wide local countryside; next town stays past the haze.
 const TOWN_VIEW = 320;
@@ -1402,7 +1403,7 @@ function spawnGarrison() {
             const x = hamlet.x + 6 + Math.cos(ang) * 2;
             const z = hamlet.z + 8 + Math.sin(ang) * 2;
             men.push({
-                faction: 4,
+                faction: places.length + i,
                 index: 80 + i * 2 + hand,
                 health: 3,
                 post: places.length + i,
@@ -5591,16 +5592,29 @@ function hurtPlayer(amount) {
         death.classList.add("show");
         swing = null;
         gesture = null;
-        forgiveAll();
     }
 }
 
-// The player belongs to no faction. Anyone struck turns hostile until the player dies.
+// Striking a faction turns that faction hostile until none of them are left standing.
 const struckFactions = new Set();
 
 function angry(faction) {
-    if (struckFactions.has(faction)) return true;
-    return !!(campaign && campaign.grudges && campaign.grudges.includes(faction));
+    return struckFactions.has(faction);
+}
+
+function factionAlive(faction) {
+    for (let i = 0; i < men.length; i++) {
+        const man = men[i];
+        if (man.faction !== faction || man.goblin || man.dying || man.health <= 0) continue;
+        return true;
+    }
+    return false;
+}
+
+function settleFaction(faction) {
+    if (!struckFactions.has(faction)) return;
+    if (factionAlive(faction)) return;
+    struckFactions.delete(faction);
 }
 
 function provoke(faction) {
@@ -5658,6 +5672,7 @@ function aim() {
 }
 
 function postHit(body) {
+    if (!campaign) return;
     pendingHit += 1;
     soldierKey = "";
     fetch("/api/campaign", {
@@ -5676,6 +5691,7 @@ function wound(man, label, quiet, knockX, knockZ) {
     // Archers' arrows only count against goblins; the campaign settles fights between factions itself.
     if (quiet && !man.goblin) return false;
     if (man.board) {
+        if (!quiet) provoke(man.faction);
         man.health = 0;
         man.dying = true;
         if (!quiet) showStrike("Slain");
@@ -5746,15 +5762,19 @@ function wound(man, label, quiet, knockX, knockZ) {
         postHit({ farmer: man.farmId });
         return true;
     }
-    const faction = campaign && campaign.factions[man.faction];
+    const faction = campaign && campaign.factions && campaign.factions[man.faction];
     const unit = faction && (faction.units || []).find((item) => item.index === man.index);
-    if (!unit || unit.health <= 0) return false;
-    unit.health -= 1;
-    man.health = unit.health;
+    if (unit && unit.health <= 0) return false;
+    if (unit) {
+        unit.health -= 1;
+        man.health = unit.health;
+    } else {
+        man.health -= 1;
+    }
     man.hostile = true;
     man.attackIn = Math.max(man.attackIn, 0.35);
-    if (unit.health <= 0) {
-        faction.alive = Math.max(0, (faction.alive || 0) - 1);
+    if (man.health <= 0) {
+        if (unit) faction.alive = Math.max(0, (faction.alive || 0) - 1);
         man.dying = true;
         if (!quiet) showStrike("Slain");
     } else if (!quiet) {
@@ -5777,12 +5797,12 @@ function wound(man, label, quiet, knockX, knockZ) {
         }
     }
     actorsDirty = true;
-    postHit({ village: man.faction, index: man.index });
+    if (unit) postHit({ village: man.faction, index: man.index });
     return true;
 }
 
 function connectSwing() {
-    if (!campaign || !swing) return;
+    if (!swing) return;
     const profile = swings[swing.kind];
     const { fx, fy, fz, rx, rz } = aim();
     const ox = cam.x + rx * profile.side;
@@ -5791,7 +5811,7 @@ function connectSwing() {
     let bestT = profile.reach;
     for (const man of men) {
         if (man.dying || man.hidden || man.decor || man.health <= 0) continue;
-        const chest = (man.stand || 0) + (man.goblin ? 0.7 : 0.95);
+        const chest = (man.stand || 0) + (man.goblin ? 0.55 : 0.75);
         const dx = man.x - ox;
         const dy = chest - cam.y;
         const dz = man.z - oz;
@@ -5804,13 +5824,13 @@ function connectSwing() {
             bestT = t;
         }
     }
-    const gate = gateInReach(ox, oz, fx, fy, fz, profile.reach);
+    const gate = campaign && gateInReach(ox, oz, fx, fy, fz, profile.reach);
     if (gate && gate.t < bestT) {
         if (strikeGate(gate)) notePractice("sword");
         return;
     }
     if (!best) {
-        const cart = cartUnder(ox + fx * Math.min(1.4, profile.reach), oz + fz * Math.min(1.4, profile.reach));
+        const cart = campaign && cartUnder(ox + fx * Math.min(1.4, profile.reach), oz + fz * Math.min(1.4, profile.reach));
         if (cart && strikeCart(cart)) notePractice("sword");
         return;
     }
@@ -6424,24 +6444,22 @@ function stepArrows(dt) {
             }
         }
         let hit = false;
-        if (campaign) {
-            for (const man of men) {
-                if (man.dying || man.hidden || man.decor || man.health <= 0 || man.faction === arrow.faction) continue;
-                const chest = (man.stand || 0) + (man.goblin ? 0.7 : 0.95);
-                if (!sweptNear(x0, y0, z0, arrow.x, arrow.y, arrow.z, man.x, chest, man.z, 0.48, 1.05)) continue;
-                const speed = Math.hypot(arrow.vx, arrow.vz) || 1;
-                if (wound(man, "Shot", !arrow.fromPlayer, arrow.vx / speed * 0.2, arrow.vz / speed * 0.2) && arrow.fromPlayer) notePractice("bow");
-                hit = true;
-                break;
-            }
-            if (!hit && arrow.fromPlayer) {
-                const lodge = cartUnder(arrow.x, arrow.z, arrow.faction);
-                if (lodge) {
-                    const pose = clientCartPose(lodge.cart);
-                    if (sweptNear(x0, y0, z0, arrow.x, arrow.y, arrow.z, pose.x, 0.7, pose.z, 1.15, 0.8) && strikeCart(lodge)) {
-                        if (arrow.fromPlayer) notePractice("bow");
-                        hit = true;
-                    }
+        for (const man of men) {
+            if (man.dying || man.hidden || man.decor || man.health <= 0 || man.faction === arrow.faction) continue;
+            const chest = (man.stand || 0) + (man.goblin ? 0.55 : 0.75);
+            if (!sweptNear(x0, y0, z0, arrow.x, arrow.y, arrow.z, man.x, chest, man.z, 0.55, 0.85)) continue;
+            const speed = Math.hypot(arrow.vx, arrow.vz) || 1;
+            if (wound(man, "Shot", !arrow.fromPlayer, arrow.vx / speed * 0.2, arrow.vz / speed * 0.2) && arrow.fromPlayer) notePractice("bow");
+            hit = true;
+            break;
+        }
+        if (!hit && arrow.fromPlayer && campaign) {
+            const lodge = cartUnder(arrow.x, arrow.z, arrow.faction);
+            if (lodge) {
+                const pose = clientCartPose(lodge.cart);
+                if (sweptNear(x0, y0, z0, arrow.x, arrow.y, arrow.z, pose.x, 0.7, pose.z, 1.15, 0.8) && strikeCart(lodge)) {
+                    notePractice("bow");
+                    hit = true;
                 }
             }
         }
@@ -6765,6 +6783,74 @@ function stepGoblin(man, dt) {
     return false;
 }
 
+function rememberHome(man) {
+    if (Number.isFinite(man.homeX) && Number.isFinite(man.homeZ)) return;
+    man.homeX = man.x;
+    man.homeZ = man.z;
+}
+
+// A provoked faction chases until the player is three times the old leash from where that person started, then walks home.
+function stepRevenge(man, dt) {
+    if (man.archer || man.goblin || man.driver) return false;
+    const mad = angry(man.faction) && !player.dead;
+    if (!mad && !man.hostile && !man.returning) return false;
+    rememberHome(man);
+    const fromHome = Math.hypot(cam.x - man.homeX, cam.z - man.homeZ);
+    if (mad && fromHome <= chaseLeash) {
+        man.returning = false;
+        man.hostile = true;
+        const dx = cam.x - man.x;
+        const dz = cam.z - man.z;
+        const dist = Math.hypot(dx, dz) || 0.0001;
+        man.yaw = Math.atan2(-dx, -dz);
+        let moving = false;
+        if (dist > 1.4) {
+            const step = Math.min(2.35 * dt, dist - 1.3);
+            const nx = man.x + dx / dist * step;
+            const nz = man.z + dz / dist * step;
+            if (!blocked(nx, man.z, man.faction)) man.x = nx;
+            if (!blocked(man.x, nz, man.faction)) man.z = nz;
+            moving = true;
+            man.striking = 0;
+        } else {
+            man.attackIn = (man.attackIn || 0) - dt;
+            if (man.attackIn <= 0) {
+                man.attackIn = 1.15 + Math.random() * 0.4;
+                man.striking = 0.32;
+                man.struck = false;
+            }
+        }
+        if (man.striking > 0) {
+            man.striking -= dt;
+            man.swing = 1 - Math.max(0, man.striking) / 0.32;
+            const reach = Math.hypot(cam.x - man.x, cam.z - man.z);
+            if (!man.struck && man.striking < 0.16 && reach < 1.75) {
+                man.struck = true;
+                hurtPlayer(8);
+            }
+            moving = true;
+        } else {
+            man.swing = -1;
+        }
+        man.bob = moving ? Math.sin(performance.now() * 0.012 + man.index) * 0.05 : 0;
+        man.walking = moving && dist > 1.4;
+        if (moving) actorsDirty = true;
+        plant(man);
+        return true;
+    }
+    man.hostile = false;
+    man.striking = 0;
+    man.swing = -1;
+    man.returning = true;
+    const moving = moveToward(man, man.homeX, man.homeZ, dt, 2.2);
+    man.walking = Boolean(moving);
+    man.bob = moving ? Math.sin(performance.now() * 0.012 + man.index) * 0.05 : 0;
+    if (moving) actorsDirty = true;
+    else man.returning = false;
+    plant(man);
+    return Boolean(moving);
+}
+
 function stepMan(man, dt) {
     if (man.dying) {
         man.down += dt * 1.5;
@@ -6776,10 +6862,6 @@ function stepMan(man, dt) {
     if (man.goblin) return stepGoblin(man, dt);
     if (man.driver) return stepDriver(man, dt);
     if (man.archer) return stepArcher(man, dt);
-    if (man.jack) return stepJack(man, dt);
-    if (man.decor) return stepKeeper(man, dt);
-    if (man.fisher) return stepFisher(man, dt);
-    if (man.farmer) return stepFarmer(man, dt);
     // Soldiers stay on the wall. Sending them to bed at night hid the garrison.
     if (man.mode === "march" && man.path && man.length) {
         const attack = marchAttack(man);
@@ -6824,81 +6906,19 @@ function stepMan(man, dt) {
         if (moving || foe) actorsDirty = true;
         return false;
     }
-    const dx = cam.x - man.x;
-    const dz = cam.z - man.z;
-    const dist = Math.hypot(dx, dz) || 0.0001;
-    const place = places[man.post];
-    const outsideTown = (x, z) => Math.hypot(x - place.ox, z - place.oz) > townLeash;
-    if (!angry(man.faction)) {
-        man.hostile = false;
-        man.striking = 0;
-    } else if (!man.hostile && dist < 5.6) {
-        man.hostile = true;
-        man.attackIn = 0.35 + Math.random() * 0.7;
-    }
-    if (man.hostile && outsideTown(man.x, man.z)) man.hostile = false;
-    let moving = false;
-    if (man.hostile) {
-        man.yaw = Math.atan2(-dx, -dz);
-        if (dist > 1.4) {
-            const step = Math.min(2.35 * dt, dist - 1.3);
-            const nx = man.x + dx / dist * step;
-            const nz = man.z + dz / dist * step;
-            if (outsideTown(nx, nz)) {
-                man.hostile = false;
-            } else {
-                if (!blocked(nx, man.z, man.faction)) man.x = nx;
-                if (!blocked(man.x, nz, man.faction)) man.z = nz;
-                moving = true;
-            }
-        } else if (!player.dead) {
-            man.attackIn -= dt;
-            if (man.attackIn <= 0) {
-                man.attackIn = 1.15 + Math.random() * 0.4;
-                man.striking = 0.32;
-                man.struck = false;
-            }
-        }
-    } else if (shouldPatrol(man)) {
+    if (stepRevenge(man, dt)) return false;
+    if (man.jack) return stepJack(man, dt);
+    if (man.decor) return stepKeeper(man, dt);
+    if (man.fisher) return stepFisher(man, dt);
+    if (man.farmer) return stepFarmer(man, dt);
+    if (shouldPatrol(man)) {
         stepPatrol(man, dt);
         return false;
-    } else if (man.homeX != null) {
+    }
+    if (man.homeX != null) {
         stepHamletPace(man, dt);
         return false;
-    } else {
-        const hx = man.homeX - man.x;
-        const hz = man.homeZ - man.z;
-        const home = Math.hypot(hx, hz);
-        if (home > 0.08) {
-            man.yaw = Math.atan2(-hx, -hz);
-            const step = Math.min(1.8 * dt, home);
-            const nx = man.x + hx / home * step;
-            const nz = man.z + hz / home * step;
-            if (!blocked(nx, man.z, man.faction)) man.x = nx;
-            if (!blocked(man.x, nz, man.faction)) man.z = nz;
-            moving = true;
-        } else {
-            man.x = man.homeX;
-            man.z = man.homeZ;
-            man.yaw = 0;
-        }
     }
-    const stepping = moving;
-    if (man.striking > 0) {
-        man.striking -= dt;
-        man.swing = 1 - Math.max(0, man.striking) / 0.32;
-        const reach = Math.hypot(cam.x - man.x, cam.z - man.z);
-        if (!man.struck && man.striking < 0.16 && reach < 1.75) {
-            man.struck = true;
-            hurtPlayer(8);
-        }
-        moving = true;
-    } else {
-        man.swing = -1;
-    }
-    man.bob = moving ? Math.sin(performance.now() * 0.012 + man.index) * 0.05 : 0;
-    man.walking = stepping;
-    if (moving) actorsDirty = true;
     plant(man);
     return false;
 }
@@ -6976,10 +6996,12 @@ function updateFight(dt) {
             continue;
         }
         if (man.board) {
+            const chasing = man.hostile || man.returning || (activeSet.has(man) && angry(man.faction));
+            if (chasing && stepRevenge(man, dt)) continue;
             if (activeSet.has(man)) stepWork(man, dt);
             continue;
         }
-        if (!activeSet.has(man)) {
+        if (!activeSet.has(man) && !man.hostile && !man.returning) {
             man.walking = false;
             continue;
         }
@@ -6987,6 +7009,10 @@ function updateFight(dt) {
             men.splice(i, 1);
             actorsDirty = true;
         }
+    }
+    if (struckFactions.size) {
+        const open = Array.from(struckFactions);
+        for (let i = 0; i < open.length; i++) settleFaction(open[i]);
     }
     stepArrows(dt);
     separateMen(dt);
