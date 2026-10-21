@@ -3,6 +3,7 @@ const { buildSystem, listNpcs, npcTitle } = require("../lib/npc-prompt");
 const {
     loadCanon,
     appendCanon,
+    appendStory,
     extractTurnMemory,
     defaultOpinionFor,
     currentCampaignId,
@@ -10,6 +11,13 @@ const {
     readWorldRecord,
     GOSSIP_DELAY_MS
 } = require("../lib/npc-memory");
+const {
+    normalizeMood,
+    storyInstructions,
+    storyUserMessage,
+    extractStoryLore
+} = require("../lib/npc-story");
+const { buildTerrainHintForStories } = require("../lib/story-terrain-context");
 
 const OPENING_USER = "[The player walks up to speak with you. Give a brief in-character greeting or question—one or two short sentences. Do not describe game UI.]";
 
@@ -27,7 +35,7 @@ function cleanHistory(raw) {
     return out;
 }
 
-async function openAiReply(system, history, userMessage) {
+async function openAiReply(system, history, userMessage, opts) {
     const key = process.env.OPENAI_API_KEY;
     if (!key) {
         const error = new Error("OPENAI_API_KEY is not set.");
@@ -35,6 +43,8 @@ async function openAiReply(system, history, userMessage) {
         throw error;
     }
     const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
+    const maxTokens = (opts && opts.maxTokens) || 420;
+    const temperature = (opts && opts.temperature) != null ? opts.temperature : 0.86;
     const messages = [{ role: "system", content: system }]
         .concat(history)
         .concat([{ role: "user", content: userMessage }]);
@@ -47,8 +57,8 @@ async function openAiReply(system, history, userMessage) {
         body: JSON.stringify({
             model,
             messages,
-            max_tokens: 420,
-            temperature: 0.86
+            max_tokens: maxTokens,
+            temperature
         })
     });
     if (!res.ok) {
@@ -100,6 +110,23 @@ async function rememberTurn(campaignId, npc, userMessage, assistantReply, priorO
     }
 }
 
+async function tellStory(campaignId, npc, mood, history, canon, playMs) {
+    const title = npcTitle(npc);
+    const system =
+        buildSystem(npc, canon) +
+        "\n" +
+        buildTerrainHintForStories() +
+        storyInstructions(mood, title);
+    const userMessage = storyUserMessage(mood);
+    const reply = await openAiReply(system, history, userMessage, {
+        maxTokens: 720,
+        temperature: 0.92
+    });
+    const lore = await extractStoryLore(reply, title, mood);
+    const canonUpdate = await appendStory(campaignId, npc, mood, reply, lore, playMs);
+    return { reply, canonUpdate, storyTitle: lore.title };
+}
+
 module.exports = async function handler(req, res) {
     res.setHeader("Cache-Control", "no-store");
     try {
@@ -107,11 +134,12 @@ module.exports = async function handler(req, res) {
         const playMs = await currentPlayMs();
         if (req.method === "GET") {
             const configured = Boolean(process.env.OPENAI_API_KEY);
-            let canon = { world: 0, npc: {}, opinion: {} };
+            let canon = { world: 0, npc: {}, opinion: {}, stories: 0 };
             const worldRow = await readWorldRecord(campaignId);
             const gossipPending = (worldRow.gossip || []).filter(
                 (row) => Number(row.spreadPlayMs) > playMs
             ).length;
+            canon.stories = (worldRow.stories || []).length;
             const ids = listNpcs();
             if (ids.length) {
                 const loaded = await loadCanon(campaignId, ids[0], playMs);
@@ -122,6 +150,16 @@ module.exports = async function handler(req, res) {
                     canon.opinion[id] = row.opinionOfPlayer || null;
                 }
             }
+            const tales = (worldRow.stories || []).map((t) => ({
+                id: t.id,
+                npc: t.npc,
+                mood: t.mood,
+                title: t.title,
+                summary: t.summary,
+                places: t.places || [],
+                toldAtPlayMs: t.toldAtPlayMs,
+                hasText: !!(t.text && t.text.length)
+            }));
             res.status(200).json({
                 configured,
                 model: configured ? (process.env.OPENAI_MODEL || "gpt-4o-mini") : null,
@@ -131,7 +169,10 @@ module.exports = async function handler(req, res) {
                 playMs,
                 gossipDelayMs: GOSSIP_DELAY_MS,
                 gossipPending,
-                memory: "Per campaign: NPC files + world.json (public facts + gossip queue). Gossip reaches other NPCs after 1 game day.",
+                storyMoods: ["scary", "mysterious", "own"],
+                memory: "Per campaign: facts, gossip, tales (full text in world.json for designer review), NPC opinion.",
+                tales,
+                talesFile: "data/campaigns/<campaignId>/world.json → stories[]",
                 canon
             });
             return;
@@ -142,25 +183,47 @@ module.exports = async function handler(req, res) {
         }
         const npc = String(req.body && req.body.npc || "").trim();
         const opening = !!(req.body && req.body.opening);
+        const storyMood = normalizeMood(req.body && req.body.storyMood);
         let message = String(req.body && req.body.message || "").trim().slice(0, 800);
         if (!npc || !listNpcs().includes(npc)) {
             res.status(400).json({ error: "Unknown NPC." });
             return;
         }
         if (opening) message = OPENING_USER;
-        if (!message) {
+        if (!opening && !storyMood && !message) {
             res.status(400).json({ error: "Message is required." });
             return;
         }
         let canon = await loadCanon(campaignId, npc, playMs);
-        if (!canon.opinionOfPlayer && !opening) {
+        if (!canon.opinionOfPlayer && !opening && !storyMood) {
             canon = {
                 ...canon,
                 opinionOfPlayer: defaultOpinionFor(npcTitle(npc))
             };
         }
-        const system = buildSystem(npc, canon);
         const history = opening ? [] : cleanHistory(req.body && req.body.history);
+
+        if (storyMood) {
+            const storyResult = await tellStory(campaignId, npc, storyMood, history, canon, playMs);
+            res.status(200).json({
+                reply: storyResult.reply,
+                npc,
+                title: npcTitle(npc),
+                story: true,
+                storyMood,
+                storyTitle: storyResult.storyTitle,
+                campaignId,
+                canonAdded: storyResult.canonUpdate ? {
+                    story: true,
+                    title: storyResult.storyTitle,
+                    facts: storyResult.canonUpdate.added || 0,
+                    places: (storyResult.canonUpdate.story && storyResult.canonUpdate.story.places) || []
+                } : null
+            });
+            return;
+        }
+
+        const system = buildSystem(npc, canon);
         const reply = await openAiReply(system, history, message);
         let canonUpdate = null;
         if (!opening) {

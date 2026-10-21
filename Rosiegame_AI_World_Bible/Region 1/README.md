@@ -8,4 +8,6 @@ Working draft for the first playable region. ESTABLISHED = agreed foundation; PR
 
 Same NPC can follow a different path in another campaign because memory and opinion are per campaign, not global.
 
+**Stories:** In AI chat, “Tell me a story” → scary / mysterious / NPC’s choice. Saved in `world.json` `stories[]` (full `text` + `places[]` hints for you). Becomes campaign-true in play; **you** promote favourites to quests, map, or git bible — see `CAMPAIGN_TALES_DESIGNER.md`. AI gets terrain hints but may invent caves/woods not on the map.
+
 **Gossip delay:** What you tell one NPC is remembered by them immediately. Other NPCs only get it via `world.json` **gossip** after **one in-game day** (`playMs` + 40 min real-time per day). Public scenes can still land in immediate `facts`.

@@ -15,8 +15,13 @@
                         { label: "What's happening in the woods?", next: "woods" },
                         { label: "What's the commander like?", next: "commanderLike" },
                         { label: "Where can I find the commander?", next: "commander" },
+                        { label: "Tell me a story.", next: "storyAsk" },
                         { label: "Nothing, thanks.", next: "bye" }
                     ]
+                },
+                storyAsk: {
+                    say: "A story? I could tell you one — ask again when the inn's quiet enough for a proper tale.",
+                    choices: [{ label: "Another time.", next: "bye" }]
                 },
                 posted: {
                     say: "Ah, one of ours. You'll know the faces soon enough. Help yourself if you're thirsty — the garrison usually finds its way here by nightfall.",
@@ -101,8 +106,13 @@
                         { label: "I hear there have been troubles in the woods.", next: "woods" },
                         { label: "Any paying work?", next: "bruteQuest" },
                         { label: "You're not from around here, are you?", next: "oldKingdom" },
+                        { label: "Tell me a story.", next: "storyAsk" },
                         { label: "Nothing. Just looking around.", next: "byeYard" }
                     ]
+                },
+                storyAsk: {
+                    say: "A story. I haven't time for fireside nonsense on the parade ground.",
+                    choices: [{ label: "Fair enough.", next: "bye" }]
                 },
                 bruteQuest: {
                     say: "Paying work. There are heavy brutes lurking southwest of town — bigger than goblins, meaner up close. Kill three of them and I'll pay fifty gold and set you up with a padded coat from our stores. Take what they carry too; I don't care.",
@@ -285,10 +295,62 @@
 
     function syncAskUi() {
         if (!askForm) return;
-        askForm.hidden = !open || !aiMode;
-        if (choicesEl) choicesEl.hidden = open && aiMode;
+        askForm.hidden = !open || !aiMode || storyPickerOpen;
+        if (choicesEl) choicesEl.hidden = !open || (!aiMode && !storyPickerOpen);
         if (askSubmit) askSubmit.disabled = aiBusy;
-        if (askInput) askInput.disabled = aiBusy;
+        if (askInput) askInput.disabled = aiBusy || storyPickerOpen;
+    }
+
+    let storyPickerOpen = false;
+
+    function showStoryMoodPicker() {
+        if (!choicesEl || !aiMode) return;
+        storyPickerOpen = true;
+        choicesEl.hidden = false;
+        choicesEl.innerHTML = "";
+        const intro = document.createElement("p");
+        intro.className = "dialogue-story-hint";
+        intro.textContent = "What kind of story?";
+        choicesEl.appendChild(intro);
+        const moods = [
+            { id: "scary", label: "Scary" },
+            { id: "mysterious", label: "Mysterious" },
+            { id: "own", label: "Whatever you want to tell" }
+        ];
+        for (const mood of moods) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "dialogue-choice";
+            btn.textContent = mood.label;
+            btn.addEventListener("click", () => {
+                storyPickerOpen = false;
+                void requestNpcStory(mood.id);
+            });
+            choicesEl.appendChild(btn);
+        }
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.className = "dialogue-choice dialogue-choice-muted";
+        cancel.textContent = "Never mind";
+        cancel.addEventListener("click", () => {
+            storyPickerOpen = false;
+            showAiActions();
+        });
+        choicesEl.appendChild(cancel);
+        syncAskUi();
+    }
+
+    function showAiActions() {
+        if (!choicesEl || !aiMode || storyPickerOpen) return;
+        choicesEl.hidden = false;
+        choicesEl.innerHTML = "";
+        const storyBtn = document.createElement("button");
+        storyBtn.type = "button";
+        storyBtn.className = "dialogue-choice";
+        storyBtn.textContent = "Tell me a story";
+        storyBtn.addEventListener("click", () => showStoryMoodPicker());
+        choicesEl.appendChild(storyBtn);
+        syncAskUi();
     }
 
     function useScriptedDialogue(nodeId) {
@@ -372,8 +434,12 @@
             if (askInput && !opening) askInput.value = "";
             titleEl.textContent = data.title || (trees[treeId] && trees[treeId].title) || treeId;
             textEl.textContent = data.reply;
-            choicesEl.innerHTML = "";
-            setAskStatus("", false);
+            if (data.story && data.storyTitle) {
+                setAskStatus("That tale is now part of this campaign’s lore.", true);
+            } else {
+                setAskStatus("", false);
+            }
+            showAiActions();
             return true;
         } catch (err) {
             setAskStatus("Could not reach the server.", true);
@@ -388,7 +454,63 @@
         if (!aiMode || !treeId || aiBusy || !askInput) return;
         const message = askInput.value.trim();
         if (!message) return;
+        if (/tell me a story/i.test(message)) {
+            showStoryMoodPicker();
+            askInput.value = "";
+            return;
+        }
         await requestNpcReply({ message });
+    }
+
+    async function requestNpcStory(mood) {
+        if (!aiMode || !treeId || aiBusy) return false;
+        const labels = { scary: "a scary story", mysterious: "a mysterious story", own: "whatever story you want to tell" };
+        const userLine = "Tell me " + (labels[mood] || "a story") + ".";
+        aiBusy = true;
+        syncAskUi();
+        setAskStatus("Thinking up a tale…", true);
+        try {
+            const res = await fetch("/api/npc-chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                cache: "no-store",
+                body: JSON.stringify({
+                    npc: treeId,
+                    storyMood: mood,
+                    history: aiHistory
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setAskStatus(data.error || "Could not tell a story.", true);
+                showAiActions();
+                return false;
+            }
+            if (data.campaignId != null) campaignKey = String(data.campaignId);
+            aiHistory.push({ role: "user", content: userLine });
+            aiHistory.push({ role: "assistant", content: data.reply });
+            if (aiHistory.length > 20) aiHistory = aiHistory.slice(-20);
+            saveStoredHistory(treeId);
+            titleEl.textContent = data.title || (trees[treeId] && trees[treeId].title) || treeId;
+            textEl.textContent = data.reply;
+            setAskStatus(
+                data.storyTitle
+                    ? "“" + data.storyTitle + "” — remembered in this campaign."
+                    : "Story remembered in this campaign.",
+                true
+            );
+            showAiActions();
+            return true;
+        } catch (err) {
+            setAskStatus("Could not reach the server.", true);
+            showAiActions();
+            return false;
+        } finally {
+            aiBusy = false;
+            storyPickerOpen = false;
+            syncAskUi();
+            if (askInput) askInput.focus();
+        }
     }
 
     async function startAiTalk(id) {
@@ -406,6 +528,7 @@
         const lastLine = aiHistory.filter((item) => item.role === "assistant").pop();
         if (lastLine) {
             textEl.textContent = lastLine.content;
+            showAiActions();
             if (askInput) askInput.focus();
             return true;
         }
@@ -414,7 +537,10 @@
         if (!ok) {
             setAskStatus("Using fixed dialogue instead.", true);
             useScriptedDialogue("start");
-        } else if (askInput) askInput.focus();
+        } else {
+            showAiActions();
+            if (askInput) askInput.focus();
+        }
         return true;
     }
 
@@ -439,6 +565,8 @@
         treeId = null;
         aiBusy = false;
         aiMode = false;
+        storyPickerOpen = false;
+        if (choicesEl) choicesEl.innerHTML = "";
         panel.hidden = true;
         document.body.classList.remove("dialogue-open");
         setAskStatus("", false);
