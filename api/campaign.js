@@ -1,8 +1,12 @@
+const fs = require("fs");
+const path = require("path");
 const World = require("../world");
 const Town = require("../town");
 const Clock = require("../clock");
 const Hero = require("../hero");
 const { getDb } = require("../lib/db");
+
+const CAMPAIGN_FILE = path.join(__dirname, "..", "data", "campaign-world.json");
 
 const TURN_MS = 10 * 60 * 1000;
 const BATTLE_MS = 2000;
@@ -256,6 +260,26 @@ async function campaignStore() {
     return db.collection("campaign");
 }
 
+function readCampaignFile() {
+    try {
+        if (!fs.existsSync(CAMPAIGN_FILE)) return null;
+        const parsed = JSON.parse(fs.readFileSync(CAMPAIGN_FILE, "utf8"));
+        return parsed && typeof parsed === "object" ? parsed : null;
+    } catch (err) {
+        console.error("campaign file read failed", err);
+        return null;
+    }
+}
+
+function writeCampaignFile(state) {
+    try {
+        fs.mkdirSync(path.dirname(CAMPAIGN_FILE), { recursive: true });
+        fs.writeFileSync(CAMPAIGN_FILE, JSON.stringify(plainState(state)));
+    } catch (err) {
+        console.error("campaign file write failed", err);
+    }
+}
+
 async function readState() {
     const store = await campaignStore();
     if (store) {
@@ -264,19 +288,39 @@ async function readState() {
             memoryState = doc.state;
             return memoryState;
         }
+        const fromFile = readCampaignFile();
+        if (fromFile) {
+            memoryState = fromFile;
+            await writeState(memoryState);
+            return memoryState;
+        }
     } else if (memoryState) {
         return memoryState;
+    } else {
+        const fromFile = readCampaignFile();
+        if (fromFile) {
+            memoryState = fromFile;
+            return memoryState;
+        }
     }
     memoryState = blankState();
-    if (store) await store.replaceOne({ _id: WORLD_KEY }, { _id: WORLD_KEY, state: plainState(memoryState), updatedAt: new Date() }, { upsert: true });
+    await writeState(memoryState);
     return memoryState;
 }
 
 async function writeState(state) {
     memoryState = state;
+    const snapshot = plainState(state);
     const store = await campaignStore();
-    if (!store) return;
-    await store.replaceOne({ _id: WORLD_KEY }, { _id: WORLD_KEY, state: plainState(state), updatedAt: new Date() }, { upsert: true });
+    if (store) {
+        await store.replaceOne(
+            { _id: WORLD_KEY },
+            { _id: WORLD_KEY, state: snapshot, updatedAt: new Date() },
+            { upsert: true }
+        );
+    } else {
+        writeCampaignFile(state);
+    }
 }
 
 function turnOf(state, clock) {
@@ -434,18 +478,10 @@ function freshMinors() {
     return minors.map(() => ({ food: START_FOOD, wood: START_WOOD, stone: 0, gold: 0, owner: -1, protector: -1, declined: [], fedDay: -1, tributeDay: -1 }));
 }
 
-function ensureHamlet(state, now) {
+function ensureHamlet(state) {
     if (state.hamlet === 1) return false;
-    const startedAt = state.startedAt;
-    const playMs = state.playMs;
-    const pausedAt = state.pausedAt;
-    const hero = state.hero;
-    restartCampaign(state, now);
-    state.startedAt = startedAt;
-    state.playMs = playMs;
-    state.pausedAt = pausedAt;
-    state.hero = hero;
-    state.restartedAt = state.restartedAt || now;
+    // Older saves lack this flag; ensureMinors fills hamlets in. Never restart the live world for a migration.
+    state.hamlet = 1;
     return true;
 }
 
@@ -5037,7 +5073,7 @@ function syncWorld(state, now) {
     const clock = paused ? state.pausedAt : now;
     const turn = turnOf(state, clock);
     let dirty = false;
-    if (ensureHamlet(state, now)) dirty = true;
+    if (ensureHamlet(state)) dirty = true;
     if (ensure(state, turn)) dirty = true;
     if (stretchMarches(state, now)) dirty = true;
     if (capArmies(state)) dirty = true;
