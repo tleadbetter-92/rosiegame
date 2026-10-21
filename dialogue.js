@@ -166,6 +166,34 @@
                     choices: []
                 }
             }
+        },
+        shopkeeper: {
+            title: "Shopkeeper",
+            nodes: {
+                start: {
+                    say: "Need supplies? I've got a bit of everything — or near enough. Gold talks.",
+                    choices: [
+                        { label: "What are you selling?", next: "wares" },
+                        { label: "Surprise me with something random.", next: "bought", action: "shopMystery" },
+                        { label: "Not today.", next: "bye" }
+                    ]
+                },
+                wares: {
+                    say: "Take a look. Prices are fair — for me.",
+                    choices: []
+                },
+                bought: {
+                    say: "There you are. Anything else?",
+                    choices: [
+                        { label: "Something else.", next: "wares" },
+                        { label: "That's all.", next: "bye" }
+                    ]
+                },
+                bye: {
+                    say: "Mind the step on your way out.",
+                    choices: []
+                }
+            }
         }
     };
 
@@ -186,10 +214,16 @@
     let aiMode = false;
     let campaignKey = "0";
     let questState = null;
+    let shopState = null;
+    let shopLastLine = "";
     const HISTORY_PREFIX = "region1-chat-";
 
     function setQuests(data) {
         questState = data || null;
+    }
+
+    function setShop(data) {
+        shopState = data || null;
     }
 
     async function runQuestAction(action) {
@@ -218,6 +252,55 @@
             return res.ok && !data.questError;
         }
         return true;
+    }
+
+    async function runShopAction(action) {
+        const body = action === "shopMystery"
+            ? { shopBuyMystery: 1 }
+            : { shopBuy: String(action || "").replace(/^shopBuy:/, "") };
+        const res = await fetch("/api/campaign", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            cache: "no-store",
+            body: JSON.stringify(body)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (typeof global.applyCampaign === "function") global.applyCampaign(data);
+        if (data.shopError) {
+            shopLastLine = data.shopError;
+            return false;
+        }
+        const notes = data.notes;
+        if (Array.isArray(notes) && notes.length) shopLastLine = notes[notes.length - 1];
+        else shopLastLine = "You tuck it into your pack.";
+        return res.ok;
+    }
+
+    function mergeShopkeeperChoices(nodeId, choices) {
+        if (treeId !== "shopkeeper") return choices || [];
+        const mystery = (shopState && shopState.mysteryPrice) || 12;
+        if (nodeId === "start") {
+            const out = (choices || []).slice();
+            const pick = out.find((c) => c.action === "shopMystery");
+            if (pick) pick.label = "Surprise me with something random (" + mystery + " gold).";
+            return out;
+        }
+        if (nodeId === "wares") {
+            const cat = (shopState && shopState.catalog) || [];
+            const out = cat.map((row) => ({
+                label: row.name + " (" + row.price + " gold)",
+                next: "bought",
+                action: "shopBuy:" + row.id
+            }));
+            out.push({
+                label: "Something random (" + mystery + " gold)",
+                next: "bought",
+                action: "shopMystery"
+            });
+            out.push({ label: "That's all.", next: "bye" });
+            return out;
+        }
+        return choices || [];
     }
 
     function mergeCommanderChoices(nodeId, choices) {
@@ -365,10 +448,12 @@
         const node = tree.nodes[nodeId];
         if (!node) return close();
         titleEl.textContent = tree.title;
-        textEl.textContent = node.say;
+        textEl.textContent = nodeId === "bought" && shopLastLine ? shopLastLine : node.say;
         choicesEl.innerHTML = "";
         choicesEl.hidden = false;
-        const choices = treeId === "commander" ? mergeCommanderChoices(nodeId, node.choices) : (node.choices || []);
+        let choices = node.choices || [];
+        if (treeId === "commander") choices = mergeCommanderChoices(nodeId, choices);
+        if (treeId === "shopkeeper") choices = mergeShopkeeperChoices(nodeId, choices);
         for (const choice of choices) {
             const btn = document.createElement("button");
             btn.type = "button";
@@ -377,11 +462,26 @@
             btn.addEventListener("click", () => {
                 void (async () => {
                     if (choice.action) {
-                        const ok = await runQuestAction(choice.action);
-                        if (!ok && choice.action === "turnInBruteCull") {
-                            textEl.textContent = "You haven't finished the job yet.";
-                            choicesEl.innerHTML = "";
-                            return;
+                        if (choice.action === "shopMystery" || String(choice.action).indexOf("shopBuy:") === 0) {
+                            const ok = await runShopAction(choice.action);
+                            if (!ok) {
+                                textEl.textContent = shopLastLine || "Can't buy that.";
+                                choicesEl.innerHTML = "";
+                                const back = document.createElement("button");
+                                back.type = "button";
+                                back.className = "dialogue-choice";
+                                back.textContent = "Back";
+                                back.addEventListener("click", () => showNode("start"));
+                                choicesEl.appendChild(back);
+                                return;
+                            }
+                        } else {
+                            const ok = await runQuestAction(choice.action);
+                            if (!ok && choice.action === "turnInBruteCull") {
+                                textEl.textContent = "You haven't finished the job yet.";
+                                choicesEl.innerHTML = "";
+                                return;
+                            }
                         }
                     }
                     showNode(choice.next);
@@ -592,5 +692,5 @@
             aiConfigured = false;
         });
 
-    global.Dialogue = { start, close, isOpen, aiReady, setQuests };
+    global.Dialogue = { start, close, isOpen, aiReady, setQuests, setShop };
 })(typeof window !== "undefined" ? window : globalThis);

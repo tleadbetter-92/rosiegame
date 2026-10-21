@@ -5,6 +5,7 @@ const Town = require("../town");
 const Clock = require("../clock");
 const Hero = require("../hero");
 const Region1Quests = require("../lib/region1-quests");
+const Region1Shop = require("../lib/region1-shop");
 const { getDb } = require("../lib/db");
 
 const CAMPAIGN_FILE = path.join(__dirname, "..", "data", "campaign-world.json");
@@ -2730,6 +2731,7 @@ function present(state, now, turn, paused, opts) {
         }, []),
         hero: Hero.normalize(state.hero),
         quests: Region1Quests.present(state),
+        shop: Region1Shop.present(),
         stance: factions.concat(minors).map((faction, index) => relation(state, PLAYER_FACTION, index)),
         grudges: (state.grudges || []).slice(),
         trails: state.trails || [],
@@ -5229,6 +5231,40 @@ async function turnInBruteCullQuest() {
     return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
 }
 
+async function shopPurchase(offerId) {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    const result = Region1Shop.buyOffer(state, offerId);
+    if (!result.ok) {
+        const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+        const payload = present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+        payload.shopError = result.error;
+        return payload;
+    }
+    note(state, "You buy " + result.bought.name + " for " + result.bought.price + " gold.");
+    await writeState(state);
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+}
+
+async function shopPurchaseMystery() {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    const result = Region1Shop.buyMystery(state);
+    if (!result.ok) {
+        const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+        const payload = present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+        payload.shopError = result.error;
+        return payload;
+    }
+    note(state, "You take a chance on the shelf — " + result.bought.name + " for " + result.paid + " gold.");
+    await writeState(state);
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+}
+
 async function campaignState(now, saved, playAdd, opts) {
     const state = saved || await readState();
     const moved = notePlay(state, Number(playAdd), now);
@@ -5507,6 +5543,14 @@ module.exports = async function handler(req, res) {
             }
             if (req.body && req.body.questTurnIn === "bruteCull") {
                 res.status(200).json(await turnInBruteCullQuest());
+                return;
+            }
+            if (req.body && typeof req.body.shopBuy === "string") {
+                res.status(200).json(await shopPurchase(req.body.shopBuy));
+                return;
+            }
+            if (req.body && req.body.shopBuyMystery) {
+                res.status(200).json(await shopPurchaseMystery());
                 return;
             }
             if (req.body && req.body.forgive) {

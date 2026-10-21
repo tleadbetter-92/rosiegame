@@ -1776,11 +1776,11 @@ function spawnGodwin() {
 function spawnKeepers() {
     for (const house of houses) {
         if (house.kind !== "shop" || !house.keeper) continue;
-        const owner = 2;
+        if (house.village === 2) continue;
         men.push({
             decor: true,
             fisher: false,
-            faction: owner,
+            faction: house.village,
             post: house.village,
             index: -50 - house.village,
             health: 1,
@@ -1796,6 +1796,32 @@ function spawnKeepers() {
             mode: "guard"
         });
     }
+}
+
+function spawnSouthwestShopkeeper() {
+    const house = houses.find((item) => item.kind === "shop" && item.village === 2);
+    if (!house || !house.keeper) return;
+    men.push({
+        shopkeeper: true,
+        decor: true,
+        dialogue: "shopkeeper",
+        name: "Shopkeeper",
+        fisher: false,
+        faction: 2,
+        post: 2,
+        index: -62,
+        health: 1,
+        x: house.keeper.x,
+        z: house.keeper.z,
+        yaw: house.keeper.yaw,
+        bob: 0,
+        down: 0,
+        swing: -1,
+        walking: false,
+        hostile: false,
+        dying: false,
+        mode: "guard"
+    });
 }
 
 function compile(type, source) {
@@ -3859,10 +3885,16 @@ function loadKaykit() {
     Promise.all([0, 1, 2, 3, 4, 5].map((index) => take("archer-" + index))).then((parts) => {
         if (parts.some((part) => !part)) return;
         folkMesh.archer = { frames: parts[0].frames, parts, walk: [1, 8], shoot: [9, 14] };
+        folkMesh.archerUnarmed = {
+            frames: parts[0].frames,
+            parts: [parts[0], parts[2], parts[3], parts[4]],
+            walk: [1, 8]
+        };
     });
 }
 
 function folkPack(man) {
+    if (man.shopkeeper) return folkMesh.archerUnarmed || folkMesh.archer || folkMesh.rogue;
     if (man.fisher || man.farmer || man.jack || man.board || man.driver || man.decor || man.inn) return folkMesh.rogue;
     if (man.brute) return folkMesh.paladin || folkMesh.knight;
     if (man.goblin) return folkMesh.knight;
@@ -4501,7 +4533,7 @@ function folkCardMatrix(man, flip) {
 function personScale(man) {
     if (man.goblin) return 0.74;
     if (man.brute) return 1.14;
-    if (man.archer) return 0.94;
+    if (man.archer || man.shopkeeper) return 0.94;
     if (man.fisher || man.farmer || man.jack || man.board || man.driver || man.decor || man.inn) return 1;
     return 1.12;
 }
@@ -5091,6 +5123,7 @@ function applyCampaign(data) {
     adoptHero(data.hero);
     campaign = data;
     if (typeof Dialogue !== "undefined" && Dialogue.setQuests) Dialogue.setQuests(data.quests || null);
+    if (typeof Dialogue !== "undefined" && Dialogue.setShop) Dialogue.setShop(data.shop || null);
     buildTrails(data.trails || []);
     const units = data.factions.map((faction) => (
         (faction.units || []).map((unit) => unit.index + ":" + unit.health + ":" + unit.mode + ":" + unit.post).join(".")
@@ -10490,7 +10523,7 @@ function aimedDoor(reach) {
 function personTitle(man) {
     if (!man || man.goblin || man.brute || man.dying || man.hidden || man.health <= 0) return "";
     if (man.name) return man.name;
-    if (man.decor) return "Shopkeeper";
+    if (man.shopkeeper || man.decor) return man.name || "Shopkeeper";
     if (man.fisher || man.farmer || man.jack || man.board || man.driver) return "Worker";
     if (man.archer || man.fixed || man.post != null) return man.archer ? "Archer" : "Soldier";
     return "";
@@ -10526,7 +10559,7 @@ function aimedPerson(reach) {
 function aimedTalkPerson(reach) {
     const man = aimedPerson(reach || 6);
     if (!man || !man.dialogue || man.post !== 2) return null;
-    if (man.inn || man.commander) return man;
+    if (man.inn || man.commander || man.shopkeeper) return man;
     return null;
 }
 
@@ -11348,6 +11381,7 @@ if (gl) {
     spawnGarrison();
     buildFolk();
     spawnKeepers();
+    spawnSouthwestShopkeeper();
     spawnGodwin();
     spawnCommander();
     spawnSouthwestBrutes();
