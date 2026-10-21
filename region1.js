@@ -1,7 +1,6 @@
 // Playable Region 1 — design and dialogue live in Rosiegame_AI_World_Bible/Region 1/
-// (README, 01_REGION/REGION_CONTEXT.md, 02_CHARACTERS/, Attacks_in_the_Woods.md).
-// Map boundaries are not marked in the world yet; scope is Southwest town (village 2)
-// and the four nearby hamlets on the campaign map until we draw borders later.
+// Server AI chat reads the same folder via lib/region1-npcs.js (keep NPC sources in sync).
+// Static lore belongs in git; MongoDB is for saves/messenger — not the bible text.
 (function (global) {
     global.Region1 = {
         id: 1,

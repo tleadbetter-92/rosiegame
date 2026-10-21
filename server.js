@@ -35,7 +35,8 @@ const routes = {
     "/api/push-subscribe": require("./api/push-subscribe"),
     "/api/notes": require("./api/notes"),
     "/api/image": require("./api/image"),
-    "/api/campaign": require("./api/campaign")
+    "/api/campaign": require("./api/campaign"),
+    "/api/npc-chat": require("./api/npc-chat")
 };
 
 const root = __dirname;

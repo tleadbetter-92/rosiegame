@@ -464,6 +464,59 @@ html, body {
     background: rgba(90, 72, 48, 0.85);
 }
 
+.dialogue-ask {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(243, 230, 204, 0.2);
+}
+
+.dialogue-ask-label {
+    margin: 0 0 6px;
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(243, 230, 204, 0.65);
+}
+
+.dialogue-ask-row {
+    display: flex;
+    gap: 8px;
+}
+
+.dialogue-ask input {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid rgba(198, 161, 90, 0.45);
+    border-radius: 4px;
+    padding: 8px 10px;
+    background: rgba(0, 0, 0, 0.35);
+    color: #f8eed8;
+    font: inherit;
+    font-size: 0.95rem;
+}
+
+.dialogue-ask button {
+    border: 1px solid rgba(198, 161, 90, 0.55);
+    border-radius: 4px;
+    padding: 8px 14px;
+    background: rgba(90, 72, 48, 0.85);
+    color: #f8eed8;
+    font: inherit;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.dialogue-ask button:disabled {
+    opacity: 0.55;
+    cursor: wait;
+}
+
+.dialogue-ask-status {
+    margin: 6px 0 0;
+    font-size: 0.82rem;
+    color: rgba(243, 200, 140, 0.9);
+}
+
 body.dialogue-open .cross {
     opacity: 0.25;
 }

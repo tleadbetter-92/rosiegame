@@ -1,7 +1,7 @@
 // Region 1 NPC chat — lore folder: Rosiegame_AI_World_Bible/Region 1/
 // Godwin: INNKEEPER_GODWIN.md + Godwin_Conversation_Example.md + Attacks_in_the_Woods.md
 // Commander: 02_CHARACTERS/Local_Garrison_Commander_Lore.md
-// UI: crosshair label, E / click to talk, reply buttons (AI later replaces lines; keep Dialogue.start).
+// UI: crosshair label, E / click to talk, reply buttons; optional AI free-text via /api/npc-chat
 (function (global) {
     const trees = {
         godwin: {
@@ -144,8 +144,37 @@
     let textEl = null;
     let choicesEl = null;
     let leaveBtn = null;
+    let askForm = null;
+    let askInput = null;
+    let askStatus = null;
+    let askSubmit = null;
     let treeId = null;
     let open = false;
+    let aiConfigured = false;
+    let aiBusy = false;
+    let aiHistory = [];
+    let aiMode = false;
+    const HISTORY_PREFIX = "region1-chat-";
+
+    function historyKey(id) {
+        return HISTORY_PREFIX + id;
+    }
+
+    function loadStoredHistory(id) {
+        try {
+            const raw = JSON.parse(sessionStorage.getItem(historyKey(id)) || "[]");
+            if (!Array.isArray(raw)) return [];
+            return raw.filter((item) => item && (item.role === "user" || item.role === "assistant") && typeof item.content === "string").slice(-20);
+        } catch (err) {
+            return [];
+        }
+    }
+
+    function saveStoredHistory(id) {
+        try {
+            sessionStorage.setItem(historyKey(id), JSON.stringify(aiHistory.slice(-20)));
+        } catch (err) { /* private mode */ }
+    }
 
     function ensureDom() {
         if (panel) return;
@@ -155,7 +184,37 @@
         textEl = panel.querySelector("[data-dialogue-text]");
         choicesEl = panel.querySelector("[data-dialogue-choices]");
         leaveBtn = panel.querySelector("[data-dialogue-leave]");
+        askForm = panel.querySelector("[data-dialogue-ask]");
+        askInput = panel.querySelector("[data-dialogue-input]");
+        askStatus = panel.querySelector("[data-dialogue-status]");
+        askSubmit = askForm && askForm.querySelector("button[type=submit]");
         if (leaveBtn) leaveBtn.addEventListener("click", () => close());
+        if (askForm) {
+            askForm.addEventListener("submit", (event) => {
+                event.preventDefault();
+                sendAiMessage();
+            });
+        }
+    }
+
+    function setAskStatus(text, show) {
+        if (!askStatus) return;
+        askStatus.hidden = !show;
+        askStatus.textContent = text || "";
+    }
+
+    function syncAskUi() {
+        if (!askForm) return;
+        askForm.hidden = !open || !aiMode;
+        if (choicesEl) choicesEl.hidden = open && aiMode;
+        if (askSubmit) askSubmit.disabled = aiBusy;
+        if (askInput) askInput.disabled = aiBusy;
+    }
+
+    function useScriptedDialogue(nodeId) {
+        aiMode = false;
+        syncAskUi();
+        showNode(nodeId || "start");
     }
 
     function renderNode(nodeId) {
@@ -166,6 +225,7 @@
         titleEl.textContent = tree.title;
         textEl.textContent = node.say;
         choicesEl.innerHTML = "";
+        choicesEl.hidden = false;
         for (const choice of node.choices || []) {
             const btn = document.createElement("button");
             btn.type = "button";
@@ -174,6 +234,8 @@
             btn.addEventListener("click", () => showNode(choice.next));
             choicesEl.appendChild(btn);
         }
+        syncAskUi();
+        setAskStatus("", false);
         if (!node.choices || !node.choices.length) {
             window.setTimeout(() => close(), 1200);
         }
@@ -185,14 +247,93 @@
         renderNode(nodeId);
     }
 
-    function start(id, nodeId) {
-        ensureDom();
-        if (!panel || !trees[id]) return false;
+    async function requestNpcReply(options) {
+        const opening = !!(options && options.opening);
+        const message = opening ? "" : String(options && options.message || "").trim();
+        if (!opening && !message) return false;
+        aiBusy = true;
+        syncAskUi();
+        setAskStatus("Thinking…", true);
+        try {
+            const res = await fetch("/api/npc-chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                cache: "no-store",
+                body: JSON.stringify({
+                    npc: treeId,
+                    message,
+                    history: aiHistory,
+                    opening
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setAskStatus(data.error || "AI could not reply.", true);
+                return false;
+            }
+            if (!opening) aiHistory.push({ role: "user", content: message });
+            aiHistory.push({ role: "assistant", content: data.reply });
+            if (aiHistory.length > 20) aiHistory = aiHistory.slice(-20);
+            saveStoredHistory(treeId);
+            if (askInput && !opening) askInput.value = "";
+            titleEl.textContent = data.title || (trees[treeId] && trees[treeId].title) || treeId;
+            textEl.textContent = data.reply;
+            choicesEl.innerHTML = "";
+            setAskStatus("", false);
+            return true;
+        } catch (err) {
+            setAskStatus("Could not reach the server.", true);
+            return false;
+        } finally {
+            aiBusy = false;
+            syncAskUi();
+        }
+    }
+
+    async function sendAiMessage() {
+        if (!aiMode || !treeId || aiBusy || !askInput) return;
+        const message = askInput.value.trim();
+        if (!message) return;
+        await requestNpcReply({ message });
+    }
+
+    async function startAiTalk(id) {
         treeId = id;
+        aiMode = true;
+        aiHistory = loadStoredHistory(id);
         open = true;
         panel.hidden = false;
         document.body.classList.add("dialogue-open");
+        choicesEl.innerHTML = "";
+        titleEl.textContent = (trees[id] && trees[id].title) || id;
+        syncAskUi();
+        setAskStatus("", false);
+        const lastLine = aiHistory.filter((item) => item.role === "assistant").pop();
+        if (lastLine) {
+            textEl.textContent = lastLine.content;
+            if (askInput) askInput.focus();
+            return true;
+        }
+        textEl.textContent = "…";
+        const ok = await requestNpcReply({ opening: true });
+        if (!ok) {
+            setAskStatus("Using fixed dialogue instead.", true);
+            useScriptedDialogue("start");
+        } else if (askInput) askInput.focus();
+        return true;
+    }
+
+    function start(id, nodeId) {
+        ensureDom();
+        if (!panel || !trees[id]) return false;
         if (document.pointerLockElement) document.exitPointerLock();
+        if (aiConfigured) return startAiTalk(id);
+        treeId = id;
+        aiMode = false;
+        aiHistory = [];
+        open = true;
+        panel.hidden = false;
+        document.body.classList.add("dialogue-open");
         showNode(nodeId || "start");
         return true;
     }
@@ -201,13 +342,30 @@
         if (!panel) return;
         open = false;
         treeId = null;
+        aiBusy = false;
+        aiMode = false;
         panel.hidden = true;
         document.body.classList.remove("dialogue-open");
+        setAskStatus("", false);
+        syncAskUi();
     }
 
     function isOpen() {
         return open;
     }
 
-    global.Dialogue = { start, close, isOpen };
+    function aiReady() {
+        return aiConfigured;
+    }
+
+    fetch("/api/npc-chat", { cache: "no-store" })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+            aiConfigured = !!(data && data.configured);
+        })
+        .catch(() => {
+            aiConfigured = false;
+        });
+
+    global.Dialogue = { start, close, isOpen, aiReady };
 })(typeof window !== "undefined" ? window : globalThis);

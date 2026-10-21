@@ -26,6 +26,14 @@
         </header>
         <p class="dialogue-text" data-dialogue-text></p>
         <div class="dialogue-choices" data-dialogue-choices></div>
+        <form class="dialogue-ask" data-dialogue-ask hidden>
+            <p class="dialogue-ask-label">You say</p>
+            <div class="dialogue-ask-row">
+                <input type="text" data-dialogue-input maxlength="500" autocomplete="off" placeholder="Ask anything…">
+                <button type="submit">Send</button>
+            </div>
+            <p class="dialogue-ask-status" data-dialogue-status hidden></p>
+        </form>
     </div>
     <div id="weapon" aria-hidden="true"></div>
     <div id="viewbow" aria-hidden="true" hidden></div>
