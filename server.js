@@ -37,7 +37,8 @@ const routes = {
     "/api/image": require("./api/image"),
     "/api/campaign": require("./api/campaign"),
     "/api/npc-chat": require("./api/npc-chat"),
-    "/api/npc-tts": require("./api/npc-tts")
+    "/api/npc-tts": require("./api/npc-tts"),
+    "/api/building-save": require("./api/building-save")
 };
 
 const root = __dirname;

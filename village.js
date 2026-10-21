@@ -19,8 +19,8 @@ function setCamAt(x, z, yaw) {
     cam.pitch = 0;
 }
 function isLegacySpawn(x, z) {
-    if (Math.hypot(x - START_FARM.x, z - START_FARM.z) < 55) return true;
-    if (Math.hypot(x - OLD_TOWN_SPAWN.x, z - OLD_TOWN_SPAWN.z) < 55) return true;
+    if (Math.hypot(x - START_FARM.x, z - START_FARM.z) < 18) return true;
+    if (Math.hypot(x - OLD_TOWN_SPAWN.x, z - OLD_TOWN_SPAWN.z) < 18) return true;
     return false;
 }
 // Southwest village start — cobble in front of the inn (Godwin).
@@ -29,21 +29,54 @@ function placeAtVillageSpawn() {
     if (house) {
         const ent = house.entrance || "south";
         if (ent === "south") {
-            setCamAt(house.x + house.w / 2, house.z + house.d + 3.5, 0);
+            setCamAt(house.x + house.w / 2 + 1.2, house.z + house.d + 5, Math.PI / 2);
             return;
         }
         if (ent === "north") {
-            setCamAt(house.x + house.w / 2, house.z - 3.5, Math.PI);
+            setCamAt(house.x + house.w / 2 - 1.2, house.z - 5, -Math.PI / 2);
             return;
         }
         if (ent === "east") {
-            setCamAt(house.x + house.w + 3.5, house.z + house.d / 2, -Math.PI / 2);
+            setCamAt(house.x + house.w + 5, house.z + house.d / 2 + 1.2, 0);
             return;
         }
-        setCamAt(house.x - 3.5, house.z + house.d / 2, Math.PI / 2);
+        setCamAt(house.x - 5, house.z + house.d / 2 - 1.2, Math.PI);
         return;
     }
     setCamAt(VILLAGE_SPAWN_FALLBACK.x, VILLAGE_SPAWN_FALLBACK.z, VILLAGE_SPAWN_FALLBACK.yaw);
+}
+
+function canStandAt(x, z, feet) {
+    if (blocked(x, z, null, feet)) return false;
+    const step = 0.45;
+    const stepUp = (nx, nz) => {
+        const next = floorAt(nx, nz, feet);
+        const rise = next > feet + 0.52 && next <= feet + 1.25;
+        if (next > feet + 0.52 && !rise && (next > Math.max(0, World.meshHeight(nx, nz)) + 0.01 || World.tooSteep(nx, nz))) return false;
+        if (next < feet - 1.25 && World.tooSteep(nx, nz)) return false;
+        return true;
+    };
+    return stepUp(x + step, z) || stepUp(x - step, z) || stepUp(x, z + step) || stepUp(x, z - step);
+}
+
+function nudgeSpawnClear(x, z, yaw) {
+    if (canStandAt(x, z, 0)) return { x, z, yaw };
+    for (let ring = 1; ring <= 6; ring++) {
+        for (let a = 0; a < 8; a++) {
+            const t = (a / 8) * Math.PI * 2;
+            const nx = x + Math.cos(t) * ring * 0.85;
+            const nz = z + Math.sin(t) * ring * 0.85;
+            if (canStandAt(nx, nz, 0)) return { x: nx, z: nz, yaw };
+        }
+    }
+    return { x, z, yaw };
+}
+
+function ensureVillageSpawnClear() {
+    if (flying) return;
+    const spot = nudgeSpawnClear(cam.x, cam.z, cam.yaw);
+    setCamAt(spot.x, spot.z, spot.yaw);
+    if (typeof Dialogue !== "undefined" && Dialogue.isOpen()) Dialogue.close();
 }
 let resumeWalkSpot = false;
 const cam = { x: VILLAGE_SPAWN_FALLBACK.x, y: 1.62, z: VILLAGE_SPAWN_FALLBACK.z, yaw: VILLAGE_SPAWN_FALLBACK.yaw, pitch: 0 };
@@ -1471,6 +1504,7 @@ if (!flying && !resumeWalkSpot) placeAtVillageSpawn();
 houses.forEach((house) => {
     if (!house.test) addHouse(house);
 });
+if (!flying && !resumeWalkSpot) ensureVillageSpawnClear();
 
 function addYard(place) {
     const ox = place.ox;
@@ -1584,7 +1618,7 @@ function spawnGarrison() {
     }
 }
 
-// Region 1 — Southwest barracks commander (soldier mesh for now).
+// Region 1 — Southwest barracks commander (medieval people pack; wall soldiers use paladin).
 function spawnCommander() {
     const house = houses.find((item) => item.kind === "barracks" && item.village === 2);
     if (!house || !house.commander) return;
@@ -1683,12 +1717,12 @@ function drawWorldMarkers(dark, proj) {
     if (mesh.worldMarkerLoot && mesh.worldMarkerLoot.count) {
         gl.uniform3f(loc.tint, 0.92, 0.38, 0.22);
         gl.uniform1f(loc.glow, 0.9);
-        drawMesh("worldMarkerLoot", 1);
+        drawMesh("worldMarkerLoot", 1, dark, proj, textures.glow);
     }
     if (mesh.worldMarkerCamp && mesh.worldMarkerCamp.count) {
         gl.uniform3f(loc.tint, 0.38, 0.62, 0.32);
         gl.uniform1f(loc.glow, 0.55);
-        drawMesh("worldMarkerCamp", 1);
+        drawMesh("worldMarkerCamp", 1, dark, proj, textures.glow);
     }
     gl.uniform3f(loc.tint, 1, 1, 1);
     gl.uniform1f(loc.glow, 0);
@@ -3418,6 +3452,10 @@ function dressHamlets() {
             hamletPads.push({ x: ox - 22, z: oz - 46, w: 58, d: 56 });
             for (let i = 0; i < layout.buildings.length; i++) {
                 const piece = layout.buildings[i];
+                if (piece.t === "kit" && piece.id) {
+                    queueKitBuild(piece.id, piece.x + ox, piece.z + oz, editorLiveYaw(piece.yaw));
+                    continue;
+                }
                 const spec = sizes[piece.t] || sizes.farmhouse;
                 const yaw = editorLiveYaw(piece.yaw);
                 const turned = Math.abs(Math.sin(yaw)) > 0.9;
@@ -3738,6 +3776,8 @@ function buildFolk() {
     uploadMesh("folkCard", card);
     loadFolkViews();
     loadKaykit();
+    queueSouthwestShowcaseBuilds();
+    runKitBuildQueue();
     gl.bindTexture(gl.TEXTURE_2D, textures.folk);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -3748,8 +3788,8 @@ function buildFolk() {
 
 function drawFolk(dark, proj) {
     if (inside) return;
-    const near = nearestMen(16, gfx().personDraw);
-    if (folkMesh.knight && folkMesh.rogue) {
+    const near = nearestMen(24, gfx().personDraw);
+    if (kaykitMeshesReady()) {
         gl.enable(gl.CULL_FACE);
         gl.enableVertexAttribArray(loc.pos);
         gl.enableVertexAttribArray(loc.uv);
@@ -3841,8 +3881,121 @@ function drawFolk(dark, proj) {
 }
 
 const folkMesh = { knight: null, rogue: null };
+
+function loadMegakitFileTexture(key, url) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            textures[key] = gl.createTexture();
+            uploadModelTexture(textures[key], img, false);
+            resolve(key);
+        };
+        img.onerror = () => {
+            console.warn("Kit texture missing:", url);
+            reject(new Error(url));
+        };
+        img.src = url;
+    });
+}
+
+function transformKitVerts(floats, wx, wz, baseY, cx, cz, yaw) {
+    const c = Math.cos(yaw);
+    const s = Math.sin(yaw);
+    const out = new Float32Array(floats.length);
+    for (let i = 0; i < floats.length; i += 6) {
+        const x = floats[i] - cx;
+        const y = floats[i + 1];
+        const z = floats[i + 2] - cz;
+        const rx = x * c + z * s;
+        const rz = -x * s + z * c;
+        out[i] = wx + rx;
+        out[i + 1] = baseY + y;
+        out[i + 2] = wz + rz;
+        out[i + 3] = floats[i + 3];
+        out[i + 4] = floats[i + 4];
+        out[i + 5] = floats[i + 5];
+    }
+    return out;
+}
+
+const kitBuildQueue = [];
+const kitBuildLayers = {};
+const KIT_TEX_FOR = { plaster: "kitPlaster", brick: "kitBrick", wood: "kitWood", tiles: "kitWood", rock: "kitBrick", metal: "kitWood" };
+let kitTexturesReady = null;
+
+function ensureKitTextures() {
+    if (!kitTexturesReady) {
+        kitTexturesReady = Promise.all([
+            loadMegakitFileTexture("kitPlaster", "models/plaster.png"),
+            loadMegakitFileTexture("kitBrick", "models/brick.png"),
+            loadMegakitFileTexture("kitWood", "models/wood.png")
+        ]).catch(() => null);
+    }
+    return kitTexturesReady;
+}
+
+function queueKitBuild(id, wx, wz, yaw) {
+    if (!id) return;
+    kitBuildQueue.push({ id: id, wx: wx, wz: wz, yaw: yaw || 0 });
+}
+
+function appendKitMesh(meshName, data) {
+    if (!kitBuildLayers[meshName]) kitBuildLayers[meshName] = [];
+    const list = kitBuildLayers[meshName];
+    for (let i = 0; i < data.length; i++) list.push(data[i]);
+}
+
+function stampKitBuildOnce(id, wx, wz, yaw) {
+    const baseY = Math.max(0, World.heightAt(wx, wz));
+    return fetch("models/kitbuild/" + id + ".meta.json")
+        .then((res) => {
+            if (!res.ok) throw new Error("missing bake: " + id);
+            return res.json();
+        })
+        .then((meta) =>
+            Promise.all(
+                meta.materials.map(({ mat }) =>
+                    fetch("models/kitbuild/" + id + "-" + mat + ".bin")
+                        .then((r) => r.arrayBuffer())
+                        .then((buf) => {
+                            const data = transformKitVerts(new Float32Array(buf), wx, wz, baseY, meta.cx, meta.cz, yaw);
+                            const meshName = "kitBuild" + mat.charAt(0).toUpperCase() + mat.slice(1);
+                            appendKitMesh(meshName, data);
+                        })
+                )
+            )
+        );
+}
+
+function flushKitBuildMeshes() {
+    for (const meshName of Object.keys(kitBuildLayers)) {
+        const list = kitBuildLayers[meshName];
+        if (!list.length) continue;
+        uploadMesh(meshName, new Float32Array(list));
+        if (mesh[meshName]) mesh[meshName].cull = false;
+        const mat = meshName.slice("kitBuild".length).toLowerCase();
+        const tk = KIT_TEX_FOR[mat] || "kitPlaster";
+        textures[meshName] = textures[tk] || textures.plaster;
+    }
+}
+
+function queueSouthwestShowcaseBuilds() {
+    const home = places[2];
+    if (!home) return;
+    queueKitBuild("my-building", home.ox - 16, home.oz + 28, 0);
+}
+
+function runKitBuildQueue() {
+    if (!kitBuildQueue.length) return Promise.resolve();
+    return ensureKitTextures()
+        .then(() => Promise.all(kitBuildQueue.map((q) => stampKitBuildOnce(q.id, q.wx, q.wz, q.yaw))))
+        .then(flushKitBuildMeshes)
+        .catch((err) => console.warn("Kit buildings:", err));
+}
+
 function loadKaykit() {
-    const take = (name) => {
+    const take = (name, meshKey) => {
+        const key = meshKey || name;
         const picture = new Image();
         picture.src = "models/kaykit/" + name + ".png";
         return Promise.all([
@@ -3859,24 +4012,26 @@ function loadKaykit() {
             gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
             gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buf, 8), gl.STATIC_DRAW);
             const tex = gl.createTexture();
-            gl.bindTexture(gl.TEXTURE_2D, tex);
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-            gl.generateMipmap(gl.TEXTURE_2D);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            uploadModelTexture(tex, img, false);
             const pack = { buffer, frames, count, tex };
-            folkMesh[name] = pack;
+            folkMesh[key] = pack;
             return pack;
         }).catch(() => null);
     };
     take("rogue");
     Promise.all([take("ch10-0"), take("ch10-1")]).then((parts) => {
         if (!parts[0] || !parts[1]) return;
-        folkMesh.knight = { frames: parts[0].frames, parts, walkOnly: true };
+        const goblin = { frames: parts[0].frames, parts, walkOnly: true };
+        folkMesh.knight = goblin;
+        folkMesh.goblinWalk = goblin;
+    });
+    take("knight", "kaykitKnight").then((part) => {
+        if (!part) return;
+        folkMesh.kaykitKnight = { frames: part.frames, parts: [part] };
+    });
+    Promise.all([take("peasant-0"), take("peasant-1")]).then((parts) => {
+        if (!parts[0] || !parts[1]) return;
+        folkMesh.quaterniusPeasant = { frames: parts[0].frames, parts };
     });
     take("prop-0").then((part) => {
         if (!part) return;
@@ -3885,21 +4040,55 @@ function loadKaykit() {
     Promise.all([0, 1, 2, 3, 4, 5].map((index) => take("archer-" + index))).then((parts) => {
         if (parts.some((part) => !part)) return;
         folkMesh.archer = { frames: parts[0].frames, parts, walk: [1, 8], shoot: [9, 14] };
-        folkMesh.archerUnarmed = {
+        const officer = {
             frames: parts[0].frames,
             parts: [parts[0], parts[2], parts[3], parts[4]],
             walk: [1, 8]
         };
+        folkMesh.archerUnarmed = officer;
+        folkMesh.commanderOfficer = officer;
     });
+    take("generic-human-0").then((part) => {
+        if (!part) return;
+        const pack = {
+            frames: part.frames,
+            parts: [part],
+            walk: [1, 8],
+            jog: [9, 16],
+            chop: [17, 22],
+            fish: [23, 28]
+        };
+        folkMesh.genericHuman = pack;
+        folkMesh.civilianWorker = pack;
+        if (!folkMesh.peasant) folkMesh.peasant = pack;
+    });
+    take("mixamo-peasant-0").then((part) => {
+        if (!part) return;
+        const pack = { frames: part.frames, parts: [part], walk: [1, 8] };
+        folkMesh.mixamoPeasant = pack;
+        folkMesh.innkeeper = pack;
+    });
+    const loadClipParts = (stem, meshKey) => {
+        Promise.all([0, 1, 2, 3, 4, 5, 6, 7].map((index) => take(stem + "-" + index))).then((parts) => {
+            const ok = parts.filter((part) => part);
+            if (!ok.length) return;
+            folkMesh[meshKey] = { frames: ok[0].frames, parts: ok };
+        });
+    };
+    loadClipParts("medieval-king", "medievalKing");
 }
 
 function folkPack(man) {
+    if (man.folkShow && folkMesh[man.folkShow]) return folkMesh[man.folkShow];
+    if (man.inn && man.post === 2) return folkMesh.innkeeper || folkMesh.mixamoPeasant || folkMesh.rogue;
+    if (man.commander) return folkMesh.commanderOfficer || folkMesh.archerUnarmed || folkMesh.archer || folkMesh.paladin || folkMesh.rogue;
+    if (man.peasant) return folkMesh.peasant || folkMesh.rogue;
     if (man.shopkeeper) return folkMesh.archerUnarmed || folkMesh.archer || folkMesh.rogue;
-    if (man.fisher || man.farmer || man.jack || man.board || man.driver || man.decor || man.inn) return folkMesh.rogue;
+    if (man.fisher || man.farmer || man.jack || man.board || man.driver || man.decor) return folkMesh.rogue;
     if (man.brute) return folkMesh.paladin || folkMesh.knight;
     if (man.goblin) return folkMesh.knight;
     if (man.archer) return folkMesh.archer || folkMesh.paladin;
-    return folkMesh.paladin || folkMesh.knight;
+    return folkMesh.paladin || folkMesh.knight || folkMesh.rogue;
 }
 
 function folkAnim(man, pack) {
@@ -3957,7 +4146,8 @@ const outdoorDrawList = [
     "housedoor", "cart", "meadowBush", "meadowRock",
     "cloth0", "cloth1", "cloth2", "cloth3", "cloth4", "skin", "pants", "steel",
     "placeGhost",
-    "swintrunk", "swinplaster", "swinlinen", "swinrock", "swinglow", "swindoor", "swinroof", "swingoods"
+    "swintrunk", "swinplaster", "swinlinen", "swinrock", "swinglow", "swindoor", "swinroof", "swingoods",
+    "kitBuildPlaster", "kitBuildBrick", "kitBuildWood", "kitBuildTiles", "kitBuildRock", "kitBuildMetal"
 ];
 
 function uploadMesh(name, floats) {
@@ -3969,6 +4159,53 @@ function uploadMesh(name, floats) {
     gl.bindBuffer(gl.ARRAY_BUFFER, mesh[name].buffer);
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
     mesh[name].count = data.length / 6;
+}
+
+function texturePowerOfTwo(w, h) {
+    return (w & (w - 1)) === 0 && (h & (h - 1)) === 0;
+}
+
+function uploadModelTexture(tex, img, flipY) {
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, !!flipY);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    if (texturePowerOfTwo(img.width, img.height)) {
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    } else {
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    }
+}
+
+function drawMesh(name, band, dark, proj, texture) {
+    const stride = 24;
+    if (!mesh[name] || !mesh[name].count) return;
+    const tex = texture || textures[name];
+    if (!tex) return;
+    if (mesh[name].cull === false) gl.disable(gl.CULL_FACE);
+    else gl.enable(gl.CULL_FACE);
+    gl.bindBuffer(gl.ARRAY_BUFFER, mesh[name].buffer);
+    gl.enableVertexAttribArray(loc.pos);
+    gl.enableVertexAttribArray(loc.uv);
+    gl.enableVertexAttribArray(loc.shade);
+    gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
+    gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
+    gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    if (dark != null) gl.uniform1f(loc.dark, dark);
+    if (proj) gl.uniformMatrix4fv(loc.proj, false, proj);
+    gl.uniform1f(loc.band, band);
+    gl.uniform1f(loc.flow, name === "water" ? 1 : 0);
+    if (mesh[name].lift) {
+        gl.enable(gl.POLYGON_OFFSET_FILL);
+        gl.polygonOffset(-2, -8);
+    }
+    gl.drawArrays(gl.TRIANGLES, 0, mesh[name].count);
+    gl.disable(gl.POLYGON_OFFSET_FILL);
 }
 
 // Ground maths runs off the page thread. The page only swaps the finished buffers in.
@@ -4531,6 +4768,7 @@ function folkCardMatrix(man, flip) {
 }
 
 function personScale(man) {
+    if (man.horse) return man.bodyScale != null ? man.bodyScale : 1;
     if (man.goblin) return 0.74;
     if (man.brute) return 1.14;
     if (man.archer || man.shopkeeper) return 0.94;
@@ -4557,8 +4795,11 @@ function personMatrix(man) {
 }
 
 const horse = {
-    x: places[2].ox + Math.sin(0.6) * 4.5,
-    z: places[2].oz + 20 - Math.cos(0.6) * 4.5,
+    horse: true,
+    bodyScale: 1.62,
+    parked: true,
+    x: places[2].ox,
+    z: places[2].oz + 8,
     yaw: Math.PI,
     stand: 0,
     bob: 0,
@@ -4566,9 +4807,13 @@ const horse = {
     down: 0,
     walking: false,
     phase: 0,
+    animPhase: 0,
+    pace: 0,
     side: 1
 };
 horse.stand = Math.max(0, World.meshHeight(horse.x, horse.z));
+
+const petFollowers = [];
 
 const study = {
     x: cam.x + Math.sin(cam.yaw) * 3.2,
@@ -4671,8 +4916,10 @@ function loadStudy() {
     }).catch(() => {});
 }
 // Skip GLB study character — outdoors stay box people only.
-let horseBody = null;
-let horseLeg = null;
+let horseMesh = null;
+let dragonMesh = null;
+let spiderMesh = null;
+let petMeshesReady = 0;
 
 function bakeMesh(floats) {
     const data = new Float32Array(floats);
@@ -4692,71 +4939,176 @@ function tiltX(oy, oz, angle) {
     };
 }
 
-function buildHorse() {
-    textures.horse = makeTexture((g, s) => {
-        g.fillStyle = "#8d5a32";
-        g.fillRect(0, 0, s, s);
-        g.fillStyle = "#a56b3c";
-        for (let i = 0; i < 20; i++) g.fillRect((i * 7) % 26, (i * 11) % s, 3, 2);
-        g.fillStyle = "#6b4124";
-        for (let i = 0; i < 16; i++) g.fillRect((i * 5) % 24, (i * 9) % s, 2, 2);
-        g.fillStyle = "#f2e6cc";
-        g.fillRect(34, 0, 12, s);
-        g.fillStyle = "#2a1b12";
-        g.fillRect(50, 0, 14, s);
-    });
-    const coat = [0.04, 0.08, 0.4, 0.5];
-    const dark = [0.8, 0.08, 0.96, 0.5];
-    const light = [0.56, 0.12, 0.68, 0.5];
-    const neck = tiltX(1.2, 0.42, 0.72);
-    const head = tiltX(1.52, 0.78, -0.28);
-    const body = [];
-    addBox(body, -0.22, 0.96, -0.7, 0.44, 0.42, 1.05, null, coat);
-    addBox(body, -0.2, 0.9, 0.22, 0.4, 0.4, 0.36, null, coat);
-    addBox(body, -0.24, 1.02, -0.86, 0.48, 0.38, 0.34, null, coat);
-    addBox(body, -0.16, 1.32, -0.2, 0.32, 0.1, 0.55, null, coat);
-    addBox(body, -0.1, 1.16, 0.28, 0.2, 0.52, 0.24, neck, coat);
-    addBox(body, -0.05, 1.58, 0.26, 0.1, 0.16, 0.4, neck, dark);
-    addBox(body, -0.12, 1.46, 0.62, 0.24, 0.28, 0.4, head, coat);
-    addBox(body, -0.09, 1.42, 0.96, 0.18, 0.16, 0.28, head, coat);
-    addBox(body, -0.04, 1.5, 1.08, 0.08, 0.16, 0.16, head, light);
-    addBox(body, -0.11, 1.7, 0.7, 0.07, 0.16, 0.08, head, dark);
-    addBox(body, 0.04, 1.7, 0.7, 0.07, 0.16, 0.08, head, dark);
-    addBox(body, -0.14, 1.56, 0.78, 0.04, 0.05, 0.05, head, dark);
-    addBox(body, 0.1, 1.56, 0.78, 0.04, 0.05, 0.05, head, dark);
-    addBox(body, -0.05, 0.58, -1.02, 0.1, 0.58, 0.12, null, dark);
-    const limb = (x, z) => {
-        addBox(body, x, 0.46, z, 0.11, 0.5, 0.12, null, coat);
-        addBox(body, x + 0.01, 0.08, z + 0.015, 0.09, 0.4, 0.09, null, dark);
-        addBox(body, x - 0.01, 0, z, 0.13, 0.1, 0.14, null, dark);
-    };
-    limb(-0.2, 0.32);
-    limb(0.09, 0.32);
-    limb(-0.2, -0.58);
-    limb(0.09, -0.58);
-    horseBody = bakeMesh(body);
-    horseLeg = horseBody;
+function parkHorseAtStorehouse() {
+    const house = houses.find((item) => item.kind === "stores" && item.village === 2);
+    if (!house) return;
+    const cx = house.x + house.w / 2;
+    const cz = house.z + house.d / 2;
+    let spot;
+    if (house.entrance === "south") spot = { x: cx, z: house.z + house.d + 2.6, yaw: Math.PI };
+    else if (house.entrance === "north") spot = { x: cx, z: house.z - 2.6, yaw: 0 };
+    else if (house.entrance === "east") spot = { x: house.x + house.w + 2.6, z: cz, yaw: -Math.PI / 2 };
+    else spot = { x: house.x - 2.6, z: cz, yaw: Math.PI / 2 };
+    horse.x = spot.x;
+    horse.z = spot.z;
+    horse.yaw = spot.yaw;
+    horse.parked = true;
+    horse.walking = false;
+    horse.stand = beastGround(horse, horse.x, horse.z);
 }
 
-function horseAnchor() {
-    const feet = horse.stand;
+function spawnSwPetFollowers() {
+    petFollowers.length = 0;
+    if (homeVillage !== 2) return;
+    const ox = places[2].ox;
+    const oz = places[2].oz;
+    const make = (mesh, bodyScale, side, x, z) => ({
+        horse: true,
+        follow: true,
+        mesh: mesh,
+        bodyScale: bodyScale,
+        side: side,
+        slowLegs: true,
+        x: x,
+        z: z,
+        yaw: 0,
+        stand: Math.max(0, World.meshHeight(x, z)),
+        bob: 0,
+        swing: 0,
+        down: 0,
+        walking: false,
+        phase: 0,
+        animPhase: 0,
+        pace: 0
+    });
+    petFollowers.push(make("dragon", 1.55, -1.15, ox + 3, oz + 10));
+    petFollowers.push(make("spider", 0.68, 1.15, ox + 5, oz + 10));
+}
+
+function petMesh(pet) {
+    if (pet.mesh === "dragon") return dragonMesh;
+    if (pet.mesh === "spider") return spiderMesh;
+    return null;
+}
+
+function onPetMeshReady() {
+    petMeshesReady += 1;
+    if (petMeshesReady >= 2) spawnSwPetFollowers();
+}
+
+function buildBeasts() {
+    loadBeastMesh("models/horse/warhorse-0", (pack) => {
+        horseMesh = pack;
+        horseMesh.walk = [1, 8];
+        horseMesh.canter = [9, 16];
+        parkHorseAtStorehouse();
+    });
+    loadBeastMesh("models/dragon/dragon-0", (pack) => {
+        dragonMesh = pack;
+        dragonMesh.walk = [1, 8];
+        onPetMeshReady();
+    });
+    loadBeastMesh("models/spider/spider-0", (pack) => {
+        spiderMesh = pack;
+        spiderMesh.walk = [1, 8];
+        onPetMeshReady();
+    });
+}
+
+function petAnimFrame(mesh, pet) {
+    if (!mesh || !pet.walking) return 0;
+    const lo = mesh.walk[0];
+    const hi = mesh.walk[1];
+    const span = hi - lo + 1;
+    const step = Math.floor((pet.animPhase || 0) * span) % span;
+    return lo + (step + span) % span;
+}
+
+function beastAnimFrame(mesh, beast) {
+    if (!mesh) return 0;
+    if (!beast.walking) return 0;
+    const lo = mesh.walk[0];
+    const hi = mesh.walk[1];
+    const span = hi - lo + 1;
+    const tick = ((performance.now() / 110) + beast.phase * 18) | 0;
+    return lo + ((tick % span) + span) % span;
+}
+
+function horseAnimFrame() {
+    if (!horseMesh) return 0;
+    if (!horse.walking) return 0;
+    const range = horse.pace > 3.4 && horseMesh.canter ? horseMesh.canter : horseMesh.walk;
+    const lo = range[0];
+    const hi = range[1];
+    const span = hi - lo + 1;
+    const step = Math.floor(horse.animPhase * span) % span;
+    return lo + (step + span) % span;
+}
+
+function loadBeastMesh(url, onReady) {
+    const picture = new Image();
+    picture.src = url + ".png";
+    Promise.all([
+        fetch(url + ".bin").then((res) => (res.ok ? res.arrayBuffer() : null)),
+        new Promise((resolve, reject) => {
+            picture.onload = () => resolve(picture);
+            picture.onerror = reject;
+        })
+    ]).then(([buf, img]) => {
+        if (!buf) return;
+        const view = new DataView(buf);
+        const frames = view.getUint32(0, true);
+        const count = view.getUint32(4, true);
+        const buffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buf, 8), gl.STATIC_DRAW);
+        const tex = gl.createTexture();
+        uploadModelTexture(tex, img, false);
+        onReady({ buffer, frames, count, tex, walk: [1, Math.min(8, frames - 1)] });
+    }).catch(() => {});
+}
+
+function drawBeast(mesh, beast, frameFn) {
+    if (!mesh || !mesh.tex || inside) return;
+    const view = activeCam();
+    if (Math.hypot(beast.x - view.x, beast.z - view.z) > 80) return;
+    const stride = 24;
+    const frame = frameFn ? frameFn() : beastAnimFrame(mesh, beast);
+    gl.enable(gl.CULL_FACE);
+    gl.bindTexture(gl.TEXTURE_2D, mesh.tex);
+    gl.uniform1f(loc.flow, 0);
+    gl.uniformMatrix4fv(loc.model, false, personMatrix(beast));
+    gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffer);
+    gl.enableVertexAttribArray(loc.pos);
+    gl.enableVertexAttribArray(loc.uv);
+    gl.enableVertexAttribArray(loc.shade);
+    const base = frame * mesh.count * stride;
+    gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, base);
+    gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, base + 12);
+    gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, base + 20);
+    gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
+}
+
+function followAnchor(beast) {
+    const feet = beast.stand;
+    const side = beast.side != null ? beast.side : 1;
     const reach = 4.5;
-    const turns = [0.6 * horse.side, -0.6 * horse.side, 1.15 * horse.side, 0];
+    const turns = [0.6 * side, -0.6 * side, 1.15 * side, 0];
     for (let i = 0; i < turns.length; i++) {
         const yaw = cam.yaw + turns[i];
         const tx = cam.x + Math.sin(yaw) * reach;
         const tz = cam.z - Math.cos(yaw) * reach;
         if (!blocked(tx, tz, homeVillage, feet)) return { x: tx, z: tz };
     }
-    const yaw = cam.yaw + 0.6 * horse.side;
+    const yaw = cam.yaw + 0.6 * side;
     return { x: cam.x + Math.sin(yaw) * reach, z: cam.z - Math.cos(yaw) * reach };
 }
 
-function horseGround(x, z) {
+function beastGround(beast, x, z) {
     const ground = Math.max(0, World.meshHeight(x, z));
     if (inside) return ground;
     let height = ground;
-    const cap = horse.stand + 0.55;
+    const cap = (beast.stand || 0) + 0.55;
     for (const floor of floorsNear(x, z)) {
         if (floor.y > cap) continue;
         if (x > floor.x && x < floor.x + floor.w && z > floor.z && z < floor.z + floor.d) {
@@ -4766,100 +5118,119 @@ function horseGround(x, z) {
     return height;
 }
 
-function stepHorse(dt) {
+function stepFollowBeast(beast, dt, canterAt) {
     let pace = 0;
-    if (!player.dead) {
-        const pdx = horse.x - cam.x;
-        const pdz = horse.z - cam.z;
+    if (player.dead) {
+        beast.walking = false;
+    } else {
+        const pdx = beast.x - cam.x;
+        const pdz = beast.z - cam.z;
         const playerDist = Math.hypot(pdx, pdz) || 0.0001;
         const dot = (pdx * Math.sin(cam.yaw) + pdz * -Math.cos(cam.yaw)) / playerDist;
         if (playerDist > 46) {
-            const spot = horseAnchor();
-            horse.x = spot.x;
-            horse.z = spot.z;
-            horse.walking = false;
-            horse.yaw = Math.atan2(-(cam.x - horse.x), -(cam.z - horse.z));
+            const spot = followAnchor(beast);
+            beast.x = spot.x;
+            beast.z = spot.z;
+            beast.walking = false;
+            beast.yaw = Math.atan2(-(cam.x - beast.x), -(cam.z - beast.z));
         } else {
             const tooFar = playerDist > 6.8;
             const tooClose = playerDist < 2.8;
             const behind = dot < 0.2;
-            let tx = horse.x;
-            let tz = horse.z;
+            let tx = beast.x;
+            let tz = beast.z;
             if (tooClose) {
                 tx = cam.x + (pdx / playerDist) * 4.5;
                 tz = cam.z + (pdz / playerDist) * 4.5;
             } else if (tooFar || behind) {
-                const spot = horseAnchor();
+                const spot = followAnchor(beast);
                 tx = spot.x;
                 tz = spot.z;
             }
-            const dx = tx - horse.x;
-            const dz = tz - horse.z;
+            const dx = tx - beast.x;
+            const dz = tz - beast.z;
             const dist = Math.hypot(dx, dz);
             if (dist > 0.45) {
-                horse.yaw = Math.atan2(-dx, -dz);
+                beast.yaw = Math.atan2(-dx, -dz);
                 let speed = 2.2;
                 if (playerDist > 7.5) speed = Hero.walkSpeed(hero);
-                if (playerDist > 16) speed = Hero.walkSpeed(hero) * 1.15;
+                if (canterAt && playerDist > 16) speed = Hero.walkSpeed(hero) * 1.15;
                 pace = speed;
                 const step = Math.min(speed * dt, dist - 0.25);
                 const ux = dx / dist;
                 const uz = dz / dist;
-                const feet = horse.stand;
-                const nx = horse.x + ux * step;
-                const nz = horse.z + uz * step;
-                const ox = horse.x;
-                const oz = horse.z;
-                if (!blocked(nx, horse.z, homeVillage, feet)) horse.x = nx;
-                if (!blocked(horse.x, nz, homeVillage, feet)) horse.z = nz;
-                if (horse.x === ox && horse.z === oz) {
+                const feet = beast.stand;
+                const nx = beast.x + ux * step;
+                const nz = beast.z + uz * step;
+                const ox = beast.x;
+                const oz = beast.z;
+                if (!blocked(nx, beast.z, homeVillage, feet)) beast.x = nx;
+                if (!blocked(beast.x, nz, homeVillage, feet)) beast.z = nz;
+                if (beast.x === ox && beast.z === oz) {
                     const leftX = ox - uz * step;
                     const leftZ = oz + ux * step;
                     const rightX = ox + uz * step;
                     const rightZ = oz - ux * step;
                     if (!blocked(leftX, leftZ, homeVillage, feet)) {
-                        horse.x = leftX;
-                        horse.z = leftZ;
+                        beast.x = leftX;
+                        beast.z = leftZ;
                     } else if (!blocked(rightX, rightZ, homeVillage, feet)) {
-                        horse.x = rightX;
-                        horse.z = rightZ;
+                        beast.x = rightX;
+                        beast.z = rightZ;
                     }
                 }
-                horse.walking = Math.hypot(horse.x - ox, horse.z - oz) > 0.001;
+                beast.walking = Math.hypot(beast.x - ox, beast.z - oz) > 0.001;
             } else {
-                horse.walking = false;
-                const face = Math.atan2(-(cam.x - horse.x), -(cam.z - horse.z));
-                let diff = face - horse.yaw;
+                beast.walking = false;
+                const face = Math.atan2(-(cam.x - beast.x), -(cam.z - beast.z));
+                let diff = face - beast.yaw;
                 while (diff > Math.PI) diff -= Math.PI * 2;
                 while (diff < -Math.PI) diff += Math.PI * 2;
-                horse.yaw += diff * Math.min(1, dt * 2.2);
+                beast.yaw += diff * Math.min(1, dt * 2.2);
             }
         }
-    } else {
-        horse.walking = false;
     }
-    horse.stand = horseGround(horse.x, horse.z);
-    if (horse.walking) horse.phase += dt * (3.2 + pace * 0.4);
-    horse.bob = horse.walking ? Math.abs(Math.sin(horse.phase * 2)) * 0.03 : 0;
+    beast.stand = beastGround(beast, beast.x, beast.z);
+    beast.pace = pace;
+    if (beast.walking) {
+        beast.phase += dt * (2.4 + pace * 0.25);
+        const legRate = beast.slowLegs ? 0.042 : 0.42;
+        beast.animPhase = (beast.animPhase || 0) + dt * legRate;
+    } else {
+        beast.animPhase = 0;
+    }
+    beast.bob = beast.walking ? Math.abs(Math.sin(beast.phase * 2)) * 0.025 : 0;
+}
+
+function stepHorse(dt) {
+    if (horse.parked) {
+        horse.walking = false;
+        horse.stand = beastGround(horse, horse.x, horse.z);
+        horse.animPhase = 0;
+        horse.bob = 0;
+        return;
+    }
+    stepFollowBeast(horse, dt, true);
+    if (horse.walking && horse.pace > 3.4) horse.animPhase += dt * 0.5;
+}
+
+function stepPetFollowers(dt) {
+    if (homeVillage !== 2 || inside) return;
+    for (let i = 0; i < petFollowers.length; i++) stepFollowBeast(petFollowers[i], dt, false);
 }
 
 function drawHorse() {
-    if (!horseBody || !horseLeg || !textures.horse || inside) return;
-    const view = activeCam();
-    if (Math.hypot(horse.x - view.x, horse.z - view.z) > 80) return;
-    const stride = 24;
-    gl.enable(gl.CULL_FACE);
-    gl.bindTexture(gl.TEXTURE_2D, textures.horse);
-    gl.uniform1f(loc.flow, 0);
-    gl.uniformMatrix4fv(loc.model, false, personMatrix(horse));
-    gl.bindBuffer(gl.ARRAY_BUFFER, horseBody.buffer);
-    gl.enableVertexAttribArray(loc.pos);
-    gl.enableVertexAttribArray(loc.uv);
-    gl.enableVertexAttribArray(loc.shade);
-    gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
-    gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
-    gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
-    gl.drawArrays(gl.TRIANGLES, 0, horseBody.count);
+    drawBeast(horseMesh, horse, horseAnimFrame);
+}
+
+function drawPetFollowers() {
+    if (homeVillage !== 2) return;
+    for (let i = 0; i < petFollowers.length; i++) {
+        const pet = petFollowers[i];
+        const mesh = petMesh(pet);
+        if (!mesh) continue;
+        drawBeast(mesh, pet, () => petAnimFrame(mesh, pet));
+    }
 }
 
 function swordMatrix(man, hand) {
@@ -4904,6 +5275,7 @@ function bowMatrix(man) {
 
 function nearestMen(cap, range) {
     const reach = range * range;
+    const priority = [];
     const list = [];
     for (let i = 0; i < men.length; i++) {
         const man = men[i];
@@ -4912,11 +5284,19 @@ function nearestMen(cap, range) {
         const dz = (man.z || 0) - cam.z;
         const d2 = dx * dx + dz * dz;
         if (d2 > reach) continue;
-        list.push({ man: man, d2: d2 });
+        const row = { man: man, d2: d2 };
+        if (man.inn || man.commander || man.shopkeeper) priority.push(row);
+        else list.push(row);
     }
+    priority.sort((a, b) => a.d2 - b.d2);
     list.sort((a, b) => a.d2 - b.d2);
-    if (list.length > cap) list.length = cap;
-    return list;
+    const out = priority.concat(list);
+    if (out.length > cap) out.length = cap;
+    return out;
+}
+
+function kaykitMeshesReady() {
+    return !!(folkMesh.rogue || folkMesh.innkeeper || folkMesh.commanderOfficer || folkMesh.paladin || folkMesh.archer);
 }
 
 let actorsRebuildAt = 0;
@@ -6536,6 +6916,7 @@ function respawn() {
     player.guard = 1.4;
     hop = 0;
     placeAtVillageSpawn();
+    ensureVillageSpawnClear();
     death.classList.remove("show");
     death.hidden = true;
     paintHealth();
@@ -9212,7 +9593,15 @@ function groundUnder(x, z, feet) {
 
 function movePlayer(dt) {
     const body = activeCam();
-    if (typeof Dialogue !== "undefined" && Dialogue.isOpen()) return;
+    if (typeof Dialogue !== "undefined" && Dialogue.isOpen()) {
+        const forward = keys.KeyW || keys.ArrowUp;
+        const back = keys.KeyS || keys.ArrowDown;
+        const left = keys.KeyA;
+        const right = keys.KeyD;
+        const stickMag = Math.hypot(stick.x, stick.y);
+        if (forward || back || left || right || stickMag > 0.18) Dialogue.close();
+        else return;
+    }
     if (player.dead && !flying) return;
     if (keys.ArrowLeft) body.yaw -= 1.7 * dt;
     if (keys.ArrowRight) body.yaw += 1.7 * dt;
@@ -9358,32 +9747,11 @@ function draw() {
     }
     paintCarts();
     const stride = 24;
-    const drawMesh = (name, band) => {
-        if (!mesh[name] || !textures[name] || !mesh[name].count) return;
-        if (mesh[name].cull === false) gl.disable(gl.CULL_FACE);
-        else gl.enable(gl.CULL_FACE);
-        gl.bindBuffer(gl.ARRAY_BUFFER, mesh[name].buffer);
-        gl.enableVertexAttribArray(loc.pos);
-        gl.enableVertexAttribArray(loc.uv);
-        gl.enableVertexAttribArray(loc.shade);
-        gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
-        gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
-        gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
-        gl.bindTexture(gl.TEXTURE_2D, textures[name]);
-        gl.uniform1f(loc.dark, dark);
-        gl.uniform1f(loc.glow, name === "glow" ? 2 : 0);
-        gl.uniform1f(loc.band, band);
-        gl.uniform1f(loc.flow, name === "water" ? 1 : 0);
-        gl.uniformMatrix4fv(loc.proj, false, proj);
-        if (mesh[name].lift) {
-            gl.enable(gl.POLYGON_OFFSET_FILL);
-            gl.polygonOffset(-2, -8);
-        }
-        gl.drawArrays(gl.TRIANGLES, 0, mesh[name].count);
-        gl.disable(gl.POLYGON_OFFSET_FILL);
-    };
     gl.clear(gl.DEPTH_BUFFER_BIT);
-    for (let i = 0; i < outdoorDrawList.length; i++) drawMesh(outdoorDrawList[i], 1);
+    for (let i = 0; i < outdoorDrawList.length; i++) {
+        gl.uniform1f(loc.glow, outdoorDrawList[i] === "glow" ? 2 : 0);
+        drawMesh(outdoorDrawList[i], 1, dark, proj);
+    }
     drawFolk(dark, proj);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -9419,11 +9787,12 @@ function draw() {
     gl.depthMask(true);
     gl.depthFunc(gl.LESS);
     gl.disable(gl.BLEND);
-    drawMesh("farTrunk", 0.6);
-    drawMesh("farLeaf", 0.6);
-    drawMesh("nearTrunk", 1);
-    drawMesh("nearLeaf", 1);
-    drawMesh("placeGhost", 1);
+    gl.uniform1f(loc.glow, 0);
+    drawMesh("farTrunk", 0.6, dark, proj);
+    drawMesh("farLeaf", 0.6, dark, proj);
+    drawMesh("nearTrunk", 1, dark, proj);
+    drawMesh("nearLeaf", 1, dark, proj);
+    drawMesh("placeGhost", 1, dark, proj);
     drawWorldMarkers(dark, proj);
     gl.uniform1f(loc.band, 1);
     gl.uniform1f(loc.flow, 0);
@@ -9431,6 +9800,7 @@ function draw() {
     // People are box stamps in cloth/skin meshes (rebuildMesh) — not people.json models.
     gl.uniformMatrix4fv(loc.model, false, identity);
     drawHorse();
+    drawPetFollowers();
     if (studyMesh && studyTex) {
         gl.enable(gl.CULL_FACE);
         gl.bindTexture(gl.TEXTURE_2D, studyTex);
@@ -10565,6 +10935,7 @@ function aimedTalkPerson(reach) {
 
 function tryTalk() {
     if (typeof Dialogue === "undefined" || Dialogue.isOpen()) return false;
+    if (document.pointerLockElement !== canvas) return false;
     if (inside || flying || player.dead) return false;
     const man = aimedTalkPerson(6);
     if (!man) return false;
@@ -10999,6 +11370,7 @@ function frame(now) {
     }
     movePlayer(dt);
     stepHorse(dt);
+    stepPetFollowers(dt);
     swingDoors(dt);
     updateFocusTown();
     maybeRemeshLand();
@@ -11050,10 +11422,18 @@ window.addEventListener("keydown", (e) => {
 });
 window.addEventListener("keyup", (e) => { keys[e.code] = false; });
 
+function lockViewFirst() {
+    if (document.pointerLockElement !== canvas) {
+        canvas.requestPointerLock();
+        return true;
+    }
+    return false;
+}
+
 canvas.addEventListener("click", () => {
+    if (lockViewFirst()) return;
     if (tryTalk()) return;
     if (tryPickup()) return;
-    if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
 });
 document.addEventListener("mousemove", (e) => {
     if (gesture) {
@@ -11089,6 +11469,7 @@ canvas.addEventListener("mousedown", (e) => {
         confirmPlaceHouse();
         return;
     }
+    if (lockViewFirst()) return;
     if (tryTalk()) return;
     if (tryPickup()) return;
     dragging = true;
@@ -11388,7 +11769,7 @@ if (gl) {
     initStaticPickups();
     markWorldMarkersDirty();
     prepareBow();
-    buildHorse();
+    buildBeasts();
     // AoE cost model: no Roblox JSON outdoors — box/billboard stamps only (see outdoorDrawList).
     requestAnimationFrame(frame);
 }

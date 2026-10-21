@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Building editor — Village MegaKit</title>
+    <style>
+        html, body { margin: 0; height: 100%; overflow: hidden; background: #1a1814; font-family: "Segoe UI", system-ui, sans-serif; color: #f3ead8; }
+        #view { display: block; width: 100%; height: 100%; }
+        #bar {
+            position: fixed; top: 12px; left: 12px; z-index: 2;
+            background: rgba(20, 16, 12, 0.92); padding: 12px 14px; border-radius: 8px;
+            width: 260px; max-height: calc(100% - 24px); overflow-y: auto;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+        }
+        #bar h1 { font-size: 15px; margin: 0 0 6px; font-weight: 650; }
+        #bar p.hint { font-size: 11px; line-height: 1.45; margin: 0 0 10px; color: #c9b89a; }
+        label { display: block; font-size: 12px; font-weight: 600; margin: 8px 0 4px; color: #d9cbb4; }
+        input[type="text"], select {
+            width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 6px;
+            border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.35); color: #fff;
+            font: 13px "Segoe UI", sans-serif;
+        }
+        button, .mode {
+            display: block; width: 100%; box-sizing: border-box; margin: 4px 0; padding: 7px 8px;
+            border-radius: 6px; border: 1px solid rgba(255,255,255,0.22); background: rgba(255,255,255,0.07);
+            color: #fff; text-align: left; cursor: pointer; font: 600 13px "Segoe UI", sans-serif;
+        }
+        .mode.on { background: #6b4423; border-color: #e8c896; }
+        button.primary { background: #3d5a3a; border-color: #8fbc8f; text-align: center; }
+        button:hover { filter: brightness(1.08); }
+        #status { font-size: 12px; color: #e8c896; min-height: 2.4em; margin-top: 8px; line-height: 1.35; }
+        #file { display: none; }
+        .row { display: flex; gap: 6px; }
+        .row button { flex: 1; text-align: center; font-size: 12px; padding: 6px 4px; }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <canvas id="view"></canvas>
+    <div id="bar">
+        <h1>Building editor</h1>
+        <p class="hint">2&nbsp;m grid — <b>everything except walls</b> snaps to the <b>centre of a square</b> (floors, roofs, overhangs, corners, props, stairs…). <b>Walls / windows / doors / shutters</b> snap to a <b>wall line</b>, centred on the tile along that edge. <b>R</b> · <b>Q/E</b> storey.</p>
+        <details class="hint" style="margin:6px 0;font-size:11px;line-height:1.45;color:#d9cbb4;">
+            <summary style="cursor:pointer;color:#e8c896;">How to roof (megakit)</summary>
+            <ol style="margin:6px 0 0;padding-left:18px;">
+                <li><b>Q/E</b> to the top floor (same footprint as walls).</li>
+                <li><b>Roof → Roof RoundTiles N×M</b> — pick size to cover the floor (each grid square = 2&nbsp;m; 4×4 name ≈ four metres).</li>
+                <li><b>Overhang → Overhang Roof …</b> — infill flat caps; <b>Overhang Side … L/R</b> — fill under eaves on sides.</li>
+                <li><b>Roof → Roof Front Brick4/6/8</b> — gable end (closed front); rotate to face the end wall.</li>
+                <li><b>Overhang → Plaster/Uneven corner &amp; long</b> — timber brackets on cell centres like floors.</li>
+            </ol>
+        </details>
+        <p id="floorLevelLabel" class="hint" style="margin-top:4px;color:#e8c896;">Floor level: 1 (y = 0)</p>
+        <label for="buildingName">Building name</label>
+        <input type="text" id="buildingName" value="my-building" maxlength="64">
+        <label for="search">Search pieces</label>
+        <input type="text" id="search" placeholder="wall, roof, door…">
+        <label for="category">Category</label>
+        <select id="category"></select>
+        <label for="piece">Piece</label>
+        <select id="piece"></select>
+        <label class="hint" style="display:flex;align-items:center;gap:8px;margin:8px 0 0;font-size:12px;">
+            <input type="checkbox" id="autoDoorLeaf" checked> Auto door leaf on <b>Wall … Door …</b> pieces
+        </label>
+        <label>Tool</label>
+        <button type="button" class="mode on" data-mode="place">Place piece</button>
+        <button type="button" class="mode" data-mode="erase">Erase (click piece)</button>
+        <div class="row">
+            <button type="button" id="undo" title="Ctrl+Z">Undo</button>
+            <button type="button" id="clear">Clear all</button>
+        </div>
+        <button type="button" class="primary" id="saveProject">Save to project (town editor + bake)</button>
+        <button type="button" id="save">Save in browser</button>
+        <button type="button" id="export">Download building.json</button>
+        <button type="button" id="load">Load building.json</button>
+        <input id="file" type="file" accept="application/json,.json">
+        <p id="status">Loading kit…</p>
+    </div>
+    <script type="module">
+        import * as THREE from "three";
+        import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+        import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+        const CELL = 2;
+        /** Megakit wall stack — one storey. */
+        const STOREY_H = 3.05;
+        const storeKey = "building-editor-draft";
+        const canvas = document.getElementById("view");
+        const statusEl = document.getElementById("status");
+        const categoryEl = document.getElementById("category");
+        const pieceEl = document.getElementById("piece");
+        const searchEl = document.getElementById("search");
+
+        let manifest = null;
+        let mode = "place";
+        let yaw = 0;
+        let floorLevel = 0;
+        let liftY = 0;
+        let selectedPiece = "";
+        let hover = null;
+        const placed = [];
+        const loader = new GLTFLoader();
+        const templateCache = new Map();
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87a8c4);
+        scene.fog = new THREE.Fog(0x87a8c4, 80, 220);
+
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+        const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 500);
+        camera.position.set(14, 12, 18);
+
+        const controls = new OrbitControls(camera, canvas);
+        controls.target.set(0, 1.5, 0);
+        controls.enableDamping = true;
+        controls.maxPolarAngle = Math.PI * 0.48;
+        controls.minDistance = 4;
+        controls.maxDistance = 120;
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+        const sun = new THREE.DirectionalLight(0xfff4e0, 1.1);
+        sun.position.set(20, 40, 12);
+        scene.add(sun);
+
+        const ground = new THREE.Mesh(
+            new THREE.PlaneGeometry(160, 160),
+            new THREE.MeshStandardMaterial({ color: 0x5a7a48, roughness: 0.95 })
+        );
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        const grid = new THREE.GridHelper(80, 40, 0x3a3028, 0x2a2420);
+        grid.position.y = 0.02;
+        scene.add(grid);
+        const floorGrid = new THREE.GridHelper(80, 40, 0x6a5040, 0x4a3828);
+        floorGrid.position.y = 0.03;
+        floorGrid.visible = false;
+        scene.add(floorGrid);
+
+        const rootGroup = new THREE.Group();
+        scene.add(rootGroup);
+
+        const ghostGroup = new THREE.Group();
+        scene.add(ghostGroup);
+        let ghostTemplate = null;
+
+        const raycaster = new THREE.Raycaster();
+        const ndc = new THREE.Vector2();
+        const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
+        /** Cell centre — 2&nbsp;m floor tiles are centred on the anchor. */
+        function snapCell(v) {
+            return Math.round((v - CELL / 2) / CELL) * CELL + CELL / 2;
+        }
+
+        /** Grid line — wall/door pieces sit on tile edges (even coords). */
+        function snapLine(v) {
+            return Math.round(v / CELL) * CELL;
+        }
+
+        function usesWallLineSnap(pieceId) {
+            if (!pieceId) return false;
+            return (
+                pieceId.startsWith("Wall_") ||
+                pieceId.startsWith("Window_") ||
+                pieceId.startsWith("WindowShutters_") ||
+                pieceId.startsWith("DoorFrame_") ||
+                pieceId.startsWith("Door_")
+            );
+        }
+
+        /**
+         * Wall-line snap: on the edge line, centred on the tile along the wall.
+         * Everything else (roof, overhang, corner, prop, stair, hole, floor, balcony…): cell centre both axes.
+         */
+        function snapForPiece(pieceId, x, z, pieceYaw) {
+            if (usesWallLineSnap(pieceId)) {
+                const alongX = Math.abs(Math.cos(pieceYaw)) >= Math.abs(Math.sin(pieceYaw));
+                if (alongX) return { x: snapCell(x), z: snapLine(z) };
+                return { x: snapLine(x), z: snapCell(z) };
+            }
+            return { x: snapCell(x), z: snapCell(z) };
+        }
+
+        /** Door leaf pivot differs from wall-door opening — align leaf to opening when wall and door share one anchor. */
+        function placementOffset(pieceId, pieceYaw) {
+            if (!pieceId || !pieceId.startsWith("Door_")) return { x: 0, z: 0 };
+            const alongX = Math.abs(Math.cos(pieceYaw)) >= Math.abs(Math.sin(pieceYaw));
+            const d = 0.51;
+            if (alongX) return { x: -d, z: 0 };
+            return { x: 0, z: -d };
+        }
+
+        function doorLeafForWall(wallId) {
+            if (!wallId || wallId.indexOf("_Door_") < 0) return null;
+            if (wallId.includes("Round")) return "Door_1_Round";
+            if (wallId.includes("Flat")) return "Door_1_Flat";
+            return null;
+        }
+
+        function pushPlaced(record) {
+            placed.push(record);
+            rootGroup.add(makeInstance(record));
+        }
+
+        function placeY() {
+            return liftY;
+        }
+
+        function syncLiftFromFloorLevel() {
+            liftY = floorLevel * STOREY_H;
+            updateFloorGuide();
+            updateFloorLevelLabel();
+        }
+
+        function updateFloorGuide() {
+            const y = placeY();
+            floorGrid.position.y = y + 0.03;
+            floorGrid.visible = y > 0.01;
+        }
+
+        function updateFloorLevelLabel() {
+            const el = document.getElementById("floorLevelLabel");
+            if (!el) return;
+            const n = floorLevel + 1;
+            el.textContent = "Floor level: " + n + " (y = " + placeY().toFixed(2) + " m)";
+        }
+
+        function snapXZ(x, z, pieceId, pieceYaw) {
+            return snapForPiece(pieceId || selectedPiece, x, z, pieceYaw != null ? pieceYaw : yaw);
+        }
+
+        let piecePivots = {};
+
+        function pivotNudge(pieceId, pieceYaw) {
+            if (usesWallLineSnap(pieceId)) return { x: 0, z: 0 };
+            const n = piecePivots[pieceId];
+            if (!n) return { x: 0, z: 0 };
+            const c = Math.cos(pieceYaw);
+            const s = Math.sin(pieceYaw);
+            return {
+                x: n.x * c + n.z * s,
+                z: -n.x * s + n.z * c
+            };
+        }
+
+        function worldPlace(x, z, pieceId, pieceYaw) {
+            let px = x;
+            let pz = z;
+            const pivot = pivotNudge(pieceId, pieceYaw);
+            px += pivot.x;
+            pz += pivot.z;
+            const off = placementOffset(pieceId, pieceYaw);
+            const c = Math.cos(pieceYaw);
+            const s = Math.sin(pieceYaw);
+            px += off.x * c + off.z * s;
+            pz += -off.x * s + off.z * c;
+            return { x: px, z: pz };
+        }
+
+        function setStatus(text) {
+            statusEl.textContent = text;
+        }
+
+        function pieceUrl(name) {
+            return manifest.piecesDir + encodeURIComponent(name) + ".gltf";
+        }
+
+        async function loadTemplate(name) {
+            if (templateCache.has(name)) return templateCache.get(name);
+            const promise = new Promise((resolve, reject) => {
+                loader.load(pieceUrl(name), (gltf) => {
+                    const root = gltf.scene;
+                    root.traverse((o) => {
+                        if (o.isMesh) {
+                            o.castShadow = true;
+                            o.receiveShadow = true;
+                        }
+                    });
+                    resolve(root);
+                }, undefined, reject);
+            });
+            templateCache.set(name, promise);
+            return promise;
+        }
+
+        function makeInstance(record) {
+            const group = new THREE.Group();
+            group.position.set(record.x, record.y, record.z);
+            group.rotation.y = record.yaw;
+            group.userData.record = record;
+            loadTemplate(record.id).then((template) => {
+                const mesh = template.clone(true);
+                group.add(mesh);
+            }).catch((err) => {
+                console.error(record.id, err);
+            });
+            return group;
+        }
+
+        function rebuildScene() {
+            while (rootGroup.children.length) rootGroup.remove(rootGroup.children[0]);
+            for (const rec of placed) {
+                rootGroup.add(makeInstance(rec));
+            }
+        }
+
+        async function updateGhost() {
+            ghostGroup.clear();
+            if (mode !== "place" || !selectedPiece || !hover) return;
+            try {
+                if (!ghostTemplate || ghostTemplate.name !== selectedPiece) {
+                    ghostTemplate = { name: selectedPiece, obj: await loadTemplate(selectedPiece) };
+                }
+                const g = ghostTemplate.obj.clone(true);
+                g.traverse((o) => {
+                    if (o.isMesh && o.material) {
+                        o.material = o.material.clone();
+                        o.material.transparent = true;
+                        o.material.opacity = 0.45;
+                        o.material.depthWrite = false;
+                    }
+                });
+                ghostGroup.position.set(hover.x, hover.y, hover.z);
+                ghostGroup.rotation.y = yaw;
+                ghostGroup.add(g);
+            } catch (err) {
+                setStatus("Could not preview: " + selectedPiece);
+            }
+        }
+
+        function pointerGround(clientX, clientY) {
+            const rect = canvas.getBoundingClientRect();
+            ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+            ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(ndc, camera);
+            const hit = new THREE.Vector3();
+            if (!raycaster.ray.intersectPlane(groundPlane, hit)) return null;
+            const xz = snapXZ(hit.x, hit.z, selectedPiece, yaw);
+            const pos = worldPlace(xz.x, xz.z, selectedPiece, yaw);
+            return {
+                x: pos.x,
+                z: pos.z,
+                y: placeY()
+            };
+        }
+
+        function addPiece(p) {
+            const wallId = selectedPiece;
+            pushPlaced({
+                id: wallId,
+                x: p.x,
+                z: p.z,
+                y: p.y,
+                yaw
+            });
+            const autoDoor = document.getElementById("autoDoorLeaf");
+            const leafId = autoDoor && autoDoor.checked ? doorLeafForWall(wallId) : null;
+            if (leafId) {
+                const snapped = snapForPiece(wallId, p.x, p.z, yaw);
+                const pos = worldPlace(snapped.x, snapped.z, leafId, yaw);
+                pushPlaced({
+                    id: leafId,
+                    x: pos.x,
+                    z: pos.z,
+                    y: p.y,
+                    yaw
+                });
+            }
+            const yNote = p.y > 0.01 ? ", y=" + p.y.toFixed(2) : "";
+            const extra = leafId ? " + " + leafId : "";
+            setStatus(placed.length + " pieces · last " + wallId + extra + " @ " + p.x + ", " + p.z + yNote);
+        }
+
+        function eraseAt(clientX, clientY) {
+            const rect = canvas.getBoundingClientRect();
+            ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+            ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(ndc, camera);
+            const hits = raycaster.intersectObjects(rootGroup.children, true);
+            if (!hits.length) return;
+            let obj = hits[0].object;
+            while (obj.parent && obj.parent !== rootGroup) obj = obj.parent;
+            const rec = obj.userData.record;
+            if (!rec) return;
+            const i = placed.indexOf(rec);
+            if (i >= 0) placed.splice(i, 1);
+            rootGroup.remove(obj);
+            setStatus(placed.length + " pieces after erase");
+        }
+
+        function payload() {
+            return {
+                kind: "building",
+                kit: manifest.kind,
+                grid: CELL,
+                name: document.getElementById("buildingName").value.trim() || "my-building",
+                pieces: placed.map((p) => ({
+                    id: p.id,
+                    x: p.x,
+                    z: p.z,
+                    y: p.y,
+                    yaw: p.yaw
+                }))
+            };
+        }
+
+        function applyPayload(data) {
+            if (!data.pieces || !Array.isArray(data.pieces)) throw new Error("Missing pieces array");
+            placed.length = 0;
+            for (const p of data.pieces) {
+                placed.push({
+                    id: p.id,
+                    x: p.x,
+                    z: p.z,
+                    y: p.y || 0,
+                    yaw: p.yaw || 0
+                });
+            }
+            if (data.name) document.getElementById("buildingName").value = data.name;
+            rebuildScene();
+            setStatus("Loaded " + placed.length + " pieces");
+        }
+
+        function fillPieceList() {
+            const q = searchEl.value.trim().toLowerCase();
+            const cat = categoryEl.value;
+            const list = (manifest.categories[cat] || []).filter((name) => !q || name.toLowerCase().includes(q));
+            pieceEl.innerHTML = "";
+            for (const name of list) {
+                const opt = document.createElement("option");
+                opt.value = name;
+                opt.textContent = name.replace(/_/g, " ");
+                pieceEl.appendChild(opt);
+            }
+            if (list.length) {
+                selectedPiece = pieceEl.value;
+            } else {
+                selectedPiece = "";
+            }
+            updateGhost();
+        }
+
+        function fillCategories() {
+            const q = searchEl.value.trim().toLowerCase();
+            const cats = Object.keys(manifest.categories).sort();
+            categoryEl.innerHTML = "";
+            for (const cat of cats) {
+                const names = manifest.categories[cat];
+                const show = !q || cat.toLowerCase().includes(q) || names.some((n) => n.toLowerCase().includes(q));
+                if (!show) continue;
+                const opt = document.createElement("option");
+                opt.value = cat;
+                opt.textContent = cat + " (" + names.length + ")";
+                categoryEl.appendChild(opt);
+            }
+            fillPieceList();
+        }
+
+        function onSearch() {
+            fillCategories();
+            if (qMatchesGlobal()) {
+                const q = searchEl.value.trim().toLowerCase();
+                for (const opt of pieceEl.options) {
+                    if (opt.value.toLowerCase().includes(q)) {
+                        pieceEl.value = opt.value;
+                        selectedPiece = opt.value;
+                        break;
+                    }
+                }
+            }
+        }
+
+        function qMatchesGlobal() {
+            const q = searchEl.value.trim().toLowerCase();
+            if (!q) return false;
+            const cat = categoryEl.value;
+            return !(manifest.categories[cat] || []).some((n) => n.toLowerCase().includes(q));
+        }
+
+        categoryEl.addEventListener("change", fillPieceList);
+        pieceEl.addEventListener("change", () => {
+            selectedPiece = pieceEl.value;
+            ghostTemplate = null;
+            updateFloorGuide();
+            updateGhost();
+        });
+        searchEl.addEventListener("input", onSearch);
+
+        document.querySelectorAll(".mode").forEach((btn) => {
+            btn.addEventListener("click", () => {
+                mode = btn.dataset.mode;
+                document.querySelectorAll(".mode").forEach((b) => b.classList.toggle("on", b === btn));
+                updateGhost();
+            });
+        });
+
+        canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+        canvas.addEventListener("mousemove", (e) => {
+            if (e.buttons === 2) return;
+            hover = pointerGround(e.clientX, e.clientY);
+            updateGhost();
+        });
+        canvas.addEventListener("mousedown", (e) => {
+            if (e.button === 2) return;
+            if (mode === "place") {
+                hover = pointerGround(e.clientX, e.clientY);
+                if (hover && selectedPiece) addPiece(hover);
+            } else if (mode === "erase") {
+                eraseAt(e.clientX, e.clientY);
+            }
+        });
+
+        window.addEventListener("keydown", (e) => {
+            if (e.target.matches("input, select, textarea")) return;
+            if (e.code === "KeyR") {
+                yaw = (yaw + Math.PI / 2) % (Math.PI * 2);
+                updateGhost();
+            }
+            if (e.code === "KeyQ") {
+                if (e.shiftKey) {
+                    liftY = Math.max(0, +(liftY - 0.25).toFixed(2));
+                    floorLevel = Math.round(liftY / STOREY_H);
+                } else {
+                    floorLevel = Math.max(0, floorLevel - 1);
+                    syncLiftFromFloorLevel();
+                }
+                updateGhost();
+                updateFloorLevelLabel();
+            }
+            if (e.code === "KeyE") {
+                if (e.shiftKey) {
+                    liftY = Math.min(24, +(liftY + 0.25).toFixed(2));
+                    floorLevel = Math.round(liftY / STOREY_H);
+                } else {
+                    floorLevel = Math.min(7, floorLevel + 1);
+                    syncLiftFromFloorLevel();
+                }
+                updateGhost();
+                updateFloorLevelLabel();
+            }
+            if (e.code === "KeyZ" && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                if (placed.length) {
+                    placed.pop();
+                    rebuildScene();
+                    setStatus("Undo · " + placed.length + " pieces");
+                }
+            }
+            const step = e.shiftKey ? 4 : 2;
+            const fwd = new THREE.Vector3();
+            camera.getWorldDirection(fwd);
+            fwd.y = 0;
+            fwd.normalize();
+            const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
+            if (e.code === "KeyW") controls.target.addScaledVector(fwd, step);
+            if (e.code === "KeyS") controls.target.addScaledVector(fwd, -step);
+            if (e.code === "KeyD") controls.target.addScaledVector(right, step);
+            if (e.code === "KeyA") controls.target.addScaledVector(right, -step);
+        });
+
+        document.getElementById("undo").addEventListener("click", () => {
+            if (placed.length) {
+                placed.pop();
+                rebuildScene();
+                setStatus("Undo · " + placed.length + " pieces");
+            }
+        });
+        document.getElementById("clear").addEventListener("click", () => {
+            if (placed.length && !confirm("Clear all " + placed.length + " pieces?")) return;
+            placed.length = 0;
+            rebuildScene();
+            setStatus("Cleared");
+        });
+        document.getElementById("saveProject").addEventListener("click", async () => {
+            const data = payload();
+            setStatus("Saving to project…");
+            try {
+                const res = await fetch("/api/building-save", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(data)
+                });
+                const out = await res.json();
+                if (!res.ok) throw new Error(out.error || "Save failed");
+                let msg = "Saved as " + out.id + " — refresh town editor to place it.";
+                if (out.baked) msg += " Baked to models/kitbuild/.";
+                else if (out.bakeError) msg += " (Bake issue: " + out.bakeError.slice(0, 80) + "…)";
+                setStatus(msg);
+            } catch (err) {
+                setStatus("Project save failed: " + err.message + " — run npm run dev from repo root.");
+            }
+        });
+        document.getElementById("save").addEventListener("click", () => {
+            localStorage.setItem(storeKey, JSON.stringify(payload()));
+            setStatus("Saved in this browser.");
+        });
+        document.getElementById("export").addEventListener("click", () => {
+            const data = payload();
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = (data.name || "building").replace(/[^\w\-]+/g, "-") + ".json";
+            a.click();
+            setStatus("Downloaded " + a.download);
+        });
+        document.getElementById("load").addEventListener("click", () => document.getElementById("file").click());
+        document.getElementById("file").addEventListener("change", () => {
+            const file = document.getElementById("file").files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                try {
+                    applyPayload(JSON.parse(reader.result));
+                    setStatus("Loaded " + file.name);
+                } catch (err) {
+                    setStatus("Load failed: " + err.message);
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        function resize() {
+            const w = canvas.clientWidth;
+            const h = canvas.clientHeight;
+            renderer.setSize(w, h, false);
+            camera.aspect = w / Math.max(1, h);
+            camera.updateProjectionMatrix();
+        }
+        window.addEventListener("resize", resize);
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        async function boot() {
+            try {
+                const [manifestRes, pivotRes] = await Promise.all([
+                    fetch("./manifest.json"),
+                    fetch("./piece-pivots.json")
+                ]);
+                manifest = await manifestRes.json();
+                if (pivotRes.ok) piecePivots = await pivotRes.json();
+            } catch (err) {
+                setStatus("Open from a local server (repo root). Could not load manifest.json.");
+                return;
+            }
+            fillCategories();
+            selectedPiece = pieceEl.value;
+            syncLiftFromFloorLevel();
+            resize();
+            animate();
+
+            const saved = localStorage.getItem(storeKey);
+            if (saved) {
+                try {
+                    applyPayload(JSON.parse(saved));
+                    setStatus(placed.length + " pieces restored from browser save.");
+                } catch (err) {
+                    setStatus("Ready — " + Object.values(manifest.categories).flat().length + " kit pieces.");
+                }
+            } else {
+                setStatus("Ready — pick a piece and click the grid.");
+            }
+        }
+
+        boot();
+    </script>
+</body>
+</html>

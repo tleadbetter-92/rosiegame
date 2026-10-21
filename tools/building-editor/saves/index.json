@@ -1,0 +1,34 @@
+{
+  "buildings": [
+    {
+      "id": "my-building",
+      "name": "my-building",
+      "file": "my-building.json",
+      "cx": 10,
+      "cz": 1,
+      "minX": 6,
+      "maxX": 14,
+      "minZ": -2,
+      "maxZ": 4,
+      "maxY": 6.1,
+      "spanX": 10,
+      "spanZ": 8,
+      "pieces": 75
+    },
+    {
+      "id": "testbuild",
+      "name": "my-building",
+      "file": "testbuild.json",
+      "cx": 2,
+      "cz": -3,
+      "minX": 0,
+      "maxX": 4,
+      "minZ": -6,
+      "maxZ": 0,
+      "maxY": 0,
+      "spanX": 6,
+      "spanZ": 8,
+      "pieces": 29
+    }
+  ]
+}

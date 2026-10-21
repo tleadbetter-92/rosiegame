@@ -8,7 +8,15 @@ function loadGlb(file) {
     const binStart = 20 + jsonLen;
     const binLen = b.readUInt32LE(binStart);
     const bin = b.slice(binStart + 8, binStart + 8 + binLen);
-    return { json, bin };
+    return { json, bin, dir: path.dirname(file) };
+}
+
+function loadGltf(file) {
+    const dir = path.dirname(file);
+    const json = JSON.parse(fs.readFileSync(file, "utf8"));
+    const uri = json.buffers[0].uri;
+    const bin = uri ? fs.readFileSync(path.join(dir, uri)) : Buffer.alloc(0);
+    return { json, bin, dir };
 }
 
 function accessor(json, bin, index) {
@@ -381,10 +389,14 @@ function fitTogether(partFrames, centerIndex, feetFromAll) {
     }
 }
 
-function diffuseImage(json, bin, materialIndex, dest) {
+function diffuseImage(json, bin, materialIndex, dest, dir) {
     const material = json.materials[materialIndex];
     const texIndex = material.pbrMetallicRoughness.baseColorTexture.index;
     const image = json.images[json.textures[texIndex].source];
+    if (image.uri && dir) {
+        fs.copyFileSync(path.join(dir, image.uri), dest);
+        return;
+    }
     const view = json.bufferViews[image.bufferView];
     const start = view.byteOffset || 0;
     fs.writeFileSync(dest, bin.slice(start, start + view.byteLength));
@@ -406,10 +418,72 @@ function sampleClip(file, steps) {
     return { json, bin, sampled };
 }
 
-function writeClip(sampled, json, bin, stem, centerIndex, feetFromAll) {
+function sampleNamed(json, bin, animName, steps) {
+    const anim = json.animations.find((item) => item.name === animName);
+    if (!anim) throw new Error("Animation not found: " + animName);
+    let duration = 0.0001;
+    for (const sampler of anim.samplers) {
+        const times = accessor(json, bin, sampler.input);
+        duration = Math.max(duration, times[times.length - 1]);
+    }
+    const sampled = [];
+    for (let i = 0; i < steps; i++) {
+        const along = steps === 1 ? 0.5 : (i + 0.5) / steps;
+        sampled.push(bakeSkinned(json, bin, sampleAnim(json, bin, animName, duration * along)));
+    }
+    return sampled;
+}
+
+function fitHorse(partFrames) {
+    const basis = partFrames[0];
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const frames of partFrames) {
+        const part = frames[0];
+        for (let i = 1; i < part.length; i += 6) {
+            minY = Math.min(minY, part[i]);
+            maxY = Math.max(maxY, part[i]);
+        }
+    }
+    const scale = 1.42 / (maxY - minY || 1);
+    const frameCount = partFrames[0].length;
+    for (let f = 0; f < frameCount; f++) {
+        let cx = 0;
+        let cz = 0;
+        let n = 0;
+        const frame = basis[f];
+        for (let i = 0; i < frame.length; i += 6) {
+            cx += frame[i];
+            cz += frame[i + 2];
+            n += 1;
+        }
+        cx /= n || 1;
+        cz /= n || 1;
+        for (const frames of partFrames) {
+            const posed = frames[f];
+            for (let i = 0; i < posed.length; i += 6) {
+                posed[i] = (posed[i] - cx) * scale;
+                posed[i + 1] = (posed[i + 1] - minY) * scale;
+                posed[i + 2] = (posed[i + 2] - cz) * scale;
+            }
+        }
+    }
+}
+
+function writeClip(sampled, json, bin, stem, centerIndex, feetFromAll, outDir, assetDir) {
+    const dir = outDir || path.join("models", "kaykit");
     const mats = [...sampled[0].keys()];
     const partFrames = mats.map((mat) => sampled.map((frame) => frame.get(mat)));
-    fitTogether(partFrames, centerIndex, feetFromAll);
+    if (
+        outDir &&
+        (outDir.includes("horse") ||
+            outDir.includes("cow") ||
+            outDir.includes("dragon") ||
+            outDir.includes("spider") ||
+            outDir.includes("creatures"))
+    )
+        fitHorse(partFrames);
+    else fitTogether(partFrames, centerIndex, feetFromAll);
     mats.forEach((mat, index) => {
         const frames = partFrames[index];
         const count = frames[0].length / 6;
@@ -417,9 +491,13 @@ function writeClip(sampled, json, bin, stem, centerIndex, feetFromAll) {
         header.writeUInt32LE(frames.length, 0);
         header.writeUInt32LE(count, 4);
         const body = Buffer.concat(frames.map((frame) => Buffer.from(new Float32Array(frame).buffer)));
-        const out = path.join("models", "kaykit", stem + "-" + index);
+        const out = path.join(dir, stem + "-" + index);
         fs.writeFileSync(out + ".bin", Buffer.concat([header, body]));
-        diffuseImage(json, bin, mat, out + ".png");
+        try {
+            diffuseImage(json, bin, mat, out + ".png", assetDir);
+        } catch (err) {
+            console.warn(stem + "-" + index, "texture from glb skipped:", err.message);
+        }
         console.log(stem + "-" + index, "verts", count, "frames", frames.length, "mat", json.materials[mat].name);
     });
 }
@@ -472,6 +550,120 @@ if (process.argv[2] === "mixamo") {
     });
     console.log("parts", names.join(", "), "center", names[center]);
     writeClip(sampled, idle.json, idle.bin, "prop", center);
+} else if (process.argv[2] === "horse") {
+    const file = path.join("models", "horse", "horse.glb");
+    const { json, bin } = loadGlb(file);
+    const names = (json.animations || []).map((a) => a.name);
+    console.log("animations", names.join(", "));
+    const idle = sampleNamed(json, bin, "Idle", 1);
+    const trot = sampleNamed(json, bin, "Trot", 8);
+    const sampled = idle.concat(trot);
+    writeClip(sampled, json, bin, "horse", 0, true, path.join("models", "horse"));
+} else if (process.argv[2] === "warhorse") {
+    const file = path.join("models", "horse", "warhorse-lite.glb");
+    const { json, bin } = loadGlb(file);
+    const names = (json.animations || []).map((a) => a.name);
+    console.log("animations", names.join(", "));
+    const idle = sampleNamed(json, bin, "idle_loop", 1);
+    const walk = sampleNamed(json, bin, "walk_loop", 8);
+    const canter = sampleNamed(json, bin, "canter_loop", 8);
+    const sampled = idle.concat(walk, canter);
+    writeClip(sampled, json, bin, "warhorse", 0, true, path.join("models", "horse"));
+} else if (process.argv[2] === "cow") {
+    const file = path.join("models", "cow", "cow.glb");
+    const { json, bin } = loadGlb(file);
+    const names = (json.animations || []).map((a) => a.name);
+    console.log("animations", names.join(", "));
+    const idleAnim = names.includes("Idle") ? "Idle" : "Trot";
+    const idle = sampleNamed(json, bin, idleAnim, 1);
+    const trot = sampleNamed(json, bin, "Trot", 8);
+    const sampled = idle.concat(trot);
+    writeClip(sampled, json, bin, "cow", 0, true, path.join("models", "cow"));
+} else if (process.argv[2] === "dragon") {
+    const file = path.join("models", "dragon", "dragon.glb");
+    const { json, bin } = loadGlb(file);
+    const names = (json.animations || []).map((a) => a.name);
+    console.log("animations", names.join(", "));
+    const idle = sampleNamed(json, bin, "Idle", 1);
+    const walk = sampleNamed(json, bin, "Walk", 8);
+    const sampled = idle.concat(walk);
+    writeClip(sampled, json, bin, "dragon", 0, true, path.join("models", "dragon"));
+} else if (process.argv[2] === "spider") {
+    const file = path.join("models", "spider", "spider.glb");
+    const { json, bin } = loadGlb(file);
+    const names = (json.animations || []).map((a) => a.name);
+    console.log("animations", names.join(", "));
+    const idle = sampleNamed(json, bin, "Idle", 1);
+    const walk = sampleNamed(json, bin, "Walk", 8);
+    const sampled = idle.concat(walk);
+    writeClip(sampled, json, bin, "spider", 0, true, path.join("models", "spider"));
+} else if (process.argv[2] === "generic-human") {
+    const file = path.join("models", "kaykit", "generic-human.glb");
+    const { json, bin } = loadGlb(file);
+    const names = (json.animations || []).map((a) => a.name);
+    console.log("animations", names.join(", "));
+    const idle = sampleNamed(json, bin, "Idle_A", 1);
+    const walk = sampleNamed(json, bin, "Walk", 8);
+    const jog = sampleNamed(json, bin, "Jog", 8);
+    const chop = sampleNamed(json, bin, "Chop_Tree", 6);
+    const fish = sampleNamed(json, bin, "Fishing_Reel", 6);
+    const sampled = idle.concat(walk, jog, chop, fish);
+    writeClip(sampled, json, bin, "generic-human", 0, true);
+} else if (process.argv[2] === "peasant") {
+    const file = path.join("models", "kaykit", "peasant", "peasant.gltf");
+    const { json, bin, dir } = loadGltf(file);
+    const sampled = [bakeSkinned(json, bin, new Map())];
+    writeClip(sampled, json, bin, "peasant", 0, true, path.join("models", "kaykit"), dir);
+} else if (process.argv[2] === "mixamo-peasant") {
+    const idle = sampleClip(path.join("models", "kaykit", "mixamo-idle.glb"), 1);
+    const walk = sampleClip(path.join("models", "kaykit", "mixamo-walk.glb"), 8);
+    const sampled = idle.sampled.concat(walk.sampled);
+    writeClip(sampled, idle.json, idle.bin, "mixamo-peasant", 0, true);
+} else if (process.argv[2] === "outfit-innkeeper") {
+    const rel = path.join(
+        "models",
+        "modular-outfits",
+        "Modular Character Outfits - Fantasy[Standard]",
+        "Exports",
+        "glTF (Godot-Unreal)",
+        "Outfits",
+        "Male_Peasant.gltf"
+    );
+    const file = path.join(rel);
+    const { json, bin, dir } = loadGltf(file);
+    const sampled = [bakeSkinned(json, bin, new Map())];
+    writeClip(sampled, json, bin, "outfit-innkeeper", 0, true, path.join("models", "kaykit"), dir);
+} else if (process.argv[2] === "medieval-commander") {
+    const file = path.join("models", "kaykit", "medieval-commander.glb");
+    const { json, bin } = loadGlb(file);
+    const sampled = [bakeSkinned(json, bin, new Map())];
+    writeClip(sampled, json, bin, "medieval-commander", 0, true);
+} else if (process.argv[2] === "medieval-innkeeper") {
+    const file = path.join("models", "kaykit", "medieval-innkeeper.glb");
+    const { json, bin } = loadGlb(file);
+    const sampled = [bakeSkinned(json, bin, new Map())];
+    writeClip(sampled, json, bin, "medieval-innkeeper", 0, true);
+} else if (process.argv[2] === "medieval-king") {
+    const file = path.join("models", "kaykit", "medieval-king.glb");
+    const { json, bin } = loadGlb(file);
+    const sampled = [bakeSkinned(json, bin, new Map())];
+    writeClip(sampled, json, bin, "medieval-king", 0, true);
+} else if (process.argv[2] && process.argv[2].startsWith("creature-static-")) {
+    const id = process.argv[2].slice("creature-static-".length);
+    const baseGlb = path.join("models", "creatures", "_glb", id + "-base.glb");
+    const { json, bin } = loadGlb(baseGlb);
+    const rest = bakeSkinned(json, bin, new Map());
+    const sampled = [rest, rest, rest, rest, rest, rest, rest, rest, rest];
+    writeClip(sampled, json, bin, id, 0, true, path.join("models", "creatures"));
+} else if (process.argv[2] && process.argv[2].startsWith("creature-")) {
+    const id = process.argv[2].slice("creature-".length);
+    const mergedGlb = path.join("models", "creatures", "_glb", id + "-merged.glb");
+    const { json, bin } = loadGlb(mergedGlb);
+    const animName = (json.animations && json.animations[0] && json.animations[0].name) || "Take 001";
+    const idle = sampleNamed(json, bin, animName, 1);
+    const walk = sampleNamed(json, bin, animName, 8);
+    const sampled = idle.concat(walk);
+    writeClip(sampled, json, bin, id, 0, true, path.join("models", "creatures"));
 } else if (process.argv[2] === "archer") {
     const idle = sampleClip(path.join("models", "kaykit", "archer-idle.glb"), 1);
     const walk = sampleClip(path.join("models", "kaykit", "archer-walk.glb"), 8);

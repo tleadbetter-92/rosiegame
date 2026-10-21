@@ -1,0 +1,28 @@
+{
+  "kind": "kitbuild",
+  "name": "my-building",
+  "cx": 10,
+  "cz": 1,
+  "materials": [
+    {
+      "mat": "brick",
+      "verts": 414
+    },
+    {
+      "mat": "wood",
+      "verts": 15486
+    },
+    {
+      "mat": "plaster",
+      "verts": 1080
+    },
+    {
+      "mat": "rock",
+      "verts": 48
+    },
+    {
+      "mat": "tiles",
+      "verts": 6684
+    }
+  ]
+}
