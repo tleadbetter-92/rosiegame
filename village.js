@@ -1294,6 +1294,9 @@ function addOpenRoom(b) {
         addBox(room.door, ix + iw - 0.28, 0.7, iz + 1.15, 0.08, 0.55, 0.4);
         use(ix + iw - 0.5, iz + 0.2, 0.28, 1.3, 1.5);
         chestAt(ix + stairW + 0.3, iz + 0.2, 0.55, 0.4);
+        if (b.village === 2) {
+            b.commander = { x: ix + stairW + 0.95, z: iz + 1.35, yaw: doorOut.yaw };
+        }
     } else if (b.kind === "smith") {
         hearthAt(stairGap, iz + 0.12, 1.15, 0.7);
         flame(stairGap + 0.28, 0.48, iz + 0.22, 0.5, 0.46, 0.34);
@@ -1579,6 +1582,33 @@ function spawnGarrison() {
             });
         }
     }
+}
+
+// Region 1 — Southwest barracks commander (soldier mesh for now).
+function spawnCommander() {
+    const house = houses.find((item) => item.kind === "barracks" && item.village === 2);
+    if (!house || !house.commander) return;
+    men.push({
+        commander: true,
+        dialogue: "commander",
+        name: "Commander",
+        fixed: true,
+        fisher: false,
+        faction: 2,
+        post: 2,
+        index: -61,
+        health: 3,
+        x: house.commander.x,
+        z: house.commander.z,
+        yaw: house.commander.yaw,
+        bob: 0,
+        down: 0,
+        swing: -1,
+        walking: false,
+        hostile: false,
+        dying: false,
+        mode: "guard"
+    });
 }
 
 // Region 1 (Rosiegame_AI_World_Bible/Region 1/) — Godwin at Southwest inn only until borders are marked.
@@ -4794,7 +4824,7 @@ function mergeMen(data) {
             length: 0
         });
     });
-    const prev = new Map(men.filter((man) => !man.fisher && !man.farmer && !man.archer && !man.decor && !man.driver && !man.jack && !man.fixed && !man.inn).map((man) => [man.faction + ":" + man.index, man]));
+    const prev = new Map(men.filter((man) => !man.fisher && !man.farmer && !man.archer && !man.decor && !man.driver && !man.jack && !man.fixed && !man.inn && !man.commander).map((man) => [man.faction + ":" + man.index, man]));
     const next = [];
     const keep = new Set();
     for (const item of wanted) {
@@ -4843,9 +4873,9 @@ function mergeMen(data) {
             });
         }
     }
-    const keptFish = men.filter((man) => man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board || man.fixed || man.inn);
+    const keptFish = men.filter((man) => man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board || man.fixed || man.inn || man.commander);
     for (const man of men) {
-        if (man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board || man.fixed || man.inn) continue;
+        if (man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board || man.fixed || man.inn || man.commander) continue;
         const key = man.faction + ":" + man.index;
         if (keep.has(key)) continue;
         man.dying = true;
@@ -7111,7 +7141,7 @@ function postAttacked(post) {
 
 function guardsAt(post) {
     return men.filter((man) => (
-        !man.fisher && !man.archer && !man.decor && !man.dying && man.health > 0 && man.post === post && man.mode !== "march"
+        !man.fisher && !man.archer && !man.decor && !man.commander && !man.dying && man.health > 0 && man.post === post && man.mode !== "march"
     )).sort((a, b) => (a.slot || 0) - (b.slot || 0));
 }
 
@@ -7147,6 +7177,21 @@ function stepInn(man) {
         man.x = house.keeper.x;
         man.z = house.keeper.z;
         man.yaw = house.keeper.yaw;
+    }
+    man.floorY = null;
+    man.swing = -1;
+    man.hostile = false;
+    man.walking = false;
+    plant(man);
+    return false;
+}
+
+function stepCommander(man) {
+    const house = building(man.post, "barracks");
+    if (house && house.commander) {
+        man.x = house.commander.x;
+        man.z = house.commander.z;
+        man.yaw = house.commander.yaw;
     }
     man.floorY = null;
     man.swing = -1;
@@ -7521,6 +7566,7 @@ function stepMan(man, dt) {
         return false;
     }
     if (stepRevenge(man, dt)) return false;
+    if (man.commander) return stepCommander(man);
     if (man.inn) return stepInn(man);
     if (man.jack) return stepJack(man, dt);
     if (man.decor) return stepKeeper(man, dt);
@@ -7553,7 +7599,7 @@ function separateMen(dt) {
     const near = [];
     for (let i = 0; i < picked.length; i++) {
         const man = picked[i].man;
-        if (man.dying || man.archer || man.decor || man.driver || man.inn || man.indoors || man.mode === "march") continue;
+        if (man.dying || man.archer || man.decor || man.driver || man.inn || man.commander || man.indoors || man.mode === "march") continue;
         near.push(man);
     }
     const step = dt * 2;
@@ -10224,8 +10270,9 @@ function aimedPerson(reach) {
 
 function aimedTalkPerson(reach) {
     const man = aimedPerson(reach || 6);
-    if (!man || !man.dialogue || !man.inn || man.post !== 2) return null;
-    return man;
+    if (!man || !man.dialogue || man.post !== 2) return null;
+    if (man.inn || man.commander) return man;
+    return null;
 }
 
 function tryTalk() {
@@ -11047,6 +11094,7 @@ if (gl) {
     buildFolk();
     spawnKeepers();
     spawnGodwin();
+    spawnCommander();
     spawnSwPickups();
     prepareBow();
     buildHorse();

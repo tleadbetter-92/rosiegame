@@ -1,5 +1,6 @@
 // Region 1 NPC chat — lore folder: Rosiegame_AI_World_Bible/Region 1/
 // Godwin: INNKEEPER_GODWIN.md + Godwin_Conversation_Example.md + Attacks_in_the_Woods.md
+// Commander: 02_CHARACTERS/Local_Garrison_Commander_Lore.md
 // UI: crosshair label, E / click to talk, reply buttons (AI later replaces lines; keep Dialogue.start).
 (function (global) {
     const trees = {
@@ -86,6 +87,52 @@
                 },
                 bye: {
                     say: "Safe roads.",
+                    choices: []
+                }
+            }
+        },
+        commander: {
+            title: "Commander",
+            nodes: {
+                start: {
+                    say: "Can I help you? You're not one of my men. What is it?",
+                    choices: [
+                        { label: "I wanted to know who's in command here.", next: "inCharge" },
+                        { label: "I hear there have been troubles in the woods.", next: "woods" },
+                        { label: "You're not from around here, are you?", next: "oldKingdom" },
+                        { label: "Nothing. Just looking around.", next: "byeYard" }
+                    ]
+                },
+                inCharge: {
+                    say: "I am. The lord has charge of this place; I have charge of his soldiers. That's the arrangement.",
+                    choices: [
+                        { label: "I hear there have been troubles in the woods.", next: "woods" },
+                        { label: "You're not from around here, are you?", next: "oldKingdom" },
+                        { label: "That's all.", next: "bye" }
+                    ]
+                },
+                woods: {
+                    say: "You've heard correctly. More than I'd like, lately. Something keeps coming out of those woods, and the lumbermen are growing nervous. I'll deal with it.",
+                    choices: [
+                        { label: "Who's in command here?", next: "inCharge" },
+                        { label: "You're not from around here, are you?", next: "oldKingdom" },
+                        { label: "Good luck.", next: "bye" }
+                    ]
+                },
+                oldKingdom: {
+                    say: "No. The Old Kingdom. A long way from here. I've served in worse places. That's not to say I'd choose to stay here.",
+                    choices: [
+                        { label: "Troubles in the woods?", next: "woods" },
+                        { label: "Who's in command here?", next: "inCharge" },
+                        { label: "I'll leave you to it.", next: "bye" }
+                    ]
+                },
+                byeYard: {
+                    say: "Then keep clear of the training yard. I won't have someone taking a practice sword to the head and blaming my men for it.",
+                    choices: []
+                },
+                bye: {
+                    say: "Dismissed.",
                     choices: []
                 }
             }

@@ -14,6 +14,12 @@
             "Player picks topics; no forced quests or dumping every rumour at once",
             "Optional follow-ups from the example file only when the player asks"
         ],
+        commanderChatRules: [
+            "Disciplined, direct, short — career soldier, not a quest-giver speech",
+            "Knows patrols, garrison duty, and that woods attacks worsened; not omniscient",
+            "Distinguish what he has seen from rumour; no hidden faction or attack source dumps",
+            "Old Kingdom posting; name, rank, and full history stay undecided until set in lore"
+        ],
         npcs: {
             godwin: {
                 dialogueId: "godwin",
@@ -24,6 +30,13 @@
                     "02_CHARACTERS/Godwin_Conversation_Example.md",
                     "Attacks_in_the_Woods.md"
                 ]
+            },
+            commander: {
+                dialogueId: "commander",
+                village: 2,
+                role: "barracks_commander",
+                building: "barracks",
+                sources: ["02_CHARACTERS/Local_Garrison_Commander_Lore.md"]
             }
         }
     };
