@@ -162,6 +162,8 @@ module.exports = async function handler(req, res) {
             }));
             res.status(200).json({
                 configured,
+                tts: configured,
+                ttsVoice: configured ? (process.env.OPENAI_TTS_VOICE || "alloy") : null,
                 model: configured ? (process.env.OPENAI_MODEL || "gpt-4o-mini") : null,
                 npcs: listNpcs(),
                 loreRoot: region1Config.loreRoot,

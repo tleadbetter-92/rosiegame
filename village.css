@@ -420,6 +420,13 @@ html, body {
     margin-bottom: 8px;
 }
 
+.dialogue-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
 .dialogue-name {
     margin: 0;
     font-size: 1.05rem;
@@ -427,7 +434,9 @@ html, body {
     letter-spacing: 0.02em;
 }
 
-.dialogue-leave {
+.dialogue-leave,
+.dialogue-voice,
+.dialogue-replay {
     border: 1px solid rgba(243, 230, 204, 0.45);
     border-radius: 4px;
     padding: 4px 10px;
@@ -435,6 +444,16 @@ html, body {
     color: #f3e6cc;
     font-size: 0.85rem;
     cursor: pointer;
+}
+
+.dialogue-voice[aria-pressed="true"] {
+    border-color: rgba(198, 161, 90, 0.75);
+    background: rgba(60, 48, 32, 0.75);
+}
+
+.dialogue-replay:disabled {
+    opacity: 0.45;
+    cursor: default;
 }
 
 .dialogue-text {

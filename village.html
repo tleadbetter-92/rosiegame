@@ -22,7 +22,11 @@
     <div id="dialogue" class="dialogue" hidden role="dialog" aria-modal="true" aria-labelledby="dialogue-name">
         <header class="dialogue-head">
             <p id="dialogue-name" class="dialogue-name" data-dialogue-name>Godwin</p>
-            <button type="button" class="dialogue-leave" data-dialogue-leave aria-label="Leave conversation">Leave</button>
+            <div class="dialogue-head-actions">
+                <button type="button" class="dialogue-voice" data-dialogue-voice aria-pressed="true">Voice on</button>
+                <button type="button" class="dialogue-replay" data-dialogue-replay aria-label="Replay this line">Replay</button>
+                <button type="button" class="dialogue-leave" data-dialogue-leave aria-label="Leave conversation">Leave</button>
+            </div>
         </header>
         <p class="dialogue-text" data-dialogue-text></p>
         <div class="dialogue-choices" data-dialogue-choices></div>
@@ -111,6 +115,7 @@
     <script src="models/roblox/lumberyard-view.js"></script>
     <script src="editor-blocks.js"></script>
     <script src="region1.js"></script>
+    <script src="npc-voice.js"></script>
     <script src="dialogue.js"></script>
     <script src="village.js"></script>
 </body>

@@ -206,6 +206,9 @@
     let askInput = null;
     let askStatus = null;
     let askSubmit = null;
+    let voiceBtn = null;
+    let replayBtn = null;
+    let lastSpokenLine = "";
     let treeId = null;
     let open = false;
     let aiConfigured = false;
@@ -361,7 +364,25 @@
         askInput = panel.querySelector("[data-dialogue-input]");
         askStatus = panel.querySelector("[data-dialogue-status]");
         askSubmit = askForm && askForm.querySelector("button[type=submit]");
+        voiceBtn = panel.querySelector("[data-dialogue-voice]");
+        replayBtn = panel.querySelector("[data-dialogue-replay]");
         if (leaveBtn) leaveBtn.addEventListener("click", () => close());
+        if (voiceBtn) {
+            voiceBtn.addEventListener("click", () => {
+                const voice = global.NpcVoice;
+                if (!voice) return;
+                voice.setAutoRead(!voice.isAutoRead());
+                syncVoiceUi();
+            });
+        }
+        if (replayBtn) {
+            replayBtn.addEventListener("click", () => {
+                const voice = global.NpcVoice;
+                if (!voice || !lastSpokenLine) return;
+                void voice.replay(lastSpokenLine);
+            });
+        }
+        syncVoiceUi();
         if (askForm) {
             askForm.addEventListener("submit", (event) => {
                 event.preventDefault();
@@ -374,6 +395,29 @@
         if (!askStatus) return;
         askStatus.hidden = !show;
         askStatus.textContent = text || "";
+    }
+
+    function syncVoiceUi() {
+        const voice = global.NpcVoice;
+        if (voiceBtn && voice) {
+            const on = voice.isAutoRead();
+            voiceBtn.setAttribute("aria-pressed", on ? "true" : "false");
+            voiceBtn.textContent = on ? "Voice on" : "Voice off";
+        }
+        if (replayBtn) {
+            replayBtn.disabled = !lastSpokenLine;
+        }
+    }
+
+    function showNpcLine(text, opts) {
+        const line = String(text || "");
+        if (textEl) textEl.textContent = line;
+        const speakable = !!(opts && opts.speak) && line && line !== "…";
+        if (speakable) lastSpokenLine = line;
+        syncVoiceUi();
+        if (!speakable) return;
+        const voice = global.NpcVoice;
+        if (voice) void voice.speak(line);
     }
 
     function syncAskUi() {
@@ -448,7 +492,8 @@
         const node = tree.nodes[nodeId];
         if (!node) return close();
         titleEl.textContent = tree.title;
-        textEl.textContent = nodeId === "bought" && shopLastLine ? shopLastLine : node.say;
+        const line = nodeId === "bought" && shopLastLine ? shopLastLine : node.say;
+        showNpcLine(line, { speak: true });
         choicesEl.innerHTML = "";
         choicesEl.hidden = false;
         let choices = node.choices || [];
@@ -465,7 +510,7 @@
                         if (choice.action === "shopMystery" || String(choice.action).indexOf("shopBuy:") === 0) {
                             const ok = await runShopAction(choice.action);
                             if (!ok) {
-                                textEl.textContent = shopLastLine || "Can't buy that.";
+                                showNpcLine(shopLastLine || "Can't buy that.", { speak: false });
                                 choicesEl.innerHTML = "";
                                 const back = document.createElement("button");
                                 back.type = "button";
@@ -478,7 +523,7 @@
                         } else {
                             const ok = await runQuestAction(choice.action);
                             if (!ok && choice.action === "turnInBruteCull") {
-                                textEl.textContent = "You haven't finished the job yet.";
+                                showNpcLine("You haven't finished the job yet.", { speak: false });
                                 choicesEl.innerHTML = "";
                                 return;
                             }
@@ -533,7 +578,7 @@
             saveStoredHistory(treeId);
             if (askInput && !opening) askInput.value = "";
             titleEl.textContent = data.title || (trees[treeId] && trees[treeId].title) || treeId;
-            textEl.textContent = data.reply;
+            showNpcLine(data.reply, { speak: true });
             if (data.story && data.storyTitle) {
                 setAskStatus("That tale is now part of this campaign’s lore.", true);
             } else {
@@ -592,7 +637,7 @@
             if (aiHistory.length > 20) aiHistory = aiHistory.slice(-20);
             saveStoredHistory(treeId);
             titleEl.textContent = data.title || (trees[treeId] && trees[treeId].title) || treeId;
-            textEl.textContent = data.reply;
+            showNpcLine(data.reply, { speak: true });
             setAskStatus(
                 data.storyTitle
                     ? "“" + data.storyTitle + "” — remembered in this campaign."
@@ -627,12 +672,12 @@
         setAskStatus("", false);
         const lastLine = aiHistory.filter((item) => item.role === "assistant").pop();
         if (lastLine) {
-            textEl.textContent = lastLine.content;
+            showNpcLine(lastLine.content, { speak: true });
             showAiActions();
             if (askInput) askInput.focus();
             return true;
         }
-        textEl.textContent = "…";
+        showNpcLine("…", { speak: false });
         const ok = await requestNpcReply({ opening: true });
         if (!ok) {
             setAskStatus("Using fixed dialogue instead.", true);
@@ -661,8 +706,10 @@
 
     function close() {
         if (!panel) return;
+        if (global.NpcVoice) global.NpcVoice.stop();
         open = false;
         treeId = null;
+        lastSpokenLine = "";
         aiBusy = false;
         aiMode = false;
         storyPickerOpen = false;
@@ -687,6 +734,9 @@
         .then((data) => {
             aiConfigured = !!(data && data.configured);
             if (data && data.campaignId != null) campaignKey = String(data.campaignId);
+            if (global.NpcVoice && data && data.tts) {
+                global.NpcVoice.configure({ serverTts: true });
+            }
         })
         .catch(() => {
             aiConfigured = false;
