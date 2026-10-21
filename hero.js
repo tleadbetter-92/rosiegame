@@ -17,7 +17,7 @@
     const SKILLS = [
         { id: "swords", name: "Swords", attr: "strength", use: "sword" },
         { id: "axes", name: "Axes", attr: "strength" },
-        { id: "blunt", name: "Blunt Weapons", attr: "strength" },
+        { id: "blunt", name: "Blunt Weapons", attr: "strength", use: "brute_hammer" },
         { id: "archery", name: "Archery", attr: "agility", use: "bow" },
         { id: "blocking", name: "Blocking", attr: "agility" },
         { id: "destruction", name: "Destruction", attr: "intelligence" },
@@ -41,8 +41,22 @@
         return Math.max(lo, Math.min(hi, n));
     }
 
+    const WEAPON_IDS = ["sword", "bow", "brute_hammer"];
+
     function defaultPack() {
         return { gold: 25, items: [], weapons: ["bow"] };
+    }
+
+    function defaultArmor() {
+        return { id: null, name: "" };
+    }
+
+    function normalizeArmor(raw) {
+        if (!raw || typeof raw !== "object" || !raw.id) return defaultArmor();
+        return {
+            id: String(raw.id),
+            name: String(raw.name || "Armour")
+        };
     }
 
     function normalizePack(raw, equipped) {
@@ -55,15 +69,15 @@
         })).filter((item) => item.id) : [];
         const gold = Math.max(0, Math.round(Number(src.gold) || base.gold));
         let weapons = Array.isArray(src.weapons)
-            ? src.weapons.filter((w) => w === "sword" || w === "bow")
+            ? src.weapons.filter((w) => WEAPON_IDS.includes(w))
             : base.weapons.slice();
-        const eq = equipped === "sword" || equipped === "bow" ? equipped : null;
+        const eq = WEAPON_IDS.includes(equipped) || equipped === null ? equipped : null;
         weapons = weapons.filter((w, index, list) => w !== eq && list.indexOf(w) === index);
         return { gold, items, weapons };
     }
 
     function normalizeEquipped(raw) {
-        if (raw === "sword" || raw === "bow" || raw === null) return raw;
+        if (WEAPON_IDS.includes(raw) || raw === null) return raw;
         return "sword";
     }
 
@@ -88,7 +102,8 @@
             stamina: 60,
             magicka: 40,
             equipped,
-            pack
+            pack,
+            armor: defaultArmor()
         };
     }
 
@@ -123,6 +138,7 @@
         const equipped = normalizeEquipped(src.equipped);
         hero.equipped = equipped;
         hero.pack = normalizePack(src.pack, equipped);
+        hero.armor = normalizeArmor(src.armor);
         return hero;
     }
 
@@ -133,7 +149,9 @@
     }
 
     function maxHealth(hero) {
-        return Math.round(10 + attr(hero, "endurance") * 0.75);
+        let total = Math.round(10 + attr(hero, "endurance") * 0.75);
+        if (hero && hero.armor && hero.armor.id) total += 5;
+        return total;
     }
 
     function maxStamina(hero) {
@@ -212,6 +230,7 @@
         const pack = hero.pack || defaultPack();
         const items = (pack.items || []).map((item) => item.id + "x" + item.count).join(";");
         const weapons = (pack.weapons || []).join(",");
+        const armor = hero.armor && hero.armor.id ? hero.armor.id : "";
         return [
             hero.level,
             hero.raised,
@@ -224,16 +243,20 @@
             hero.equipped == null ? "-" : hero.equipped,
             Math.round(pack.gold || 0),
             weapons,
-            items
+            items,
+            armor
         ].join("|");
     }
 
     return {
         ATTRIBUTES,
         SKILLS,
+        WEAPON_IDS,
         create,
         normalize,
         defaultPack,
+        defaultArmor,
+        normalizeArmor,
         normalizePack,
         practice,
         practiceUse,

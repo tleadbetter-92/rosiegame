@@ -1612,6 +1612,142 @@ function spawnCommander() {
 }
 
 // Region 1 (Rosiegame_AI_World_Bible/Region 1/) — Godwin at Southwest inn only until borders are marked.
+// Region 1 — prop/brute lurkers in the wild (~500 m southwest of town).
+const BRUTE_FACTION = 11;
+const BRUTE_COUNT = 20;
+const BRUTE_RESPAWN_MS = Clock.DAY_MS;
+const bruteRespawnQueue = [];
+let markersDirty = true;
+
+function markWorldMarkersDirty() {
+    markersDirty = true;
+}
+
+function addLootMarkerVerts(list, x, z) {
+    const y = World.meshHeight(x, z);
+    addBox(list, x - 0.14, y, z - 0.14, 0.28, 0.95, 0.28);
+    addBox(list, x - 0.5, y + 0.78, z - 0.07, 0.95, 0.11, 0.14);
+    addBox(list, x - 0.38, y + 0.02, z - 0.38, 0.76, 0.06, 0.76);
+}
+
+function addCampMarkerVerts(list, cx, cz, radius, posts) {
+    const n = posts || 18;
+    const cy = World.meshHeight(cx, cz);
+    addBox(list, cx - 0.3, cy, cz - 0.3, 0.6, 1.55, 0.6);
+    for (let i = 0; i < n; i++) {
+        const ang = (i / n) * Math.PI * 2;
+        const px = cx + Math.cos(ang) * radius;
+        const pz = cz + Math.sin(ang) * radius;
+        const y = World.meshHeight(px, pz);
+        addBox(list, px - 0.22, y + 0.02, pz - 0.22, 0.44, 0.32, 0.44);
+    }
+}
+
+function rebuildWorldMarkers() {
+    const loot = [];
+    const camp = [];
+    for (const pick of worldPickups) {
+        if (!pick.taken) addLootMarkerVerts(loot, pick.x, pick.z);
+    }
+    uploadMesh("worldMarkerLoot", loot);
+    if (homeVillage === 2 && World.southwestBruteLair) {
+        const lair = World.southwestBruteLair(BRUTE_COUNT);
+        addCampMarkerVerts(camp, lair.centre.x, lair.centre.z, lair.radius, 22);
+    }
+    const wild = World.wildSpots(50);
+    if (wild.centre) {
+        let ringR = 58;
+        if (wild.spots.length > 3) {
+            ringR = Math.hypot(wild.spots[2].x - wild.centre.x, wild.spots[2].z - wild.centre.z);
+            ringR = Math.max(42, Math.min(95, ringR));
+        }
+        addCampMarkerVerts(camp, wild.centre.x, wild.centre.z, ringR, 26);
+    }
+    uploadMesh("worldMarkerCamp", camp);
+    markersDirty = false;
+}
+
+function drawWorldMarkers(dark, proj) {
+    if (inside || flying) return;
+    if (markersDirty) rebuildWorldMarkers();
+    if (!textures.glow) return;
+    gl.enableVertexAttribArray(loc.pos);
+    gl.enableVertexAttribArray(loc.uv);
+    gl.enableVertexAttribArray(loc.shade);
+    gl.uniform1f(loc.dark, dark);
+    gl.uniform1f(loc.band, 1);
+    gl.uniform1f(loc.flow, 0);
+    gl.uniformMatrix4fv(loc.proj, false, proj);
+    gl.uniformMatrix4fv(loc.model, false, identity);
+    gl.bindTexture(gl.TEXTURE_2D, textures.glow);
+    if (mesh.worldMarkerLoot && mesh.worldMarkerLoot.count) {
+        gl.uniform3f(loc.tint, 0.92, 0.38, 0.22);
+        gl.uniform1f(loc.glow, 0.9);
+        drawMesh("worldMarkerLoot", 1);
+    }
+    if (mesh.worldMarkerCamp && mesh.worldMarkerCamp.count) {
+        gl.uniform3f(loc.tint, 0.38, 0.62, 0.32);
+        gl.uniform1f(loc.glow, 0.55);
+        drawMesh("worldMarkerCamp", 1);
+    }
+    gl.uniform3f(loc.tint, 1, 1, 1);
+    gl.uniform1f(loc.glow, 0);
+}
+
+function spawnOneBrute(spot, slot) {
+    men.push({
+        brute: true,
+        name: "Brute",
+        fisher: false,
+        faction: BRUTE_FACTION,
+        post: -1,
+        index: -80 - slot,
+        health: 4,
+        x: spot.x,
+        z: spot.z,
+        homeX: spot.x,
+        homeZ: spot.z,
+        slot,
+        yaw: Math.random() * Math.PI * 2,
+        bob: 0,
+        down: 0,
+        swing: -1,
+        walking: false,
+        hostile: true,
+        attackIn: 0.8,
+        dying: false,
+        mode: "guard"
+    });
+}
+
+function spawnSouthwestBrutes() {
+    if (homeVillage !== 2 || !World.southwestBruteLair) return;
+    const lair = World.southwestBruteLair(BRUTE_COUNT);
+    lair.spots.forEach((spot, slot) => spawnOneBrute(spot, slot));
+    markWorldMarkersDirty();
+}
+
+function scheduleBruteRespawn(man) {
+    if (!man || !man.brute) return;
+    bruteRespawnQueue.push({
+        respawnPlayMs: gameMs() + BRUTE_RESPAWN_MS,
+        homeX: man.homeX,
+        homeZ: man.homeZ,
+        slot: man.slot || 0
+    });
+}
+
+function tickBruteRespawn() {
+    const now = gameMs();
+    for (let i = bruteRespawnQueue.length - 1; i >= 0; i--) {
+        const row = bruteRespawnQueue[i];
+        if (row.respawnPlayMs > now) continue;
+        bruteRespawnQueue.splice(i, 1);
+        const alive = men.some((man) => man.brute && man.homeX === row.homeX && man.homeZ === row.homeZ && !man.dying);
+        if (!alive) spawnOneBrute({ x: row.homeX, z: row.homeZ }, row.slot);
+    }
+}
+
 function spawnGodwin() {
     const house = houses.find((item) => item.kind === "tavern" && item.village === 2);
     if (!house || !house.keeper) return;
@@ -3728,6 +3864,7 @@ function loadKaykit() {
 
 function folkPack(man) {
     if (man.fisher || man.farmer || man.jack || man.board || man.driver || man.decor || man.inn) return folkMesh.rogue;
+    if (man.brute) return folkMesh.paladin || folkMesh.knight;
     if (man.goblin) return folkMesh.knight;
     if (man.archer) return folkMesh.archer || folkMesh.paladin;
     return folkMesh.paladin || folkMesh.knight;
@@ -4363,6 +4500,7 @@ function folkCardMatrix(man, flip) {
 
 function personScale(man) {
     if (man.goblin) return 0.74;
+    if (man.brute) return 1.14;
     if (man.archer) return 0.94;
     if (man.fisher || man.farmer || man.jack || man.board || man.driver || man.decor || man.inn) return 1;
     return 1.12;
@@ -4824,7 +4962,7 @@ function mergeMen(data) {
             length: 0
         });
     });
-    const prev = new Map(men.filter((man) => !man.fisher && !man.farmer && !man.archer && !man.decor && !man.driver && !man.jack && !man.fixed && !man.inn && !man.commander).map((man) => [man.faction + ":" + man.index, man]));
+    const prev = new Map(men.filter((man) => !man.fisher && !man.farmer && !man.archer && !man.decor && !man.driver && !man.jack && !man.fixed && !man.inn && !man.commander && !man.brute).map((man) => [man.faction + ":" + man.index, man]));
     const next = [];
     const keep = new Set();
     for (const item of wanted) {
@@ -4873,9 +5011,9 @@ function mergeMen(data) {
             });
         }
     }
-    const keptFish = men.filter((man) => man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board || man.fixed || man.inn || man.commander);
+    const keptFish = men.filter((man) => man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board || man.fixed || man.inn || man.commander || man.brute);
     for (const man of men) {
-        if (man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board || man.fixed || man.inn || man.commander) continue;
+        if (man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board || man.fixed || man.inn || man.commander || man.brute) continue;
         const key = man.faction + ":" + man.index;
         if (keep.has(key)) continue;
         man.dying = true;
@@ -4944,6 +5082,7 @@ let seenRestart = 0;
 let campaign = null;
 
 function applyCampaign(data) {
+    if (typeof window !== "undefined") window.applyCampaign = applyCampaign;
     rememberPlay(data);
     const stamp = Number(data && data.restartedAt) || 0;
     if (stamp < seenRestart) return;
@@ -4951,6 +5090,7 @@ function applyCampaign(data) {
     rememberWorld(data);
     adoptHero(data.hero);
     campaign = data;
+    if (typeof Dialogue !== "undefined" && Dialogue.setQuests) Dialogue.setQuests(data.quests || null);
     buildTrails(data.trails || []);
     const units = data.factions.map((faction) => (
         (faction.units || []).map((unit) => unit.index + ":" + unit.health + ":" + unit.mode + ":" + unit.post).join(".")
@@ -5776,12 +5916,86 @@ const worldPickups = [];
 function weaponLabel(id) {
     if (id === "sword") return "Sword";
     if (id === "bow") return "Longbow";
+    if (id === "brute_hammer") return "Brute hammer";
     return id;
+}
+
+function playerStrikeDamage() {
+    if (arm === "brute_hammer") return 2;
+    return 1;
+}
+
+function swingProfile(kind) {
+    const table = arm === "brute_hammer" ? hammerSwings : swings;
+    return table[kind];
+}
+
+let lootSerial = 0;
+
+function spawnLootPile(x, z, drops, label) {
+    const pick = {
+        id: "loot-" + Date.now() + "-" + (lootSerial += 1),
+        x,
+        z,
+        kind: "loot",
+        label: label || "Search remains",
+        drops: drops.slice(),
+        taken: false
+    };
+    pick.y = Math.max(0, World.meshHeight(pick.x, pick.z));
+    worldPickups.push(pick);
+    markWorldMarkersDirty();
+    return pick;
+}
+
+function applyLootDrop(drop) {
+    if (!hero.pack) hero.pack = Hero.defaultPack();
+    if (drop.type === "gold") {
+        hero.pack.gold += drop.amount || 0;
+        showStrike("+" + drop.amount + " gold");
+    } else if (drop.type === "weapon") {
+        if (!hero.pack.weapons.includes(drop.id)) hero.pack.weapons.push(drop.id);
+        showStrike(drop.name || weaponLabel(drop.id));
+    } else if (drop.type === "item") {
+        addItemToPack(drop.id, drop.name, drop.count || 1);
+        showStrike(drop.name || drop.id);
+    }
+}
+
+const BRUTE_LOOT_DROPS = [
+    { type: "gold", amount: 10 },
+    { type: "weapon", id: "brute_hammer", name: "Brute hammer" }
+];
+
+function dropLootForKill(man) {
+    if (!man || man.lootDropped || man.decor || man.inn || man.commander) return;
+    man.lootDropped = true;
+    if (man.brute) {
+        spawnLootPile(man.x, man.z, BRUTE_LOOT_DROPS, "Search remains (brute)");
+        reportBruteKillToCampaign();
+    } else if (man.goblin) {
+        spawnLootPile(man.x, man.z, [{ type: "gold", amount: 2 }], "Search remains");
+    } else if (man.post != null && !man.archer && !man.fisher && !man.farmer && !man.driver) {
+        spawnLootPile(man.x, man.z, [{ type: "gold", amount: 3 }], "Search remains");
+    }
+}
+
+function reportBruteKillToCampaign() {
+    fetch("/api/campaign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ bruteKill: 1 })
+    }).then((res) => res.json()).then((data) => {
+        if (typeof applyCampaign === "function") applyCampaign(data);
+    }).catch(() => {});
 }
 
 function syncEquippedFromHero() {
     if (!hero.pack) hero.pack = Hero.defaultPack();
-    arm = hero.equipped === "bow" || hero.equipped === "sword" ? hero.equipped : null;
+    arm = hero.equipped === "bow" || hero.equipped === "sword" || hero.equipped === "brute_hammer"
+        ? hero.equipped
+        : null;
     try {
         localStorage.setItem("village-arm", arm || "");
     } catch (err) { /* still equipped this visit */ }
@@ -5796,7 +6010,7 @@ function addItemToPack(id, name, count) {
 }
 
 function equipWeapon(id) {
-    if (id !== null && id !== "sword" && id !== "bow") return;
+    if (id !== null && !Hero.WEAPON_IDS.includes(id)) return;
     if (!hero.pack) hero.pack = Hero.defaultPack();
     if (id === hero.equipped) return;
     if (id) {
@@ -5820,7 +6034,7 @@ function unequipWeapon() {
 }
 
 // Southwest inn area — sample pickups until real items exist.
-function spawnSwPickups() {
+function initStaticPickups() {
     worldPickups.length = 0;
     worldPickups.push(
         { id: "sw-gold-1", x: -2478.4, z: 614.2, label: "Gold coins", kind: "gold", amount: 15 },
@@ -5864,7 +6078,9 @@ function tryPickup() {
     const pick = aimedPickup(4.2);
     if (!pick) return false;
     if (!hero.pack) hero.pack = Hero.defaultPack();
-    if (pick.kind === "gold") {
+    if (pick.kind === "loot" && Array.isArray(pick.drops)) {
+        for (const drop of pick.drops) applyLootDrop(drop);
+    } else if (pick.kind === "gold") {
         hero.pack.gold += pick.amount;
         showStrike("+" + pick.amount + " gold");
     } else {
@@ -5872,6 +6088,7 @@ function tryPickup() {
         showStrike(pick.label);
     }
     pick.taken = true;
+    markWorldMarkersDirty();
     paintSheet();
     scheduleHeroSave();
     return true;
@@ -5890,6 +6107,12 @@ const swings = {
     chop: { reach: 2.05, radius: 0.72, side: 0 },
     "slash-left": { reach: 2.25, radius: 0.9, side: -0.55 },
     "slash-right": { reach: 2.25, radius: 0.9, side: 0.55 }
+};
+const hammerSwings = {
+    chop: { reach: 2.45, radius: 0.88, side: 0 },
+    "slash-left": { reach: 2.35, radius: 0.95, side: -0.55 },
+    "slash-right": { reach: 2.35, radius: 0.95, side: 0.55 },
+    thrust: { reach: 2.15, radius: 0.5, side: 0 }
 };
 
 function showStrike(text) {
@@ -5932,7 +6155,7 @@ function adoptHero(raw) {
         let eq = arm;
         try {
             const saved = localStorage.getItem("village-arm");
-            if (saved === "bow" || saved === "sword") eq = saved;
+            if (saved === "bow" || saved === "sword" || saved === "brute_hammer") eq = saved;
         } catch (err) { /* use current arm */ }
         hero.equipped = eq === "bow" ? "bow" : "sword";
         hero.pack = Hero.normalizePack({ gold: 0, items: [], weapons: [hero.equipped === "sword" ? "bow" : "sword"] }, hero.equipped);
@@ -6028,8 +6251,14 @@ function paintSheet() {
             "<li><span>" + item.name + (item.count > 1 ? " ×" + item.count : "") + "</span></li>"
         )).join("");
     }
+    const armorLine = document.getElementById("pack-armor");
+    if (armorLine) {
+        armorLine.textContent = hero.armor && hero.armor.id
+            ? "Armour: " + hero.armor.name
+            : "Armour: none";
+    }
     if (emptyNote) {
-        emptyNote.hidden = hero.pack.weapons.length > 0 || hero.pack.items.length > 0;
+        emptyNote.hidden = hero.pack.weapons.length > 0 || hero.pack.items.length > 0 || !!(hero.armor && hero.armor.id);
     }
     const attrs = document.getElementById("self-attributes");
     const skills = document.getElementById("self-skills");
@@ -6317,7 +6546,7 @@ function postHit(body) {
 function wound(man, label, quiet, knockX, knockZ) {
     if (!man || man.dying || man.health <= 0 || man.jack) return false;
     // Archers' arrows only count against goblins; the campaign settles fights between factions itself.
-    if (quiet && !man.goblin) return false;
+    if (quiet && !man.goblin && !man.brute) return false;
     if (man.board) {
         if (!quiet) provoke(man.faction);
         man.health = 0;
@@ -6328,12 +6557,26 @@ function wound(man, label, quiet, knockX, knockZ) {
         else shrinkBoardCrew(man.boardOrder);
         return true;
     }
-    if (!man.goblin) provoke(man.faction);
+    if (!man.goblin && !man.brute) provoke(man.faction);
     const word = label || "Hit";
-    if (man.goblin) {
-        man.health -= 1;
+    const strikeDamage = quiet ? 1 : playerStrikeDamage();
+    if (man.brute) {
+        man.health -= strikeDamage;
         if (man.health <= 0) {
             man.dying = true;
+            dropLootForKill(man);
+            if (!quiet) showStrike("Slain");
+        } else if (!quiet) {
+            showStrike(word);
+        }
+        actorsDirty = true;
+        return true;
+    }
+    if (man.goblin) {
+        man.health -= strikeDamage;
+        if (man.health <= 0) {
+            man.dying = true;
+            dropLootForKill(man);
             if (!quiet) showStrike("Slain");
         } else if (!quiet) {
             showStrike(word);
@@ -6404,6 +6647,7 @@ function wound(man, label, quiet, knockX, knockZ) {
     if (man.health <= 0) {
         if (unit) faction.alive = Math.max(0, (faction.alive || 0) - 1);
         man.dying = true;
+        dropLootForKill(man);
         if (!quiet) showStrike("Slain");
     } else if (!quiet) {
         showStrike(word);
@@ -6431,7 +6675,8 @@ function wound(man, label, quiet, knockX, knockZ) {
 
 function connectSwing() {
     if (!swing) return;
-    const profile = swings[swing.kind];
+    const profile = swingProfile(swing.kind);
+    if (!profile) return;
     const { fx, fy, fz, rx, rz } = aim();
     const ox = cam.x + rx * profile.side;
     const oz = cam.z + rz * profile.side;
@@ -6463,11 +6708,13 @@ function connectSwing() {
         return;
     }
     const label = swing.kind === "chop" ? "Chop" : swing.kind === "thrust" ? "Thrust" : "Slash";
-    if (wound(best, label, false, fx * 0.28, fz * 0.28)) notePractice("sword");
+    const practiceUse = arm === "brute_hammer" ? "brute_hammer" : arm === "bow" ? "bow" : "sword";
+    if (wound(best, label, false, fx * 0.28, fz * 0.28)) notePractice(practiceUse);
 }
 
 function startSwing(kind) {
-    if (arm !== "sword" || player.dead || swing || !swings[kind]) return;
+    if (arm !== "sword" && arm !== "brute_hammer") return;
+    if (player.dead || swing || !swingProfile(kind)) return;
     const now = performance.now();
     if (now < nextSwing) return;
     nextSwing = now + 480;
@@ -7350,11 +7597,15 @@ function wildTarget(man) {
     }
     let best = null;
     for (const other of men) {
-        if (other.goblin || other.dying || other.health <= 0 || other.archer || other.decor) continue;
+        if (other.goblin || other.brute || other.dying || other.health <= 0 || other.archer || other.decor) continue;
         const d = Math.hypot(other.x - man.x, other.z - man.z);
         if (d < WILD_SIGHT && home(other.x, other.z) && (!best || d < best.d)) best = { x: other.x, z: other.z, d };
     }
     return best;
+}
+
+function stepBrute(man, dt) {
+    return stepWild(man, dt);
 }
 
 function stepWild(man, dt) {
@@ -7518,6 +7769,7 @@ function stepMan(man, dt) {
         actorsDirty = true;
         return man.down > 1.2;
     }
+    if (man.brute) return stepBrute(man, dt);
     if (man.goblin) return stepGoblin(man, dt);
     if (man.driver) return stepDriver(man, dt);
     if (man.archer) return stepArcher(man, dt);
@@ -7641,6 +7893,7 @@ function updateFight(dt) {
         if (swing.age >= 0.36) swing = null;
     }
     stepCpuWork();
+    tickBruteRespawn();
     refreshSeenCrews();
     const quality = gfx();
     // Only the nearest UNIT_CAP people step in 3D; everyone else is campaign-map state.
@@ -7651,6 +7904,7 @@ function updateFight(dt) {
         const man = men[i];
         if (man.dying) {
             if (stepMan(man, dt)) {
+                if (man.brute) scheduleBruteRespawn(man);
                 men.splice(i, 1);
                 actorsDirty = true;
             }
@@ -9137,6 +9391,7 @@ function draw() {
     drawMesh("nearTrunk", 1);
     drawMesh("nearLeaf", 1);
     drawMesh("placeGhost", 1);
+    drawWorldMarkers(dark, proj);
     gl.uniform1f(loc.band, 1);
     gl.uniform1f(loc.flow, 0);
     gl.uniformMatrix4fv(loc.proj, false, proj);
@@ -10233,7 +10488,7 @@ function aimedDoor(reach) {
 }
 
 function personTitle(man) {
-    if (!man || man.goblin || man.dying || man.hidden || man.health <= 0) return "";
+    if (!man || man.goblin || man.brute || man.dying || man.hidden || man.health <= 0) return "";
     if (man.name) return man.name;
     if (man.decor) return "Shopkeeper";
     if (man.fisher || man.farmer || man.jack || man.board || man.driver) return "Worker";
@@ -10866,7 +11121,7 @@ const viewbow = document.getElementById("viewbow");
 
 function paintArm() {
     const on = phone.matches;
-    weapon.hidden = flying || arm !== "sword";
+    weapon.hidden = flying || (arm !== "sword" && arm !== "brute_hammer");
     viewbow.hidden = flying || arm !== "bow";
     const unarmed = !arm;
     pad.hidden = !on;
@@ -11095,7 +11350,9 @@ if (gl) {
     spawnKeepers();
     spawnGodwin();
     spawnCommander();
-    spawnSwPickups();
+    spawnSouthwestBrutes();
+    initStaticPickups();
+    markWorldMarkersDirty();
     prepareBow();
     buildHorse();
     // AoE cost model: no Roblox JSON outdoors — box/billboard stamps only (see outdoorDrawList).

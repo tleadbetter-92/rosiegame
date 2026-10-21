@@ -763,6 +763,51 @@
         return wildCache;
     }
 
+    // Region 1 — brute lurkers ~500 m southwest of the main Southwest town (places[2]).
+    let bruteLairCache = null;
+    function southwestBruteLair(count) {
+        const n = Math.max(1, Math.min(24, count || 20));
+        if (bruteLairCache && bruteLairCache.n === n) return bruteLairCache;
+        const home = places[2];
+        const dist = 500;
+        const cx = home.x - dist * Math.SQRT1_2;
+        const cz = home.z - dist * Math.SQRT1_2;
+        const radius = 52;
+        const roll = (x, z) => {
+            const v = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
+            return v - Math.floor(v);
+        };
+        const spots = [];
+        for (let i = 0; i < n; i++) {
+            const base = (i / n) * Math.PI * 2 + roll(cx + i, cz - i) * 0.35;
+            let placed = null;
+            for (let tryRing = 0; tryRing < 14 && !placed; tryRing++) {
+                const r = radius * (0.28 + roll(i, tryRing) * 0.72);
+                const ang = base + tryRing * 0.41;
+                const px = cx + Math.cos(ang) * r;
+                const pz = cz + Math.sin(ang) * r;
+                if (Math.hypot(px - home.x, pz - home.z) < dist * 0.68) continue;
+                if (wet(px, pz) || heightAt(px, pz) < 0.5) continue;
+                placed = { x: Math.round(px * 10) / 10, z: Math.round(pz * 10) / 10 };
+            }
+            if (!placed) {
+                const ang = (i / n) * Math.PI * 2;
+                const px = cx + Math.cos(ang) * radius * 0.65;
+                const pz = cz + Math.sin(ang) * radius * 0.65;
+                placed = { x: Math.round(px * 10) / 10, z: Math.round(pz * 10) / 10 };
+            }
+            spots.push(placed);
+        }
+        bruteLairCache = {
+            n,
+            centre: { x: Math.round(cx * 10) / 10, z: Math.round(cz * 10) / 10 },
+            radius,
+            dist,
+            spots
+        };
+        return bruteLairCache;
+    }
+
     // Ground under a building pad is cleared of trees and bushes.
     function onPad(x, z, margin = 1) {
         const near = padsNear(x, z);
@@ -1464,6 +1509,7 @@
         // Ore placed on the editor map, [x, z]: where mine workers dig stone and gold.
         ores: edit.ores || [],
         wildSpots,
+        southwestBruteLair,
         cliffRocks,
         groundStones
     };

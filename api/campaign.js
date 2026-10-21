@@ -4,6 +4,7 @@ const World = require("../world");
 const Town = require("../town");
 const Clock = require("../clock");
 const Hero = require("../hero");
+const Region1Quests = require("../lib/region1-quests");
 const { getDb } = require("../lib/db");
 
 const CAMPAIGN_FILE = path.join(__dirname, "..", "data", "campaign-world.json");
@@ -471,6 +472,7 @@ function restartCampaign(state, now) {
     state.grudges = [];
     state.goblins = { nextAt: nextGoblinRaid(now), raid: null };
     state.wilds = null;
+    Region1Quests.resetQuests(state);
     // Player houses stay; they are not faction buildings.
 }
 
@@ -2727,6 +2729,7 @@ function present(state, now, turn, paused, opts) {
             return list;
         }, []),
         hero: Hero.normalize(state.hero),
+        quests: Region1Quests.present(state),
         stance: factions.concat(minors).map((faction, index) => relation(state, PLAYER_FACTION, index)),
         grudges: (state.grudges || []).slice(),
         trails: state.trails || [],
@@ -5165,6 +5168,7 @@ function syncWorld(state, now) {
     if (ensurePlayerBuilds(state)) dirty = true;
     if (finishPlayerJobs(state, now)) dirty = true;
     if (ensureHero(state)) dirty = true;
+    if (Region1Quests.ensureQuests(state)) dirty = true;
     return { dirty, turn, paused };
 }
 
@@ -5179,6 +5183,47 @@ async function saveHero(raw) {
     const now = Date.now();
     syncWorld(state, now);
     state.hero = Hero.prefer(state.hero, raw);
+    await writeState(state);
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+}
+
+async function acceptBruteCullQuest() {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    const result = Region1Quests.acceptBruteCull(state, now);
+    if (result.ok) note(state, "You agreed to cull the brutes in the woods for the commander.");
+    await writeState(state);
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+}
+
+async function reportBruteKill() {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    const result = Region1Quests.noteBruteKill(state);
+    if (result.ok && state.quests.bruteCull.phase === "ready") {
+        note(state, "Enough brutes down — report to the commander.");
+    }
+    await writeState(state);
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+}
+
+async function turnInBruteCullQuest() {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    const result = Region1Quests.turnInBruteCull(state);
+    if (!result.ok) {
+        const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+        const payload = present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+        payload.questError = result.error;
+        return payload;
+    }
+    note(state, "The commander pays you for clearing the brutes.");
     await writeState(state);
     const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
     return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
@@ -5450,6 +5495,18 @@ module.exports = async function handler(req, res) {
             }
             if (req.body && req.body.hero && typeof req.body.hero === "object") {
                 res.status(200).json(await saveHero(req.body.hero));
+                return;
+            }
+            if (req.body && req.body.questAccept === "bruteCull") {
+                res.status(200).json(await acceptBruteCullQuest());
+                return;
+            }
+            if (req.body && req.body.bruteKill) {
+                res.status(200).json(await reportBruteKill());
+                return;
+            }
+            if (req.body && req.body.questTurnIn === "bruteCull") {
+                res.status(200).json(await turnInBruteCullQuest());
                 return;
             }
             if (req.body && req.body.forgive) {

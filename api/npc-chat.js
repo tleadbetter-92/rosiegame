@@ -1,6 +1,15 @@
 const region1Config = require("../lib/region1-npcs");
 const { buildSystem, listNpcs, npcTitle } = require("../lib/npc-prompt");
-const { loadCanon, appendCanon, extractCanonFacts } = require("../lib/npc-memory");
+const {
+    loadCanon,
+    appendCanon,
+    extractTurnMemory,
+    defaultOpinionFor,
+    currentCampaignId,
+    currentPlayMs,
+    readWorldRecord,
+    GOSSIP_DELAY_MS
+} = require("../lib/npc-memory");
 
 const OPENING_USER = "[The player walks up to speak with you. Give a brief in-character greeting or question—one or two short sentences. Do not describe game UI.]";
 
@@ -38,8 +47,8 @@ async function openAiReply(system, history, userMessage) {
         body: JSON.stringify({
             model,
             messages,
-            max_tokens: 320,
-            temperature: 0.72
+            max_tokens: 420,
+            temperature: 0.86
         })
     });
     if (!res.ok) {
@@ -65,14 +74,26 @@ async function openAiReply(system, history, userMessage) {
     return String(text).trim();
 }
 
-async function rememberTurn(npc, userMessage, assistantReply) {
+async function rememberTurn(campaignId, npc, userMessage, assistantReply, priorOpinion, playMs) {
     if (!userMessage || !assistantReply) return null;
     try {
         const title = npcTitle(npc);
-        const extracted = await extractCanonFacts(userMessage, assistantReply, title);
-        const has = (extracted.world && extracted.world.length) || (extracted.npc && extracted.npc.length);
-        if (!has) return null;
-        return appendCanon(npc, extracted.world, extracted.npc);
+        const extracted = await extractTurnMemory(userMessage, assistantReply, title, priorOpinion);
+        const hasFacts =
+            (extracted.worldPublic && extracted.worldPublic.length) ||
+            (extracted.worldSpread && extracted.worldSpread.length) ||
+            (extracted.npc && extracted.npc.length);
+        const hasOpinion = !!extracted.opinionOfPlayer;
+        if (!hasFacts && !hasOpinion) return null;
+        return appendCanon(
+            campaignId,
+            npc,
+            extracted.worldPublic,
+            extracted.worldSpread,
+            extracted.npc,
+            extracted.opinionOfPlayer || priorOpinion,
+            playMs
+        );
     } catch (err) {
         console.error("npc canon extract", err);
         return null;
@@ -82,16 +103,23 @@ async function rememberTurn(npc, userMessage, assistantReply) {
 module.exports = async function handler(req, res) {
     res.setHeader("Cache-Control", "no-store");
     try {
+        const campaignId = await currentCampaignId();
+        const playMs = await currentPlayMs();
         if (req.method === "GET") {
             const configured = Boolean(process.env.OPENAI_API_KEY);
-            let canon = { world: 0, npc: {} };
+            let canon = { world: 0, npc: {}, opinion: {} };
+            const worldRow = await readWorldRecord(campaignId);
+            const gossipPending = (worldRow.gossip || []).filter(
+                (row) => Number(row.spreadPlayMs) > playMs
+            ).length;
             const ids = listNpcs();
-            if (configured && ids.length) {
-                const loaded = await loadCanon(ids[0]);
+            if (ids.length) {
+                const loaded = await loadCanon(campaignId, ids[0], playMs);
                 canon.world = loaded.world.length;
                 for (const id of ids) {
-                    const row = await loadCanon(id);
+                    const row = await loadCanon(campaignId, id, playMs);
                     canon.npc[id] = row.npc.length;
+                    canon.opinion[id] = row.opinionOfPlayer || null;
                 }
             }
             res.status(200).json({
@@ -99,7 +127,11 @@ module.exports = async function handler(req, res) {
                 model: configured ? (process.env.OPENAI_MODEL || "gpt-4o-mini") : null,
                 npcs: listNpcs(),
                 loreRoot: region1Config.loreRoot,
-                memory: "MongoDB when MONGODB_URI is set, else data/npc-canon.json on the server",
+                campaignId,
+                playMs,
+                gossipDelayMs: GOSSIP_DELAY_MS,
+                gossipPending,
+                memory: "Per campaign: NPC files + world.json (public facts + gossip queue). Gossip reaches other NPCs after 1 game day.",
                 canon
             });
             return;
@@ -120,22 +152,38 @@ module.exports = async function handler(req, res) {
             res.status(400).json({ error: "Message is required." });
             return;
         }
-        const canon = await loadCanon(npc);
+        let canon = await loadCanon(campaignId, npc, playMs);
+        if (!canon.opinionOfPlayer && !opening) {
+            canon = {
+                ...canon,
+                opinionOfPlayer: defaultOpinionFor(npcTitle(npc))
+            };
+        }
         const system = buildSystem(npc, canon);
         const history = opening ? [] : cleanHistory(req.body && req.body.history);
         const reply = await openAiReply(system, history, message);
         let canonUpdate = null;
         if (!opening) {
-            canonUpdate = await rememberTurn(npc, message, reply);
+            canonUpdate = await rememberTurn(
+                campaignId,
+                npc,
+                message,
+                reply,
+                canon.opinionOfPlayer,
+                playMs
+            );
         }
         res.status(200).json({
             reply,
             npc,
             title: npcTitle(npc),
             opening,
+            campaignId,
+            opinionOfPlayer: (canonUpdate && canonUpdate.opinionOfPlayer) || canon.opinionOfPlayer || null,
             canonAdded: canonUpdate ? {
                 world: (canonUpdate.world || []).length,
-                npc: (canonUpdate.npc || []).length
+                npc: (canonUpdate.npc || []).length,
+                opinionUpdated: !!canonUpdate.opinionOfPlayer
             } : null
         });
     } catch (error) {

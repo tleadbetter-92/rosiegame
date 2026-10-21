@@ -99,9 +99,29 @@
                     choices: [
                         { label: "I wanted to know who's in command here.", next: "inCharge" },
                         { label: "I hear there have been troubles in the woods.", next: "woods" },
+                        { label: "Any paying work?", next: "bruteQuest" },
                         { label: "You're not from around here, are you?", next: "oldKingdom" },
                         { label: "Nothing. Just looking around.", next: "byeYard" }
                     ]
+                },
+                bruteQuest: {
+                    say: "Paying work. There are heavy brutes lurking southwest of town — bigger than goblins, meaner up close. Kill three of them and I'll pay fifty gold and set you up with a padded coat from our stores. Take what they carry too; I don't care.",
+                    choices: [
+                        { label: "I'll handle it.", next: "bruteAccepted", action: "acceptBruteCull" },
+                        { label: "Not my fight.", next: "bye" }
+                    ]
+                },
+                bruteAccepted: {
+                    say: "Good. Southwest woods, well out from the walls. Don't come back until three are down — or don't come back at all.",
+                    choices: []
+                },
+                bruteProgress: {
+                    say: "Still brutes out there. You know the deal — three dead, then we talk payment.",
+                    choices: [{ label: "Understood.", next: "bye" }]
+                },
+                brutePaid: {
+                    say: "You've done it. Fifty gold, and the padded coat from our stores — wear it before you pick another fight. Dismissed.",
+                    choices: []
                 },
                 inCharge: {
                     say: "I am. The lord has charge of this place; I have charge of his soldiers. That's the arrangement.",
@@ -154,10 +174,70 @@
     let aiBusy = false;
     let aiHistory = [];
     let aiMode = false;
+    let campaignKey = "0";
+    let questState = null;
     const HISTORY_PREFIX = "region1-chat-";
 
+    function setQuests(data) {
+        questState = data || null;
+    }
+
+    async function runQuestAction(action) {
+        if (action === "acceptBruteCull") {
+            const res = await fetch("/api/campaign", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                cache: "no-store",
+                body: JSON.stringify({ questAccept: "bruteCull" })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (data.quests) setQuests(data.quests);
+            if (typeof global.applyCampaign === "function") global.applyCampaign(data);
+            return res.ok;
+        }
+        if (action === "turnInBruteCull") {
+            const res = await fetch("/api/campaign", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                cache: "no-store",
+                body: JSON.stringify({ questTurnIn: "bruteCull" })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (data.quests) setQuests(data.quests);
+            if (typeof global.applyCampaign === "function") global.applyCampaign(data);
+            return res.ok && !data.questError;
+        }
+        return true;
+    }
+
+    function mergeCommanderChoices(nodeId, choices) {
+        if (treeId !== "commander" || nodeId !== "start") return choices || [];
+        const out = (choices || []).slice();
+        const q = questState && questState.bruteCull;
+        if (!q) return out;
+        if (q.phase === "active") {
+            out.unshift({ label: "About those brutes… (" + q.kills + "/" + q.need + ")", next: "bruteProgress" });
+        }
+        if (q.phase === "ready" || (q.phase === "active" && q.kills >= q.need)) {
+            out.unshift({ label: "I've killed the brutes you wanted.", next: "brutePaid", action: "turnInBruteCull" });
+        }
+        if (q.phase === "rewarded") {
+            return out.filter((c) => c.next !== "bruteQuest");
+        }
+        return out;
+    }
+
+    function syncCampaignKey() {
+        return fetch("/api/campaign?brief=1", { cache: "no-store" })
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => {
+                if (data && data.restartedAt != null) campaignKey = String(data.restartedAt);
+            })
+            .catch(() => { /* keep last key */ });
+    }
+
     function historyKey(id) {
-        return HISTORY_PREFIX + id;
+        return HISTORY_PREFIX + campaignKey + ":" + id;
     }
 
     function loadStoredHistory(id) {
@@ -226,12 +306,25 @@
         textEl.textContent = node.say;
         choicesEl.innerHTML = "";
         choicesEl.hidden = false;
-        for (const choice of node.choices || []) {
+        const choices = treeId === "commander" ? mergeCommanderChoices(nodeId, node.choices) : (node.choices || []);
+        for (const choice of choices) {
             const btn = document.createElement("button");
             btn.type = "button";
             btn.className = "dialogue-choice";
             btn.textContent = choice.label;
-            btn.addEventListener("click", () => showNode(choice.next));
+            btn.addEventListener("click", () => {
+                void (async () => {
+                    if (choice.action) {
+                        const ok = await runQuestAction(choice.action);
+                        if (!ok && choice.action === "turnInBruteCull") {
+                            textEl.textContent = "You haven't finished the job yet.";
+                            choicesEl.innerHTML = "";
+                            return;
+                        }
+                    }
+                    showNode(choice.next);
+                })();
+            });
             choicesEl.appendChild(btn);
         }
         syncAskUi();
@@ -271,6 +364,7 @@
                 setAskStatus(data.error || "AI could not reply.", true);
                 return false;
             }
+            if (data.campaignId != null) campaignKey = String(data.campaignId);
             if (!opening) aiHistory.push({ role: "user", content: message });
             aiHistory.push({ role: "assistant", content: data.reply });
             if (aiHistory.length > 20) aiHistory = aiHistory.slice(-20);
@@ -298,6 +392,7 @@
     }
 
     async function startAiTalk(id) {
+        await syncCampaignKey();
         treeId = id;
         aiMode = true;
         aiHistory = loadStoredHistory(id);
@@ -358,14 +453,16 @@
         return aiConfigured;
     }
 
+    syncCampaignKey();
     fetch("/api/npc-chat", { cache: "no-store" })
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
             aiConfigured = !!(data && data.configured);
+            if (data && data.campaignId != null) campaignKey = String(data.campaignId);
         })
         .catch(() => {
             aiConfigured = false;
         });
 
-    global.Dialogue = { start, close, isOpen, aiReady };
+    global.Dialogue = { start, close, isOpen, aiReady, setQuests };
 })(typeof window !== "undefined" ? window : globalThis);

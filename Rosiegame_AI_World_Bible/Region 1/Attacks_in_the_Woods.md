@@ -25,6 +25,10 @@ The wizardly figures are associated with the hidden people and may be connected 
 
 The creatures’ identity, origin, nature and means of control are deliberately OPEN QUESTIONS. Do not invent a definitive answer for them yet.
 
+## Brute lurkers (Southwest wilds — playtest)
+
+**PROVISIONAL.** About **500 m southwest** of the main Southwest town, a marked ring holds roughly **twenty brutes** (prop warriors in the 3D world). Each respawns after **one in-game day** if killed. A **glow marker ring** on the ground shows the camp (same style as the goblin woods camp marker). Slain foes leave a **loot marker** until searched. Local colour for the woods threat, not established canon identity yet.
+
 ## What the Settlement Knows
 
 The settlement has not necessarily recognised the pattern of the wizardly figures appearing alongside the creatures.
