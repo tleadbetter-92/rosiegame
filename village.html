@@ -19,6 +19,14 @@
     <div id="clock">12:00</div>
     <div class="cross"></div>
     <p id="look" hidden></p>
+    <div id="dialogue" class="dialogue" hidden role="dialog" aria-modal="true" aria-labelledby="dialogue-name">
+        <header class="dialogue-head">
+            <p id="dialogue-name" class="dialogue-name" data-dialogue-name>Godwin</p>
+            <button type="button" class="dialogue-leave" data-dialogue-leave aria-label="Leave conversation">Leave</button>
+        </header>
+        <p class="dialogue-text" data-dialogue-text></p>
+        <div class="dialogue-choices" data-dialogue-choices></div>
+    </div>
     <div id="weapon" aria-hidden="true"></div>
     <div id="viewbow" aria-hidden="true" hidden></div>
     <button id="pack" type="button">Pack</button>
@@ -27,10 +35,13 @@
     <div id="pack-panel" hidden>
         <button id="pack-close" type="button">Close</button>
         <p id="self-level">Level 1</p>
-        <div class="pack-arms">
-            <button type="button" data-arm="sword" aria-pressed="true">Sword</button>
-            <button type="button" data-arm="bow" aria-pressed="false">Bow</button>
-        </div>
+        <p id="pack-gold" class="pack-gold">Gold: 0</p>
+        <h2>Hands</h2>
+        <div id="pack-hands" class="pack-hands"></div>
+        <h2>Pack</h2>
+        <ul id="pack-weapons" class="pack-list"></ul>
+        <ul id="pack-items" class="pack-list"></ul>
+        <p id="pack-empty" class="pack-note" hidden>Nothing else yet.</p>
         <h2>Build</h2>
         <button id="build-house" type="button">Build house</button>
         <p id="build-status" class="pack-note"></p>
@@ -90,6 +101,8 @@
     <script src="hero.js"></script>
     <script src="models/roblox/lumberyard-view.js"></script>
     <script src="editor-blocks.js"></script>
+    <script src="region1.js"></script>
+    <script src="dialogue.js"></script>
     <script src="village.js"></script>
 </body>
 </html>

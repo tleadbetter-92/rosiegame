@@ -7,53 +7,55 @@ if (!gl) {
 
 const places = World.places;
 const flying = new URLSearchParams(location.search).get("fly") === "1";
-// Just south of the designed Southwest farmhouse door, looking back at the house.
-const START_FARM = { x: -2372, z: 744.5, yaw: Math.PI };
+// Legacy spawns — saved positions here are moved to the village inn on load.
+const START_FARM = { x: -2372, z: 744.5 };
 const OLD_TOWN_SPAWN = { x: places[2].ox, z: places[2].oz + 20 };
-function atStartFarm(x, z, yaw) {
+const VILLAGE_SPAWN_FALLBACK = { x: places[2].ox, z: places[2].oz + 12, yaw: 0 };
+function setCamAt(x, z, yaw) {
     cam.x = x;
     cam.z = z;
     cam.y = 1.62 + Math.max(0, World.heightAt(x, z));
     cam.yaw = yaw;
     cam.pitch = 0;
 }
-
-// Prefer the live Southwest start-farm door once campaign plots are in; else the fixed kit spot.
-function placeAtKitFarm() {
-    const plots = raisedData && raisedData.plots || [];
-    const farm = plots.find((plot) => plot && plot.kind === "farm" && plot.village === 2 && plot.house
-        && (plot.id === "show-farm-2" || String(plot.id || "").indexOf("show-farm-2") === 0));
-    if (farm && farm.house) {
-        const h = farm.house;
-        const s = Math.sin(h.yaw || 0);
-        const c = Math.cos(h.yaw || 0);
-        const fx = -s;
-        const fz = -c;
-        const half = (Math.abs(fx) > Math.abs(fz) ? h.w : h.d) * 0.5;
-        const side = h.doorSide == null ? 1 : h.doorSide;
-        const doorX = h.x + fx * (half - 0.06) - c * side;
-        const doorZ = h.z + fz * (half - 0.06) + s * side;
-        const x = doorX + fx * 3.5;
-        const z = doorZ + fz * 3.5;
-        atStartFarm(x, z, Math.atan2(h.x - x, -(h.z - z)));
+function isLegacySpawn(x, z) {
+    if (Math.hypot(x - START_FARM.x, z - START_FARM.z) < 55) return true;
+    if (Math.hypot(x - OLD_TOWN_SPAWN.x, z - OLD_TOWN_SPAWN.z) < 55) return true;
+    return false;
+}
+// Southwest village start — cobble in front of the inn (Godwin).
+function placeAtVillageSpawn() {
+    const house = houses.find((item) => item.kind === "tavern" && item.village === 2);
+    if (house) {
+        const ent = house.entrance || "south";
+        if (ent === "south") {
+            setCamAt(house.x + house.w / 2, house.z + house.d + 3.5, 0);
+            return;
+        }
+        if (ent === "north") {
+            setCamAt(house.x + house.w / 2, house.z - 3.5, Math.PI);
+            return;
+        }
+        if (ent === "east") {
+            setCamAt(house.x + house.w + 3.5, house.z + house.d / 2, -Math.PI / 2);
+            return;
+        }
+        setCamAt(house.x - 3.5, house.z + house.d / 2, Math.PI / 2);
         return;
     }
-    atStartFarm(START_FARM.x, START_FARM.z, START_FARM.yaw);
+    setCamAt(VILLAGE_SPAWN_FALLBACK.x, VILLAGE_SPAWN_FALLBACK.z, VILLAGE_SPAWN_FALLBACK.yaw);
 }
-const cam = { x: START_FARM.x, y: 1.62, z: START_FARM.z, yaw: START_FARM.yaw, pitch: 0 };
+let resumeWalkSpot = false;
+const cam = { x: VILLAGE_SPAWN_FALLBACK.x, y: 1.62, z: VILLAGE_SPAWN_FALLBACK.z, yaw: VILLAGE_SPAWN_FALLBACK.yaw, pitch: 0 };
 cam.y = 1.62 + Math.max(0, World.heightAt(cam.x, cam.z));
 if (!flying) {
     try {
         const spot = JSON.parse(localStorage.getItem("village-spot") || "null");
-        // Keep a saved walk position, but move anyone still parked on the old town spawn to the farm.
-        if (spot && Number.isFinite(spot.x) && Number.isFinite(spot.z)
-            && Math.hypot(spot.x - OLD_TOWN_SPAWN.x, spot.z - OLD_TOWN_SPAWN.z) > 50) {
-            cam.x = spot.x;
-            cam.z = spot.z;
-            cam.y = 1.62 + Math.max(0, World.heightAt(spot.x, spot.z));
-            if (Number.isFinite(spot.yaw)) cam.yaw = spot.yaw;
+        if (spot && Number.isFinite(spot.x) && Number.isFinite(spot.z) && !isLegacySpawn(spot.x, spot.z)) {
+            setCamAt(spot.x, spot.z, Number.isFinite(spot.yaw) ? spot.yaw : 0);
+            resumeWalkSpot = true;
         }
-    } catch (err) { /* start at the farm */ }
+    } catch (err) { /* start in the village */ }
 }
 if (flying) {
     cam.x = -200;
@@ -1462,6 +1464,7 @@ function seatSwKeeps() {
 }
 
 seatSwKeeps();
+if (!flying && !resumeWalkSpot) placeAtVillageSpawn();
 houses.forEach((house) => {
     if (!house.test) addHouse(house);
 });
@@ -1578,11 +1581,13 @@ function spawnGarrison() {
     }
 }
 
+// Region 1 (Rosiegame_AI_World_Bible/Region 1/) — Godwin at Southwest inn only until borders are marked.
 function spawnGodwin() {
     const house = houses.find((item) => item.kind === "tavern" && item.village === 2);
     if (!house || !house.keeper) return;
     men.push({
         inn: true,
+        dialogue: "godwin",
         name: "Godwin",
         fisher: false,
         faction: 2,
@@ -5736,10 +5741,111 @@ window.addEventListener("pagehide", () => {
 let nextSwing = 0;
 let nextShot = 0;
 let arm = "sword";
-try {
-    const savedArm = localStorage.getItem("village-arm");
-    if (savedArm === "bow" || savedArm === "sword") arm = savedArm;
-} catch (err) { /* keep the sword if storage is blocked */ }
+const worldPickups = [];
+
+function weaponLabel(id) {
+    if (id === "sword") return "Sword";
+    if (id === "bow") return "Longbow";
+    return id;
+}
+
+function syncEquippedFromHero() {
+    if (!hero.pack) hero.pack = Hero.defaultPack();
+    arm = hero.equipped === "bow" || hero.equipped === "sword" ? hero.equipped : null;
+    try {
+        localStorage.setItem("village-arm", arm || "");
+    } catch (err) { /* still equipped this visit */ }
+    paintArm();
+}
+
+function addItemToPack(id, name, count) {
+    if (!hero.pack) hero.pack = Hero.defaultPack();
+    const row = hero.pack.items.find((item) => item.id === id);
+    if (row) row.count += count;
+    else hero.pack.items.push({ id, name, count });
+}
+
+function equipWeapon(id) {
+    if (id !== null && id !== "sword" && id !== "bow") return;
+    if (!hero.pack) hero.pack = Hero.defaultPack();
+    if (id === hero.equipped) return;
+    if (id) {
+        const inHand = hero.equipped === id;
+        const inPack = hero.pack.weapons.includes(id);
+        if (!inHand && !inPack) return;
+    }
+    if (hero.equipped && !hero.pack.weapons.includes(hero.equipped)) {
+        hero.pack.weapons.push(hero.equipped);
+    }
+    if (id) hero.pack.weapons = hero.pack.weapons.filter((w) => w !== id);
+    hero.equipped = id;
+    syncEquippedFromHero();
+    paintSheet();
+    scheduleHeroSave();
+}
+
+function unequipWeapon() {
+    if (!hero.equipped) return;
+    equipWeapon(null);
+}
+
+// Southwest inn area — sample pickups until real items exist.
+function spawnSwPickups() {
+    worldPickups.length = 0;
+    worldPickups.push(
+        { id: "sw-gold-1", x: -2478.4, z: 614.2, label: "Gold coins", kind: "gold", amount: 15 },
+        { id: "sw-ale-1", x: -2476.1, z: 612.6, label: "Ale", kind: "item", itemId: "ale", itemName: "Ale", count: 1 }
+    );
+    for (const pick of worldPickups) {
+        pick.y = Math.max(0, World.meshHeight(pick.x, pick.z));
+        pick.taken = false;
+    }
+}
+
+function aimedPickup(reach) {
+    if (inside || flying || player.dead) return null;
+    const body = activeCam();
+    const sy = Math.sin(body.yaw);
+    const cy = Math.cos(body.yaw);
+    const cp = Math.cos(body.pitch);
+    const fx = sy * cp;
+    const fy = Math.sin(body.pitch);
+    const fz = -cy * cp;
+    let best = null;
+    let bestT = reach || 4;
+    for (const pick of worldPickups) {
+        if (pick.taken) continue;
+        const along = (pick.x - body.x) * fx + (pick.z - body.z) * fz;
+        if (along < 0.35 || along > bestT) continue;
+        const hx = body.x + fx * along;
+        const hz = body.z + fz * along;
+        if (Math.hypot(hx - pick.x, hz - pick.z) > 0.55) continue;
+        const hy = body.y + fy * along;
+        const foot = pick.y || 0;
+        if (hy < foot + 0.05 || hy > foot + 1.6) continue;
+        best = pick;
+        bestT = along;
+    }
+    return best;
+}
+
+function tryPickup() {
+    if (typeof Dialogue !== "undefined" && Dialogue.isOpen()) return false;
+    const pick = aimedPickup(4.2);
+    if (!pick) return false;
+    if (!hero.pack) hero.pack = Hero.defaultPack();
+    if (pick.kind === "gold") {
+        hero.pack.gold += pick.amount;
+        showStrike("+" + pick.amount + " gold");
+    } else {
+        addItemToPack(pick.itemId, pick.itemName, pick.count || 1);
+        showStrike(pick.label);
+    }
+    pick.taken = true;
+    paintSheet();
+    scheduleHeroSave();
+    return true;
+}
 const arrows = [];
 let strikeTimer = 0;
 let swing = null;
@@ -5792,7 +5898,17 @@ function adoptHero(raw) {
     const next = Hero.normalize(raw);
     if (heroReady && next.raised <= hero.raised) return;
     hero = next;
+    if (raw.pack == null && raw.equipped == null) {
+        let eq = arm;
+        try {
+            const saved = localStorage.getItem("village-arm");
+            if (saved === "bow" || saved === "sword") eq = saved;
+        } catch (err) { /* use current arm */ }
+        hero.equipped = eq === "bow" ? "bow" : "sword";
+        hero.pack = Hero.normalizePack({ gold: 0, items: [], weapons: [hero.equipped === "sword" ? "bow" : "sword"] }, hero.equipped);
+    }
     heroReady = true;
+    syncEquippedFromHero();
     applyHeroVitals(true);
 }
 
@@ -5856,6 +5972,35 @@ function paintSheet() {
     if (!pack || pack.hidden) return;
     const level = document.getElementById("self-level");
     if (level) level.textContent = "Level " + hero.level;
+    if (!hero.pack) hero.pack = Hero.defaultPack();
+    const goldLine = document.getElementById("pack-gold");
+    if (goldLine) goldLine.textContent = "Gold: " + hero.pack.gold;
+    const hands = document.getElementById("pack-hands");
+    if (hands) {
+        if (hero.equipped) {
+            hands.innerHTML = "<p>Equipped: <b>" + weaponLabel(hero.equipped) + "</b></p>" +
+                "<button type=\"button\" data-unequip>Unequip</button>";
+        } else {
+            hands.innerHTML = "<p>Hands empty</p>";
+        }
+    }
+    const weaponList = document.getElementById("pack-weapons");
+    if (weaponList) {
+        weaponList.innerHTML = hero.pack.weapons.map((id) => (
+            "<li><span>" + weaponLabel(id) + "</span>" +
+            "<button type=\"button\" data-equip=\"" + id + "\">Equip</button></li>"
+        )).join("");
+    }
+    const itemList = document.getElementById("pack-items");
+    const emptyNote = document.getElementById("pack-empty");
+    if (itemList) {
+        itemList.innerHTML = hero.pack.items.map((item) => (
+            "<li><span>" + item.name + (item.count > 1 ? " ×" + item.count : "") + "</span></li>"
+        )).join("");
+    }
+    if (emptyNote) {
+        emptyNote.hidden = hero.pack.weapons.length > 0 || hero.pack.items.length > 0;
+    }
     const attrs = document.getElementById("self-attributes");
     const skills = document.getElementById("self-skills");
     if (attrs) {
@@ -6098,7 +6243,7 @@ function respawn() {
     player.dead = 0;
     player.guard = 1.4;
     hop = 0;
-    placeAtKitFarm();
+    placeAtVillageSpawn();
     death.classList.remove("show");
     death.hidden = true;
     paintHealth();
@@ -8734,6 +8879,7 @@ function groundUnder(x, z, feet) {
 
 function movePlayer(dt) {
     const body = activeCam();
+    if (typeof Dialogue !== "undefined" && Dialogue.isOpen()) return;
     if (player.dead && !flying) return;
     if (keys.ArrowLeft) body.yaw -= 1.7 * dt;
     if (keys.ArrowRight) body.yaw += 1.7 * dt;
@@ -9180,7 +9326,6 @@ let raisedData = null;
 let raisedKey = "";
 let raisedContentKey = "";
 
-let farmStartPlaced = false;
 function raisePlots(data) {
     raisedData = data || null;
     // Remesh only when plot content changes or the camera cell moves — not on every campaign poll.
@@ -9192,16 +9337,6 @@ function raisePlots(data) {
         raisedKey = "";
     }
     stampRaisedPlots();
-    // First time the Southwest start farm is known, stand at its door (unless already walking elsewhere).
-    if (!flying && !farmStartPlaced && !inside) {
-        const nearStart = Math.hypot(cam.x - START_FARM.x, cam.z - START_FARM.z) < 40
-            || Math.hypot(cam.x - OLD_TOWN_SPAWN.x, cam.z - OLD_TOWN_SPAWN.z) < 50;
-        if (nearStart && plots.some((plot) => plot && plot.id === "show-farm-2" && plot.house)) {
-            placeAtKitFarm();
-            farmStartPlaced = true;
-            saveSpot();
-        }
-    }
 }
 
 function clearRaised() {
@@ -10087,6 +10222,20 @@ function aimedPerson(reach) {
     return best;
 }
 
+function aimedTalkPerson(reach) {
+    const man = aimedPerson(reach || 6);
+    if (!man || !man.dialogue || !man.inn || man.post !== 2) return null;
+    return man;
+}
+
+function tryTalk() {
+    if (typeof Dialogue === "undefined" || Dialogue.isOpen()) return false;
+    if (inside || flying || player.dead) return false;
+    const man = aimedTalkPerson(6);
+    if (!man) return false;
+    return Dialogue.start(man.dialogue, "start");
+}
+
 let propData = null;
 function turnProp(x, y, z, yaw) {
     const c = Math.cos(yaw);
@@ -10419,12 +10568,22 @@ function toggleDoor(door) {
     if (door.house && door.house.inside) refreshSwInside();
 }
 
-function useDoor() {
+function useActivate() {
+    if (typeof Dialogue !== "undefined" && Dialogue.isOpen()) {
+        Dialogue.close();
+        return;
+    }
+    if (tryTalk()) return;
+    if (tryPickup()) return;
     if (inside) {
         if (atExit()) leaveInterior();
         return;
     }
     toggleDoor(aimedDoor() || nearestDoor());
+}
+
+function useDoor() {
+    useActivate();
 }
 
 const civicTitle = {
@@ -10453,11 +10612,14 @@ function paintLook() {
     if (!label) return;
     let title = "";
     if (!inside && !flying) {
+        const pick = aimedPickup(4.5);
         const door = aimedDoor(8);
         const person = aimedPerson(8);
+        const pickDist = pick ? Math.hypot(pick.x - cam.x, pick.z - cam.z) : 99;
         const doorDist = door ? Math.hypot(door.x - cam.x, door.z - cam.z) : 99;
         const personDist = person ? Math.hypot(person.x - cam.x, person.z - cam.z) : 99;
-        title = person && personDist <= doorDist ? personTitle(person) : houseTitle(door);
+        if (pick && pickDist <= personDist && pickDist <= doorDist) title = pick.label;
+        else title = person && personDist <= doorDist ? personTitle(person) : houseTitle(door);
     }
     label.hidden = !title;
     label.textContent = title;
@@ -10470,11 +10632,17 @@ function paintDoor() {
     const base = arm === "bow"
         ? "WASD to walk · Space to jump · mouse to look · click to shoot · Alt toggles fast · Pack to switch"
         : "WASD to walk · Space to jump · mouse to look · drag to swing · Alt toggles fast · Pack to switch";
-    const door = inside ? null : (aimedDoor() || nearestDoor());
+    const pick = inside ? null : aimedPickup(4.2);
+    const talk = inside ? null : (pick ? null : aimedTalkPerson(6));
+    const door = inside ? null : (pick || talk ? null : (aimedDoor() || nearestDoor()));
     const tap = phone.matches;
     const open = tap ? " · tap to open" : " · right click to open";
     const shut = tap ? " · tap to close" : " · right click to close";
-    helpLine.textContent = door ? base + (door.want ? shut : open) : base;
+    const speak = tap ? " · tap to talk" : " · E to talk";
+    const take = tap ? " · tap to take" : " · E to take";
+    if (pick) helpLine.textContent = base + take;
+    else if (talk) helpLine.textContent = base + speak;
+    else helpLine.textContent = door ? base + (door.want ? shut : open) : base;
 }
 
 function frame(now) {
@@ -10525,10 +10693,17 @@ window.addEventListener("keydown", (e) => {
     }
     if (e.code === "KeyF" && !e.repeat) shootArrow();
     if (e.code === "KeyE" && !e.repeat) useDoor();
-    if (e.code === "Escape" && placing) {
-        cancelPlaceHouse();
-        e.preventDefault();
-        return;
+    if (e.code === "Escape" && !e.repeat) {
+        if (typeof Dialogue !== "undefined" && Dialogue.isOpen()) {
+            Dialogue.close();
+            e.preventDefault();
+            return;
+        }
+        if (placing) {
+            cancelPlaceHouse();
+            e.preventDefault();
+            return;
+        }
     }
     if ((e.code === "KeyP" || e.code === "KeyC") && !e.repeat) {
         if (placing) cancelPlaceHouse();
@@ -10541,6 +10716,8 @@ window.addEventListener("keydown", (e) => {
 window.addEventListener("keyup", (e) => { keys[e.code] = false; });
 
 canvas.addEventListener("click", () => {
+    if (tryTalk()) return;
+    if (tryPickup()) return;
     if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
 });
 document.addEventListener("mousemove", (e) => {
@@ -10577,6 +10754,8 @@ canvas.addEventListener("mousedown", (e) => {
         confirmPlaceHouse();
         return;
     }
+    if (tryTalk()) return;
+    if (tryPickup()) return;
     dragging = true;
     if (arm === "bow") {
         shootArrow();
@@ -10642,8 +10821,9 @@ function paintArm() {
     const on = phone.matches;
     weapon.hidden = flying || arm !== "sword";
     viewbow.hidden = flying || arm !== "bow";
+    const unarmed = !arm;
     pad.hidden = !on;
-    attack.hidden = flying || !on;
+    attack.hidden = flying || !on || unarmed;
     const jumpBtn = document.getElementById("jump");
     if (jumpBtn) jumpBtn.hidden = flying || !on;
     attack.classList.toggle("arm-bow", arm === "bow");
@@ -10661,22 +10841,20 @@ function paintArm() {
         helpLine.textContent = fastOn
             ? "WASD to fly · mouse to look · Space up · Shift down · Alt toggles fast · fast on"
             : "WASD to fly · mouse to look · Space up · Shift down · Alt toggles fast";
-    } else if (helpLine) {
-        helpLine.textContent = arm === "bow"
-            ? "WASD to walk · Space to jump · mouse to look · click to shoot · Alt toggles fast · Pack to switch"
-            : "WASD to walk · Space to jump · mouse to look · drag to swing · Alt toggles fast · Pack to switch";
+    } else if (helpLine && !placing && !flying) {
+        if (!arm) {
+            helpLine.textContent = "WASD to walk · Space to jump · mouse to look · Alt toggles fast · Pack for gear";
+        } else {
+            helpLine.textContent = arm === "bow"
+                ? "WASD to walk · Space to jump · mouse to look · click to shoot · Alt toggles fast · Pack to switch"
+                : "WASD to walk · Space to jump · mouse to look · drag to swing · Alt toggles fast · Pack to switch";
+        }
     }
-    packPanel.querySelectorAll("[data-arm]").forEach((button) => {
-        button.setAttribute("aria-pressed", button.dataset.arm === arm ? "true" : "false");
-    });
 }
 
 function chooseArm(next) {
-    if (next !== "sword" && next !== "bow") return;
-    arm = next;
-    try { localStorage.setItem("village-arm", arm); } catch (err) { /* the choice still lasts this visit */ }
+    equipWeapon(next);
     packPanel.hidden = true;
-    paintArm();
 }
 
 function showPhoneControls() {
@@ -10808,9 +10986,15 @@ if (enterButton) {
     });
 }
 packPanel.addEventListener("click", (e) => {
-    const button = e.target.closest("[data-arm]");
-    if (!button) return;
-    chooseArm(button.dataset.arm);
+    if (e.target.closest("[data-unequip]")) {
+        unequipWeapon();
+        return;
+    }
+    const equip = e.target.closest("[data-equip]");
+    if (equip) {
+        equipWeapon(equip.dataset.equip);
+        return;
+    }
 });
 
 canvas.addEventListener("touchstart", (e) => {
@@ -10863,6 +11047,7 @@ if (gl) {
     buildFolk();
     spawnKeepers();
     spawnGodwin();
+    spawnSwPickups();
     prepareBow();
     buildHorse();
     // AoE cost model: no Roblox JSON outdoors — box/billboard stamps only (see outdoorDrawList).

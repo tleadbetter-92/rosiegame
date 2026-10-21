@@ -125,9 +125,49 @@ html, body {
     color: #e7d7b2;
 }
 
-#pack-panel .pack-arms {
+.pack-gold {
+    margin: 0;
+    font: 650 1rem "Segoe UI", system-ui, sans-serif;
+    color: #e8c86a;
+}
+
+.pack-hands {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     gap: 8px;
+    font: 500 0.92rem "Segoe UI", system-ui, sans-serif;
+}
+
+.pack-hands p {
+    margin: 0;
+    flex: 1 1 100%;
+}
+
+.pack-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.pack-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    font: 500 0.9rem "Segoe UI", system-ui, sans-serif;
+}
+
+.pack-list button {
+    min-width: 0;
+    padding: 6px 10px;
+    font-size: 0.85rem;
 }
 
 #pack-panel button {
@@ -354,6 +394,78 @@ html, body {
     text-align: center;
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
     pointer-events: none;
+}
+
+.dialogue {
+    position: fixed;
+    left: 50%;
+    bottom: 132px;
+    z-index: 12;
+    width: min(520px, calc(100vw - 32px));
+    padding: 14px 16px 12px;
+    border: 1px solid rgba(243, 230, 204, 0.35);
+    border-radius: 8px;
+    background: rgba(18, 16, 14, 0.92);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+    transform: translateX(-50%);
+    color: #f3e6cc;
+    font-family: Georgia, "Times New Roman", serif;
+}
+
+.dialogue-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.dialogue-name {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.dialogue-leave {
+    border: 1px solid rgba(243, 230, 204, 0.45);
+    border-radius: 4px;
+    padding: 4px 10px;
+    background: rgba(0, 0, 0, 0.35);
+    color: #f3e6cc;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.dialogue-text {
+    margin: 0 0 12px;
+    line-height: 1.45;
+    font-size: 1rem;
+}
+
+.dialogue-choices {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.dialogue-choice {
+    text-align: left;
+    border: 1px solid rgba(198, 161, 90, 0.45);
+    border-radius: 4px;
+    padding: 8px 10px;
+    background: rgba(60, 48, 32, 0.65);
+    color: #f8eed8;
+    font-size: 0.95rem;
+    cursor: pointer;
+}
+
+.dialogue-choice:hover {
+    background: rgba(90, 72, 48, 0.85);
+}
+
+body.dialogue-open .cross {
+    opacity: 0.25;
 }
 
 #look {

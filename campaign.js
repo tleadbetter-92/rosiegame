@@ -297,6 +297,26 @@ function paint(data) {
     } else {
         log.innerHTML = lines.map((line) => "<li>" + line + "</li>").join("");
     }
+    paintGoblins(data);
+}
+
+function paintGoblins(data) {
+    const status = document.getElementById("goblin-status");
+    if (!status) return;
+    const camp = (data.wilds || []).filter((hp) => hp > 0).length;
+    const rules = data.rules && data.rules.goblins;
+    const max = rules && rules.camp ? rules.camp.max : null;
+    let text = "Woods camp: " + camp + (max ? " / " + max : "");
+    const raid = data.goblins;
+    if (raid && raid.hp) {
+        const alive = raid.hp.filter((hp) => hp > 0).length;
+        text += " · Raid: " + alive + " marching or fighting";
+    } else if (data.nextGoblinsAt) {
+        const left = Math.max(0, data.nextGoblinsAt - Date.now());
+        const min = Math.max(1, Math.round(left / 60000));
+        text += " · Next auto raid ~" + min + " min";
+    }
+    status.textContent = text;
 }
 
 const unitNames = { soldier: "soldier", fisher: "fisherman", wood: "woodcutter", jack: "lumberjack", ore: "miner" };
@@ -441,15 +461,31 @@ function bindStance(select) {
 holds.forEach(bindFood);
 document.querySelectorAll("[data-stance]").forEach(bindStance);
 
-document.getElementById("restart").addEventListener("click", async () => {
-    if (!window.confirm("Start again? Every village goes back to its starting soldiers, farmers, food, and wood.")) return;
-    const data = await (await fetch("/api/campaign", {
+async function postCampaign(body) {
+    const res = await fetch("/api/campaign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
-        body: JSON.stringify({ restart: true })
-    })).json();
-    take(data);
+        body: JSON.stringify(body)
+    });
+    if (!res.ok) return null;
+    return res.json();
+}
+
+document.getElementById("goblin-raid").addEventListener("click", async () => {
+    const data = await postCampaign({ goblinRaid: true });
+    if (data) take(data);
+});
+
+document.getElementById("goblin-camp").addEventListener("click", async () => {
+    const data = await postCampaign({ addCampGoblins: 5 });
+    if (data) take(data);
+});
+
+document.getElementById("restart").addEventListener("click", async () => {
+    if (!window.confirm("Start again? Every village goes back to its starting soldiers, farmers, food, and wood.")) return;
+    const data = await postCampaign({ restart: true });
+    if (data) take(data);
 });
 
 clock.textContent = "Loading the campaign.";

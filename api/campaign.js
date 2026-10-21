@@ -2108,6 +2108,78 @@ function nextGoblinRaid(now) {
     return now + Math.round(GOBLIN_EVERY * (0.6 + Math.random() * 0.8));
 }
 
+function ensureGoblins(state, now) {
+    if (!state.goblins) {
+        state.goblins = { nextAt: nextGoblinRaid(now), raid: null };
+        return true;
+    }
+    return false;
+}
+
+function goblinDenRaidPath() {
+    const path = [{ x: GOBLIN_DEN.x, z: GOBLIN_DEN.z }, gateSpot(GOBLIN_VILLAGE, sideFacing(GOBLIN_VILLAGE, GOBLIN_DEN), 8)];
+    return { path, length: pathLength(path) };
+}
+
+// Start a den raid or swell an active one. Automatic timers are unchanged.
+function startDenGoblinRaid(state, now, count, manual) {
+    ensureGoblins(state, now);
+    const place = factions[GOBLIN_VILLAGE].name;
+    const roll = GOBLIN_MIN + Math.floor(Math.random() * (GOBLIN_MAX - GOBLIN_MIN + 1));
+    const n = Math.max(1, Math.min(GOBLIN_MAX * 3, Math.floor(Number(count)) || roll));
+    const raid = state.goblins.raid;
+    if (raid) {
+        for (let i = 0; i < n; i++) raid.hp.push(1);
+        note(state, n + " more goblins join the raid on " + place + (manual ? " (campaign)." : "."));
+        return true;
+    }
+    const route = goblinDenRaidPath();
+    state.goblins.raid = {
+        id: "goblins-" + now,
+        startedAt: now,
+        arriveAt: now + Math.round(route.length / GOBLIN_SPEED * 1000),
+        path: route.path,
+        length: route.length,
+        hp: new Array(n).fill(1),
+        rounds: 0
+    };
+    note(state, n + " goblins run out of the hills toward " + place + (manual ? " (called from campaign)." : "."));
+    return true;
+}
+
+function ensureWildCamp(state, now) {
+    const play = playClock(state);
+    if (play == null) return false;
+    const day = Clock.day(play);
+    if (!state.wilds || !Array.isArray(state.wilds.hp) || state.wilds.hp.length !== WILD_MAX) {
+        state.wilds = { hp: new Array(WILD_MAX).fill(0).map((_, i) => (i < WILD_START ? 1 : 0)), day };
+        return true;
+    }
+    return false;
+}
+
+function addWildCampGoblins(state, now, add, manual) {
+    const camp = World.wildSpots(WILD_MAX);
+    if (!camp.centre) {
+        if (manual) note(state, "There is no goblin camp marked on the map.");
+        return false;
+    }
+    ensureGoblins(state, now);
+    ensureWildCamp(state, now);
+    const want = Math.max(1, Math.min(WILD_MAX, Math.floor(Number(add)) || 5));
+    let placed = 0;
+    for (let i = 0; i < WILD_MAX && placed < want; i++) {
+        if (state.wilds.hp[i] > 0) continue;
+        state.wilds.hp[i] = 1;
+        placed += 1;
+    }
+    const alive = state.wilds.hp.filter((hp) => hp > 0).length;
+    if (placed > 0) {
+        note(state, placed + " goblin" + (placed === 1 ? "" : "s") + " join the woods camp (" + alive + " / " + WILD_MAX + ")" + (manual ? " (campaign)." : "."));
+    } else if (manual) note(state, "The woods camp is full (" + WILD_MAX + " goblins).");
+    return placed > 0;
+}
+
 function endGoblinRaid(state, now, text) {
     state.goblins.raid = null;
     state.goblins.nextAt = nextGoblinRaid(now);
@@ -2116,28 +2188,13 @@ function endGoblinRaid(state, now, text) {
 
 // Goblins have one hit point and land a blow far less often than a soldier, so a garrison usually wins.
 function goblinRaids(state, now) {
-    if (!state.goblins) {
-        state.goblins = { nextAt: nextGoblinRaid(now), raid: null };
-        return true;
-    }
+    if (ensureGoblins(state, now)) return true;
     const raid = state.goblins.raid;
     const place = factions[GOBLIN_VILLAGE].name;
     if (!raid) {
         if (state.goblins.nextAt > now + GOBLIN_EVERY * 1.4) state.goblins.nextAt = nextGoblinRaid(now);
         if (Number.isFinite(state.pausedAt) || now < state.goblins.nextAt) return false;
-        const count = GOBLIN_MIN + Math.floor(Math.random() * (GOBLIN_MAX - GOBLIN_MIN + 1));
-        const path = [{ x: GOBLIN_DEN.x, z: GOBLIN_DEN.z }, gateSpot(GOBLIN_VILLAGE, sideFacing(GOBLIN_VILLAGE, GOBLIN_DEN), 8)];
-        const length = pathLength(path);
-        state.goblins.raid = {
-            id: "goblins-" + now,
-            startedAt: now,
-            arriveAt: now + Math.round(length / GOBLIN_SPEED * 1000),
-            path,
-            length,
-            hp: new Array(count).fill(1),
-            rounds: 0
-        };
-        note(state, count + " goblins run out of the hills toward " + place + ".");
+        startDenGoblinRaid(state, now, null, false);
         return true;
     }
     let dirty = false;
@@ -5288,6 +5345,32 @@ async function hitGoblin(index) {
     return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
 }
 
+async function callGoblinRaid(count) {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    if (Number.isFinite(state.pausedAt)) {
+        note(state, "Unpause the campaign before calling a goblin raid.");
+    } else {
+        startDenGoblinRaid(state, now, count, true);
+        goblinRaids(state, now);
+    }
+    await writeState(state);
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+}
+
+async function callAddCampGoblins(add) {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    addWildCampGoblins(state, now, add, true);
+    if (stepWilds(state, now)) goblinRaids(state, now);
+    await writeState(state);
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+}
+
 async function hitWild(index) {
     const state = await readState();
     const now = Date.now();
@@ -5407,6 +5490,15 @@ module.exports = async function handler(req, res) {
             }
             if (req.body && Number.isInteger(req.body.goblin)) {
                 res.status(200).json(await hitGoblin(req.body.goblin));
+                return;
+            }
+            if (req.body && req.body.goblinRaid) {
+                const count = Number.isFinite(Number(req.body.count)) ? Number(req.body.count) : null;
+                res.status(200).json(await callGoblinRaid(count));
+                return;
+            }
+            if (req.body && (req.body.addCampGoblins || req.body.addCampGoblins === 0)) {
+                res.status(200).json(await callAddCampGoblins(req.body.addCampGoblins));
                 return;
             }
             if (req.body && Number.isInteger(req.body.archer) && Number.isInteger(req.body.tower)) {
