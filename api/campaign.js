@@ -950,6 +950,7 @@ function factionPop(state, faction) {
     for (const job of state.training || []) {
         if (state.owners[job.village] === faction) n += 1;
     }
+    n += livingArchers(state, faction);
     return n;
 }
 
@@ -1283,6 +1284,31 @@ function besiege(state, now) {
     return dirty;
 }
 
+function livingArchers(state, faction) {
+    let n = 0;
+    for (let village = 0; village < 4; village++) {
+        if (state.owners[village] !== faction) continue;
+        const row = (state.archers && state.archers[village]) || [];
+        for (let side = 0; side < 4; side++) if ((row[side] || 0) > 0) n += 1;
+    }
+    return n;
+}
+
+function livingSoldiers(state, faction) {
+    return livingCount(state, faction);
+}
+
+function emptyTower(state, faction) {
+    for (let village = 0; village < 4; village++) {
+        if (state.owners[village] !== faction) continue;
+        const row = (state.archers && state.archers[village]) || [];
+        for (let side = 0; side < 4; side++) {
+            if ((row[side] || 0) <= 0) return { village, side };
+        }
+    }
+    return null;
+}
+
 function finishTraining(state, now) {
     let dirty = false;
     const keep = [];
@@ -1294,14 +1320,22 @@ function finishTraining(state, now) {
         dirty = true;
         const owner = state.owners[job.village];
         if (factionPop(state, owner) > popLimit(state, owner)) {
-            state.food[owner] += job.kind === "soldier" ? SOLDIER_COST : FISHER_COST;
+            state.food[owner] += job.kind === "soldier" || job.kind === "archer" ? SOLDIER_COST : FISHER_COST;
             continue;
         }
         if (job.kind === "fisher") addFisher(state, job.village, now);
         else if (job.kind === "wood") addWoodcutter(state, job.village, now);
         else if (job.kind === "ore") addWoodcutter(state, job.village, now, true);
         else if (job.kind === "jack") addJack(state, now, job.village);
-        else {
+        else if (job.kind === "archer") {
+            const spot = emptyTower(state, owner);
+            if (!spot) state.food[owner] += SOLDIER_COST;
+            else {
+                ensureArchers(state);
+                state.archers[spot.village][spot.side] = MAX_HP;
+                note(state, factions[owner].name + " posts an archer.");
+            }
+        } else {
             const owner = state.owners[job.village];
             const index = state.nextIndex[owner]++;
             state.health[keyOf(owner, index)] = MAX_HP;
@@ -1360,8 +1394,16 @@ function orderTraining(state, now) {
             at = digs[0].village;
         } else if (!has("fisher") && workerCount(state, faction, state.fishermen) < 1 && producingFarms(state, faction) * FARM_PER_DAY < dailyFood(state, faction)) kind = "fisher";
         else if (!has("soldier")) kind = "soldier";
+        else if (!has("archer")) {
+            const spot = emptyTower(state, faction);
+            const queued = state.training.filter((job) => job.kind === "archer" && state.owners[job.village] === faction).length;
+            if (spot && livingArchers(state, faction) + queued < livingSoldiers(state, faction)) {
+                kind = "archer";
+                at = spot.village;
+            }
+        }
         if (!kind) continue;
-        const cost = kind === "soldier" ? SOLDIER_COST : FISHER_COST;
+        const cost = kind === "soldier" || kind === "archer" ? SOLDIER_COST : FISHER_COST;
         if (!pay(cost)) continue;
         state.training.push({ village: at, kind: kind, readyAt: now + RECRUIT_MS });
         dirty = true;
@@ -2683,6 +2725,7 @@ function campaignRules() {
         ],
         units: [
             { name: "Soldier", food: SOLDIER_COST, ms: RECRUIT_MS, does: "Guards and marches; " + MAX_HP + " hit points. Houses train as many as food and room allow" },
+            { name: "Archer", food: SOLDIER_COST, ms: RECRUIT_MS, does: "Stands on a watchtower and shoots. A town trains one for an empty tower, and never more living archers than soldiers" },
             { name: "Fisherman", food: FISHER_COST, ms: RECRUIT_MS, does: FISH_FOOD + " food a catch, about every " + Math.round(FISH_MS / 1000) + " s" },
             { name: "Woodcutter", food: FISHER_COST, ms: RECRUIT_MS, does: WOOD_YIELD + " wood a trip, about every " + Math.round(WOOD_MS / 1000) + " s. One more for every " + WOOD_PER_POP + " people" },
             { name: "Miner", food: FISHER_COST, ms: RECRUIT_MS, does: ORE_STONE + " stone and " + ORE_GOLD + " gold a trip to the nearest ore, digging about " + Math.round(ORE_MS / 1000) + " s" },

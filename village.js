@@ -438,97 +438,138 @@ const textures = {
         g.beginPath();
         g.rect(0, 0, 128, 128);
         g.clip();
-        g.fillStyle = "#e7c4a6";
+        const skin = g.createRadialGradient(64, 62, 6, 64, 68, 78);
+        skin.addColorStop(0, "#f3d2b6");
+        skin.addColorStop(0.55, "#e0b494");
+        skin.addColorStop(1, "#b88868");
+        g.fillStyle = skin;
         g.fillRect(0, 0, 128, 128);
+        g.fillStyle = "rgba(90, 48, 32, 0.45)";
+        g.fillRect(0, 0, 16, 128);
+        g.fillRect(112, 0, 16, 128);
+        g.fillStyle = "rgba(70, 40, 28, 0.35)";
+        g.fillRect(16, 78, 96, 50);
         g.fillStyle = "#3a2416";
-        g.fillRect(0, 0, 128, 30);
-        g.fillRect(0, 0, 16, 96);
-        g.fillRect(112, 0, 16, 96);
-        g.fillStyle = "rgba(70, 36, 24, 0.38)";
-        g.fillRect(0, 24, 20, 104);
-        g.fillRect(108, 24, 20, 104);
-        g.fillStyle = "#2a1c14";
-        g.fillRect(26, 38, 30, 5);
-        g.fillRect(74, 38, 30, 5);
-        g.fillStyle = "#f6f3ec";
+        g.fillRect(8, 0, 112, 28);
+        g.fillRect(0, 0, 22, 78);
+        g.fillRect(106, 0, 22, 78);
+        g.fillStyle = "#2a1a10";
+        g.fillRect(22, 22, 84, 8);
+        g.fillStyle = "#24160e";
+        g.fillRect(24, 36, 28, 7);
+        g.fillRect(76, 36, 28, 7);
+        g.fillStyle = "#f7f4ee";
         g.beginPath();
-        g.ellipse(40, 56, 13, 8, 0, 0, Math.PI * 2);
-        g.ellipse(90, 56, 13, 8, 0, 0, Math.PI * 2);
+        g.ellipse(36, 56, 14, 9, 0, 0, Math.PI * 2);
+        g.ellipse(92, 56, 14, 9, 0, 0, Math.PI * 2);
         g.fill();
-        g.fillStyle = "#3d5c7a";
+        g.fillStyle = "#2e4a68";
         g.beginPath();
-        g.arc(42, 57, 5.5, 0, Math.PI * 2);
-        g.arc(92, 57, 5.5, 0, Math.PI * 2);
+        g.arc(38, 56, 6.5, 0, Math.PI * 2);
+        g.arc(92, 56, 6.5, 0, Math.PI * 2);
         g.fill();
-        g.fillStyle = "#14110e";
+        g.fillStyle = "#100e0c";
         g.beginPath();
-        g.arc(43, 57, 2.6, 0, Math.PI * 2);
-        g.arc(93, 57, 2.6, 0, Math.PI * 2);
+        g.arc(39, 56, 3.2, 0, Math.PI * 2);
+        g.arc(93, 56, 3.2, 0, Math.PI * 2);
         g.fill();
         g.fillStyle = "#ffffff";
-        g.fillRect(46, 53, 3, 3);
-        g.fillRect(96, 53, 3, 3);
-        g.fillStyle = "rgba(140, 80, 58, 0.55)";
-        g.fillRect(60, 58, 8, 24);
+        g.fillRect(42, 51, 3, 3);
+        g.fillRect(96, 51, 3, 3);
+        g.fillStyle = "rgba(160, 96, 70, 0.7)";
+        g.fillRect(60, 52, 8, 22);
+        g.fillStyle = "#f0d2bc";
+        g.fillRect(58, 48, 4, 8);
         g.fillStyle = "#c48b72";
-        g.fillRect(56, 78, 16, 6);
-        g.fillStyle = "#9a4e48";
-        g.fillRect(46, 94, 36, 5);
-        g.fillStyle = "rgba(58, 36, 22, 0.5)";
-        g.fillRect(42, 98, 44, 16);
-        g.fillStyle = "rgba(80, 46, 34, 0.3)";
-        g.fillRect(34, 112, 60, 16);
+        g.fillRect(54, 78, 20, 5);
+        g.fillStyle = "#8a403c";
+        g.fillRect(48, 92, 32, 4);
+        g.fillStyle = "rgba(58, 36, 22, 0.55)";
+        g.fillRect(36, 100, 56, 18);
         g.restore();
-        g.fillStyle = "#e7c4a6";
+        g.fillStyle = "#e4bfa0";
         g.fillRect(128, 0, 64, 128);
         g.fillStyle = "#3a2416";
-        g.fillRect(128, 0, 64, 34);
-        g.fillRect(128, 0, 22, 108);
+        g.fillRect(128, 0, 64, 36);
+        g.fillRect(128, 0, 18, 100);
         g.fillStyle = "#1c2430";
-        g.fillRect(158, 50, 8, 7);
+        g.fillRect(160, 52, 8, 6);
         g.fillStyle = "#c48b72";
-        g.fillRect(152, 72, 12, 18);
+        g.fillRect(154, 74, 14, 16);
         g.fillStyle = "rgba(58, 36, 22, 0.45)";
-        g.fillRect(146, 100, 28, 20);
+        g.fillRect(146, 104, 30, 18);
         g.fillStyle = "#3a2416";
         g.fillRect(192, 0, 64, 64);
         g.fillStyle = "#5a4030";
-        g.fillRect(192, 46, 64, 10);
-        g.fillStyle = "#3e527f";
-        g.fillRect(0, 128, 186, 128);
-        g.fillStyle = "#2c3c62";
-        g.fillRect(34, 156, 8, 88);
-        g.fillRect(86, 148, 7, 100);
-        g.fillRect(128, 160, 8, 76);
-        g.fillStyle = "#e0c27a";
-        g.fillRect(0, 128, 7, 128);
-        g.fillRect(143, 128, 7, 128);
+        g.fillRect(192, 40, 64, 12);
+        const wool = g.createLinearGradient(0, 0, 150, 0);
+        wool.addColorStop(0, "#152038");
+        wool.addColorStop(0.22, "#2a4068");
+        wool.addColorStop(0.5, "#7a94c0");
+        wool.addColorStop(0.78, "#2a4068");
+        wool.addColorStop(1, "#152038");
+        g.fillStyle = wool;
+        g.fillRect(0, 128, 150, 100);
+        g.fillStyle = "rgba(8, 12, 24, 0.45)";
+        g.fillRect(0, 128, 14, 100);
+        g.fillRect(136, 128, 14, 100);
+        g.fillStyle = "rgba(255, 255, 255, 0.14)";
+        g.fillRect(62, 148, 26, 52);
+        g.fillStyle = "#1a2848";
+        g.fillRect(46, 156, 4, 48);
+        g.fillRect(100, 156, 4, 48);
         g.fillStyle = "#e7c4a6";
-        g.fillRect(52, 128, 50, 18);
+        g.fillRect(56, 128, 38, 16);
         g.fillStyle = "#d8c4a4";
-        g.fillRect(42, 142, 70, 10);
-        g.fillStyle = "#3a2414";
-        g.fillRect(0, 214, 150, 16);
+        g.beginPath();
+        g.moveTo(48, 144);
+        g.lineTo(75, 162);
+        g.lineTo(102, 144);
+        g.fill();
         g.fillStyle = "#c9a45a";
-        g.fillRect(64, 216, 20, 12);
-        g.fillStyle = "#2c3c62";
-        g.fillRect(0, 238, 150, 18);
-        g.fillStyle = "#3e527f";
+        g.fillRect(68, 156, 14, 10);
+        g.fillStyle = "#2a1c12";
+        g.fillRect(0, 200, 150, 18);
+        g.fillStyle = "#e0c27a";
+        g.fillRect(58, 202, 34, 12);
+        g.fillStyle = "#8a7048";
+        g.fillRect(70, 204, 10, 8);
+        g.fillStyle = "#6a5438";
+        g.fillRect(0, 216, 150, 12);
+        const sideWool = g.createLinearGradient(156, 0, 186, 0);
+        sideWool.addColorStop(0, "#1a2844");
+        sideWool.addColorStop(1, "#4a6290");
+        g.fillStyle = sideWool;
         g.fillRect(156, 128, 30, 128);
         g.fillStyle = "#e0c27a";
-        g.fillRect(156, 128, 5, 128);
-        g.fillStyle = "#3a2414";
-        g.fillRect(156, 214, 30, 16);
-        g.fillStyle = "#3e527f";
-        g.fillRect(190, 128, 28, 64);
+        g.fillRect(180, 128, 4, 86);
+        g.fillStyle = "#2a1c12";
+        g.fillRect(156, 206, 30, 22);
+        const sleeveGrad = g.createLinearGradient(190, 0, 218, 0);
+        sleeveGrad.addColorStop(0, "#1a2844");
+        sleeveGrad.addColorStop(0.5, "#5a74a4");
+        sleeveGrad.addColorStop(1, "#243656");
+        g.fillStyle = sleeveGrad;
+        g.fillRect(190, 128, 28, 56);
         g.fillStyle = "#e0c27a";
-        g.fillRect(190, 184, 28, 6);
+        g.fillRect(190, 174, 28, 6);
         g.fillStyle = "#e7c4a6";
         g.fillRect(220, 128, 30, 36);
-        g.fillStyle = "#4a3428";
-        g.fillRect(190, 168, 66, 88);
-        g.fillStyle = "#2a1c14";
-        g.fillRect(190, 232, 66, 24);
+        g.fillStyle = "#c49878";
+        g.fillRect(224, 132, 12, 16);
+        const leg = g.createLinearGradient(190, 0, 256, 0);
+        leg.addColorStop(0, "#2a1c12");
+        leg.addColorStop(0.5, "#6a4c34");
+        leg.addColorStop(1, "#2a1c12");
+        g.fillStyle = leg;
+        g.fillRect(190, 168, 66, 58);
+        g.fillStyle = "#1a100c";
+        g.fillRect(218, 168, 6, 58);
+        g.fillStyle = "#14100c";
+        g.fillRect(190, 214, 66, 42);
+        g.fillStyle = "#3a3028";
+        g.fillRect(196, 214, 6, 6);
+        g.fillRect(244, 214, 6, 6);
     })
 };
 
@@ -621,6 +662,90 @@ textures.palisade = paintTexture(256, (g) => {
     g.fillRect(0, 82, 256, 5);
     g.fillRect(0, 166, 256, 5);
 });
+textures.goods = paintTexture(256, (g) => {
+    g.fillStyle = "#3c2a1c";
+    g.fillRect(0, 0, 256, 256);
+    for (let x = 0; x < 256; x += 32) {
+        g.fillStyle = x % 64 ? "#4e3624" : "#3a2818";
+        g.fillRect(x, 0, 30, 256);
+        g.fillStyle = "#24160e";
+        g.fillRect(x + 30, 0, 2, 256);
+    }
+    g.fillStyle = "#2a1c12";
+    g.fillRect(0, 6, 256, 16);
+    g.fillStyle = "#6a4528";
+    g.fillRect(0, 18, 256, 4);
+    const barrel = (cx, foot) => {
+        g.fillStyle = "#6b4426";
+        g.beginPath();
+        g.ellipse(cx, foot - 36, 20, 34, 0, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = "#8a5a30";
+        g.beginPath();
+        g.ellipse(cx - 4, foot - 48, 8, 16, 0, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = "#2c1c10";
+        g.fillRect(cx - 20, foot - 52, 40, 5);
+        g.fillRect(cx - 20, foot - 24, 40, 5);
+        g.fillStyle = "#d2b072";
+        g.fillRect(cx - 2, foot - 70, 5, 8);
+    };
+    barrel(34, 250);
+    barrel(78, 252);
+    barrel(122, 248);
+    const sack = (cx, foot, tone, lean) => {
+        g.fillStyle = tone;
+        g.beginPath();
+        g.moveTo(cx - 16, foot);
+        g.quadraticCurveTo(cx - 22, foot - 28, cx - 8, foot - 36);
+        g.quadraticCurveTo(cx, foot - 48, cx + 8, foot - 36);
+        g.quadraticCurveTo(cx + 24, foot - 26, cx + 16, foot);
+        g.closePath();
+        g.fill();
+        g.fillStyle = "#3a2414";
+        g.fillRect(cx - 3, foot - 44, 6, 8);
+        g.strokeStyle = "rgba(40,24,12,0.45)";
+        g.lineWidth = 2;
+        g.beginPath();
+        g.moveTo(cx, foot - 36);
+        g.lineTo(cx + lean, foot - 8);
+        g.stroke();
+    };
+    sack(162, 246, "#c6b07a", 4);
+    sack(196, 242, "#8fa06a", -3);
+    sack(188, 228, "#6e5430", 2);
+    g.fillStyle = "#7a5430";
+    g.fillRect(16, 56, 54, 46);
+    g.strokeStyle = "#2c1c10";
+    g.lineWidth = 3;
+    g.strokeRect(16, 56, 54, 46);
+    g.beginPath();
+    g.moveTo(18, 58);
+    g.lineTo(68, 100);
+    g.moveTo(68, 58);
+    g.lineTo(18, 100);
+    g.stroke();
+    g.fillStyle = "#8b6238";
+    g.fillRect(78, 70, 40, 34);
+    g.strokeRect(78, 70, 40, 34);
+    g.fillStyle = "#d8d2c4";
+    g.fillRect(140, 48, 14, 28);
+    g.fillRect(160, 44, 12, 32);
+    g.fillStyle = "#6a8a44";
+    g.fillRect(178, 52, 16, 24);
+    g.fillStyle = "#2c1c10";
+    g.fillRect(138, 42, 58, 4);
+    g.strokeStyle = "#a07848";
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(230, 78, 14, 0.2, Math.PI * 1.7);
+    g.stroke();
+});
+gl.bindTexture(gl.TEXTURE_2D, textures.goods);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
 function clothTexture(color) {
     return makeTexture((g, s) => {
@@ -862,7 +987,7 @@ function dressCivic(b, furn) {
 
 function addOpenRoom(b) {
     const sealed = true;
-    const held = { trunk: [], plaster: [], linen: [], rock: [], glow: [], door: [], roof: [] };
+    const held = { trunk: [], plaster: [], linen: [], rock: [], glow: [], door: [], roof: [], goods: [] };
     const room = sealed ? held : batches;
     const { x, z, w, d, h, rise } = b;
     const t = 0.28;
@@ -1064,10 +1189,10 @@ function addOpenRoom(b) {
     };
     const stairLow = entrance === "north" || entrance === "west";
     const stairEast = entrance === "west";
-    const stairW = 0.92;
+    const stairW = 1.1;
     const stairL = Math.min(2.2, id - 1.35);
-    const stairX = stairEast ? ix + iw - stairW - 0.08 : ix + 0.08;
-    const stairZ = stairLow ? iz + id - stairL - 0.08 : iz + 0.08;
+    const stairX = stairEast ? ix + iw - stairW + 0.02 : ix - 0.02;
+    const stairZ = stairLow ? iz + id - stairL + 0.02 : iz - 0.02;
     const stairGap = stairX + stairW + 0.62;
     const topY = 2.72;
     const stepN = 9;
@@ -1094,7 +1219,8 @@ function addOpenRoom(b) {
         const sz = stairLow ? stairZ + stairL - (i + 1) * run : stairZ + i * run;
         addBox(room.trunk, stairX, 0, sz, stairW, py, run + 0.02);
         pushNap(stairCx, pz, py);
-        b.decks.push({ x: stairX, z: sz, w: stairW, d: run + 0.02, y: py });
+        b.decks.push({ x: stairX, z: sz, w: stairW, d: run + 0.02, y: py, stair: true });
+        furn.push({ x: stairX, z: sz, w: stairW, d: run + 0.02, y0: 0, y1: py, stair: true });
     }
     const landX = stairEast ? ix + 0.08 : stairX + stairW + 0.08;
     const landW = iw - stairW - 0.24;
@@ -1123,7 +1249,31 @@ function addOpenRoom(b) {
     if (entrance === "east") b.keeper = { x: doorIn.x - 1.15, z: doorIn.z, yaw: doorOut.yaw };
     if (entrance === "west") b.keeper = { x: doorIn.x + 1.15, z: doorIn.z, yaw: doorOut.yaw };
     const backZ = stairLow ? iz + 0.15 : iz + Math.max(0.4, id - 1.7);
-    if (b.kind === "stores") {
+    if (b.kind === "stores" && b.village === 2) {
+        const y0 = 0.06;
+        const y1 = 2.42;
+        const far = iz + id - 0.08;
+        const x0 = ix + 0.2;
+        const x1 = ix + iw - 0.2;
+        pushQuad(room.goods,
+            [x1, y0, far, 1, 0, 0.92],
+            [x0, y0, far, 0, 0, 0.92],
+            [x0, y1, far, 0, 1, 0.92],
+            [x1, y1, far, 1, 1, 0.92]
+        );
+        const side = ix + iw - 0.06;
+        const z0 = iz + 0.7;
+        const z1 = iz + id - 0.7;
+        pushQuad(room.goods,
+            [side, y0, z0, 0.02, 0, 0.86],
+            [side, y0, z1, 0.98, 0, 0.86],
+            [side, y1, z1, 0.98, 1, 0.86],
+            [side, y1, z0, 0.02, 1, 0.86]
+        );
+        const stackX = stairX + stairW + 1;
+        use(stackX, far - 0.4, Math.max(0.4, x1 - stackX), 0.4, 1.2);
+        use(ix + iw - 0.5, z0, 0.42, Math.max(0.4, z1 - z0), 1.2);
+    } else if (b.kind === "stores") {
         shelfAt(stairGap, iz + 0.08, Math.max(1.1, ix + iw - 0.9 - stairGap), "x");
         crateAt(stairGap, iz + 1.15, 0.55);
         crateAt(stairGap + 0.65, iz + 1.2, 0.42);
@@ -1428,6 +1578,30 @@ function spawnGarrison() {
     }
 }
 
+function spawnGodwin() {
+    const house = houses.find((item) => item.kind === "tavern" && item.village === 2);
+    if (!house || !house.keeper) return;
+    men.push({
+        inn: true,
+        name: "Godwin",
+        fisher: false,
+        faction: 2,
+        post: 2,
+        index: -60,
+        health: 3,
+        x: house.keeper.x,
+        z: house.keeper.z,
+        yaw: house.keeper.yaw,
+        bob: 0,
+        down: 0,
+        swing: -1,
+        walking: false,
+        hostile: false,
+        dying: false,
+        mode: "guard"
+    });
+}
+
 function spawnKeepers() {
     for (const house of houses) {
         if (house.kind !== "shop" || !house.keeper) continue;
@@ -1508,6 +1682,7 @@ uniform float uFogNear;
 uniform float uFogSpan;
 uniform float uDrawFar;
 uniform float uStipple;
+uniform float uCut;
 void main() {
     vec2 uv = vUv;
     if (uFlow > 0.5) uv.y += uTime * 0.035;
@@ -1515,7 +1690,8 @@ void main() {
     float dist = distance(vWorld, uEye);
     if (uBand > 0.5 && uBand < 0.8 && dist < 70.0) discard;
     if (uBand > 0.5 && dist > uDrawFar) discard;
-    vec3 color = texture2D(uTex, uv).rgb * vShade * uTint;
+    vec4 tex = texture2D(uTex, uv);
+    vec3 color = tex.rgb * vShade * uTint;
     if (uFlow > 0.5) color *= vec3(0.78, 0.9, 0.86);
     float fog = clamp((dist - uFogNear) / uFogSpan, 0.0, 1.0);
     // Sky-colored haze (not dusty beige) so open country stays green until it dissolves into the sky.
@@ -1532,6 +1708,10 @@ void main() {
         color *= mix(1.0, 0.2, uDark);
     }
     float cover = vAlpha;
+    if (uCut > 0.5) {
+        cover *= tex.a;
+        if (cover < 0.45) discard;
+    }
     // Break a half-covered gravel or dirt edge into stones instead of one straight triangle.
     if (uStipple > 0.5 && cover < 0.98) {
         float n = fract(sin(dot(floor(vWorld * 1.4), vec2(12.9898, 78.233))) * 43758.5453);
@@ -1648,7 +1828,8 @@ const loc = {
     fogNear: gl.getUniformLocation(program, "uFogNear"),
     fogSpan: gl.getUniformLocation(program, "uFogSpan"),
     drawFar: gl.getUniformLocation(program, "uDrawFar"),
-    stipple: gl.getUniformLocation(program, "uStipple")
+    stipple: gl.getUniformLocation(program, "uStipple"),
+    cut: gl.getUniformLocation(program, "uCut")
 };
 const identity = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 const peopleModels = {};
@@ -3322,25 +3503,44 @@ function buildFolk() {
     const face = uv(0, 0, 128, 128);
     const side = uv(128, 0, 64, 128);
     const hair = uv(192, 0, 64, 64);
-    const chest = uv(0, 128, 150, 86);
-    const waist = uv(0, 190, 150, 66);
+    const chest = uv(0, 128, 150, 100);
+    const waist = uv(0, 206, 150, 28);
     const clothSide = uv(156, 128, 30, 128);
     const sleeve = uv(190, 128, 28, 62);
     const hand = uv(220, 128, 30, 36);
     const pants = uv(190, 168, 66, 88);
+    const boot = uv(190, 214, 66, 42);
     const list = [];
-    folkBox(list, -0.11, 0, -0.05, 0.09, 0.52, 0.11, pants);
-    folkBox(list, 0.02, 0, -0.05, 0.09, 0.52, 0.11, pants);
-    folkBox(list, -0.15, 0.5, -0.07, 0.3, 0.22, 0.14, clothSide, waist);
-    folkBox(list, -0.2, 0.7, -0.08, 0.4, 0.24, 0.16, clothSide, chest);
-    folkBox(list, -0.27, 0.62, -0.04, 0.08, 0.28, 0.09, sleeve);
-    folkBox(list, 0.19, 0.62, -0.04, 0.08, 0.28, 0.09, sleeve);
-    folkBox(list, -0.26, 0.46, -0.035, 0.07, 0.16, 0.08, hand);
-    folkBox(list, 0.19, 0.46, -0.035, 0.07, 0.16, 0.08, hand);
-    folkBox(list, -0.04, 0.92, 0.0, 0.08, 0.07, 0.08, side);
-    folkBox(list, -0.075, 0.98, 0.02, 0.15, 0.2, 0.14, side, face);
-    folkBox(list, -0.08, 1.15, 0.01, 0.16, 0.045, 0.15, hair);
+    folkBox(list, -0.11, 0.12, -0.065, 0.1, 0.78, 0.13, pants);
+    folkBox(list, 0.02, 0.12, -0.065, 0.1, 0.78, 0.13, pants);
+    folkBox(list, -0.12, 0, -0.08, 0.12, 0.16, 0.16, boot);
+    folkBox(list, 0.01, 0, -0.08, 0.12, 0.16, 0.16, boot);
+    folkBox(list, -0.2, 0.98, -0.1, 0.42, 0.44, 0.2, clothSide, chest);
+    folkBox(list, -0.26, 1.28, -0.09, 0.1, 0.12, 0.16, sleeve);
+    folkBox(list, 0.18, 1.28, -0.09, 0.1, 0.12, 0.16, sleeve);
+    folkBox(list, -0.28, 0.9, -0.02, 0.09, 0.42, 0.1, sleeve);
+    folkBox(list, 0.21, 0.9, -0.02, 0.09, 0.42, 0.1, sleeve);
+    folkBox(list, -0.27, 0.76, -0.015, 0.08, 0.16, 0.08, hand);
+    folkBox(list, 0.21, 0.76, -0.015, 0.08, 0.16, 0.08, hand);
+    folkBox(list, -0.04, 1.36, 0.02, 0.08, 0.1, 0.08, side);
+    folkBox(list, -0.11, 1.42, 0.0, 0.22, 0.28, 0.18, side, face);
+    folkBox(list, -0.03, 1.52, 0.16, 0.06, 0.08, 0.05, hand);
+    folkBox(list, -0.145, 1.48, 0.01, 0.05, 0.2, 0.12, hair);
+    folkBox(list, 0.095, 1.48, 0.01, 0.05, 0.2, 0.12, hair);
+    folkBox(list, -0.13, 1.64, -0.02, 0.26, 0.12, 0.22, hair);
     uploadMesh("folk", list);
+    const cardH = 2.15;
+    const cardW = 2.15;
+    const card = [];
+    pushQuad(card,
+        [-cardW / 2, 0, 0, 0, 0, 1],
+        [-cardW / 2, cardH, 0, 0, 1, 1],
+        [cardW / 2, cardH, 0, 1, 1, 1],
+        [cardW / 2, 0, 0, 1, 0, 1]
+    );
+    uploadMesh("folkCard", card);
+    loadFolkViews();
+    loadKaykit();
     gl.bindTexture(gl.TEXTURE_2D, textures.folk);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -3350,8 +3550,77 @@ function buildFolk() {
 }
 
 function drawFolk(dark, proj) {
-    if (inside || !mesh.folk || !mesh.folk.count || !textures.folk) return;
+    if (inside) return;
     const near = nearestMen(16, gfx().personDraw);
+    if (folkMesh.knight && folkMesh.rogue) {
+        gl.enable(gl.CULL_FACE);
+        gl.enableVertexAttribArray(loc.pos);
+        gl.enableVertexAttribArray(loc.uv);
+        gl.enableVertexAttribArray(loc.shade);
+        gl.uniform1f(loc.dark, dark);
+        gl.uniform1f(loc.glow, 0);
+        gl.uniform1f(loc.band, 1);
+        gl.uniform1f(loc.flow, 0);
+        gl.uniform1f(loc.cut, 0);
+        gl.uniformMatrix4fv(loc.proj, false, proj);
+        for (let i = 0; i < near.length; i++) {
+            const man = near[i].man;
+            if (man.hidden) continue;
+            const pack = folkPack(man);
+            if (!pack) continue;
+            const dead = man.dying || (man.health != null && man.health <= 0);
+            if (dead && !pack.death) continue;
+            plant(man);
+            man.meshDeath = dead && !!pack.death;
+            man.meshAttack = !dead && !!pack.attack && man.swing > 0;
+            const frame = folkAnim(man, pack);
+            folkModel.set(personMatrix(man));
+            gl.uniformMatrix4fv(loc.model, false, folkModel);
+            const parts = pack.parts || [pack];
+            for (let p = 0; p < parts.length; p++) {
+                const part = parts[p];
+                gl.bindTexture(gl.TEXTURE_2D, part.tex);
+                gl.bindBuffer(gl.ARRAY_BUFFER, part.buffer);
+                gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 24, frame * part.count * 24);
+                gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, 24, frame * part.count * 24 + 12);
+                gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, 24, frame * part.count * 24 + 20);
+                gl.drawArrays(gl.TRIANGLES, 0, part.count);
+            }
+        }
+        gl.uniformMatrix4fv(loc.model, false, identity);
+        return;
+    }
+    if (folkReady && mesh.folkCard) {
+        gl.disable(gl.CULL_FACE);
+        gl.enableVertexAttribArray(loc.pos);
+        gl.enableVertexAttribArray(loc.uv);
+        gl.enableVertexAttribArray(loc.shade);
+        gl.bindBuffer(gl.ARRAY_BUFFER, mesh.folkCard.buffer);
+        gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 24, 0);
+        gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, 24, 12);
+        gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, 24, 20);
+        gl.uniform1f(loc.dark, dark);
+        gl.uniform1f(loc.glow, 0);
+        gl.uniform1f(loc.band, 1);
+        gl.uniform1f(loc.flow, 0);
+        gl.uniform1f(loc.cut, 1);
+        gl.uniformMatrix4fv(loc.proj, false, proj);
+        for (let i = 0; i < near.length; i++) {
+            const man = near[i].man;
+            if (man.hidden || man.dying || (man.health != null && man.health <= 0)) continue;
+            plant(man);
+            const pose = folkPose(man);
+            folkModel.set(folkCardMatrix(man, pose.flip));
+            gl.uniformMatrix4fv(loc.model, false, folkModel);
+            gl.bindTexture(gl.TEXTURE_2D, folkViews[pose.index]);
+            gl.drawArrays(gl.TRIANGLES, 0, mesh.folkCard.count);
+        }
+        gl.uniform1f(loc.cut, 0);
+        gl.enable(gl.CULL_FACE);
+        gl.uniformMatrix4fv(loc.model, false, identity);
+        return;
+    }
+    if (!mesh.folk || !mesh.folk.count || !textures.folk) return;
     gl.enable(gl.CULL_FACE);
     gl.bindBuffer(gl.ARRAY_BUFFER, mesh.folk.buffer);
     gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 24, 0);
@@ -3374,6 +3643,102 @@ function drawFolk(dark, proj) {
     gl.uniformMatrix4fv(loc.model, false, identity);
 }
 
+const folkMesh = { knight: null, rogue: null };
+function loadKaykit() {
+    const take = (name) => {
+        const picture = new Image();
+        picture.src = "models/kaykit/" + name + ".png";
+        return Promise.all([
+            fetch("models/kaykit/" + name + ".bin").then((res) => res.arrayBuffer()),
+            new Promise((resolve, reject) => {
+                picture.onload = () => resolve(picture);
+                picture.onerror = reject;
+            })
+        ]).then(([buf, img]) => {
+            const view = new DataView(buf);
+            const frames = view.getUint32(0, true);
+            const count = view.getUint32(4, true);
+            const buffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buf, 8), gl.STATIC_DRAW);
+            const tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+            gl.generateMipmap(gl.TEXTURE_2D);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            const pack = { buffer, frames, count, tex };
+            folkMesh[name] = pack;
+            return pack;
+        }).catch(() => null);
+    };
+    take("rogue");
+    Promise.all([take("ch10-0"), take("ch10-1")]).then((parts) => {
+        if (!parts[0] || !parts[1]) return;
+        folkMesh.knight = { frames: parts[0].frames, parts, walkOnly: true };
+    });
+    take("prop-0").then((part) => {
+        if (!part) return;
+        folkMesh.paladin = { frames: part.frames, parts: [part], walk: [1, 8], attack: [9, 14], death: [15, 20] };
+    });
+    Promise.all([0, 1, 2, 3, 4, 5].map((index) => take("archer-" + index))).then((parts) => {
+        if (parts.some((part) => !part)) return;
+        folkMesh.archer = { frames: parts[0].frames, parts, walk: [1, 8], shoot: [9, 14] };
+    });
+}
+
+function folkPack(man) {
+    if (man.fisher || man.farmer || man.jack || man.board || man.driver || man.decor || man.inn) return folkMesh.rogue;
+    if (man.goblin) return folkMesh.knight;
+    if (man.archer) return folkMesh.archer || folkMesh.paladin;
+    return folkMesh.paladin || folkMesh.knight;
+}
+
+function folkAnim(man, pack) {
+    if (pack.death && man.dying) {
+        const span = pack.death[1] - pack.death[0];
+        const t = Math.max(0, Math.min(1, (man.down || 0) / 1.2));
+        return pack.death[0] + Math.round(t * span);
+    }
+    if (pack.attack && man.swing > 0) {
+        const span = pack.attack[1] - pack.attack[0];
+        const t = Math.max(0, Math.min(1, man.swing));
+        return pack.attack[0] + Math.min(span, Math.floor(t * (span + 1)));
+    }
+    if (pack.shoot && man.swing > 0) {
+        const span = pack.shoot[1] - pack.shoot[0];
+        const t = Math.max(0, Math.min(1, man.swing));
+        return pack.shoot[0] + Math.min(span, Math.floor(t * (span + 1)));
+    }
+    if (pack.walk && man.walking) {
+        const span = pack.walk[1] - pack.walk[0] + 1;
+        const tick = ((performance.now() / 130) + (man.index || 0)) | 0;
+        return pack.walk[0] + ((tick % span) + span) % span;
+    }
+    if (pack.walk || pack.attack || pack.shoot) return 0;
+    if (pack.idleWalk) {
+        if (!man.walking) return 0;
+        const steps = pack.frames - 1;
+        const tick = ((performance.now() / 130) + (man.index || 0)) | 0;
+        return 1 + ((tick % steps) + steps) % steps;
+    }
+    if (pack.walkOnly) {
+        if (!man.walking) return 0;
+        const tick = ((performance.now() / 130) + (man.index || 0)) | 0;
+        const steps = pack.frames;
+        return ((tick % steps) + steps) % steps;
+    }
+    if (man.swing > 0) return pack.frames - 1;
+    if (!man.walking) return 0;
+    const steps = pack.frames - 2;
+    const tick = ((performance.now() / 130) + (man.index || 0)) | 0;
+    return 1 + ((tick % steps) + steps) % steps;
+}
+
 // Explicit outdoor draw set — never Object.keys(mesh) (that pulled every town/prop buffer).
 const outdoorDrawList = [
     "grass", "dirt", "cobble", "sand", "gravel", "marsh", "water", "crag", "plow", "yardgravel",
@@ -3388,7 +3753,7 @@ const outdoorDrawList = [
     "housedoor", "cart", "meadowBush", "meadowRock",
     "cloth0", "cloth1", "cloth2", "cloth3", "cloth4", "skin", "pants", "steel",
     "placeGhost",
-    "swintrunk", "swinplaster", "swinlinen", "swinrock", "swinglow", "swindoor", "swinroof"
+    "swintrunk", "swinplaster", "swinlinen", "swinrock", "swinglow", "swindoor", "swinroof", "swingoods"
 ];
 
 function uploadMesh(name, floats) {
@@ -3882,14 +4247,100 @@ function plant(man) {
     man.stand = Math.max(0, World.meshHeight(man.x, man.z), World.bridgeDeck(man.x, man.z) ?? 0);
 }
 
+const folkViews = [];
+let folkReady = false;
+function loadFolkViews() {
+    const files = [1, 5, 6, 7, 9];
+    let pending = files.length;
+    for (let i = 0; i < files.length; i++) {
+        const n = files[i];
+        const img = new Image();
+        img.onload = () => {
+            const scale = document.createElement("canvas");
+            scale.width = 512;
+            scale.height = 512;
+            scale.getContext("2d").drawImage(img, 0, 0, 512, 512);
+            const tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, scale);
+            gl.generateMipmap(gl.TEXTURE_2D);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            folkViews[n - 1] = tex;
+            pending -= 1;
+            if (pending === 0) folkReady = true;
+        };
+        img.src = (n < 10 ? "0" : "") + n + "_noShadow.png";
+    }
+}
+
+function folkFacing(man) {
+    const dx = cam.x - man.x;
+    const dz = cam.z - man.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const fx = -Math.sin(man.yaw);
+    const fz = -Math.cos(man.yaw);
+    const cross = fx * (dz / len) - fz * (dx / len);
+    const dot = fx * (dx / len) + fz * (dz / len);
+    return { ang: Math.atan2(cross, dot), cross };
+}
+
+function folkPose(man) {
+    const face = folkFacing(man);
+    const abs = Math.abs(face.ang);
+    const step = man.walking && ((performance.now() / 280) | 0) % 2 === 1;
+    if (abs < 0.95) return { index: step ? 6 : 0, flip: false };
+    if (abs > 2.15) return { index: 8, flip: face.cross > 0 };
+    if (step) return { index: 5, flip: face.cross <= 0 };
+    return { index: 4, flip: face.cross > 0 };
+}
+
+function folkCardMatrix(man, flip) {
+    const dx = cam.x - man.x;
+    const dz = cam.z - man.z;
+    const my = Math.atan2(dx, dz);
+    const k = man.goblin ? 0.74 : 1;
+    const c = Math.cos(my) * k;
+    const s = Math.sin(my) * k;
+    const y = (man.stand || 0) + man.bob - Math.min(man.down, 1.05) * k;
+    const out = takeMat4();
+    out[0] = flip ? -c : c;
+    out[1] = 0;
+    out[2] = flip ? s : -s;
+    out[3] = 0;
+    out[4] = 0;
+    out[5] = k;
+    out[6] = 0;
+    out[7] = 0;
+    out[8] = s;
+    out[9] = 0;
+    out[10] = c;
+    out[11] = 0;
+    out[12] = man.x;
+    out[13] = y;
+    out[14] = man.z;
+    out[15] = 1;
+    return out;
+}
+
+function personScale(man) {
+    if (man.goblin) return 0.74;
+    if (man.archer) return 0.94;
+    if (man.fisher || man.farmer || man.jack || man.board || man.driver || man.decor || man.inn) return 1;
+    return 1.12;
+}
+
 function personMatrix(man) {
     const yaw = man.yaw + Math.PI;
-    const k = man.goblin ? 0.74 : 1;
+    const k = personScale(man);
     const c = Math.cos(yaw) * k;
     const s = Math.sin(yaw) * k;
-    const slash = man.swing > 0 ? Math.sin(man.swing * Math.PI) : 0;
+    const slash = man.meshAttack || man.meshDeath ? 0 : (man.swing > 0 ? Math.sin(man.swing * Math.PI) : 0);
     const lunge = slash * 0.22;
-    const y = (man.stand || 0) + man.bob - Math.min(man.down, 1.05) * k;
+    const y = (man.stand || 0) + man.bob - (man.meshDeath ? 0 : Math.min(man.down, 1.05) * k);
     const px = man.x + Math.sin(man.yaw) * lunge;
     const pz = man.z - Math.cos(man.yaw) * lunge;
     const out = takeMat4();
@@ -4338,7 +4789,7 @@ function mergeMen(data) {
             length: 0
         });
     });
-    const prev = new Map(men.filter((man) => !man.fisher && !man.farmer && !man.archer && !man.decor && !man.driver && !man.jack && !man.fixed).map((man) => [man.faction + ":" + man.index, man]));
+    const prev = new Map(men.filter((man) => !man.fisher && !man.farmer && !man.archer && !man.decor && !man.driver && !man.jack && !man.fixed && !man.inn).map((man) => [man.faction + ":" + man.index, man]));
     const next = [];
     const keep = new Set();
     for (const item of wanted) {
@@ -4387,9 +4838,9 @@ function mergeMen(data) {
             });
         }
     }
-    const keptFish = men.filter((man) => man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board || man.fixed);
+    const keptFish = men.filter((man) => man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board || man.fixed || man.inn);
     for (const man of men) {
-        if (man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board || man.fixed) continue;
+        if (man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board || man.fixed || man.inn) continue;
         const key = man.faction + ":" + man.index;
         if (keep.has(key)) continue;
         man.dying = true;
@@ -4662,6 +5113,7 @@ function mergeFishermen(data) {
             old.shelter = !!item.shelter;
             old.bed = item.bed || "manor";
             old.homeNap = item.home || null;
+            old.name = item.name || "";
             if (old.health <= 0) old.dying = true;
             nextFish.push(old);
         } else {
@@ -4691,6 +5143,7 @@ function mergeFishermen(data) {
                 shelter: !!item.shelter,
                 bed: item.bed || "manor",
                 homeNap: item.home || null,
+                name: item.name || "",
                 cycleStart: item.cycleStart,
                 walkMs: item.walkMs,
                 yaw: 0,
@@ -5811,7 +6264,7 @@ function connectSwing() {
     let bestT = profile.reach;
     for (const man of men) {
         if (man.dying || man.hidden || man.decor || man.health <= 0) continue;
-        const chest = (man.stand || 0) + (man.goblin ? 0.55 : 0.75);
+        const chest = (man.stand || 0) + (man.goblin ? 0.55 : 1.15);
         const dx = man.x - ox;
         const dy = chest - cam.y;
         const dz = man.z - oz;
@@ -6446,7 +6899,7 @@ function stepArrows(dt) {
         let hit = false;
         for (const man of men) {
             if (man.dying || man.hidden || man.decor || man.health <= 0 || man.faction === arrow.faction) continue;
-            const chest = (man.stand || 0) + (man.goblin ? 0.55 : 0.75);
+            const chest = (man.stand || 0) + (man.goblin ? 0.55 : 1.15);
             if (!sweptNear(x0, y0, z0, arrow.x, arrow.y, arrow.z, man.x, chest, man.z, 0.55, 0.85)) continue;
             const speed = Math.hypot(arrow.vx, arrow.vz) || 1;
             if (wound(man, "Shot", !arrow.fromPlayer, arrow.vx / speed * 0.2, arrow.vz / speed * 0.2) && arrow.fromPlayer) notePractice("bow");
@@ -6487,13 +6940,14 @@ function stepArrows(dt) {
 
 function stepArcher(man, dt) {
     const target = archerTarget(man);
-    man.swing = -1;
     man.hostile = false;
+    if (man.swing > 0) man.swing = Math.max(-1, man.swing - dt / 0.7);
     if (target) {
         man.yaw = Math.atan2(-(target.x - man.x), -(target.z - man.z));
         man.attackIn -= dt;
         if (man.attackIn <= 0) {
             man.attackIn = 1.55;
+            man.swing = 1;
             launchArrow(man.faction, man.x, (man.stand || 0) + 1.28, man.z, target.x, target.y, target.z, 9);
         }
     } else {
@@ -6539,6 +6993,21 @@ function stepSoldierRest(man, dt) {
         }
         man.riseAt = 0;
     }
+    return false;
+}
+
+function stepInn(man) {
+    const house = building(man.post, "tavern");
+    if (house && house.keeper) {
+        man.x = house.keeper.x;
+        man.z = house.keeper.z;
+        man.yaw = house.keeper.yaw;
+    }
+    man.floorY = null;
+    man.swing = -1;
+    man.hostile = false;
+    man.walking = false;
+    plant(man);
     return false;
 }
 
@@ -6907,6 +7376,7 @@ function stepMan(man, dt) {
         return false;
     }
     if (stepRevenge(man, dt)) return false;
+    if (man.inn) return stepInn(man);
     if (man.jack) return stepJack(man, dt);
     if (man.decor) return stepKeeper(man, dt);
     if (man.fisher) return stepFisher(man, dt);
@@ -6938,7 +7408,7 @@ function separateMen(dt) {
     const near = [];
     for (let i = 0; i < picked.length; i++) {
         const man = picked[i].man;
-        if (man.dying || man.archer || man.decor || man.driver || man.indoors || man.mode === "march") continue;
+        if (man.dying || man.archer || man.decor || man.driver || man.inn || man.indoors || man.mode === "march") continue;
         near.push(man);
     }
     const step = dt * 2;
@@ -7839,13 +8309,22 @@ function floorAt(x, z, feet) {
     const cap = feet == null ? ground + 0.6 : feet + 0.55;
     const deck = World.bridgeDeck(x, z);
     if (deck != null && deck <= cap) height = Math.max(height, deck);
+    const stairCap = feet == null ? ground + 1.3 : feet + 1.25;
     for (const floor of floorsNear(x, z)) {
-        if (floor.y > cap) continue;
+        if (floor.y > (floor.stair ? stairCap : cap)) continue;
         if (x > floor.x && x < floor.x + floor.w && z > floor.z && z < floor.z + floor.d) {
             height = Math.max(height, floor.y);
         }
     }
     return height;
+}
+
+function onStair(x, z, height) {
+    for (const floor of floorsNear(x, z)) {
+        if (!floor.stair || Math.abs(floor.y - height) > 0.02) continue;
+        if (x > floor.x && x < floor.x + floor.w && z > floor.z && z < floor.z + floor.d) return true;
+    }
+    return false;
 }
 
 function hitsSolid(x, z, feet) {
@@ -7942,8 +8421,10 @@ function blockedOutside(x, z, faction, feet) {
         if (b.open) {
             const body = stand + 1.6;
             for (const part of b.parts) {
+                if (part.stair && part.y1 <= stand + 1.25) continue;
+                const reach = part.stair ? 0.05 : r;
                 if (body <= part.y0 + 0.02 || stand >= part.y1 - 0.02) continue;
-                if (x > part.x - r && x < part.x + part.w + r && z > part.z - r && z < part.z + part.d + r) return true;
+                if (x > part.x - reach && x < part.x + part.w + reach && z > part.z - reach && z < part.z + part.d + reach) return true;
             }
             continue;
         }
@@ -8289,9 +8770,10 @@ function movePlayer(dt) {
         mz = mz / len * dist;
         const stepUp = (nx, nz) => {
             const next = floorAt(nx, nz, feet);
-            // Open ground can be climbed however steep it is; only cliffs, peaks and raised floors stop the player.
-            if (next > feet + 0.52 && (next > Math.max(0, World.meshHeight(nx, nz)) + 0.01 || World.tooSteep(nx, nz))) return false;
-            if (next < feet - 0.52 && World.tooSteep(nx, nz)) return false;
+            // A stair tread can be a full pace above the feet. Other raised floors stay a short step.
+            const rise = next > feet + 0.52 && next <= feet + 1.25;
+            if (next > feet + 0.52 && !rise && (next > Math.max(0, World.meshHeight(nx, nz)) + 0.01 || World.tooSteep(nx, nz))) return false;
+            if (next < feet - 1.25 && World.tooSteep(nx, nz)) return false;
             return true;
         };
         // Landing a jump on a fence leaves the player inside it; let them walk back out.
@@ -8302,9 +8784,10 @@ function movePlayer(dt) {
         passFence = null;
     }
     const ground = groundUnder(body.x, body.z, feet);
-    const grounded = hop <= 0 && feet <= ground + 0.12;
+    const plant = feet > ground + 0.12 && feet - ground <= 0.55 && onStair(body.x, body.z, ground) ? 0.55 : 0.12;
+    const grounded = hop <= 0 && feet <= ground + plant;
     if (grounded && (keys.Space || jumpHeld)) hop = 7.2;
-    if (hop > 0 || feet > ground + 0.12) {
+    if (hop > 0 || feet > ground + plant) {
         hop -= 18 * dt;
         let nextY = body.y + hop * dt;
         const land = groundUnder(body.x, body.z, nextY - 1.62);
@@ -9568,6 +10051,42 @@ function aimedDoor(reach) {
     return best;
 }
 
+function personTitle(man) {
+    if (!man || man.goblin || man.dying || man.hidden || man.health <= 0) return "";
+    if (man.name) return man.name;
+    if (man.decor) return "Shopkeeper";
+    if (man.fisher || man.farmer || man.jack || man.board || man.driver) return "Worker";
+    if (man.archer || man.fixed || man.post != null) return man.archer ? "Archer" : "Soldier";
+    return "";
+}
+
+function aimedPerson(reach) {
+    if (inside || flying || player.dead) return null;
+    const body = activeCam();
+    const sy = Math.sin(body.yaw);
+    const cy = Math.cos(body.yaw);
+    const cp = Math.cos(body.pitch);
+    const fx = sy * cp;
+    const fy = Math.sin(body.pitch);
+    const fz = -cy * cp;
+    let best = null;
+    let bestT = reach || 8;
+    for (const man of men) {
+        if (!personTitle(man)) continue;
+        const along = (man.x - body.x) * fx + (man.z - body.z) * fz;
+        if (along < 0.4 || along > bestT) continue;
+        const hx = body.x + fx * along;
+        const hz = body.z + fz * along;
+        if (Math.hypot(hx - man.x, hz - man.z) > 0.45) continue;
+        const hy = body.y + fy * along;
+        const foot = man.stand || 0;
+        if (hy < foot + 0.15 || hy > foot + 1.9) continue;
+        best = man;
+        bestT = along;
+    }
+    return best;
+}
+
 let propData = null;
 function turnProp(x, y, z, yaw) {
     const c = Math.cos(yaw);
@@ -9854,13 +10373,29 @@ function leaveInterior() {
     inside = null;
 }
 
+function playerInHouse(house) {
+    return !!house && cam.x > house.x && cam.x < house.x + house.w && cam.z > house.z && cam.z < house.z + house.d;
+}
+
+function closedRoomHold() {
+    let key = "";
+    for (let i = 0; i < doors.length; i++) {
+        const door = doors[i];
+        if (!door.house || !door.house.inside || door.want || !playerInHouse(door.house)) continue;
+        key += (door.id || door.x + "," + door.z) + ";";
+    }
+    return key;
+}
+
+let heldRoomsPrev = "";
+
 function refreshSwInside() {
-    const merged = { trunk: [], plaster: [], linen: [], rock: [], glow: [], door: [], roof: [] };
+    const merged = { trunk: [], plaster: [], linen: [], rock: [], glow: [], door: [], roof: [], goods: [] };
     for (let i = 0; i < houses.length; i++) {
         const house = houses[i];
         if (!house.inside) continue;
         const door = doors.find((item) => item.house === house);
-        if (!door || !door.want) continue;
+        if (!door || (!door.want && !playerInHouse(house))) continue;
         for (const key of Object.keys(merged)) {
             const src = house.inside[key];
             if (src && src.length) merged[key].push(...src);
@@ -9870,6 +10405,10 @@ function refreshSwInside() {
         const name = "swin" + key;
         uploadMesh(name, merged[key]);
         if (textures[key]) textures[name] = textures[key];
+        if (key === "goods" && mesh[name]) {
+            mesh[name].cull = false;
+            mesh[name].lift = true;
+        }
     }
 }
 
@@ -9912,7 +10451,14 @@ function houseTitle(door) {
 function paintLook() {
     const label = document.getElementById("look");
     if (!label) return;
-    const title = inside || flying ? "" : houseTitle(aimedDoor(8));
+    let title = "";
+    if (!inside && !flying) {
+        const door = aimedDoor(8);
+        const person = aimedPerson(8);
+        const doorDist = door ? Math.hypot(door.x - cam.x, door.z - cam.z) : 99;
+        const personDist = person ? Math.hypot(person.x - cam.x, person.z - cam.z) : 99;
+        title = person && personDist <= doorDist ? personTitle(person) : houseTitle(door);
+    }
     label.hidden = !title;
     label.textContent = title;
 }
@@ -9961,6 +10507,11 @@ function frame(now) {
     syncArrowMesh();
     paintDoor();
     paintLook();
+    const heldRooms = closedRoomHold();
+    if (heldRooms !== heldRoomsPrev) {
+        heldRoomsPrev = heldRooms;
+        refreshSwInside();
+    }
     draw();
     requestAnimationFrame(frame);
 }
@@ -10311,6 +10862,7 @@ if (gl) {
     spawnGarrison();
     buildFolk();
     spawnKeepers();
+    spawnGodwin();
     prepareBow();
     buildHorse();
     // AoE cost model: no Roblox JSON outdoors — box/billboard stamps only (see outdoorDrawList).

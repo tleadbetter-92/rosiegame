@@ -241,7 +241,7 @@ function paint(data) {
         hold.querySelector("[data-wood]").textContent = String(village.wood || 0);
         const status = hold.querySelector("[data-status]");
         const jobs = village.training || [];
-        const training = jobs.map((kind) => (kind === "soldier" ? "Training a soldier" : "Training a worker")).concat((village.works || []).map((kind) => {
+        const training = jobs.map((kind) => (kind === "soldier" ? "Training a soldier" : kind === "archer" ? "Training an archer" : "Training a worker")).concat((village.works || []).map((kind) => {
             if (kind === "house") return "Building a house";
             if (kind === "yard") return "Building a lumberyard";
             return "Building a farm";
@@ -442,7 +442,7 @@ holds.forEach(bindFood);
 document.querySelectorAll("[data-stance]").forEach(bindStance);
 
 document.getElementById("restart").addEventListener("click", async () => {
-    if (!window.confirm("Start again? Every village goes back to ten soldiers, two farmers, and 100 food.")) return;
+    if (!window.confirm("Start again? Every village goes back to its starting soldiers, farmers, food, and wood.")) return;
     const data = await (await fetch("/api/campaign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -452,10 +452,7 @@ document.getElementById("restart").addEventListener("click", async () => {
     take(data);
 });
 
-holds.forEach((hold, index) => {
-    const count = hold.querySelector("[data-count]");
-    if (count) count.textContent = "6";
-    const box = hold.querySelector("[data-men]");
-    if (box) box.innerHTML = men(6, homeColors[index]);
+clock.textContent = "Loading the campaign.";
+refresh().catch(() => {
+    clock.textContent = "The campaign could not be loaded.";
 });
-clock.textContent = "Six soldiers stand in each village.";
