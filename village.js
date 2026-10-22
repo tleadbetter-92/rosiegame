@@ -3485,6 +3485,10 @@ function dressFlatHouses() {
 const hamletPads = [];
 // Ashby — closest minor hamlet to Southwest (homeVillage 2); pilot for saved town-block layout.
 const HAMLET_TOWN_BLOCK_INDEX = 0;
+// dressHamlets() queues kit pieces at load — must exist before that runs.
+const kitBuildQueue = [];
+const kitBuildLayers = {};
+const kitShells = [];
 
 // Editor door faces +Z. The live house uses the opposite yaw so the door ends up on the same side.
 function editorLiveYaw(yaw) {
@@ -4030,10 +4034,6 @@ function transformKitVerts(floats, wx, wz, baseY, cx, cz, yaw) {
     }
     return out;
 }
-
-const kitBuildQueue = [];
-const kitBuildLayers = {};
-const kitShells = [];
 
 function kitWorldPoint(x, z, wx, wz, cx, cz, yaw) {
     const c = Math.cos(yaw);
