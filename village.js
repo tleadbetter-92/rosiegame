@@ -2763,8 +2763,6 @@ function stampEditorBlock(block, ox, oz) {
         });
         textures.yardgravel = textures.gravel;
     }
-    const plow = block.plow || [];
-    const gravel = block.gravel || [];
     const fences = block.fences || [];
     const yAt = (x, z) => Math.max(0, World.heightAt(x, z));
     const patch = (list, cell) => {
@@ -2779,8 +2777,21 @@ function stampEditorBlock(block, ox, oz) {
             [x + w, yAt(x + w, z) + 0.06, z, (x + w) / 4, z / 4, 1]
         );
     };
-    for (let i = 0; i < plow.length; i++) patch(batches.plow, plow[i]);
-    for (let i = 0; i < gravel.length; i++) patch(batches.yardgravel, gravel[i]);
+    const groundLayers = [
+        ["plow", batches.plow],
+        ["gravel", batches.yardgravel],
+        ["grass", batches.grass],
+        ["dirt", batches.dirt],
+        ["cobble", batches.cobble],
+        ["stone", batches.cobble],
+        ["sand", batches.sand]
+    ];
+    for (let g = 0; g < groundLayers.length; g++) {
+        const cells = block[groundLayers[g][0]];
+        if (!cells) continue;
+        const list = groundLayers[g][1];
+        for (let i = 0; i < cells.length; i++) patch(list, cells[i]);
+    }
     const at = (x, z, yaw, px, pz) => {
         const c = Math.cos(yaw);
         const s = Math.sin(yaw);
@@ -3472,6 +3483,8 @@ function dressFlatHouses() {
 }
 
 const hamletPads = [];
+// Ashby — closest minor hamlet to Southwest (homeVillage 2); pilot for saved town-block layout.
+const HAMLET_TOWN_BLOCK_INDEX = 0;
 
 // Editor door faces +Z. The live house uses the opposite yaw so the door ends up on the same side.
 function editorLiveYaw(yaw) {
@@ -3493,28 +3506,46 @@ function shutDoor(b) {
     else addBox(batches.trunk, x - 0.58, y, z - 0.05, 1.16, 2.1, 0.1);
 }
 
-function hamletFarmAt(hamlet) {
+function hamletFarmAt(hamlet, index) {
+    if (index === HAMLET_TOWN_BLOCK_INDEX && typeof EditorBlocks !== "undefined" && EditorBlocks.hamletTown) {
+        const ox = hamlet.x + 1;
+        const oz = hamlet.z + 25.5;
+        return { x: ox - 28, z: oz + 26 };
+    }
     return { x: hamlet.x + 58, z: hamlet.z };
+}
+
+function hamletEditorLayout(index) {
+    if (typeof EditorBlocks === "undefined") return null;
+    if (index === HAMLET_TOWN_BLOCK_INDEX && EditorBlocks.hamletTown) return EditorBlocks.hamletTown;
+    return EditorBlocks.hamlet || null;
 }
 
 function dressHamlets() {
     const hamlets = World.hamlets || [];
-    const layout = (typeof EditorBlocks !== "undefined" && EditorBlocks.hamlet) || null;
     const lists = { wall: batches.bill, front: batches.billFront, plaster: batches.plaster, roof: batches.roof };
     const sizes = { farmhouse: [4.7, 4.7], vshop: [5.5, 5], stores: [8, 5.5] };
     hamlets.forEach((hamlet, index) => {
         const village = places.length + index;
         const ox = hamlet.x + 1;
         const oz = hamlet.z + 25.5;
+        const layout = hamletEditorLayout(index);
+        const townBlock = index === HAMLET_TOWN_BLOCK_INDEX && typeof EditorBlocks !== "undefined" && layout === EditorBlocks.hamletTown;
         if (layout) {
             stampEditorBlock(layout, ox, oz);
-            hamletPads.push({ x: ox - 22, z: oz - 46, w: 58, d: 56 });
+            const half = (layout.size || 192) * 0.5;
+            if (townBlock) {
+                hamletPads.push({ x: ox - half, z: oz - half, w: layout.size || 192, d: layout.size || 192 });
+            } else {
+                hamletPads.push({ x: ox - 22, z: oz - 46, w: 58, d: 56 });
+            }
             for (let i = 0; i < layout.buildings.length; i++) {
                 const piece = layout.buildings[i];
                 if (piece.t === "kit" && piece.id) {
                     queueKitBuild(piece.id, piece.x + ox, piece.z + oz, editorLiveYaw(piece.yaw));
                     continue;
                 }
+                if (piece.t === "lamp") continue;
                 const spec = sizes[piece.t] || sizes.farmhouse;
                 const yaw = editorLiveYaw(piece.yaw);
                 const turned = Math.abs(Math.sin(yaw)) > 0.9;
@@ -3532,7 +3563,7 @@ function dressHamlets() {
                     minX: x - w / 2,
                     minZ: z - d / 2,
                     mesh: "house",
-                    role: "house",
+                    role: piece.t === "farmhouse" ? "farmhouse" : "house",
                     doorSide: 0,
                     village: village,
                     quiet: true
@@ -3540,9 +3571,11 @@ function dressHamlets() {
                 stampFlatKitHouse(lists, house);
                 shutDoor(house);
                 scenery.push({ x: house.minX, z: house.minZ, w: w, d: d, top: house.y + 4.2 });
+                if (piece.t === "farmhouse" && townBlock) Town.buildings.push(house);
             }
         }
-        const farm = hamletFarmAt(hamlet);
+        if (townBlock) return;
+        const farm = hamletFarmAt(hamlet, index);
         dressDesignedFarm(farm.x - 4, farm.z + 26);
         const size = 4.7;
         const house = {
@@ -10911,7 +10944,7 @@ function seedHamletFarms(state) {
     let changed = false;
     for (let i = 0; i < hamlets.length; i++) {
         const owner = places.length + i;
-        const at = hamletFarmAt(hamlets[i]);
+        const at = hamletFarmAt(hamlets[i], i);
         const field = { x: at.x + 10, z: at.z - 18, w: 20, d: 14 };
         let site = null;
         for (let n = 0; n < state.sites.length; n++) {

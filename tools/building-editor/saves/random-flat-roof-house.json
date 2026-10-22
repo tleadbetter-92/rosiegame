@@ -105,13 +105,6 @@
     {
       "id": "Floor_WoodLight",
       "x": 7,
-      "z": 1,
-      "y": 3.05,
-      "yaw": 0
-    },
-    {
-      "id": "Floor_WoodLight",
-      "x": 7,
       "z": -1,
       "y": 3.05,
       "yaw": 0
@@ -168,48 +161,41 @@
     {
       "id": "Wall_UnevenBrick_Straight",
       "x": 7,
-      "z": 4,
+      "z": 3,
       "y": 0,
       "yaw": 0
     },
     {
       "id": "Wall_UnevenBrick_Straight",
       "x": 5,
-      "z": 4,
+      "z": 3,
       "y": 0,
       "yaw": 0
     },
     {
       "id": "Wall_UnevenBrick_Straight",
       "x": 7,
-      "z": 4,
+      "z": 3,
       "y": 3.05,
       "yaw": 0
     },
     {
       "id": "Wall_UnevenBrick_Straight",
       "x": 5,
-      "z": 4,
+      "z": 3,
       "y": 3.05,
       "yaw": 0
     },
     {
       "id": "Wall_UnevenBrick_Straight",
-      "x": 5,
-      "z": 4,
-      "y": 3.05,
-      "yaw": 0
-    },
-    {
-      "id": "Wall_UnevenBrick_Straight",
-      "x": 10,
+      "x": 9,
       "z": 3,
       "y": 3.05,
       "yaw": 1.5707963267948966
     },
     {
       "id": "Wall_UnevenBrick_Straight",
-      "x": 10,
+      "x": 9,
       "z": -1,
       "y": 3.05,
       "yaw": 1.5707963267948966
@@ -217,55 +203,55 @@
     {
       "id": "Wall_UnevenBrick_Straight",
       "x": 7,
-      "z": -2,
+      "z": -1,
       "y": 3.05,
       "yaw": 3.141592653589793
     },
     {
       "id": "Wall_UnevenBrick_Straight",
       "x": 5,
-      "z": -2,
+      "z": -1,
       "y": 3.05,
       "yaw": 3.141592653589793
     },
     {
       "id": "Wall_UnevenBrick_Straight",
       "x": 7,
-      "z": -2,
+      "z": -1,
       "y": 0,
       "yaw": 3.141592653589793
     },
     {
       "id": "Wall_UnevenBrick_Straight",
       "x": 5,
-      "z": -2,
+      "z": -1,
       "y": 0,
       "yaw": 3.141592653589793
     },
     {
       "id": "Wall_UnevenBrick_Straight",
-      "x": 2,
+      "x": 1,
       "z": 3,
       "y": 3.05,
       "yaw": 4.71238898038469
     },
     {
       "id": "Wall_UnevenBrick_Straight",
-      "x": 2,
+      "x": 1,
       "z": -1,
       "y": 3.05,
       "yaw": 4.71238898038469
     },
     {
       "id": "Wall_UnevenBrick_Straight",
-      "x": 10,
+      "x": 9,
       "z": -1,
       "y": 0,
       "yaw": 1.5707963267948966
     },
     {
       "id": "Wall_UnevenBrick_Straight",
-      "x": 10,
+      "x": 9,
       "z": 3,
       "y": 0,
       "yaw": 1.5707963267948966
@@ -273,48 +259,48 @@
     {
       "id": "Wall_UnevenBrick_Window_Wide_Round",
       "x": 3,
-      "z": -2,
+      "z": -1,
       "y": 0,
       "yaw": 3.141592653589793
     },
     {
       "id": "Wall_UnevenBrick_Window_Wide_Round",
       "x": 9,
-      "z": -2,
+      "z": -1,
       "y": 0,
       "yaw": 3.141592653589793
     },
     {
       "id": "Wall_UnevenBrick_Window_Wide_Round",
       "x": 3,
-      "z": -2,
+      "z": -1,
       "y": 3.05,
       "yaw": 3.141592653589793
     },
     {
       "id": "Wall_UnevenBrick_Window_Wide_Round",
       "x": 9,
-      "z": -2,
+      "z": -1,
       "y": 3.05,
       "yaw": 3.141592653589793
     },
     {
       "id": "Wall_UnevenBrick_Window_Wide_Round",
-      "x": 2,
+      "x": 1,
       "z": 1,
       "y": 3.05,
       "yaw": 4.71238898038469
     },
     {
       "id": "Wall_UnevenBrick_Window_Wide_Round",
-      "x": 2,
+      "x": 1,
       "z": 3,
       "y": 0,
       "yaw": 4.71238898038469
     },
     {
       "id": "Wall_UnevenBrick_Window_Wide_Round",
-      "x": 2,
+      "x": 1,
       "z": -1,
       "y": 0,
       "yaw": 4.71238898038469
@@ -322,63 +308,63 @@
     {
       "id": "Wall_UnevenBrick_Window_Wide_Round",
       "x": 3,
-      "z": 4,
+      "z": 3,
       "y": 0,
       "yaw": 0
     },
     {
       "id": "Wall_UnevenBrick_Window_Wide_Round",
       "x": 9,
-      "z": 4,
+      "z": 3,
       "y": 0,
       "yaw": 0
     },
     {
       "id": "Wall_UnevenBrick_Window_Wide_Round",
       "x": 9,
-      "z": 4,
+      "z": 3,
       "y": 3.05,
       "yaw": 0
     },
     {
       "id": "Wall_UnevenBrick_Window_Wide_Round",
       "x": 3,
-      "z": 4,
+      "z": 3,
       "y": 3.05,
       "yaw": 0
     },
     {
       "id": "Wall_UnevenBrick_Straight",
-      "x": 2,
+      "x": 1,
       "z": 1,
       "y": 0,
       "yaw": 4.71238898038469
     },
     {
       "id": "Wall_UnevenBrick_Window_Wide_Round",
-      "x": 10,
+      "x": 9,
       "z": 1,
       "y": 3.05,
       "yaw": 1.5707963267948966
     },
     {
       "id": "Wall_UnevenBrick_Door_Flat",
-      "x": 10,
+      "x": 9,
       "z": 1,
       "y": 0,
       "yaw": 1.5707963267948966
     },
     {
       "id": "Door_1_Flat",
-      "x": 9.49,
+      "x": 9,
       "z": 1,
       "y": 0,
       "yaw": 1.5707963267948966
     },
     {
       "id": "Stair_Interior_Simple",
-      "x": 4.725,
-      "z": 2.9969999999999994,
+      "x": 5,
+      "z": 3,
       "y": 0,
       "yaw": 4.71238898038469
     },
