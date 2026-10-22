@@ -1649,6 +1649,8 @@ function spawnCommander() {
 // Region 1 — prop/brute lurkers in the wild (~500 m southwest of town).
 const BRUTE_FACTION = 11;
 const BRUTE_COUNT = 20;
+/** Southwest: show Kaykit brute at the gate only — no wild lair brutes until we want combat again. */
+const SW_WILD_BRUTES = false;
 const BRUTE_RESPAWN_MS = Clock.DAY_MS;
 const bruteRespawnQueue = [];
 let markersDirty = true;
@@ -1684,7 +1686,7 @@ function rebuildWorldMarkers() {
         if (!pick.taken) addLootMarkerVerts(loot, pick.x, pick.z);
     }
     uploadMesh("worldMarkerLoot", loot);
-    if (homeVillage === 2 && World.southwestBruteLair) {
+    if (homeVillage === 2 && SW_WILD_BRUTES && World.southwestBruteLair) {
         const lair = World.southwestBruteLair(BRUTE_COUNT);
         addCampMarkerVerts(camp, lair.centre.x, lair.centre.z, lair.radius, 22);
     }
@@ -1756,6 +1758,12 @@ function spawnOneBrute(spot, slot) {
 
 function spawnSouthwestBrutes() {
     if (homeVillage !== 2 || !World.southwestBruteLair) return;
+    if (!SW_WILD_BRUTES) {
+        for (let i = men.length - 1; i >= 0; i--) {
+            if (men[i].brute) men.splice(i, 1);
+        }
+        return;
+    }
     const lair = World.southwestBruteLair(BRUTE_COUNT);
     lair.spots.forEach((spot, slot) => spawnOneBrute(spot, slot));
     markWorldMarkersDirty();
@@ -2196,6 +2204,45 @@ function crag(x, z, ry, s) {
 }
 
 const treeSpots = [];
+const FOREST_TREE_CELL = 40;
+let forestTreeGrid = null;
+
+function ensureForestTreeGrid() {
+    if (forestTreeGrid) return forestTreeGrid;
+    forestTreeGrid = new Map();
+    for (const t of World.trees || []) {
+        if (!t.forest && !t.edit) continue;
+        const key = Math.floor(t.x / FOREST_TREE_CELL) + "," + Math.floor(t.z / FOREST_TREE_CELL);
+        let cell = forestTreeGrid.get(key);
+        if (!cell) forestTreeGrid.set(key, cell = []);
+        cell.push({ x: t.x, z: t.z, pine: t.kind === "pine" });
+    }
+    return forestTreeGrid;
+}
+
+function forestTreesNear(x, z, reach) {
+    const grid = ensureForestTreeGrid();
+    const r2 = reach * reach;
+    const c0 = Math.floor((x - reach) / FOREST_TREE_CELL);
+    const c1 = Math.floor((x + reach) / FOREST_TREE_CELL);
+    const k0 = Math.floor((z - reach) / FOREST_TREE_CELL);
+    const k1 = Math.floor((z + reach) / FOREST_TREE_CELL);
+    const out = [];
+    for (let cx = c0; cx <= c1; cx++) {
+        for (let cz = k0; cz <= k1; cz++) {
+            const cell = grid.get(cx + "," + cz);
+            if (!cell) continue;
+            for (let i = 0; i < cell.length; i++) {
+                const spot = cell[i];
+                const dx = spot.x - x;
+                const dz = spot.z - z;
+                if (dx * dx + dz * dz > r2) continue;
+                out.push(spot);
+            }
+        }
+    }
+    return out;
+}
 
 function focusCenters() {
     const list = [];
@@ -2210,6 +2257,13 @@ function focusCenters() {
     return list;
 }
 
+function pushWorldTreeSpot(x, z, pine) {
+    if (World.wet(x, z) || World.roadDist(x, z) < 10) return;
+    const y = Math.max(0, World.heightAt(x, z));
+    if (y < 0.25) return;
+    treeSpots.push({ x: x, z: z, y: y, pine: pine });
+}
+
 function plantFocusTrees() {
     treeSpots.length = 0;
     const cx = focusTown.x;
@@ -2219,10 +2273,7 @@ function plantFocusTrees() {
         const r = 42 + (i % 7) * 3.2;
         const x = cx + Math.cos(a) * r;
         const z = cz + Math.sin(a) * r;
-        if (World.wet(x, z) || World.roadDist(x, z) < 12) continue;
-        const y = Math.max(0, World.heightAt(x, z));
-        if (y < 0.25) continue;
-        treeSpots.push({ x: x, z: z, y: y, pine: i % 3 !== 1 });
+        pushWorldTreeSpot(x, z, i % 3 !== 1);
     }
     nearMarkX = 1e9;
     nearMarkZ = 1e9;
@@ -2289,6 +2340,14 @@ function farTree(trunk, leaf, x, z, y, pine) {
     addBox(trunk, x - 0.18, y, z - 0.18, 0.36, pine ? 3.4 : 2.5, 0.36);
     const g = pine ? 1.35 : 1.55;
     addBox(leaf, x - g, y + 1.45, z - g, g * 2, pine ? 2.3 : 1.7, g * 2);
+}
+
+/** Silhouette for the outer ring — readable through haze, cheap to draw. */
+function distantTree(trunk, leaf, x, z, y, pine) {
+    addBox(trunk, x - 0.14, y, z - 0.14, 0.28, pine ? 4.5 : 3.4, 0.28);
+    const g = pine ? 2.05 : 2.25;
+    const top = y + (pine ? 3.8 : 2.85);
+    addBox(leaf, x - g * 0.5, top, z - g * 0.5, g, pine ? 4.2 : 3.2, g);
 }
 
 function dressSouthMeadow() {
@@ -3550,9 +3609,12 @@ function gfx() {
         fogNear: 230,
         fogSpan: 170,
         drawFar: 360,
-        treeNear: 180,
-        treeFar: 0,
-        treeCap: 48,
+        treeNear: 90,
+        treeMid: 210,
+        treeFar: 340,
+        treeCap: 120,
+        treeMidCap: 320,
+        treeFarCap: 520,
         meadowReach: 110,
         meadowStep: 40,
         meadowProps: true,
@@ -3616,7 +3678,7 @@ function refreshNearTrees() {
     const grew = growMeadow(cam.x, cam.z, cam.yaw);
     const dx = cam.x - nearMarkX;
     const dz = cam.z - nearMarkZ;
-    if (!grew && dx * dx + dz * dz < 55 * 55) return;
+    if (!grew && dx * dx + dz * dz < 28 * 28) return;
     nearMarkX = cam.x;
     nearMarkZ = cam.z;
     const quality = gfx();
@@ -3624,25 +3686,43 @@ function refreshNearTrees() {
     const leaf = [];
     const farTrunk = [];
     const farLeaf = [];
-    const near = [];
     const nearR2 = quality.treeNear * quality.treeNear;
+    const midR2 = quality.treeMid * quality.treeMid;
     const farR2 = quality.treeFar * quality.treeFar;
-    for (const spot of treeSpots) {
-        if (cleared(spot.x, spot.z, spot.y)) continue;
-        const ox = spot.x - cam.x;
-        const oz = spot.z - cam.z;
+    const candidates = [];
+    const seen = new Set();
+    function addCandidate(x, z, pine, y) {
+        const key = Math.round(x * 2) + "," + Math.round(z * 2);
+        if (seen.has(key)) return;
+        seen.add(key);
+        const gy = y != null ? y : Math.max(0, World.heightAt(x, z));
+        if (gy < 0.25 || cleared(x, z, gy)) return;
+        const ox = x - cam.x;
+        const oz = z - cam.z;
         const d2 = ox * ox + oz * oz;
-        if (quality.treeFar > 0 && d2 > 70 * 70 && d2 < farR2) farTree(farTrunk, farLeaf, spot.x, spot.z, spot.y, spot.pine);
-        if (d2 > nearR2) continue;
-        near.push({ spot: spot, d2: d2 });
+        if (d2 > farR2) return;
+        candidates.push({ x: x, z: z, y: gy, pine: pine, d2: d2 });
     }
-    if (near.length > quality.treeCap) {
-        near.sort((a, b) => a.d2 - b.d2);
-        near.length = quality.treeCap;
-    }
-    for (let i = 0; i < near.length; i++) {
-        const spot = near[i].spot;
-        fullTree(trunk, leaf, spot.x, spot.z, spot.y, spot.pine);
+    for (const spot of treeSpots) addCandidate(spot.x, spot.z, spot.pine, spot.y);
+    for (const spot of forestTreesNear(cam.x, cam.z, quality.treeFar)) addCandidate(spot.x, spot.z, spot.pine);
+    candidates.sort((a, b) => a.d2 - b.d2);
+    let nearN = 0;
+    let midN = 0;
+    let farN = 0;
+    for (let i = 0; i < candidates.length; i++) {
+        const spot = candidates[i];
+        const d2 = spot.d2;
+        if (d2 <= nearR2 && nearN < quality.treeCap) {
+            fullTree(trunk, leaf, spot.x, spot.z, spot.y, spot.pine);
+            nearN++;
+        } else if (d2 <= midR2 && midN < quality.treeMidCap) {
+            farTree(farTrunk, farLeaf, spot.x, spot.z, spot.y, spot.pine);
+            midN++;
+        } else if (d2 <= farR2 && farN < quality.treeFarCap) {
+            distantTree(farTrunk, farLeaf, spot.x, spot.z, spot.y, spot.pine);
+            farN++;
+        }
+        if (nearN >= quality.treeCap && midN >= quality.treeMidCap && farN >= quality.treeFarCap) break;
     }
     textures.nearTrunk = textures.trunk;
     textures.nearLeaf = textures.leaf;
@@ -3920,6 +4000,121 @@ function transformKitVerts(floats, wx, wz, baseY, cx, cz, yaw) {
 
 const kitBuildQueue = [];
 const kitBuildLayers = {};
+const kitShells = [];
+
+function kitWorldPoint(x, z, wx, wz, cx, cz, yaw) {
+    const c = Math.cos(yaw);
+    const s = Math.sin(yaw);
+    const lx = x - cx;
+    const lz = z - cz;
+    return { x: wx + lx * c + lz * s, z: wz + -lx * s + lz * c };
+}
+
+function kitWorldRect(rect, wx, wz, cx, cz, yaw, baseY) {
+    const c1 = kitWorldPoint(rect.x, rect.z, wx, wz, cx, cz, yaw);
+    const c2 = kitWorldPoint(rect.x + rect.w, rect.z, wx, wz, cx, cz, yaw);
+    const c3 = kitWorldPoint(rect.x, rect.z + rect.d, wx, wz, cx, cz, yaw);
+    const c4 = kitWorldPoint(rect.x + rect.w, rect.z + rect.d, wx, wz, cx, cz, yaw);
+    const xs = [c1.x, c2.x, c3.x, c4.x];
+    const zs = [c1.z, c2.z, c3.z, c4.z];
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minZ = Math.min(...zs);
+    const maxZ = Math.max(...zs);
+    return {
+        x: minX,
+        z: minZ,
+        w: maxX - minX,
+        d: maxZ - minZ,
+        y0: baseY + (rect.y0 || 0),
+        y1: baseY + (rect.y1 != null ? rect.y1 : rect.y0 + 3.05)
+    };
+}
+
+function registerKitPhysics(id, wx, wz, baseY, meta, physics) {
+    if (!physics) return;
+    const cx = meta.cx;
+    const cz = meta.cz;
+    const yaw = meta._yaw || 0;
+    const shell = physics.shell;
+    if (shell) {
+        const box = kitWorldRect(
+            { x: shell.minX, z: shell.minZ, w: shell.w, d: shell.d, y0: shell.y0, y1: shell.y0 + shell.h },
+            wx,
+            wz,
+            cx,
+            cz,
+            yaw,
+            baseY
+        );
+        const entry = (physics.doors || [])[0];
+        let door = null;
+        if (entry) {
+            const p = kitWorldPoint(entry.x, entry.z, wx, wz, cx, cz, yaw);
+            const faceYaw = yaw + (entry.yaw || 0);
+            door = {
+                id: "kit:" + id,
+                kind: "kit",
+                role: id,
+                x: p.x,
+                z: p.z,
+                y: baseY + (entry.y || 0),
+                fx: -Math.sin(faceYaw),
+                fz: -Math.cos(faceYaw),
+                yaw: faceYaw,
+                wide: entry.wide || 0.56,
+                swing: 0,
+                want: false
+            };
+            doors.push(door);
+            doorGrid = null;
+        }
+        kitShells.push({
+            minX: box.x,
+            minZ: box.z,
+            w: box.w,
+            d: box.d,
+            y: baseY,
+            entry: door
+        });
+        townBuildGrid = null;
+    }
+    for (const solid of physics.solids || []) {
+        const world = kitWorldRect(solid, wx, wz, cx, cz, yaw, baseY);
+        solids.push({
+            x: world.x,
+            z: world.z,
+            w: world.w,
+            d: world.d,
+            y0: world.y0,
+            y1: world.y1,
+            raised: true,
+            stair: !!solid.stair
+        });
+    }
+    solidGrid = null;
+    for (const deck of physics.floors || []) {
+        const world = kitWorldRect(
+            { x: deck.x, z: deck.z, w: deck.w, d: deck.d, y0: deck.y, y1: deck.y },
+            wx,
+            wz,
+            cx,
+            cz,
+            yaw,
+            baseY
+        );
+        floors.push({
+            x: world.x,
+            z: world.z,
+            w: world.w,
+            d: world.d,
+            y: world.y0,
+            stair: !!deck.stair
+        });
+    }
+    floorGrid = null;
+    if ((physics.doors || []).length) poseDoors();
+}
 const KIT_TEX_FOR = { plaster: "kitPlaster", brick: "kitBrick", wood: "kitWood", tiles: "kitWood", rock: "kitBrick", metal: "kitWood" };
 let kitTexturesReady = null;
 
@@ -3952,8 +4147,9 @@ function stampKitBuildOnce(id, wx, wz, yaw) {
             if (!res.ok) throw new Error("missing bake: " + id);
             return res.json();
         })
-        .then((meta) =>
-            Promise.all(
+        .then((meta) => {
+            meta._yaw = yaw;
+            const meshJob = Promise.all(
                 meta.materials.map(({ mat }) =>
                     fetch("models/kitbuild/" + id + "-" + mat + ".bin")
                         .then((r) => r.arrayBuffer())
@@ -3963,8 +4159,13 @@ function stampKitBuildOnce(id, wx, wz, yaw) {
                             appendKitMesh(meshName, data);
                         })
                 )
-            )
-        );
+            );
+            const physJob = fetch("models/kitbuild/" + id + ".physics.json")
+                .then((r) => (r.ok ? r.json() : null))
+                .then((physics) => registerKitPhysics(id, wx, wz, baseY, meta, physics))
+                .catch(() => null);
+            return Promise.all([meshJob, physJob]);
+        });
 }
 
 function flushKitBuildMeshes() {
@@ -3982,7 +4183,7 @@ function flushKitBuildMeshes() {
 function queueSouthwestShowcaseBuilds() {
     const home = places[2];
     if (!home) return;
-    queueKitBuild("my-building", home.ox - 16, home.oz + 28, 0);
+    queueKitBuild("my-building", home.ox - 26, home.oz + 42, 0);
 }
 
 function runKitBuildQueue() {
@@ -4018,6 +4219,16 @@ function loadKaykit() {
             return pack;
         }).catch(() => null);
     };
+    const loadCraftPixFolk = (stem, meshKey, aliases) => {
+        take(stem + "-0", meshKey).then((part) => {
+            if (!part) return;
+            const pack = { frames: part.frames, parts: [part], walk: [1, 8] };
+            folkMesh[meshKey] = pack;
+            for (const alias of aliases || []) folkMesh[alias] = pack;
+            layoutSwNorthGateShowcase();
+        });
+    };
+    loadCraftPixFolk("folk-peasant-f", "folkPeasantF");
     take("rogue");
     Promise.all([take("ch10-0"), take("ch10-1")]).then((parts) => {
         if (!parts[0] || !parts[1]) return;
@@ -4032,10 +4243,14 @@ function loadKaykit() {
     Promise.all([take("peasant-0"), take("peasant-1")]).then((parts) => {
         if (!parts[0] || !parts[1]) return;
         folkMesh.quaterniusPeasant = { frames: parts[0].frames, parts };
+        layoutSwNorthGateShowcase();
     });
     take("prop-0").then((part) => {
         if (!part) return;
-        folkMesh.paladin = { frames: part.frames, parts: [part], walk: [1, 8], attack: [9, 14], death: [15, 20] };
+        const pack = { frames: part.frames, parts: [part], walk: [1, 8], attack: [9, 14], death: [15, 20] };
+        folkMesh.paladin = pack;
+        folkMesh.bruteShowcase = pack;
+        layoutSwNorthGateShowcase();
     });
     Promise.all([0, 1, 2, 3, 4, 5].map((index) => take("archer-" + index))).then((parts) => {
         if (parts.some((part) => !part)) return;
@@ -4066,25 +4281,53 @@ function loadKaykit() {
         if (!part) return;
         const pack = { frames: part.frames, parts: [part], walk: [1, 8] };
         folkMesh.mixamoPeasant = pack;
+    });
+    take("mixamo-godwin-0").then((part) => {
+        if (!part) return;
+        const pack = { frames: part.frames, parts: [part], walk: [1, 8] };
+        folkMesh.godwin = pack;
         folkMesh.innkeeper = pack;
+    });
+    take("mixamo-monster-0").then((part) => {
+        if (!part) return;
+        const pack = { frames: part.frames, parts: [part], walk: [1, 8], attack: [9, 14] };
+        folkMesh.mixamoMonster = pack;
+        layoutSwNorthGateShowcase();
+    });
+    take("outfit-female-peasant-0").then((part) => {
+        if (!part) return;
+        const pack = { frames: part.frames, parts: [part] };
+        if (part.frames > 1) pack.walk = [1, Math.min(8, part.frames - 1)];
+        folkMesh.femalePeasant = pack;
+        layoutSwNorthGateShowcase();
     });
     const loadClipParts = (stem, meshKey) => {
         Promise.all([0, 1, 2, 3, 4, 5, 6, 7].map((index) => take(stem + "-" + index))).then((parts) => {
             const ok = parts.filter((part) => part);
             if (!ok.length) return;
             folkMesh[meshKey] = { frames: ok[0].frames, parts: ok };
+            layoutSwNorthGateShowcase();
         });
     };
     loadClipParts("medieval-king", "medievalKing");
+    loadClipParts("medieval-innkeeper", "medievalInnkeeper");
+    loadClipParts("medieval-commander", "medievalCommanderClip");
+    loadClipParts("outfit-innkeeper", "outfitInnkeeper");
+}
+
+function peasantGirlPack() {
+    return folkMesh.mixamoPeasant || folkMesh.femalePeasant || folkMesh.folkPeasantF || null;
 }
 
 function folkPack(man) {
     if (man.folkShow && folkMesh[man.folkShow]) return folkMesh[man.folkShow];
-    if (man.inn && man.post === 2) return folkMesh.innkeeper || folkMesh.mixamoPeasant || folkMesh.rogue;
+    if (man.inn && man.post === 2) return folkMesh.godwin || folkMesh.innkeeper || folkMesh.mixamoPeasant || folkMesh.rogue;
     if (man.commander) return folkMesh.commanderOfficer || folkMesh.archerUnarmed || folkMesh.archer || folkMesh.paladin || folkMesh.rogue;
-    if (man.peasant) return folkMesh.peasant || folkMesh.rogue;
+    if (man.peasant) return peasantGirlPack() || folkMesh.peasant || folkMesh.rogue;
     if (man.shopkeeper) return folkMesh.archerUnarmed || folkMesh.archer || folkMesh.rogue;
-    if (man.fisher || man.farmer || man.jack || man.board || man.driver || man.decor) return folkMesh.rogue;
+    if (man.fisher || man.farmer || man.jack || man.board || man.driver || man.decor) {
+        return peasantGirlPack() || folkMesh.rogue;
+    }
     if (man.brute) return folkMesh.paladin || folkMesh.knight;
     if (man.goblin) return folkMesh.knight;
     if (man.archer) return folkMesh.archer || folkMesh.paladin;
@@ -4770,7 +5013,7 @@ function folkCardMatrix(man, flip) {
 function personScale(man) {
     if (man.horse) return man.bodyScale != null ? man.bodyScale : 1;
     if (man.goblin) return 0.74;
-    if (man.brute) return 1.14;
+    if (man.showcaseBrute || man.brute) return 1.14;
     if (man.archer || man.shopkeeper) return 0.94;
     if (man.fisher || man.farmer || man.jack || man.board || man.driver || man.decor || man.inn) return 1;
     return 1.12;
@@ -4783,7 +5026,7 @@ function personMatrix(man) {
     const s = Math.sin(yaw) * k;
     const slash = man.meshAttack || man.meshDeath ? 0 : (man.swing > 0 ? Math.sin(man.swing * Math.PI) : 0);
     const lunge = slash * 0.22;
-    const y = (man.stand || 0) + man.bob - (man.meshDeath ? 0 : Math.min(man.down, 1.05) * k);
+    const y = (man.stand || 0) + (man.floatY || 0) + man.bob - (man.meshDeath ? 0 : Math.min(man.down, 1.05) * k);
     const px = man.x + Math.sin(man.yaw) * lunge;
     const pz = man.z - Math.cos(man.yaw) * lunge;
     const out = takeMat4();
@@ -4814,6 +5057,210 @@ const horse = {
 horse.stand = Math.max(0, World.meshHeight(horse.x, horse.z));
 
 const petFollowers = [];
+
+// Asset lineup outside SW north gate (palisade side 0). Not campaign men — never cleared on sync.
+const gateShowcase = [];
+const showcaseCreatureMeshes = {};
+const SW_GATE_SHOWCASE_OUT = 5;
+const SW_GATE_SHOWCASE_STEP = 5;
+const SHOWCASE_PATROL_HALF = 3.5;
+// Player eye ~1.62 m; belly ~1.05 m — beasts use targetH / at when scale omitted (see bellyScaleFor).
+const PLAYER_BELLY_H = 1.05;
+const DOG_SIZE_H = 0.52;
+// Mixamo monster + Kaykit brute + peasant + beasts — peaceful patrol outside SW north gate.
+const SW_GATE_SHOWCASE = [
+    { kind: "folk", folkShow: "mixamoMonster" },
+    { kind: "folk", folkShow: "bruteShowcase", showcaseBrute: true },
+    { kind: "folk", folkShow: "folkPeasantF" },
+    { kind: "beast", id: "bear", scale: 1.95 },
+    { kind: "beast", id: "rat", targetH: DOG_SIZE_H, at: 0.55 }
+];
+
+function makeShowcaseFolk(x, z, yaw, spec, slot) {
+    const folkShow = typeof spec === "string" ? spec : spec.folkShow;
+    const stand = Math.max(0, World.meshHeight(x, z));
+    return {
+        showcase: true,
+        folkShow: folkShow,
+        showcaseBrute: !!(spec && spec.showcaseBrute),
+        homeX: x,
+        homeZ: z,
+        homeYaw: yaw,
+        x: x,
+        z: z,
+        yaw: yaw,
+        stand: stand,
+        bob: 0,
+        swing: 0,
+        down: 0,
+        walking: true,
+        hidden: false,
+        index: slot || 0,
+        patrolT: (slot || 0) * 0.9
+    };
+}
+
+function bellyScaleFor(spec, mesh) {
+    if (spec.scale != null) return spec.scale;
+    if (!mesh || !mesh.spanY) return 1;
+    const at = spec.at != null ? spec.at : 0.7;
+    const target = spec.targetH != null ? spec.targetH : PLAYER_BELLY_H;
+    return target / (mesh.spanY * at);
+}
+
+function makeShowcaseBeast(x, z, yaw, spec, slot) {
+    const mesh = showcaseBeastMesh({ beastId: spec.id, meshSource: spec.source });
+    const beast = {
+        showcase: true,
+        horse: true,
+        beastId: spec.id,
+        meshSource: spec.source || "quaternius",
+        bodyScale: bellyScaleFor(spec, mesh),
+        homeX: x,
+        homeZ: z,
+        homeYaw: yaw,
+        x: x,
+        z: z,
+        yaw: yaw,
+        stand: 0,
+        bob: 0,
+        swing: 0,
+        down: 0,
+        walking: true,
+        phase: Math.random() * 6,
+        animPhase: 0,
+        pace: 0.6,
+        slowLegs: spec.id === "spider" || spec.id === "rat",
+        patrolT: (slot || 0) * 0.9
+    };
+    beast.stand = beastGround(beast, x, z);
+    return beast;
+}
+
+function stepGateShowcase(dt) {
+    if (homeVillage !== 2 || inside || !gateShowcase.length) return;
+    for (let i = 0; i < gateShowcase.length; i++) {
+        const entry = gateShowcase[i];
+        if (entry.homeX == null) {
+            entry.homeX = entry.x;
+            entry.homeZ = entry.z;
+            entry.homeYaw = entry.yaw;
+        }
+        entry.patrolT = (entry.patrolT || 0) + dt * (0.32 + i * 0.04);
+        const along = Math.sin(entry.patrolT) * SHOWCASE_PATROL_HALF;
+        const c = Math.cos(entry.homeYaw);
+        const s = Math.sin(entry.homeYaw);
+        entry.x = entry.homeX + c * along;
+        entry.z = entry.homeZ + s * along;
+        const movingForward = Math.cos(entry.patrolT) >= 0;
+        entry.yaw = entry.homeYaw + (movingForward ? 0 : Math.PI);
+        entry.walking = true;
+        entry.bob = Math.abs(Math.sin(entry.patrolT * 2.1)) * 0.035;
+        if (entry.folkShow === "mixamoMonster" || entry.folkShow === "bruteShowcase") {
+            entry.swing = Math.max(0, (entry.swing || 0) - dt * 1.4);
+            const punchPhase = entry.folkShow === "bruteShowcase" ? 0.58 : 0.65;
+            if (Math.sin(entry.patrolT * punchPhase) > 0.94 && entry.swing <= 0) entry.swing = 1;
+        }
+        if (entry.beastId) {
+            entry.animPhase = (entry.animPhase || 0) + dt * (entry.slowLegs ? 0.55 : 0.42);
+        }
+    }
+}
+
+function showcaseBeastMesh(beast) {
+    if (beast.beastId === "dragon") return dragonMesh;
+    if (beast.beastId === "horse") return horseMesh;
+    if (beast.beastId === "spider" && beast.meshSource === "game") return spiderMesh;
+    return showcaseCreatureMeshes[beast.beastId] || null;
+}
+
+function layoutSwNorthGateShowcase() {
+    if (homeVillage !== 2) return;
+    gateShowcase.length = 0;
+    const anchor = swNorthGateOutside(SW_GATE_SHOWCASE_OUT);
+    const specs = SW_GATE_SHOWCASE;
+    const x0 = anchor.x - ((specs.length - 1) * SW_GATE_SHOWCASE_STEP) / 2;
+    for (let i = 0; i < specs.length; i++) {
+        const spec = specs[i];
+        const x = x0 + i * SW_GATE_SHOWCASE_STEP;
+        const z = anchor.z + (i % 2 ? 0.4 : -0.4);
+        const yaw = anchor.yaw;
+        if (spec.kind === "folk") {
+            if (!folkMesh[spec.folkShow]) continue;
+            gateShowcase.push(makeShowcaseFolk(x, z, yaw, spec, i));
+        } else if (spec.kind === "beast") {
+            if (!showcaseBeastMesh({ beastId: spec.id, meshSource: spec.source })) continue;
+            gateShowcase.push(makeShowcaseBeast(x, z, yaw, spec, i));
+        }
+    }
+}
+
+function loadShowcaseCreature(id) {
+    const url = "models/creatures/" + id + "-0";
+    loadBeastMesh(url, (pack) => {
+        pack.walk = [1, Math.min(8, pack.frames - 1)];
+        if (id === "rat" || id === "spider") pack.slowLegs = true;
+        showcaseCreatureMeshes[id] = pack;
+        layoutSwNorthGateShowcase();
+    });
+}
+
+function initSwGateShowcaseMeshes() {
+    for (const spec of SW_GATE_SHOWCASE) {
+        if (spec.kind !== "beast") continue;
+        if (spec.id === "horse" || spec.id === "dragon" || (spec.id === "spider" && spec.source === "game")) continue;
+        loadShowcaseCreature(spec.id);
+    }
+}
+
+function drawGateShowcase(dark, proj) {
+    if (homeVillage !== 2 || inside || !gateShowcase.length) return;
+    const reach = 140 * 140;
+    gl.enable(gl.CULL_FACE);
+    gl.uniform1f(loc.dark, dark);
+    gl.uniform1f(loc.glow, 0);
+    gl.uniform1f(loc.band, 1);
+    gl.uniform1f(loc.flow, 0);
+    gl.uniform1f(loc.cut, 0);
+    gl.uniformMatrix4fv(loc.proj, false, proj);
+    gl.enableVertexAttribArray(loc.pos);
+    gl.enableVertexAttribArray(loc.uv);
+    gl.enableVertexAttribArray(loc.shade);
+    for (let i = 0; i < gateShowcase.length; i++) {
+        const entry = gateShowcase[i];
+        const dx = entry.x - cam.x;
+        const dz = entry.z - cam.z;
+        if (dx * dx + dz * dz > reach) continue;
+        if (entry.folkShow) {
+            const pack = folkMesh[entry.folkShow];
+            if (!pack) continue;
+            entry.stand = Math.max(0, World.meshHeight(entry.x, entry.z));
+            const frame = folkAnim(entry, pack);
+            folkModel.set(personMatrix(entry));
+            gl.uniformMatrix4fv(loc.model, false, folkModel);
+            const parts = pack.parts || [pack];
+            for (let p = 0; p < parts.length; p++) {
+                const part = parts[p];
+                gl.bindTexture(gl.TEXTURE_2D, part.tex);
+                gl.bindBuffer(gl.ARRAY_BUFFER, part.buffer);
+                gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 24, frame * part.count * 24);
+                gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, 24, frame * part.count * 24 + 12);
+                gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, 24, frame * part.count * 24 + 20);
+                gl.drawArrays(gl.TRIANGLES, 0, part.count);
+            }
+        } else if (entry.beastId) {
+            const mesh = showcaseBeastMesh(entry);
+            if (!mesh) continue;
+            entry.stand = beastGround(entry, entry.x, entry.z);
+            drawBeast(mesh, entry, () => {
+                if (!entry.walking || mesh.frames <= 1) return 0;
+                if (entry.slowLegs) return petAnimFrame(mesh, entry);
+                return beastAnimFrame(mesh, entry);
+            });
+        }
+    }
+    gl.uniformMatrix4fv(loc.model, false, identity);
+}
 
 const study = {
     x: cam.x + Math.sin(cam.yaw) * 3.2,
@@ -4918,6 +5365,10 @@ function loadStudy() {
 // Skip GLB study character — outdoors stay box people only.
 let horseMesh = null;
 let dragonMesh = null;
+let foxMesh = null;
+let eagleMesh = null;
+let snakeMesh = null;
+let horse2Mesh = null;
 let spiderMesh = null;
 let petMeshesReady = 0;
 
@@ -4957,35 +5408,84 @@ function parkHorseAtStorehouse() {
     horse.stand = beastGround(horse, horse.x, horse.z);
 }
 
-function spawnSwPetFollowers() {
-    petFollowers.length = 0;
-    if (homeVillage !== 2) return;
-    const ox = places[2].ox;
-    const oz = places[2].oz;
-    const make = (mesh, bodyScale, side, x, z) => ({
+function petBodyScale(mesh, targetHeight, at) {
+    const spanY = mesh.spanY || 1.4;
+    const belly = at != null ? at : 0.55;
+    return targetHeight / (spanY * belly);
+}
+
+function petSpawnSpot(dist, side) {
+    const feet = Math.max(0, World.meshHeight(cam.x, cam.z));
+    for (let tryI = 0; tryI < 10; tryI++) {
+        const yaw = cam.yaw + (side < 0 ? 0.35 : -0.35) + tryI * 0.55;
+        const x = cam.x - Math.sin(yaw) * dist;
+        const z = cam.z + Math.cos(yaw) * dist;
+        if (!blocked(x, z, homeVillage, feet)) return { x, z, yaw };
+    }
+    const yaw = cam.yaw + (side < 0 ? 0.35 : -0.35);
+    return {
+        x: cam.x - Math.sin(yaw) * dist,
+        z: cam.z + Math.cos(yaw) * dist,
+        yaw
+    };
+}
+
+function addPetFollower(spec) {
+    const mesh = spec.mesh;
+    if (!mesh) return null;
+    const dist = spec.dist != null ? spec.dist : 3;
+    const side = spec.side != null ? spec.side : 1;
+    const spot = petSpawnSpot(dist, side);
+    const pet = {
         horse: true,
-        follow: true,
-        mesh: mesh,
-        bodyScale: bodyScale,
-        side: side,
-        slowLegs: true,
-        x: x,
-        z: z,
-        yaw: 0,
-        stand: Math.max(0, World.meshHeight(x, z)),
+        mesh: spec.id,
+        bodyScale: petBodyScale(mesh, spec.targetH, spec.at),
+        x: spot.x,
+        z: spot.z,
+        yaw: spot.yaw,
+        stand: 0,
         bob: 0,
         swing: 0,
         down: 0,
         walking: false,
-        phase: 0,
+        phase: Math.random() * 6,
         animPhase: 0,
-        pace: 0
-    });
-    petFollowers.push(make("dragon", 1.55, -1.15, ox + 3, oz + 10));
-    petFollowers.push(make("spider", 0.68, 1.15, ox + 5, oz + 10));
+        pace: 0,
+        side: side,
+        slowLegs: !!spec.slowLegs,
+        canterFollow: !!spec.canterFollow,
+        floatY: spec.floatY || 0
+    };
+    pet.stand = beastGround(pet, pet.x, pet.z);
+    petFollowers.push(pet);
+    return pet;
+}
+
+const PET_FOLLOWER_SPECS = () => [
+    { id: "fox", mesh: foxMesh, targetH: 0.48, dist: 2.6, side: -1 },
+    { id: "snake", mesh: snakeMesh, targetH: 0.4, at: 0.35, dist: 3.2, side: 1, slowLegs: true },
+    { id: "eagle", mesh: eagleMesh, targetH: 0.5, dist: 4, side: -1, floatY: 0.35 },
+    { id: "horse2", mesh: horse2Mesh, targetH: 1.45, dist: 7.5, side: 1, canterFollow: true }
+];
+
+function spawnSwPetFollowers() {
+    if (homeVillage !== 2) {
+        layoutSwNorthGateShowcase();
+        return;
+    }
+    const have = new Set(petFollowers.map((p) => p.mesh));
+    for (const spec of PET_FOLLOWER_SPECS()) {
+        if (!spec.mesh || have.has(spec.id)) continue;
+        addPetFollower(spec);
+    }
+    layoutSwNorthGateShowcase();
 }
 
 function petMesh(pet) {
+    if (pet.mesh === "fox") return foxMesh;
+    if (pet.mesh === "eagle") return eagleMesh;
+    if (pet.mesh === "snake") return snakeMesh;
+    if (pet.mesh === "horse2") return horse2Mesh;
     if (pet.mesh === "dragon") return dragonMesh;
     if (pet.mesh === "spider") return spiderMesh;
     return null;
@@ -5002,23 +5502,54 @@ function buildBeasts() {
         horseMesh.walk = [1, 8];
         horseMesh.canter = [9, 16];
         parkHorseAtStorehouse();
+        layoutSwNorthGateShowcase();
     });
     loadBeastMesh("models/dragon/dragon-0", (pack) => {
         dragonMesh = pack;
         dragonMesh.walk = [1, 8];
         onPetMeshReady();
+        layoutSwNorthGateShowcase();
     });
     loadBeastMesh("models/spider/spider-0", (pack) => {
         spiderMesh = pack;
         spiderMesh.walk = [1, 8];
+        showcaseCreatureMeshes.spider = pack;
         onPetMeshReady();
+        layoutSwNorthGateShowcase();
     });
+    loadBeastMesh("models/creatures/fox-full-0", (pack) => {
+        foxMesh = pack;
+        foxMesh.walk = [1, 8];
+        if (pack.frames > 9) foxMesh.run = [9, Math.min(16, pack.frames - 1)];
+        spawnSwPetFollowers();
+    });
+    loadBeastMesh("models/creatures/eagle-0", (pack) => {
+        eagleMesh = pack;
+        eagleMesh.walk = [1, Math.min(8, pack.frames - 1)];
+        spawnSwPetFollowers();
+    });
+    loadBeastMesh("models/creatures/snake-0", (pack) => {
+        snakeMesh = pack;
+        snakeMesh.walk = [1, Math.min(8, pack.frames - 1)];
+        spawnSwPetFollowers();
+    });
+    loadBeastMesh("models/horse/horse2-0", (pack) => {
+        horse2Mesh = pack;
+        horse2Mesh.walk = [1, 8];
+        horse2Mesh.trot = [9, 16];
+        horse2Mesh.canter = [17, Math.min(24, pack.frames - 1)];
+        spawnSwPetFollowers();
+    });
+    initSwGateShowcaseMeshes();
 }
 
 function petAnimFrame(mesh, pet) {
     if (!mesh || !pet.walking) return 0;
-    const lo = mesh.walk[0];
-    const hi = mesh.walk[1];
+    let range = mesh.walk;
+    if (pet.canterFollow && pet.pace > 3.2 && mesh.canter) range = mesh.canter;
+    else if (pet.canterFollow && pet.pace > 2.4 && mesh.trot) range = mesh.trot;
+    const lo = range[0];
+    const hi = range[1];
     const span = hi - lo + 1;
     const step = Math.floor((pet.animPhase || 0) * span) % span;
     return lo + (step + span) % span;
@@ -5045,6 +5576,21 @@ function horseAnimFrame() {
     return lo + (step + span) % span;
 }
 
+function beastSpanYFromBin(buf) {
+    const view = new DataView(buf);
+    const count = view.getUint32(4, true);
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < count; i++) {
+        const y = view.getFloat32(8 + i * 24 + 4, true);
+        if (!Number.isFinite(y)) continue;
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+    }
+    if (!Number.isFinite(minY) || maxY <= minY) return 1.42;
+    return maxY - minY;
+}
+
 function loadBeastMesh(url, onReady) {
     const picture = new Image();
     picture.src = url + ".png";
@@ -5059,12 +5605,13 @@ function loadBeastMesh(url, onReady) {
         const view = new DataView(buf);
         const frames = view.getUint32(0, true);
         const count = view.getUint32(4, true);
+        const spanY = beastSpanYFromBin(buf);
         const buffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buf, 8), gl.STATIC_DRAW);
         const tex = gl.createTexture();
         uploadModelTexture(tex, img, false);
-        onReady({ buffer, frames, count, tex, walk: [1, Math.min(8, frames - 1)] });
+        onReady({ buffer, frames, count, tex, spanY, walk: [1, Math.min(8, frames - 1)] });
     }).catch(() => {});
 }
 
@@ -5133,6 +5680,7 @@ function stepFollowBeast(beast, dt, canterAt) {
             beast.z = spot.z;
             beast.walking = false;
             beast.yaw = Math.atan2(-(cam.x - beast.x), -(cam.z - beast.z));
+            beast.stuckT = 0;
         } else {
             const tooFar = playerDist > 6.8;
             const tooClose = playerDist < 2.8;
@@ -5154,7 +5702,7 @@ function stepFollowBeast(beast, dt, canterAt) {
                 beast.yaw = Math.atan2(-dx, -dz);
                 let speed = 2.2;
                 if (playerDist > 7.5) speed = Hero.walkSpeed(hero);
-                if (canterAt && playerDist > 16) speed = Hero.walkSpeed(hero) * 1.15;
+                if (canterAt && playerDist > 12) speed = Hero.walkSpeed(hero) * 1.12;
                 pace = speed;
                 const step = Math.min(speed * dt, dist - 0.25);
                 const ux = dx / dist;
@@ -5166,6 +5714,15 @@ function stepFollowBeast(beast, dt, canterAt) {
                 const oz = beast.z;
                 if (!blocked(nx, beast.z, homeVillage, feet)) beast.x = nx;
                 if (!blocked(beast.x, nz, homeVillage, feet)) beast.z = nz;
+                if (beast.x === ox && beast.z === oz) {
+                    beast.stuckT = (beast.stuckT || 0) + dt;
+                    if (beast.stuckT > 0.35 && beast.canterFollow) {
+                        const spot = followAnchor(beast);
+                        beast.x = spot.x;
+                        beast.z = spot.z;
+                        beast.stuckT = 0;
+                    }
+                } else beast.stuckT = 0;
                 if (beast.x === ox && beast.z === oz) {
                     const leftX = ox - uz * step;
                     const leftZ = oz + ux * step;
@@ -5216,7 +5773,9 @@ function stepHorse(dt) {
 
 function stepPetFollowers(dt) {
     if (homeVillage !== 2 || inside) return;
-    for (let i = 0; i < petFollowers.length; i++) stepFollowBeast(petFollowers[i], dt, false);
+    for (let i = 0; i < petFollowers.length; i++) {
+        stepFollowBeast(petFollowers[i], dt, !!petFollowers[i].canterFollow);
+    }
 }
 
 function drawHorse() {
@@ -8451,13 +9010,19 @@ function palisadeBox(village) {
     };
 }
 
-function gateSpot(village, side) {
+function gateSpot(village, side, out) {
     const box = palisadeBox(village);
-    const out = 1.6;
-    if (side === 0) return { x: box.cx, z: box.minZ - out };
-    if (side === 1) return { x: box.maxX + out, z: box.cz };
-    if (side === 2) return { x: box.cx, z: box.maxZ + out };
-    return { x: box.minX - out, z: box.cz };
+    const dist = out != null ? out : 1.6;
+    if (side === 0) return { x: box.cx, z: box.minZ - dist };
+    if (side === 1) return { x: box.maxX + dist, z: box.cz };
+    if (side === 2) return { x: box.cx, z: box.maxZ + dist };
+    return { x: box.minX - dist, z: box.cz };
+}
+
+/** Southwest palisade side 0 = north gate; stand this many metres outside the wall line. */
+function swNorthGateOutside(outMetres) {
+    const spot = gateSpot(2, 0, outMetres != null ? outMetres : 5);
+    return { x: spot.x, z: spot.z, yaw: Math.PI };
 }
 
 function gateCenter(village, side) {
@@ -8956,6 +9521,10 @@ function buildingsNear(x, z) {
             if (!Number.isFinite(b.minX) || !Number.isFinite(b.minZ)) continue;
             boxes.push({ x: b.minX, z: b.minZ, w: b.w, d: b.d, building: b });
         }
+        for (let i = 0; i < kitShells.length; i++) {
+            const k = kitShells[i];
+            boxes.push({ x: k.minX, z: k.minZ, w: k.w, d: k.d, building: k });
+        }
         townBuildGrid = boxGrid(boxes);
         townBuildGrid.source = list.length;
         townBuildGrid.count = list.length;
@@ -9396,6 +9965,23 @@ function bakeMini() {
         });
         ctx.stroke();
     }
+    if (World.editForests && World.editForests.length) {
+        ctx.fillStyle = "rgba(38, 92, 34, 0.42)";
+        ctx.strokeStyle = "rgba(28, 68, 26, 0.65)";
+        ctx.lineWidth = 1;
+        for (const patch of World.editForests) {
+            const fx = patch[0];
+            const fz = patch[1];
+            const fr = patch[2];
+            const p = point(fx, fz);
+            const rx = (fr / (miniX1 - miniX0)) * cols;
+            const ry = (fr / (miniZ1 - miniZ0)) * rows;
+            ctx.beginPath();
+            ctx.ellipse(p.x, p.y, Math.max(1.5, rx), Math.max(1.5, ry), 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+        }
+    }
 }
 
 function hayClearOfDoor(hx, hz, door, yaw) {
@@ -9753,6 +10339,7 @@ function draw() {
         drawMesh(outdoorDrawList[i], 1, dark, proj);
     }
     drawFolk(dark, proj);
+    drawGateShowcase(dark, proj);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthFunc(gl.LEQUAL);
@@ -9788,8 +10375,8 @@ function draw() {
     gl.depthFunc(gl.LESS);
     gl.disable(gl.BLEND);
     gl.uniform1f(loc.glow, 0);
-    drawMesh("farTrunk", 0.6, dark, proj);
-    drawMesh("farLeaf", 0.6, dark, proj);
+    drawMesh("farTrunk", 0.78, dark, proj);
+    drawMesh("farLeaf", 0.78, dark, proj);
     drawMesh("nearTrunk", 1, dark, proj);
     drawMesh("nearLeaf", 1, dark, proj);
     drawMesh("placeGhost", 1, dark, proj);
@@ -9907,7 +10494,11 @@ function hitsShell(b, x, z, r) {
     if (door) {
         const out = (x - door.x) * door.fx + (z - door.z) * door.fz;
         const lat = (x - door.x) * door.fz - (z - door.z) * door.fx;
-        if (Math.abs(lat) < 0.95 && out > -0.85 && out < 0.8) return false;
+        const open = (door.swing || 0) > 0.72;
+        const latLim = open ? 1.2 : 0.95;
+        const outBack = open ? -1.35 : -0.85;
+        const outFront = open ? 1.25 : 0.8;
+        if (Math.abs(lat) < latLim && out > outBack && out < outFront) return false;
     }
     const t = 0.34;
     if (z > minZ - r && z < minZ + t + r) return true;
@@ -11371,6 +11962,7 @@ function frame(now) {
     movePlayer(dt);
     stepHorse(dt);
     stepPetFollowers(dt);
+    stepGateShowcase(dt);
     swingDoors(dt);
     updateFocusTown();
     maybeRemeshLand();

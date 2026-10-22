@@ -109,6 +109,28 @@ function lerp(a, b, t, n) {
     return out;
 }
 
+function nodeIndexByName(json) {
+    const map = new Map();
+    json.nodes.forEach((node, index) => {
+        if (node.name) map.set(node.name, index);
+    });
+    return map;
+}
+
+/** Apply animation from a sibling GLB (often mesh-less) onto the base rig by joint name. */
+function sampleAnimRemapped(baseJson, animJson, animBin, animName, time) {
+    const animPose = sampleAnim(animJson, animBin, animName, time);
+    const baseByName = nodeIndexByName(baseJson);
+    const animNodes = animJson.nodes;
+    const remapped = new Map();
+    for (const [animIndex, tracks] of animPose) {
+        const name = animNodes[animIndex] && animNodes[animIndex].name;
+        if (!name || !baseByName.has(name)) continue;
+        remapped.set(baseByName.get(name), tracks);
+    }
+    return remapped;
+}
+
 function sampleAnim(json, bin, name, time) {
     const anim = json.animations.find((item) => item.name === name);
     const cache = [];
@@ -418,6 +440,25 @@ function sampleClip(file, steps) {
     return { json, bin, sampled };
 }
 
+function sampleClipOnBase(baseFile, animFile, steps) {
+    const base = loadGlb(baseFile);
+    const animDoc = loadGlb(animFile);
+    const anim = animDoc.json.animations[0];
+    if (!anim) throw new Error("No animation in " + animFile);
+    let duration = 0.0001;
+    for (const sampler of anim.samplers) {
+        const times = accessor(animDoc.json, animDoc.bin, sampler.input);
+        duration = Math.max(duration, times[times.length - 1]);
+    }
+    const sampled = [];
+    for (let i = 0; i < steps; i++) {
+        const along = steps === 1 ? 0.5 : (i + 0.5) / steps;
+        const pose = sampleAnimRemapped(base.json, animDoc.json, animDoc.bin, anim.name, duration * along);
+        sampled.push(bakeSkinned(base.json, base.bin, pose));
+    }
+    return { json: base.json, bin: base.bin, sampled };
+}
+
 function sampleNamed(json, bin, animName, steps) {
     const anim = json.animations.find((item) => item.name === animName);
     if (!anim) throw new Error("Animation not found: " + animName);
@@ -474,13 +515,14 @@ function writeClip(sampled, json, bin, stem, centerIndex, feetFromAll, outDir, a
     const dir = outDir || path.join("models", "kaykit");
     const mats = [...sampled[0].keys()];
     const partFrames = mats.map((mat) => sampled.map((frame) => frame.get(mat)));
+    const outKey = outDir ? String(outDir).replace(/\\/g, "/") : "";
     if (
-        outDir &&
-        (outDir.includes("horse") ||
-            outDir.includes("cow") ||
-            outDir.includes("dragon") ||
-            outDir.includes("spider") ||
-            outDir.includes("creatures"))
+        outKey &&
+        (outKey.includes("horse") ||
+            outKey.includes("cow") ||
+            outKey.includes("dragon") ||
+            outKey.includes("spider") ||
+            outKey.includes("creatures"))
     )
         fitHorse(partFrames);
     else fitTogether(partFrames, centerIndex, feetFromAll);
@@ -614,6 +656,17 @@ if (process.argv[2] === "mixamo") {
     const { json, bin, dir } = loadGltf(file);
     const sampled = [bakeSkinned(json, bin, new Map())];
     writeClip(sampled, json, bin, "peasant", 0, true, path.join("models", "kaykit"), dir);
+} else if (process.argv[2] === "mixamo-monster") {
+    const idle = sampleClip(path.join("models", "monster-idle.glb"), 1);
+    const walk = sampleClip(path.join("models", "monster-walk.glb"), 8);
+    const hook = sampleClip(path.join("models", "monster-hook.glb"), 6);
+    const sampled = idle.sampled.concat(walk.sampled, hook.sampled);
+    writeClip(sampled, idle.json, idle.bin, "mixamo-monster", 0, true);
+} else if (process.argv[2] === "mixamo-godwin") {
+    const idle = sampleClip(path.join("models", "kaykit", "godwin-idle.glb"), 1);
+    const walk = sampleClip(path.join("models", "kaykit", "godwin-walk.glb"), 8);
+    const sampled = idle.sampled.concat(walk.sampled);
+    writeClip(sampled, idle.json, idle.bin, "mixamo-godwin", 0, true);
 } else if (process.argv[2] === "mixamo-peasant") {
     const idle = sampleClip(path.join("models", "kaykit", "mixamo-idle.glb"), 1);
     const walk = sampleClip(path.join("models", "kaykit", "mixamo-walk.glb"), 8);
@@ -633,6 +686,35 @@ if (process.argv[2] === "mixamo") {
     const { json, bin, dir } = loadGltf(file);
     const sampled = [bakeSkinned(json, bin, new Map())];
     writeClip(sampled, json, bin, "outfit-innkeeper", 0, true, path.join("models", "kaykit"), dir);
+} else if (process.argv[2] === "outfit-female-peasant") {
+    const file = path.join(
+        "models",
+        "modular-outfits",
+        "Modular Character Outfits - Fantasy[Standard]",
+        "Exports",
+        "glTF (Godot-Unreal)",
+        "Outfits",
+        "Female_Peasant.gltf"
+    );
+    const female = loadGltf(file);
+    const human = loadGlb(path.join("models", "kaykit", "generic-human.glb"));
+    const idle = [bakeSkinned(female.json, female.bin, new Map())];
+    let duration = 0.0001;
+    const walkAnim = (human.json.animations || []).find((a) => a.name === "Walk");
+    if (walkAnim) {
+        for (const sampler of walkAnim.samplers) {
+            const times = accessor(human.json, human.bin, sampler.input);
+            duration = Math.max(duration, times[times.length - 1]);
+        }
+    }
+    const walkSampled = [];
+    for (let i = 0; i < 8; i++) {
+        const along = (i + 0.5) / 8;
+        const pose = sampleAnim(human.json, human.bin, "Walk", duration * along);
+        walkSampled.push(bakeSkinned(female.json, female.bin, pose));
+    }
+    const sampled = idle.concat(walkSampled);
+    writeClip(sampled, female.json, female.bin, "outfit-female-peasant", 0, true, path.join("models", "kaykit"), female.dir);
 } else if (process.argv[2] === "medieval-commander") {
     const file = path.join("models", "kaykit", "medieval-commander.glb");
     const { json, bin } = loadGlb(file);
@@ -655,6 +737,25 @@ if (process.argv[2] === "mixamo") {
     const rest = bakeSkinned(json, bin, new Map());
     const sampled = [rest, rest, rest, rest, rest, rest, rest, rest, rest];
     writeClip(sampled, json, bin, id, 0, true, path.join("models", "creatures"));
+} else if (process.argv[2] && process.argv[2].startsWith("creature-pair-")) {
+    const id = process.argv[2].slice("creature-pair-".length);
+    const dir = path.join("models", "creatures", "_glb");
+    const baseGlb = path.join(dir, id + "-base.glb");
+    const idleGlb = path.join(dir, id + "-idle.glb");
+    const moveGlb = path.join(dir, id + "-move.glb");
+    const idle = sampleClipOnBase(baseGlb, fs.existsSync(idleGlb) ? idleGlb : moveGlb, 1);
+    const walk = sampleClipOnBase(baseGlb, moveGlb, 8);
+    writeClip(idle.sampled.concat(walk.sampled), idle.json, idle.bin, id, 0, true, path.join("models", "creatures"));
+} else if (process.argv[2] && process.argv[2].startsWith("creature-quad-")) {
+    const id = process.argv[2].slice("creature-quad-".length);
+    const dir = path.join("models", "creatures", "_glb");
+    const idle = sampleClip(path.join(dir, id + "-idle.glb"), 1);
+    const walk = sampleClip(path.join(dir, id + "-move.glb"), 8);
+    if (idle.sampled[0].length !== walk.sampled[0].length) {
+        throw new Error(id + " idle/move vertex mismatch — re-export Quaternius clips");
+    }
+    const sampled = idle.sampled.concat(walk.sampled);
+    writeClip(sampled, idle.json, idle.bin, id, 0, true, path.join("models", "creatures"));
 } else if (process.argv[2] && process.argv[2].startsWith("creature-")) {
     const id = process.argv[2].slice("creature-".length);
     const mergedGlb = path.join("models", "creatures", "_glb", id + "-merged.glb");
@@ -677,6 +778,45 @@ if (process.argv[2] === "mixamo") {
     });
     console.log("parts", names.join(", "), "center", names[center]);
     writeClip(sampled, idle.json, idle.bin, "archer", center, true);
+} else if (process.argv[2] === "fox" || process.argv[2] === "fox-full") {
+    const file = path.join("models", "fox full.glb");
+    const { json, bin } = loadGlb(file);
+    const names = (json.animations || []).map((a) => a.name);
+    console.log("animations", names.join(", "));
+    const idle = sampleNamed(json, bin, "Idle", 1);
+    const walk = sampleNamed(json, bin, "Walk", 8);
+    const run = names.includes("Run") ? sampleNamed(json, bin, "Run", 8) : [];
+    const sampled = idle.concat(walk, run);
+    writeClip(sampled, json, bin, "fox-full", 0, true, path.join("models", "creatures"));
+} else if (process.argv[2] === "eagle") {
+    const file = path.join("models", "egle.glb");
+    const { json, bin } = loadGlb(file);
+    const names = (json.animations || []).map((a) => a.name);
+    console.log("animations", names.join(", "));
+    const idle = sampleNamed(json, bin, "Idle", 1);
+    const move = sampleNamed(json, bin, names.includes("Walk") ? "Walk" : "Flap", 8);
+    const sampled = idle.concat(move);
+    writeClip(sampled, json, bin, "eagle", 0, true, path.join("models", "creatures"));
+} else if (process.argv[2] === "snake") {
+    const file = path.join("models", "snake.glb");
+    const { json, bin } = loadGlb(file);
+    const names = (json.animations || []).map((a) => a.name);
+    console.log("animations", names.join(", "));
+    const idle = sampleNamed(json, bin, "Idle", 1);
+    const move = sampleNamed(json, bin, names.includes("Side_winding") ? "Side_winding" : "Idle", 8);
+    const sampled = idle.concat(move);
+    writeClip(sampled, json, bin, "snake", 0, true, path.join("models", "creatures"));
+} else if (process.argv[2] === "horse2") {
+    const file = path.join("models", "horse.glb");
+    const { json, bin } = loadGlb(file);
+    const names = (json.animations || []).map((a) => a.name);
+    console.log("animations", names.join(", "));
+    const idle = sampleNamed(json, bin, "Idle", 1);
+    const walk = sampleNamed(json, bin, "Walk", 8);
+    const trot = sampleNamed(json, bin, "Trot", 8);
+    const run = names.includes("Run") ? sampleNamed(json, bin, "Run", 8) : [];
+    const sampled = idle.concat(walk, trot, run);
+    writeClip(sampled, json, bin, "horse2", 0, true, path.join("models", "horse"));
 } else {
     const dir = path.join("models", "kaykit");
     bake(path.join(dir, "Knight.glb"), path.join(dir, "knight.bin"), path.join(dir, "knight.png"));

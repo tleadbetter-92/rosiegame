@@ -125,6 +125,7 @@
 <body>
     <div id="ui">
         <h3>Terrain Editor</h3>
+        <p style="font-size:11px;color:#666;margin:-8px 0 12px;line-height:1.35;">Open via repo root: <code style="font-size:10px;">npm run serve:editors</code> then <code style="font-size:10px;">localhost:8080/tools/terrain-editor/Terrain-editor.html</code> (or <code style="font-size:10px;">npm run dev</code> on :5173 — same paths).</p>
         <div class="control-group">
             <label for="brushSize">Brush Radius: <span id="brushSizeVal">5</span></label>
             <input type="range" id="brushSize" min="1" max="25" step="0.5" value="5">
@@ -147,11 +148,22 @@
         <div class="control-group">
             <label>Nature Tools (Shift+Click):</label>
             <div class="radio-row">
-                <label><input type="radio" name="brushMode" value="tree"> Tree <span id="treeBadge" class="loading-badge">...</span></label>
+                <label><input type="radio" name="brushMode" value="tree"> Tree (one 3D tree) <span id="treeBadge" class="loading-badge">...</span></label>
                 <label><input type="radio" name="brushMode" value="grass"> Grass <span id="grassBadge" class="loading-badge">...</span></label>
                 <label><input type="radio" name="brushMode" value="rock"> Rock <span id="rockBadge" class="loading-badge">...</span></label>
+                <label><input type="radio" name="brushMode" value="pebble"> Pebble <span id="pebbleBadge" class="loading-badge">...</span></label>
+                <label><input type="radio" name="brushMode" value="bush"> Bush <span id="bushBadge" class="loading-badge">...</span></label>
+                <label><input type="radio" name="brushMode" value="plant"> Plant <span id="plantBadge" class="loading-badge">...</span></label>
+            </div>
+            <div class="radio-row" style="margin-top:6px;">
+                <span style="font-size:12px;color:#555;width:100%;">Tree pack (Shift+click):</span>
+                <label><input type="radio" name="treeSource" value="megakit" checked> Quaternius kit</label>
+                <label><input type="radio" name="treeSource" value="deciduous"> Deciduous GLB</label>
+                <label><input type="radio" name="treeSource" value="mixed"> Mixed</label>
+            </div>
+            <div class="radio-row">
                 <label><input type="radio" name="brushMode" value="water"> Water</label>
-                <label><input type="radio" name="brushMode" value="forest"> Forest</label>
+                <label><input type="radio" name="brushMode" value="forest"> Forest zone (green marker → game woodland + minimap)</label>
                 <label><input type="radio" name="brushMode" value="path"> Dirt path</label>
                 <label><input type="radio" name="brushMode" value="road"> Stone road</label>
                 <label><input type="radio" name="brushMode" value="cliff"> Cliff</label>
@@ -648,19 +660,20 @@
               return terrains.some(t => t.gx === gx && t.gz === gz);
           }
 
-          // 3. Load Nature Assets
+          // 3. Load Nature Assets (local Quaternius Nature MegaKit + deciduous GLB pack)
         const loader = new GLTFLoader();
         window.grassModel = null;
         window.rockModel = null;
-        window.treeGltf = null;
+        window.natureReady = false;
+        window.natureManifest = null;
+        window.natureScenes = {};
         window.customModel = null;
-        
+
         const mixers = [];
         const clock = new THREE.Clock();
         const placedObjects = [];
         const lastPlacedPosition = new THREE.Vector3(9999, 9999, 9999);
 
-        // Utility to fix materials so they don't appear black
         function fixMaterials(model) {
             model.traverse(c => {
                 if (c.isMesh) {
@@ -675,36 +688,131 @@
             });
         }
 
-        loader.load('https://raw.githubusercontent.com/Ren23447/Rotstorm-FPS/main/grass.glb', (gltf) => {
-            window.grassModel = gltf.scene;
-            fixMaterials(window.grassModel);
-            const badge = document.getElementById('grassBadge');
-            badge.textContent = 'OK';
-            badge.classList.replace('loading-badge', 'loaded-badge');
-        });
+        function natureAssetUrl(kind, id) {
+            const m = window.natureManifest;
+            if (kind === 'deciduous') return m.deciduousGlbBase + encodeURIComponent(id) + '.glb';
+            return m.megakitGltfBase + encodeURIComponent(id) + '.gltf';
+        }
 
-        loader.load('https://raw.githubusercontent.com/Ren23447/Rotstorm-FPS/main/rock.glb', (gltf) => {
-            window.rockModel = gltf.scene;
-            fixMaterials(window.rockModel);
-            // Rocks can be slightly metallic
-            window.rockModel.traverse(c => {
-                if (c.isMesh && c.material) {
-                    c.material.metalness = 0.2;
-                    c.material.roughness = 0.8;
-                }
+        function loadNatureScene(kind, id) {
+            const key = kind + ':' + id;
+            if (window.natureScenes[key]) return Promise.resolve(window.natureScenes[key]);
+            return new Promise((resolve, reject) => {
+                loader.load(natureAssetUrl(kind, id), (gltf) => {
+                    fixMaterials(gltf.scene);
+                    window.natureScenes[key] = gltf.scene;
+                    resolve(gltf.scene);
+                }, undefined, reject);
             });
-            const badge = document.getElementById('rockBadge');
-            badge.textContent = 'OK';
-            badge.classList.replace('loading-badge', 'loaded-badge');
-        });
+        }
 
-        loader.load('https://raw.githubusercontent.com/Ren23447/Rotstorm-FPS/main/tree_animate.glb', (gltf) => {
-            window.treeGltf = gltf;
-            fixMaterials(window.treeGltf.scene);
-            const badge = document.getElementById('treeBadge');
-            badge.textContent = 'OK';
-            badge.classList.replace('loading-badge', 'loaded-badge');
-        });
+        function treeSourceMode() {
+            const el = document.querySelector('input[name=treeSource]:checked');
+            return el ? el.value : 'megakit';
+        }
+
+        function pickTreeId() {
+            const m = window.natureManifest;
+            const mode = treeSourceMode();
+            let kind = 'megakit';
+            let pool = m.trees.filter((id) => !id.startsWith('DeadTree'));
+            if (mode === 'deciduous') {
+                kind = 'deciduous';
+                pool = m.deciduous;
+            } else if (mode === 'mixed') {
+                if (Math.random() < 0.35 && m.deciduous.length) {
+                    kind = 'deciduous';
+                    pool = m.deciduous;
+                }
+            }
+            const id = pool[Math.floor(Math.random() * pool.length)];
+            return { kind, id };
+        }
+
+        function cloneNatureTree(spec) {
+            const key = spec.kind + ':' + spec.id;
+            const root = window.natureScenes[key];
+            if (!root) return null;
+            return SkeletonUtils.clone(root);
+        }
+
+        function parseNatureUrl(url) {
+            if (!url || url.indexOf(':') < 0) return null;
+            const i = url.indexOf(':');
+            return { kind: url.slice(0, i), id: url.slice(i + 1) };
+        }
+
+        function cloneFromNatureUrl(url) {
+            const spec = parseNatureUrl(url);
+            return spec ? cloneNatureTree(spec) : null;
+        }
+
+        function scaleNatureClone(clone, type, url) {
+            const scale = 0.8 + Math.random() * 0.4;
+            if (type === 'tree' && url && url.startsWith('deciduous:')) {
+                clone.scale.setScalar(scale * 0.22);
+            } else {
+                clone.scale.set(scale, scale, scale);
+            }
+        }
+
+        function setBadge(id, text, ok) {
+            const badge = document.getElementById(id);
+            if (!badge) return;
+            badge.textContent = text;
+            badge.classList.remove('loading-badge', 'loaded-badge');
+            badge.classList.add(ok ? 'loaded-badge' : 'loading-badge');
+        }
+
+        async function initNatureAssets() {
+            try {
+                const res = await fetch('./nature-manifest.json');
+                window.natureManifest = await res.json();
+            } catch (err) {
+                console.error(err);
+                setBadge('treeBadge', 'no manifest', false);
+                return;
+            }
+            const m = window.natureManifest;
+            const todo = [];
+            for (const id of m.trees) todo.push(loadNatureScene('megakit', id));
+            for (const id of m.deciduous) todo.push(loadNatureScene('deciduous', id));
+            for (const id of m.grass) todo.push(loadNatureScene('megakit', id));
+            for (const id of m.rocks) todo.push(loadNatureScene('megakit', id));
+            for (const id of (m.bushes || [])) todo.push(loadNatureScene('megakit', id));
+            for (const id of (m.plants || [])) todo.push(loadNatureScene('megakit', id));
+            for (const id of (m.pebbles || [])) todo.push(loadNatureScene('megakit', id));
+            let done = 0;
+            const total = todo.length;
+            setBadge('treeBadge', '0/' + total, false);
+            await Promise.all(todo.map((p) => p.then(() => {
+                done++;
+                if (done % 4 === 0 || done === total) setBadge('treeBadge', done + '/' + total, done === total);
+            })));
+            window.grassModel = window.natureScenes['megakit:' + m.grass[0]] || null;
+            window.rockModel = window.natureScenes['megakit:' + m.rocks[0]] || null;
+            window.natureReady = !!(window.grassModel && window.rockModel && m.trees.length);
+            setBadge('treeBadge', m.trees.length + '+' + m.deciduous.length, true);
+            setBadge('grassBadge', 'OK', true);
+            setBadge('rockBadge', m.rocks.length + ' kinds', true);
+            setBadge('pebbleBadge', (m.pebbles || []).length ? 'OK' : '—', !!(m.pebbles || []).length);
+            setBadge('bushBadge', (m.bushes || []).length ? 'OK' : '—', !!(m.bushes || []).length);
+            setBadge('plantBadge', (m.plants || []).length ? 'OK' : '—', !!(m.plants || []).length);
+        }
+
+        function pickFromPool(pool) {
+            if (!pool || !pool.length) return null;
+            const id = pool[Math.floor(Math.random() * pool.length)];
+            return { kind: 'megakit', id };
+        }
+
+        function cloneFromPool(pool) {
+            const spec = pickFromPool(pool);
+            if (!spec) return { clone: null, url: null };
+            const clone = cloneNatureTree(spec);
+            return { clone, url: spec.kind + ':' + spec.id };
+        }
+        initNatureAssets();
 
         document.getElementById('loadCustomGlbBtn').addEventListener('click', () => {
             const url = document.getElementById('customGlbUrl').value;
@@ -901,18 +1009,8 @@
                         });
                         clone = new THREE.Mesh(geom, mat);
                         clone.castShadow = true; clone.receiveShadow = true;
-                    } else if (originalData.type === 'tree' && window.treeGltf) {
-                        clone = SkeletonUtils.clone(window.treeGltf.scene);
-                        if (originalData.visibleChildIndex !== -1 && originalData.visibleChildIndex !== undefined) {
-                            const children = clone.children.filter(c => c.isMesh || c.isGroup || c.type === 'Object3D');
-                            children.forEach((c, i) => { if (i !== originalData.visibleChildIndex) c.visible = false; });
-                        }
-                        if (window.treeGltf.animations && window.treeGltf.animations.length > 0) {
-                            const mixer = new THREE.AnimationMixer(clone);
-                            window.treeGltf.animations.forEach(clip => mixer.clipAction(clip).play());
-                            mixer.setTime(Math.random() * 10);
-                            mixers.push(mixer);
-                        }
+                    } else if (originalData.type === 'tree' && window.natureReady) {
+                        clone = originalData.url ? cloneFromNatureUrl(originalData.url) : cloneNatureTree(pickTreeId());
                     } else if (originalData.type === 'grass' && window.grassModel) {
                         clone = SkeletonUtils.clone(window.grassModel);
                     } else if (originalData.type === 'rock' && window.rockModel) {
@@ -1195,8 +1293,28 @@
 
             if (type === 'grass' && window.grassModel) {
                 clone = SkeletonUtils.clone(window.grassModel);
-            } else if (type === 'rock' && window.rockModel) {
-                clone = SkeletonUtils.clone(window.rockModel);
+                const gids = window.natureManifest.grass;
+                if (gids && gids.length > 1) {
+                    const gid = gids[Math.floor(Math.random() * gids.length)];
+                    const alt = window.natureScenes['megakit:' + gid];
+                    if (alt) clone = SkeletonUtils.clone(alt);
+                }
+            } else if (type === 'rock' && window.natureReady) {
+                const picked = cloneFromPool(window.natureManifest.rocks);
+                clone = picked.clone;
+                objUrl = picked.url;
+            } else if (type === 'pebble' && window.natureReady) {
+                const picked = cloneFromPool(window.natureManifest.pebbles);
+                clone = picked.clone;
+                objUrl = picked.url;
+            } else if (type === 'bush' && window.natureReady) {
+                const picked = cloneFromPool(window.natureManifest.bushes);
+                clone = picked.clone;
+                objUrl = picked.url;
+            } else if (type === 'plant' && window.natureReady) {
+                const picked = cloneFromPool(window.natureManifest.plants);
+                clone = picked.clone;
+                objUrl = picked.url;
             } else if (type === 'water') {
                 const sim = new WaterSim(6, 12);
                 scene.add(sim.mesh);
@@ -1206,23 +1324,10 @@
                 clone = markerMesh(type);
             } else if (groundColors[type]) {
                 clone = groundMesh(type);
-            } else if (type === 'tree' && window.treeGltf) {
-                clone = SkeletonUtils.clone(window.treeGltf.scene);
-                
-                const children = clone.children.filter(c => c.isMesh || c.isGroup || c.type === 'Object3D');
-                if (children.length > 1) {
-                    visibleChildIndex = Math.floor(Math.random() * children.length);
-                    children.forEach((c, i) => {
-                        if (i !== visibleChildIndex) c.visible = false;
-                    });
-                }
-
-                if (window.treeGltf.animations.length > 0) {
-                    const mixer = new THREE.AnimationMixer(clone);
-                    window.treeGltf.animations.forEach(clip => mixer.clipAction(clip).play());
-                    mixer.setTime(Math.random() * 10); 
-                    mixers.push(mixer);
-                }
+            } else if (type === 'tree' && window.natureReady) {
+                const spec = pickTreeId();
+                clone = cloneNatureTree(spec);
+                if (clone) objUrl = spec.kind + ':' + spec.id;
             } else if (['cube', 'sphere', 'cone', 'cylinder'].includes(type)) {
                 let geom;
                 if (type === 'cube') geom = new THREE.BoxGeometry(2, 2, 2);
@@ -1251,9 +1356,9 @@
                 else if (type === 'sphere') clone.position.y += 1.2;
 
                 clone.rotation.y = Math.random() * Math.PI * 2;
-                const scale = 0.8 + Math.random() * 0.4;
-                clone.scale.set(scale, scale, scale);
                 if (groundColors[type]) clone.scale.set(brushSize, 1, brushSize);
+                else if (type === 'forest') clone.scale.set(brushSize / 3, 1, brushSize / 3);
+                else scaleNatureClone(clone, type, objUrl);
                 
                 scene.add(clone);
                 lastPlacedPosition.copy(point);
@@ -1358,7 +1463,7 @@
 
         // 7. Load Logic
         function checkModelsLoaded() {
-            return window.grassModel && window.rockModel && window.treeGltf;
+            return window.natureReady;
         }
 
         function loadSceneFromJS(code) {
@@ -1418,18 +1523,8 @@
                               const mat = new THREE.MeshStandardMaterial({color: data.color !== undefined ? data.color : 0x888888, roughness: 0.6, metalness: 0.1});
                               clone = new THREE.Mesh(geom, mat);
                               clone.castShadow = true; clone.receiveShadow = true;
-                          } else if (data.type === 'tree' && window.treeGltf) {
-                              clone = SkeletonUtils.clone(window.treeGltf.scene);
-                              if (data.vi !== -1 && data.vi !== undefined) {
-                                  const children = clone.children.filter(c => c.isMesh || c.isGroup || c.type === 'Object3D');
-                                  children.forEach((c, i) => { if (i !== data.vi) c.visible = false; });
-                              }
-                              if (window.treeGltf.animations && window.treeGltf.animations.length > 0) {
-                                  const mixer = new THREE.AnimationMixer(clone);
-                                  window.treeGltf.animations.forEach(clip => mixer.clipAction(clip).play());
-                                  mixer.setTime(Math.random() * 10);
-                                  mixers.push(mixer);
-                              }
+                          } else if (data.type === 'tree' && window.natureReady) {
+                              clone = data.url ? cloneFromNatureUrl(data.url) : cloneNatureTree(pickTreeId());
                           } else if (data.type === 'water') {
                               const sim = new WaterSim(6, 12);
                               waterSims.push(sim);

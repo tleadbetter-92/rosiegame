@@ -28,6 +28,16 @@
         </div>
     </header>
     <p class="lead">You are the Southwest campaign player. Place a farm, lumberyard, or mine, select it, and grow workers there. They stay at that building. A farm holds 4. A mine or lumberyard holds 100. End your turn when you are finished.</p>
+    <section class="sheet roster-sheet">
+        <h2>Game assets (keep list)</h2>
+        <p class="roster-lead">Characters and creatures we are keeping for Rosiegame — Southwest experiments use these meshes first.</p>
+        <div class="scroll">
+            <table id="asset-roster">
+                <thead><tr><th>Name</th><th>Pack id</th><th>Status</th><th>In game</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </section>
     <section class="sheet place-sheet">
         <h2>Place a building</h2>
         <div class="kinds" id="kinds"></div>
@@ -103,6 +113,7 @@
     </section>
     <script src="world-edit.js"></script>
     <script src="world.js"></script>
+    <script src="asset-roster.js"></script>
     <script src="campaign.js"></script>
     <script src="board.js"></script>
 </body>

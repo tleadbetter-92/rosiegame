@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const src = path.join(__dirname, "..", "art", "medieval-village", "glTF");
+const src = path.join(__dirname, "..", "models", "village-megakit", "glTF");
 const outDir = path.join(__dirname, "..", "models");
 const names = {
     "T_Plaster_BaseColor.png": "plaster",

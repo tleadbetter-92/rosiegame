@@ -127,6 +127,7 @@ for (const p of building.pieces) {
     maxX = Math.max(maxX, p.x);
     minZ = Math.min(minZ, p.z);
     maxZ = Math.max(maxZ, p.z);
+    if (p.id.startsWith("Door_")) continue;
     addPiece(groups, p.id, p.x, p.y || 0, p.z, p.yaw || 0);
 }
 
@@ -143,6 +144,128 @@ for (const [mat, list] of Object.entries(groups)) {
     console.log(outName + "-" + mat + ".bin", list.length / 6, "verts");
 }
 fs.writeFileSync(path.join(outDir, outName + ".meta.json"), JSON.stringify(meta, null, 2));
+
+const STOREY = 3.05;
+const WALL_T = 0.36;
+
+function wallAlongX(yaw) {
+    return Math.abs(Math.cos(yaw)) >= Math.abs(Math.sin(yaw));
+}
+
+function wallBox(p) {
+    const yaw = p.yaw || 0;
+    const alongX = wallAlongX(yaw);
+    const len = 2;
+    const w = alongX ? len : WALL_T;
+    const d = alongX ? WALL_T : len;
+    return {
+        x: p.x - w / 2,
+        z: p.z - d / 2,
+        w,
+        d,
+        y0: p.y || 0,
+        y1: (p.y || 0) + STOREY,
+        stair: false
+    };
+}
+
+function stairBoxes(p) {
+    const yaw = p.yaw || 0;
+    const alongX = wallAlongX(yaw);
+    const len = 1.9;
+    const w = alongX ? len : 1.35;
+    const d = alongX ? 1.35 : len;
+    const x = p.x - w / 2;
+    const z = p.z - d / 2;
+    const y0 = p.y || 0;
+    const solids = [{ x, z, w, d, y0, y1: y0 + STOREY, stair: true }];
+    const floors = [];
+    const steps = 5;
+    for (let i = 0; i < steps; i++) {
+        const py = y0 + ((i + 1) / steps) * STOREY;
+        const run = d / steps;
+        floors.push({
+            x,
+            z: z + (alongX ? 0 : i * run),
+            w: alongX ? w / steps : w,
+            d: alongX ? d : run,
+            y: py - 0.08,
+            stair: true
+        });
+    }
+    floors.push({ x, z, w, d, y: y0 + STOREY, stair: false });
+    return { solids, floors };
+}
+
+function physicsFromPieces(pieces) {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    let maxY = 0;
+    const solids = [];
+    const floors = [];
+    let doorAnchor = null;
+
+    for (const p of pieces) {
+        const id = p.id;
+        minX = Math.min(minX, p.x);
+        maxX = Math.max(maxX, p.x);
+        minZ = Math.min(minZ, p.z);
+        maxZ = Math.max(maxZ, p.z);
+        maxY = Math.max(maxY, (p.y || 0) + STOREY);
+        if (id.startsWith("Wall_")) {
+            if (id.includes("_Door_")) {
+                doorAnchor = p;
+                continue;
+            }
+            solids.push(wallBox(p));
+        } else if (id.startsWith("DoorFrame_")) {
+            if (!doorAnchor) doorAnchor = p;
+        } else if (id.startsWith("Stair")) {
+            const stair = stairBoxes(p);
+            solids.push(...stair.solids);
+            floors.push(...stair.floors);
+        }
+    }
+
+    const shell = {
+        minX: minX - 1,
+        minZ: minZ - 1,
+        w: maxX - minX + 2,
+        d: maxZ - minZ + 2,
+        y0: 0,
+        h: maxY
+    };
+    const doors = [];
+    if (doorAnchor) {
+        const yaw = doorAnchor.yaw || 0;
+        const s = Math.sin(yaw);
+        const c = Math.cos(yaw);
+        doors.push({
+            x: doorAnchor.x,
+            z: doorAnchor.z,
+            y: doorAnchor.y || 0,
+            fx: -s,
+            fz: -c,
+            yaw,
+            wide: 0.56
+        });
+    }
+    floors.push({
+        x: shell.minX + 0.45,
+        z: shell.minZ + 0.45,
+        w: Math.max(1.2, shell.w - 0.9),
+        d: Math.max(1.2, shell.d - 0.9),
+        y: 0.06,
+        stair: false
+    });
+    return { cx, cz, shell, solids, floors, doors };
+}
+
+const physics = physicsFromPieces(building.pieces);
+fs.writeFileSync(path.join(outDir, outName + ".physics.json"), JSON.stringify(physics, null, 2));
+console.log(outName + ".physics.json", "solids", physics.solids.length, "doors", physics.doors.length);
 
 const texOut = path.join(__dirname, "..", "models");
 for (const uri of Object.keys(names)) {

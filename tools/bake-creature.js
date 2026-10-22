@@ -43,13 +43,16 @@ async function convertPair(spec) {
     const name = fbxName(spec.id);
     const baseFbx = modelPath(spec.group, name);
     const moveFbx = animPath(spec.group, name, spec.move);
+    const idleFbx = animPath(spec.group, name, "Idle");
     if (!fs.existsSync(baseFbx)) throw new Error("Missing " + baseFbx);
     if (!fs.existsSync(moveFbx)) throw new Error("Missing " + moveFbx);
     fs.mkdirSync(tmpDir, { recursive: true });
     const baseGlb = path.join(tmpDir, spec.id + "-base.glb");
     const moveGlb = path.join(tmpDir, spec.id + "-move.glb");
+    const idleGlb = path.join(tmpDir, spec.id + "-idle.glb");
     await convert(baseFbx, baseGlb);
     await convert(moveFbx, moveGlb);
+    if (fs.existsSync(idleFbx)) await convert(idleFbx, idleGlb);
     try {
         execSync(
             `node tools/merge-creature-glb.mjs "${baseGlb}" "${moveGlb}" "${path.join(tmpDir, spec.id + "-merged.glb")}"`,
@@ -85,7 +88,7 @@ function bakeFromGlb(spec) {
     if (mergedHasAnim(merged)) {
         execSync(`node tools/bake-kaykit.js creature-${id}`, { cwd: root, stdio: "inherit" });
     } else {
-        execSync(`node tools/bake-kaykit.js creature-static-${id}`, { cwd: root, stdio: "inherit" });
+        execSync(`node tools/bake-kaykit.js creature-pair-${id}`, { cwd: root, stdio: "inherit" });
     }
     copyPackTexture(spec);
 }

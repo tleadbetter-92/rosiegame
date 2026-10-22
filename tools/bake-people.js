@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { parseBinary } = require("fbx-parser");
 
-const srcDir = path.join("art", "people", "fbx", "unral_better_export");
+const srcDir = path.join("models", "medieval-people", "fbx", "unral_better_export");
 const picks = {
     soldier0: "rich_citizens_1.fbx",
     soldier1: "peasant_5.fbx",
@@ -302,7 +302,7 @@ fs.copyFileSync(
     path.join("art", "weapons", "sword_one_handed", "sword_sword_BaseColor.png"),
     path.join("models", "sword.png")
 );
-fs.copyFileSync(path.join("art", "people", "texture", "people_texture_map.png"), path.join("models", "people.png"));
+fs.copyFileSync(path.join("models", "medieval-people", "texture", "people_texture_map.png"), path.join("models", "people.png"));
 const scratch = path.join("tools", "people_texture_map.png");
 if (fs.existsSync(scratch)) fs.unlinkSync(scratch);
 console.log("wrote models/people.json", fs.statSync("models/people.json").size);

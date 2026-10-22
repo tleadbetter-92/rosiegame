@@ -46,15 +46,23 @@
     <canvas id="view"></canvas>
     <div id="bar">
         <h1>Building editor</h1>
-        <p class="hint">2&nbsp;m grid — <b>everything except walls</b> snaps to the <b>centre of a square</b> (floors, roofs, overhangs, corners, props, stairs…). <b>Walls / windows / doors / shutters</b> snap to a <b>wall line</b>, centred on the tile along that edge. <b>R</b> · <b>Q/E</b> storey.</p>
+        <p class="hint">2&nbsp;m grid — one rule for <b>all</b> kit pieces: click snaps the <b>tile centre</b> (same anchor as <code>Floor_Brick</code>). No extra nudge — balconies, overhangs, walls, and floors share that point; rotate with <b>R</b> so “outward” faces the edge you want. <b>Q/E</b> storey.</p>
+        <details class="hint" style="margin:6px 0;font-size:11px;line-height:1.45;color:#d9cbb4;">
+            <summary style="cursor:pointer;color:#e8c896;">Floors &amp; props (megakit)</summary>
+            <ul style="margin:6px 0 0;padding-left:18px;">
+                <li><b>Floor</b> — <code>Floor_Brick</code>, <code>Floor_RedBrick</code>, <code>Floor_UnevenBrick</code>, <code>Floor_WoodDark</code> / <code>Floor_WoodLight</code> (+ half tiles &amp; overhang corners).</li>
+                <li><b>Prop</b> — crates, wagon, chimneys, vines, fences, border trim; search <b>prop</b> or <b>floor</b> above.</li>
+                <li>Medieval <b>street lamps</b> are not in this kit — use the town editor lamp or add CC0 models under <code>models/town-props/</code> (see README there).</li>
+            </ul>
+        </details>
         <details class="hint" style="margin:6px 0;font-size:11px;line-height:1.45;color:#d9cbb4;">
             <summary style="cursor:pointer;color:#e8c896;">How to roof (megakit)</summary>
             <ol style="margin:6px 0 0;padding-left:18px;">
                 <li><b>Q/E</b> to the top floor (same footprint as walls).</li>
-                <li><b>Roof → Roof RoundTiles N×M</b> — pick size to cover the floor (each grid square = 2&nbsp;m; 4×4 name ≈ four metres).</li>
-                <li><b>Overhang → Overhang Roof …</b> — infill flat caps; <b>Overhang Side … L/R</b> — fill under eaves on sides.</li>
-                <li><b>Roof → Roof Front Brick4/6/8</b> — gable end (closed front); rotate to face the end wall.</li>
-                <li><b>Overhang → Plaster/Uneven corner &amp; long</b> — timber brackets on cell centres like floors.</li>
+                <li><b>Roof → Roof RoundTiles N×M</b> — same cell-centre snap as floors; size name ≈ metres (4×4 ≈ 4&nbsp;m).</li>
+                <li><b>Overhang</b> — same tile-centre click as floors; long pieces extend ~2&nbsp;m along +Z at rotation 0.</li>
+                <li><b>Roof → Roof Front Brick4/6/8</b> — gable end; rotate to face the end wall.</li>
+                <li><b>Corner / Wall / Window / Door</b> — all anchor on square centres like <b>Floor</b>; rotate with <b>R</b>.</li>
             </ol>
         </details>
         <p id="floorLevelLabel" class="hint" style="margin-top:4px;color:#e8c896;">Floor level: 1 (y = 0)</p>
@@ -67,7 +75,7 @@
         <label for="piece">Piece</label>
         <select id="piece"></select>
         <label class="hint" style="display:flex;align-items:center;gap:8px;margin:8px 0 0;font-size:12px;">
-            <input type="checkbox" id="autoDoorLeaf" checked> Auto door leaf on <b>Wall … Door …</b> pieces
+            <input type="checkbox" id="autoDoorLeaf" checked> Auto door leaf on <b>Wall … Door …</b> and <b>DoorFrame</b> pieces
         </label>
         <label>Tool</label>
         <button type="button" class="mode on" data-mode="place">Place piece</button>
@@ -165,34 +173,12 @@
             return Math.round((v - CELL / 2) / CELL) * CELL + CELL / 2;
         }
 
-        /** Grid line — wall/door pieces sit on tile edges (even coords). */
-        function snapLine(v) {
-            return Math.round(v / CELL) * CELL;
-        }
-
-        function usesWallLineSnap(pieceId) {
-            if (!pieceId) return false;
-            return (
-                pieceId.startsWith("Wall_") ||
-                pieceId.startsWith("Window_") ||
-                pieceId.startsWith("WindowShutters_") ||
-                pieceId.startsWith("DoorFrame_") ||
-                pieceId.startsWith("Door_")
-            );
-        }
-
-        /**
-         * Wall-line snap: on the edge line, centred on the tile along the wall.
-         * Everything else (roof, overhang, corner, prop, stair, hole, floor, balcony…): cell centre both axes.
-         */
+        /** Megakit placement — tile centre on both axes (matches Floor_* glTF origin). */
         function snapForPiece(pieceId, x, z, pieceYaw) {
-            if (usesWallLineSnap(pieceId)) {
-                const alongX = Math.abs(Math.cos(pieceYaw)) >= Math.abs(Math.sin(pieceYaw));
-                if (alongX) return { x: snapCell(x), z: snapLine(z) };
-                return { x: snapLine(x), z: snapCell(z) };
-            }
             return { x: snapCell(x), z: snapCell(z) };
         }
+
+        /** Optional overrides in piece-pivots.json — prefer empty; kit roots are authored for tile centres. */
 
         /** Door leaf pivot differs from wall-door opening — align leaf to opening when wall and door share one anchor. */
         function placementOffset(pieceId, pieceYaw) {
@@ -208,6 +194,17 @@
             if (wallId.includes("Round")) return "Door_1_Round";
             if (wallId.includes("Flat")) return "Door_1_Flat";
             return null;
+        }
+
+        function doorLeafForFrame(frameId) {
+            if (!frameId || !frameId.startsWith("DoorFrame_")) return null;
+            if (frameId.includes("Round")) return "Door_1_Round";
+            if (frameId.includes("Flat")) return "Door_1_Flat";
+            return null;
+        }
+
+        function autoDoorLeafFor(pieceId) {
+            return doorLeafForWall(pieceId) || doorLeafForFrame(pieceId);
         }
 
         function pushPlaced(record) {
@@ -245,7 +242,6 @@
         let piecePivots = {};
 
         function pivotNudge(pieceId, pieceYaw) {
-            if (usesWallLineSnap(pieceId)) return { x: 0, z: 0 };
             const n = piecePivots[pieceId];
             if (!n) return { x: 0, z: 0 };
             const c = Math.cos(pieceYaw);
@@ -262,6 +258,8 @@
             const pivot = pivotNudge(pieceId, pieceYaw);
             px += pivot.x;
             pz += pivot.z;
+            px = Math.round(px * 500) / 500;
+            pz = Math.round(pz * 500) / 500;
             const off = placementOffset(pieceId, pieceYaw);
             const c = Math.cos(pieceYaw);
             const s = Math.sin(pieceYaw);
@@ -353,7 +351,9 @@
             return {
                 x: pos.x,
                 z: pos.z,
-                y: placeY()
+                y: placeY(),
+                sx: xz.x,
+                sz: xz.z
             };
         }
 
@@ -367,10 +367,11 @@
                 yaw
             });
             const autoDoor = document.getElementById("autoDoorLeaf");
-            const leafId = autoDoor && autoDoor.checked ? doorLeafForWall(wallId) : null;
+            const leafId = autoDoor && autoDoor.checked ? autoDoorLeafFor(wallId) : null;
             if (leafId) {
-                const snapped = snapForPiece(wallId, p.x, p.z, yaw);
-                const pos = worldPlace(snapped.x, snapped.z, leafId, yaw);
+                const ax = p.sx != null ? p.sx : p.x;
+                const az = p.sz != null ? p.sz : p.z;
+                const pos = worldPlace(ax, az, leafId, yaw);
                 pushPlaced({
                     id: leafId,
                     x: pos.x,

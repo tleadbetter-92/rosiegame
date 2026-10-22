@@ -488,6 +488,31 @@ document.getElementById("restart").addEventListener("click", async () => {
     if (data) take(data);
 });
 
+function paintAssetRoster() {
+    const table = document.getElementById("asset-roster");
+    const list = window.GAME_ASSET_ROSTER;
+    if (!table || !list || !list.length) return;
+    const body = table.querySelector("tbody");
+    body.innerHTML = list
+        .map(
+            (row) =>
+                "<tr><td>" +
+                row.name +
+                "</td><td><code>" +
+                row.pack +
+                "</code></td><td><span class=\"status-pill " +
+                row.status +
+                "\">" +
+                row.status +
+                "</span></td><td>" +
+                row.note +
+                "</td></tr>"
+        )
+        .join("");
+}
+
+paintAssetRoster();
+
 clock.textContent = "Loading the campaign.";
 refresh().catch(() => {
     clock.textContent = "The campaign could not be loaded.";

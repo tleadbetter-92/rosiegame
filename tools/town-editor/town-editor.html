@@ -29,7 +29,10 @@
     <canvas id="view"></canvas>
     <div id="bar">
         <h1>Town block</h1>
-        <p>The piece sits under the cursor. Left click sets it down. R turns it. Right-drag looks. WASD moves.</p>
+        <p>The piece sits under the cursor. Left click sets it down. R turns it. Right-drag looks. WASD moves. Ground paints in a brush — hold left click and drag.</p>
+        <label for="groundBrush" style="display:block;font-size:12px;color:#d9cbb4;margin:8px 0 4px;">Ground brush (cells)</label>
+        <input type="range" id="groundBrush" min="0" max="8" value="2" style="width:100%;">
+        <p id="groundBrushLabel" style="font-size:11px;color:#e8c896;margin:0 0 8px;">5 × 5 squares · [ smaller · ] larger</p>
         <label class="tool on"><input type="radio" name="tool" value="street" checked> Street house</label>
         <label class="tool"><input type="radio" name="tool" value="long"> Long house</label>
         <label class="tool"><input type="radio" name="tool" value="cot"> Cottage</label>
@@ -42,15 +45,16 @@
         <label class="tool"><input type="radio" name="tool" value="stores"> Storehouse</label>
         <label class="tool"><input type="radio" name="tool" value="inn"> Inn</label>
         <label class="tool"><input type="radio" name="tool" value="yard"> Lumber yard</label>
-        <label class="tool"><input type="radio" name="tool" value="nwfarm"> Northwest farm</label>
-        <label class="tool"><input type="radio" name="tool" value="nefarm"> Northeast farm</label>
-        <label class="tool"><input type="radio" name="tool" value="swfarm"> Southwest farm</label>
-        <label class="tool"><input type="radio" name="tool" value="sefarm"> Southeast farm</label>
+        <label class="tool"><input type="radio" name="tool" value="farm"> Farm</label>
         <label class="tool"><input type="radio" name="tool" value="cobble"> Cobbles</label>
-        <label class="tool"><input type="radio" name="tool" value="stone"> Stone floor</label>
+        <label class="tool"><input type="radio" name="tool" value="stone"> Stone slabs</label>
+        <label class="tool"><input type="radio" name="tool" value="brick"> Red brick</label>
         <label class="tool"><input type="radio" name="tool" value="gravel"> Gravel</label>
+        <label class="tool"><input type="radio" name="tool" value="dirt"> Dirt path</label>
+        <label class="tool"><input type="radio" name="tool" value="sand"> Sand</label>
         <label class="tool"><input type="radio" name="tool" value="grass"> Grass</label>
         <label class="tool"><input type="radio" name="tool" value="fence"> Fence</label>
+        <label class="tool"><input type="radio" name="tool" value="lamp"> Street lamp</label>
         <label class="tool"><input type="radio" name="tool" value="plow"> Plowed field</label>
         <label class="tool"><input type="radio" name="tool" value="farmhouse"> Farmhouse</label>
         <label class="tool"><input type="radio" name="tool" value="erase"> Erase</label>
@@ -65,6 +69,7 @@
         <input id="file" type="file" accept="application/json,.json">
         <p id="status"></p>
     </div>
+    <script src="../../editor-blocks.js"></script>
     <script>
         const canvas = document.getElementById("view");
         const gl = canvas.getContext("webgl", { antialias: true });
@@ -80,6 +85,63 @@
         let camDist = 42;
         const target = { x: 0, z: 0 };
         let painting = false;
+        let groundBrushRadius = 2;
+        let lastGroundPaintKey = "";
+
+        function isGroundPaintTool(t) {
+            return t === "grass" || t === "cobble" || t === "gravel" || t === "stone" || t === "plow"
+                || t === "dirt" || t === "brick" || t === "sand";
+        }
+        function groundBrushSide() {
+            return groundBrushRadius * 2 + 1;
+        }
+        function updateGroundBrushLabel() {
+            const side = groundBrushSide();
+            const metres = side * CELL;
+            document.getElementById("groundBrushLabel").textContent =
+                side + " × " + side + " squares (" + metres + " m) · [ smaller · ] larger";
+        }
+        function forEachGroundBrushCell(cx, cz, fn) {
+            const r = groundBrushRadius;
+            for (let ix = -r; ix <= r; ix++) {
+                for (let iz = -r; iz <= r; iz++) {
+                    const x = cx + ix * CELL;
+                    const z = cz + iz * CELL;
+                    if (x < -HALF || x >= HALF || z < -HALF || z >= HALF) continue;
+                    fn(x, z);
+                }
+            }
+        }
+        function paintGroundBrush(cx, cz, kind) {
+            let changed = false;
+            forEachGroundBrushCell(cx, cz, (x, z) => {
+                const key = x + "," + z;
+                if (block.ground[key] !== kind) {
+                    block.ground[key] = kind;
+                    changed = true;
+                }
+            });
+            return changed;
+        }
+        function eraseGroundBrush(cx, cz) {
+            let changed = false;
+            forEachGroundBrushCell(cx, cz, (x, z) => {
+                const key = x + "," + z;
+                if (block.ground[key] !== undefined) {
+                    delete block.ground[key];
+                    changed = true;
+                }
+            });
+            return changed;
+        }
+        function ghostGroundBrush(bags, cx, cz) {
+            forEachGroundBrushCell(cx, cz, (x, z) => {
+                pushQuad(bags.mark,
+                    [x, 0.06, z, 0, 0, 1], [x, 0.06, z + CELL, 0, 1, 1],
+                    [x + CELL, 0.06, z + CELL, 1, 1, 1], [x + CELL, 0.06, z, 1, 0, 1]
+                );
+            });
+        }
 
         function tex(paint, repeat) {
             const c = document.createElement("canvas");
@@ -236,6 +298,30 @@
                 for (let y = 0; y < s; y += 8) g.fillRect(0, y, s, 2);
                 g.fillStyle = "#3c6e32";
                 for (let y = 3; y < s; y += 16) g.fillRect(0, y, s, 5);
+            }, true),
+            brick: tex((g, s) => {
+                g.fillStyle = "#8a4a38";
+                g.fillRect(0, 0, s, s);
+                const tones = ["#a05844", "#7a4030", "#945040"];
+                let y = 0, row = 0;
+                while (y < s) {
+                    let x = (row % 2) * 10;
+                    while (x < s) {
+                        g.fillStyle = tones[(row + x) % 3];
+                        g.fillRect(x, y, 18, 7);
+                        x += 20;
+                    }
+                    y += 9;
+                    row++;
+                }
+                g.fillStyle = "#5c3024";
+                for (let y = 0; y < s; y += 9) g.fillRect(0, y, s, 1);
+            }, true),
+            sand: tex((g, s) => {
+                g.fillStyle = "#c4a878";
+                g.fillRect(0, 0, s, s);
+                g.fillStyle = "#b09868";
+                for (let i = 0; i < 55; i++) g.fillRect((i * 23) % s, (i * 11) % s, 3, 2);
             }, true)
         };
 
@@ -486,6 +572,18 @@
             rail(0.42); rail(0.78);
             return wood;
         }
+        function lampMesh() {
+            const wood = [], stone = [], glow = [];
+            const post = (px, pz) => {
+                solid(stone, px, 0, pz, 0.22, 0.35, 0.22, 0.85);
+                solid(wood, px + 0.03, 0.35, pz + 0.03, 0.16, 2.85, 0.16, 0.9);
+                solid(wood, px - 0.08, 2.95, pz + 0.02, 0.38, 0.12, 0.26, 0.75);
+                solid(glow, px + 0.02, 3.05, pz + 0.04, 0.18, 0.32, 0.18, 1);
+                solid(wood, px + 0.01, 3.38, pz + 0.03, 0.2, 0.14, 0.2, 0.8);
+            };
+            post(-0.11, -0.11);
+            return { wood, stone, glow };
+        }
         function farmhouseMesh() {
             const stone = [], plaster = [], roof = [], wood = [], glow = [];
             const x0 = -2.35, x1 = 2.35, z0 = -2.35, z1 = 2.35;
@@ -516,7 +614,7 @@
             return { stone, plaster, roof, wood, glow };
         }
         const kit = {
-            street: streetMesh(), long: longMesh(), fence: fenceMesh(), farmhouse: farmhouseMesh(), yard: { parts: [] },
+            street: streetMesh(), long: longMesh(), fence: fenceMesh(), lamp: lampMesh(), farmhouse: farmhouseMesh(), yard: { parts: [] },
             cot: gableMesh(-2.6, 2.6, -2, 2, 2.5, 4.5, 0.3),
             shop: shopMesh(),
             gable: gableMesh(-3.4, 3.4, -5.5, 5.5, 3.5, 6.4, 0.4),
@@ -578,7 +676,107 @@
             })
         };
         const civicTools = ["lord", "barracks", "smith", "vshop", "stores", "inn"];
-        const farmTools = ["nwfarm", "nefarm", "swfarm", "sefarm"];
+        const FARM_ERASE_RADIUS = 52;
+
+        function farmLayoutTemplate() {
+            return (typeof EditorBlocks !== "undefined" && EditorBlocks.farm) || null;
+        }
+
+        function rotFarmOffset(lx, lz, pieceYaw) {
+            const c = Math.cos(pieceYaw);
+            const s = Math.sin(pieceYaw);
+            return [lx * c - lz * s, lx * s + lz * c];
+        }
+
+        function stampFarmLayout(anchorX, anchorZ, pieceYaw) {
+            const tpl = farmLayoutTemplate();
+            if (!tpl) return false;
+            const putGround = (cells, kind) => {
+                for (let i = 0; i < cells.length; i++) {
+                    const cell = cells[i];
+                    const off = rotFarmOffset(cell[0], cell[1], pieceYaw);
+                    const x = snap(anchorX + off[0]);
+                    const z = snap(anchorZ + off[1]);
+                    if (x < -HALF || x >= HALF || z < -HALF || z >= HALF) continue;
+                    block.ground[x + "," + z] = kind;
+                }
+            };
+            putGround(tpl.plow || [], "plow");
+            putGround(tpl.gravel || [], "gravel");
+            for (let i = 0; i < (tpl.fences || []).length; i++) {
+                const piece = tpl.fences[i];
+                const off = rotFarmOffset(piece[0], piece[1], pieceYaw);
+                block.fences.push({
+                    x: snap(anchorX + off[0]),
+                    z: snap(anchorZ + off[1]),
+                    yaw: (piece[2] || 0) + pieceYaw
+                });
+            }
+            for (let i = 0; i < (tpl.buildings || []).length; i++) {
+                const b = tpl.buildings[i];
+                const off = rotFarmOffset(b.x, b.z, pieceYaw);
+                block.buildings.push({
+                    t: b.t,
+                    x: snap(anchorX + off[0]),
+                    z: snap(anchorZ + off[1]),
+                    yaw: (b.yaw || 0) + pieceYaw
+                });
+            }
+            block.buildings.push({ t: "farm-stamp", x: anchorX, z: anchorZ, yaw: pieceYaw });
+            return true;
+        }
+
+        function ghostFarmLayout(bags, anchorX, anchorZ, pieceYaw) {
+            const tpl = farmLayoutTemplate();
+            if (!tpl) return;
+            const markCell = (lx, lz) => {
+                const off = rotFarmOffset(lx, lz, pieceYaw);
+                const x = snap(anchorX + off[0]);
+                const z = snap(anchorZ + off[1]);
+                pushQuad(bags.mark,
+                    [x, 0.06, z, 0, 0, 1], [x, 0.06, z + CELL, 0, 1, 1],
+                    [x + CELL, 0.06, z + CELL, 1, 1, 1], [x + CELL, 0.06, z, 1, 0, 1]
+                );
+            };
+            for (let i = 0; i < (tpl.plow || []).length; i++) markCell(tpl.plow[i][0], tpl.plow[i][1]);
+            for (let i = 0; i < (tpl.gravel || []).length; i++) markCell(tpl.gravel[i][0], tpl.gravel[i][1]);
+            for (let i = 0; i < (tpl.buildings || []).length; i++) {
+                const b = tpl.buildings[i];
+                const off = rotFarmOffset(b.x, b.z, pieceYaw);
+                const x = snap(anchorX + off[0]);
+                const z = snap(anchorZ + off[1]);
+                const by = (b.yaw || 0) + pieceYaw;
+                if (b.t === "farmhouse") {
+                    stampGhost(bags.stone, kit.farmhouse.stone, x, z, by);
+                    stampGhost(bags.plaster, kit.farmhouse.plaster, x, z, by);
+                    stampGhost(bags.roof, kit.farmhouse.roof, x, z, by);
+                    stampGhost(bags.wood, kit.farmhouse.wood, x, z, by);
+                    stampGhost(bags.glow, kit.farmhouse.glow, x, z, by);
+                }
+            }
+            for (let i = 0; i < (tpl.fences || []).length; i++) {
+                const piece = tpl.fences[i];
+                const off = rotFarmOffset(piece[0], piece[1], pieceYaw);
+                stampGhost(bags.wood, kit.fence, snap(anchorX + off[0]), snap(anchorZ + off[1]), (piece[2] || 0) + pieceYaw);
+            }
+        }
+
+        function eraseFarmStamp(stamp) {
+            const cx = stamp.x;
+            const cz = stamp.z;
+            block.buildings = block.buildings.filter((b) => {
+                if (b.t === "farm-stamp" && b.x === cx && b.z === cz) return false;
+                if (Math.hypot(b.x - cx, b.z - cz) <= FARM_ERASE_RADIUS) return false;
+                return true;
+            });
+            block.fences = block.fences.filter((f) => Math.hypot(f.x - cx, f.z - cz) > FARM_ERASE_RADIUS);
+            for (const key of Object.keys(block.ground)) {
+                const parts = key.split(",");
+                const gx = Number(parts[0]);
+                const gz = Number(parts[1]);
+                if (Math.hypot(gx - cx, gz - cz) <= FARM_ERASE_RADIUS) delete block.ground[key];
+            }
+        }
 
         function turn(x, z, yaw, px, pz) {
             const c = Math.cos(yaw), s = Math.sin(yaw);
@@ -649,116 +847,10 @@
             edgeLocal(wood, x, z, x, z + rect.d, gap && gap.side === "west" ? gap : null);
             edgeLocal(wood, x + rect.w, z, x + rect.w, z + rect.d, gap && gap.side === "east" ? gap : null);
         }
-        function farmMesh(farm) {
-            const yard = farm.yard;
-            const ox = yard.x + yard.w / 2;
-            const oz = yard.z + yard.d / 2;
-            const piece = { dirt: [], wood: [], keep: [], roof: [], stone: [], linen: [], glow: [], thatch: [] };
-            const x0 = -yard.w / 2;
-            const z0 = -yard.d / 2;
-            pushQuad(piece.dirt,
-                [x0, 0.05, z0, 0, 0, 1],
-                [x0, 0.05, z0 + yard.d, 0, yard.d / 4, 1],
-                [x0 + yard.w, 0.05, z0 + yard.d, yard.w / 4, yard.d / 4, 1],
-                [x0 + yard.w, 0.05, z0, yard.w / 4, 0, 1]
-            );
-            fenceLocal(piece.wood, yard, ox, oz);
-            if (farm.pen) fenceLocal(piece.wood, farm.pen, ox, oz);
-            if (farm.garden) fenceLocal(piece.wood, farm.garden, ox, oz);
-            const house = farm.buildings.find((b) => b.role === "farmhouse");
-            if (house) {
-                const body = civicMesh({ w: 4.7, d: 4.7, rise: 1.85, gable: false, dress: function () {} });
-                stampCivic(piece, body, house.x - ox, house.z - oz, house.yaw, stamp);
-            }
-            for (const b of farm.buildings) {
-                if (b.role === "farmhouse") continue;
-                const h = b.role === "shed" ? 2.35 : 3.15;
-                const x = b.minX - ox;
-                const z = b.minZ - oz;
-                solid(piece.wood, x, 0, z, b.w, h, b.d, 0.75);
-                const ridge = h + Math.min(b.w, b.d) * 0.34;
-                if (b.w >= b.d) {
-                    const mid = z + b.d / 2;
-                    pushQuad(piece.roof, [x - 0.15, h, z - 0.1, 0, 0, 0.9], [x - 0.15, ridge, mid, 0, 0.5, 1], [x + b.w + 0.15, ridge, mid, 1, 0.5, 1], [x + b.w + 0.15, h, z - 0.1, 1, 0, 0.9]);
-                    pushQuad(piece.roof, [x - 0.15, h, z + b.d + 0.1, 0, 0, 0.78], [x + b.w + 0.15, h, z + b.d + 0.1, 1, 0, 0.78], [x + b.w + 0.15, ridge, mid, 1, 0.5, 1], [x - 0.15, ridge, mid, 0, 0.5, 1]);
-                } else {
-                    const mid = x + b.w / 2;
-                    pushQuad(piece.roof, [x - 0.1, h, z - 0.15, 0, 0, 0.9], [x - 0.1, h, z + b.d + 0.15, 0, 1, 0.9], [mid, ridge, z + b.d + 0.15, 0.5, 1, 1], [mid, ridge, z - 0.15, 0.5, 0, 1]);
-                    pushQuad(piece.roof, [x + b.w + 0.1, h, z - 0.15, 1, 0, 0.78], [mid, ridge, z - 0.15, 0.5, 0, 1], [mid, ridge, z + b.d + 0.15, 0.5, 1, 1], [x + b.w + 0.1, h, z + b.d + 0.15, 1, 1, 0.78]);
-                }
-            }
-            for (const spot of farm.hay || []) solid(piece.thatch, spot[0] - ox - 0.6, 0, spot[1] - oz - 0.5, 1.2, 0.7, 1, 0.9);
-            for (const spot of farm.cart || []) solid(piece.wood, spot[0] - ox - 0.7, 0.35, spot[1] - oz - 0.4, 1.4, 0.7, 0.8, 0.7);
-            for (const spot of farm.orchard || []) {
-                solid(piece.wood, spot[0] - ox - 0.12, 0, spot[1] - oz - 0.12, 0.24, 1.6, 0.24, 0.6);
-                solid(piece.thatch, spot[0] - ox - 1.1, 1.5, spot[1] - oz - 1.1, 2.2, 1.6, 2.2, 0.85);
-            }
-            return piece;
-        }
-        function stampFarm(bags, piece, x, z, yaw, put) {
-            stampCivic(bags, piece, x, z, yaw, put);
-            put(bags.dirt, piece.dirt, x, z, yaw);
-            put(bags.thatch, piece.thatch, x, z, yaw);
-        }
-        const knownFarms = {
-            nwfarm: {
-                buildings: [
-                    { role: "farmhouse", x: -1475, z: -860, yaw: 0, w: 4.7, d: 4.7, minX: -1477.35, minZ: -862.35 },
-                    { role: "shed", x: -1454, z: -820, w: 3, d: 2.4, minX: -1455.5, minZ: -821.2 }
-                ],
-                yard: { x: -1504, z: -848, w: 58, d: 34, gap: { side: "east", at: -830, width: 2.4 } },
-                pen: { x: -1442, z: -846, w: 4.4, d: 3.6, gap: { side: "west", at: -844.2, width: 1.4 } },
-                garden: { x: -1498, z: -808, w: 6.5, d: 4 },
-                hay: [[-1462, -828]],
-                cart: [[-1436, -832]]
-            },
-            nefarm: {
-                buildings: [
-                    { role: "farmhouse", x: 1296, z: -1480, yaw: Math.PI, w: 4.7, d: 4.7, minX: 1293.65, minZ: -1482.35 },
-                    { role: "shed", x: 1318, z: -1448, w: 3, d: 2.4, minX: 1316.5, minZ: -1449.2 }
-                ],
-                yard: { x: 1278, z: -1468, w: 56, d: 36, gap: { side: "south", at: 1296, width: 2.4 } },
-                pen: { x: 1262, z: -1456, w: 4.2, d: 3.4, gap: { side: "east", at: -1454.3, width: 1.3 } },
-                garden: { x: 1324, z: -1464, w: 6, d: 4 },
-                hay: [[1306, -1460]],
-                cart: [[1284, -1428]]
-            },
-            swfarm: {
-                buildings: [
-                    { role: "farmhouse", x: -2372, z: 750, yaw: Math.PI / 2, w: 4.7, d: 4.7, minX: -2374.35, minZ: 747.65 },
-                    { role: "barn", x: -2356, z: 792, w: 6.6, d: 4.2, minX: -2359.3, minZ: 789.9 },
-                    { role: "shed", x: -2386, z: 780, w: 3.2, d: 2.6, minX: -2387.6, minZ: 778.7 }
-                ],
-                yard: { x: -2406, z: 762, w: 96, d: 42, gap: { side: "north", at: -2372, width: 2.8 } },
-                pen: { x: -2396, z: 746, w: 5.2, d: 4.4, gap: { side: "south", at: -2393.4, width: 1.6 } },
-                garden: { x: -2334, z: 768, w: 8, d: 6 },
-                hay: [[-2348, 786]],
-                orchard: [[-2382, 818], [-2368, 826], [-2354, 818], [-2340, 826]],
-                cart: [[-2374, 752]]
-            },
-            sefarm: {
-                buildings: [
-                    { role: "farmhouse", x: 640, z: 1384, yaw: -Math.PI / 2, w: 4.7, d: 4.7, minX: 637.65, minZ: 1381.65 },
-                    { role: "barn", x: 658, z: 1434, w: 5.4, d: 3.6, minX: 655.3, minZ: 1432.2 },
-                    { role: "shed", x: 612, z: 1424, w: 3, d: 2.4, minX: 610.5, minZ: 1422.8 }
-                ],
-                yard: { x: 598, z: 1396, w: 82, d: 52, gap: { side: "east", at: 1412, width: 2.6 } },
-                pen: { x: 600, z: 1452, w: 4.6, d: 3.6, gap: { side: "north", at: 602.3, width: 1.4 } },
-                garden: { x: 668, z: 1402, w: 7, d: 5 },
-                hay: [[646, 1422]],
-                orchard: [[670, 1456], [658, 1464], [682, 1460]],
-                cart: [[688, 1412]]
-            }
-        };
-        kit.nwfarm = farmMesh(knownFarms.nwfarm);
-        kit.nefarm = farmMesh(knownFarms.nefarm);
-        kit.swfarm = farmMesh(knownFarms.swfarm);
-        kit.sefarm = farmMesh(knownFarms.sefarm);
-
         const buckets = {};
         const meshes = {};
         function rebuild() {
-            const names = ["field", "dirt", "stone", "timber", "roof", "red", "thatch", "plaster", "shop", "keep", "linen", "glow", "grass", "cobble", "gravel", "plow", "wood", "yard", "mark"];
+            const names = ["field", "dirt", "stone", "timber", "roof", "red", "thatch", "plaster", "shop", "keep", "linen", "glow", "grass", "cobble", "gravel", "plow", "brick", "sand", "wood", "yard", "mark"];
             for (const name of names) buckets[name] = [];
             const edge = HALF / 8;
             pushQuad(buckets.field,
@@ -775,6 +867,7 @@
                 );
             }
             for (const b of block.buildings) {
+                if (b.t === "farm-stamp") continue;
                 if (b.t === "street") {
                     stamp(buckets.stone, kit.street.stone, b.x, b.z, b.yaw);
                     stamp(buckets.timber, kit.street.timber, b.x, b.z, b.yaw);
@@ -796,12 +889,16 @@
                     stamp(buckets.roof, kit.farmhouse.roof, b.x, b.z, b.yaw);
                     stamp(buckets.wood, kit.farmhouse.wood, b.x, b.z, b.yaw);
                     stamp(buckets.glow, kit.farmhouse.glow, b.x, b.z, b.yaw);
+                } else if (b.t === "lamp") {
+                    stamp(buckets.stone, kit.lamp.stone, b.x, b.z, b.yaw);
+                    stamp(buckets.wood, kit.lamp.wood, b.x, b.z, b.yaw);
+                    stamp(buckets.glow, kit.lamp.glow, b.x, b.z, b.yaw);
                 } else if (civicTools.indexOf(b.t) >= 0) {
                     stampCivic(buckets, kit[b.t], b.x, b.z, b.yaw, stamp);
-                } else if (farmTools.indexOf(b.t) >= 0) {
-                    stampFarm(buckets, kit[b.t], b.x, b.z, b.yaw, stamp);
                 } else if (b.t === "kit" && b.id) {
-                    stampKitFootprint(buckets.mark, kitEntry(b.id), b.x, b.z, b.yaw);
+                    if (!stampKitBaked(buckets, kitBakedCache[b.id], b.x, b.z, b.yaw || 0)) {
+                        stampKitFootprint(buckets.mark, kitEntry(b.id), b.x, b.z, b.yaw);
+                    }
                 } else {
                     stamp(buckets.red, kit.long.red, b.x, b.z, b.yaw);
                     stamp(buckets.thatch, kit.long.thatch, b.x, b.z, b.yaw);
@@ -833,7 +930,10 @@
                 const x = isKitTool(tool) ? snapCell(hover.x) : snap(hover.x);
                 const z = isKitTool(tool) ? snapCell(hover.z) : snap(hover.z);
                 if (isKitTool(tool)) {
-                    stampKitFootprint(bags.mark, kitEntry(tool.slice(4)), x, z, yaw);
+                    const kid = tool.slice(4);
+                    if (!stampKitBaked(bags, kitBakedCache[kid], x, z, yaw)) {
+                        stampKitFootprint(bags.mark, kitEntry(kid), x, z, yaw);
+                    }
                 } else if (tool === "street") {
                     stampGhost(bags.stone, kit.street.stone, x, z, yaw);
                     stampGhost(bags.timber, kit.street.timber, x, z, yaw);
@@ -860,10 +960,16 @@
                     stampGhost(bags.glow, kit.farmhouse.glow, x, z, yaw);
                 } else if (civicTools.indexOf(tool) >= 0) {
                     stampCivic(bags, kit[tool], x, z, yaw, stampGhost);
-                } else if (farmTools.indexOf(tool) >= 0) {
-                    stampFarm(bags, kit[tool], x, z, yaw, stampGhost);
+                } else if (tool === "farm") {
+                    ghostFarmLayout(bags, x, z, yaw);
                 } else if (tool === "fence") {
                     stampGhost(bags.wood, kit.fence, x, z, yaw);
+                } else if (tool === "lamp") {
+                    stampGhost(bags.stone, kit.lamp.stone, x, z, yaw);
+                    stampGhost(bags.wood, kit.lamp.wood, x, z, yaw);
+                    stampGhost(bags.glow, kit.lamp.glow, x, z, yaw);
+                } else if (isGroundPaintTool(tool) || tool === "erase") {
+                    ghostGroundBrush(bags, x, z);
                 } else {
                     pushQuad(bags.mark,
                         [x, 0.06, z, 0, 0, 1], [x, 0.06, z + CELL, 0, 1, 1],
@@ -924,6 +1030,76 @@
                 [c[1][0], y, c[1][1], 1, 0, 0.95]
             );
         }
+        const KIT_MAT_BUCKET = { plaster: "plaster", brick: "stone", wood: "timber", tiles: "roof", metal: "glow", rock: "stone" };
+        const kitBakedCache = {};
+        function stampKitVerts(list, floats, wx, wz, cx, cz, yaw) {
+            const c = Math.cos(yaw);
+            const s = Math.sin(yaw);
+            for (let i = 0; i < floats.length; i += 6) {
+                const lx = floats[i] - cx;
+                const lz = floats[i + 2] - cz;
+                const rx = lx * c + lz * s;
+                const rz = -lx * s + lz * c;
+                list.push(wx + rx, floats[i + 1], wz + rz, floats[i + 3], floats[i + 4], floats[i + 5]);
+            }
+        }
+        function stampKitBaked(buckets, cached, wx, wz, yaw) {
+            if (!cached || !cached.parts) return false;
+            for (const mat of Object.keys(cached.parts)) {
+                const bucket = KIT_MAT_BUCKET[mat] || "plaster";
+                if (!buckets[bucket]) buckets[bucket] = [];
+                stampKitVerts(buckets[bucket], cached.parts[mat], wx, wz, cached.meta.cx, cached.meta.cz, yaw);
+            }
+            return true;
+        }
+        function preloadKitBaked(id) {
+            if (!id || kitBakedCache[id]) return Promise.resolve(kitBakedCache[id]);
+            return fetch("../../models/kitbuild/" + id + ".meta.json")
+                .then((res) => (res.ok ? res.json() : null))
+                .then((meta) => {
+                    if (!meta) return null;
+                    return Promise.all(
+                        meta.materials.map(({ mat }) =>
+                            fetch("../../models/kitbuild/" + id + "-" + mat + ".bin")
+                                .then((r) => r.arrayBuffer())
+                                .then((buf) => [mat, new Float32Array(buf)])
+                        )
+                    ).then((pairs) => {
+                        const parts = {};
+                        for (const pair of pairs) parts[pair[0]] = pair[1];
+                        kitBakedCache[id] = { meta, parts };
+                        return kitBakedCache[id];
+                    });
+                })
+                .catch(() => null);
+        }
+        function preloadBlockKits() {
+            const ids = [];
+            for (const b of block.buildings) {
+                if (b.t === "kit" && b.id && ids.indexOf(b.id) < 0) ids.push(b.id);
+            }
+            return Promise.all(ids.map(preloadKitBaked));
+        }
+        function loadMegakitTextures() {
+            function fileTex(url, key) {
+                const img = new Image();
+                img.onload = () => {
+                    const t = gl.createTexture();
+                    gl.bindTexture(gl.TEXTURE_2D, t);
+                    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+                    textures[key] = t;
+                };
+                img.src = url;
+            }
+            fileTex("../../models/plaster.png", "plaster");
+            fileTex("../../models/brick.png", "stone");
+            fileTex("../../models/wood.png", "timber");
+        }
         function loadKitCatalog() {
             fetch("../building-editor/saves/index.json")
                 .then((res) => (res.ok ? res.json() : { buildings: [] }))
@@ -950,6 +1126,7 @@
                     document.getElementById("status").textContent = kitCatalog.length
                         ? kitCatalog.length + " kit building(s) ready."
                         : "No kit saves yet — see building editor.";
+                    refreshBlock();
                 })
                 .catch(() => {
                     document.getElementById("status").textContent = "Could not load kit catalog (run index-saves.js).";
@@ -988,25 +1165,45 @@
             const x = isKitTool(tool) ? snapCell(p.x) : snap(p.x);
             const z = isKitTool(tool) ? snapCell(p.z) : snap(p.z);
             if (x < -HALF || x >= HALF || z < -HALF || z >= HALF) return;
-            if (tool === "grass" || tool === "cobble" || tool === "gravel" || tool === "stone" || tool === "plow") {
-                block.ground[x + "," + z] = tool;
+            if (isGroundPaintTool(tool)) {
+                const paintKey = x + "," + z + ":" + tool + ":" + groundBrushRadius;
+                if (painting && paintKey === lastGroundPaintKey) return;
+                lastGroundPaintKey = paintKey;
+                if (paintGroundBrush(x, z, tool)) refreshBlock();
+                return;
             } else if (tool === "erase") {
-                delete block.ground[x + "," + z];
-                block.buildings = block.buildings.filter((b) => {
-                    const dx = b.x - x;
-                    const dz = b.z - z;
-                    const radius = farmTools.indexOf(b.t) >= 0 ? 54 : b.t === "kit" ? 8 : 3;
-                    return Math.hypot(dx, dz) > radius;
-                });
-                block.fences = block.fences.filter((f) => Math.hypot(f.x - p.x, f.z - p.z) > 2);
+                const stamp = block.buildings.find((b) => b.t === "farm-stamp" && Math.hypot(b.x - x, b.z - z) <= FARM_ERASE_RADIUS);
+                if (stamp) {
+                    eraseFarmStamp(stamp);
+                } else {
+                    const paintKey = x + "," + z + ":erase:" + groundBrushRadius;
+                    if (!(painting && paintKey === lastGroundPaintKey)) {
+                        lastGroundPaintKey = paintKey;
+                        eraseGroundBrush(x, z);
+                    }
+                    block.buildings = block.buildings.filter((b) => {
+                        const dx = b.x - x;
+                        const dz = b.z - z;
+                        const radius = b.t === "kit" ? 8 : 3;
+                        return Math.hypot(dx, dz) > radius;
+                    });
+                    block.fences = block.fences.filter((f) => Math.hypot(f.x - p.x, f.z - p.z) > 2);
+                }
+            } else if (tool === "farm") {
+                stampFarmLayout(x, z, yaw);
             } else if (isKitTool(tool)) {
                 block.buildings.push({ t: "kit", id: tool.slice(4), x: x, z: z, yaw: yaw });
-            } else if (tool === "street" || tool === "long" || tool === "yard" || tool === "cot" || tool === "shop" || tool === "gable" || tool === "farmhouse" || civicTools.indexOf(tool) >= 0 || farmTools.indexOf(tool) >= 0) {
+            } else if (tool === "street" || tool === "long" || tool === "yard" || tool === "cot" || tool === "shop" || tool === "gable" || tool === "farmhouse" || tool === "lamp" || civicTools.indexOf(tool) >= 0) {
                 block.buildings.push({ t: tool, x: x, z: z, yaw: yaw });
             } else if (tool === "fence") {
                 block.fences.push({ x: x, z: z, yaw: yaw });
             }
-            rebuild();
+            lastGroundPaintKey = "";
+            refreshBlock();
+        }
+
+        function refreshBlock() {
+            preloadBlockKits().then(() => rebuild());
         }
 
         function cameraAxes(e) {
@@ -1105,25 +1302,48 @@
         });
         canvas.addEventListener("mousemove", (e) => {
             if (e.buttons === 2) {
-                camYaw += e.movementX * 0.008;
-                camPitch = Math.max(0.15, Math.min(1.2, camPitch + e.movementY * 0.006));
+                camYaw -= e.movementX * 0.008;
+                camPitch = Math.max(0.15, Math.min(1.2, camPitch - e.movementY * 0.006));
                 return;
             }
             hover = hit(e.clientX, e.clientY);
             rebuildGhost();
-            if (painting && (tool === "grass" || tool === "cobble" || tool === "gravel" || tool === "stone" || tool === "plow" || tool === "erase")) {
+            if (painting && (isGroundPaintTool(tool) || tool === "erase")) {
                 paintAt(hover);
             }
             const status = document.getElementById("status");
             if (hover) status.textContent = Math.round(hover.x) + ", " + Math.round(hover.z);
         });
-        window.addEventListener("mouseup", () => { painting = false; });
+        window.addEventListener("mouseup", () => {
+            painting = false;
+            lastGroundPaintKey = "";
+        });
+        document.getElementById("groundBrush").addEventListener("input", (e) => {
+            groundBrushRadius = Number(e.target.value);
+            updateGroundBrushLabel();
+            rebuildGhost();
+        });
+        updateGroundBrushLabel();
         canvas.addEventListener("contextmenu", (e) => e.preventDefault());
         canvas.addEventListener("wheel", (e) => {
             camDist = Math.max(12, Math.min(240, camDist + Math.sign(e.deltaY) * 4));
             e.preventDefault();
         }, { passive: false });
         window.addEventListener("keydown", (e) => {
+            if (e.code === "BracketLeft") {
+                groundBrushRadius = Math.max(0, groundBrushRadius - 1);
+                document.getElementById("groundBrush").value = String(groundBrushRadius);
+                updateGroundBrushLabel();
+                rebuildGhost();
+                return;
+            }
+            if (e.code === "BracketRight") {
+                groundBrushRadius = Math.min(8, groundBrushRadius + 1);
+                document.getElementById("groundBrush").value = String(groundBrushRadius);
+                updateGroundBrushLabel();
+                rebuildGhost();
+                return;
+            }
             if (e.code === "KeyR") {
                 yaw = (yaw + Math.PI / 2) % (Math.PI * 2);
                 rebuildGhost();
@@ -1135,8 +1355,8 @@
             fx /= fl; fz /= fl;
             if (e.code === "KeyW") { target.x += fx * step; target.z += fz * step; }
             if (e.code === "KeyS") { target.x -= fx * step; target.z -= fz * step; }
-            if (e.code === "KeyD") { target.x += fz * step; target.z -= fx * step; }
-            if (e.code === "KeyA") { target.x -= fz * step; target.z += fx * step; }
+            if (e.code === "KeyD") { target.x -= fz * step; target.z += fx * step; }
+            if (e.code === "KeyA") { target.x += fz * step; target.z -= fx * step; }
         });
 
         function payload() {
@@ -1144,14 +1364,15 @@
                 const [x, z] = key.split(",").map(Number);
                 return { x, z, t };
             });
-            return { kind: "town-block", size: HALF * 2, ground, buildings: block.buildings, fences: block.fences };
+            const buildings = block.buildings.filter((b) => b.t !== "farm-stamp");
+            return { kind: "town-block", size: HALF * 2, ground, buildings, fences: block.fences };
         }
         function applyPayload(data) {
             block.ground = {};
             for (const cell of data.ground || []) block.ground[cell.x + "," + cell.z] = cell.t;
             block.buildings = data.buildings || [];
             block.fences = data.fences || [];
-            rebuild();
+            refreshBlock();
         }
         document.getElementById("save").addEventListener("click", () => {
             localStorage.setItem(storeKey, JSON.stringify(payload()));
@@ -1179,11 +1400,12 @@
 
         const saved = localStorage.getItem(storeKey);
         if (saved) {
-            try { applyPayload(JSON.parse(saved)); } catch (err) { sampleLayout(); rebuild(); }
+            try { applyPayload(JSON.parse(saved)); } catch (err) { sampleLayout(); refreshBlock(); }
         } else {
             sampleLayout();
-            rebuild();
+            refreshBlock();
         }
+        loadMegakitTextures();
         loadKitCatalog();
         fetch("/models/roblox/lumberyard.json").then((res) => res.json()).then(yardFromModel).catch(() => {
             document.getElementById("status").textContent = "Lumber yard model did not load.";

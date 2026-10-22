@@ -7,6 +7,7 @@
     const editPaths = edit.paths || [];
     const editRoads = edit.roads || [];
     const editBridges = edit.bridges || [];
+    const editForests = edit.forests || [];
     let bridges = null;
     let loaded = false;
     const places = [
@@ -1201,7 +1202,25 @@
         return ((x - cx) / rx) ** 2 + ((z - cz) / rz) ** 2 + (n - 0.5) * 0.66;
     }
 
+    function editorForestThick(x, z) {
+        let thick = 0;
+        for (let i = 0; i < editForests.length; i++) {
+            const patch = editForests[i];
+            const cx = patch[0];
+            const cz = patch[1];
+            const r = patch[2];
+            const dx = x - cx;
+            const dz = z - cz;
+            const d = Math.hypot(dx, dz);
+            if (d > r) continue;
+            thick = Math.max(thick, smooth(1, 0.08, d / r));
+        }
+        return thick;
+    }
+
     function forestAt(x, z) {
+        const painted = editorForestThick(x, z);
+        if (painted > 0) return painted;
         if (x > 520 && z < -680) return 0;
         if (x > 400 && z > 1080 && z < 1520) return 0;
         if (!woodRoom(x, z)) return 0;
@@ -1244,7 +1263,7 @@
     const trees = buildTrees();
 
     function plantEditWoods() {
-        // Ignore painted forest floods. Only keep a few hand-placed editor trees if any.
+        // Hand-placed Tree brush spots (hero trees), not forest zone markers.
         for (const [x, z] of edit.trees || []) {
             if (heightAt(x, z) <= 0.3 || wet(x, z)) continue;
             const kind = hash(Math.floor(x) + 11, Math.floor(z) + 4) < 0.6 ? "pine" : "oak";
@@ -1312,6 +1331,43 @@
     }
 
     const groves = plantGroves();
+
+    function plantEditorForestGroves() {
+        for (let p = 0; p < editForests.length; p++) {
+            const cx = editForests[p][0];
+            const cz = editForests[p][1];
+            const r = editForests[p][2];
+            const count = Math.min(100, Math.max(10, Math.floor((r * r) / 220)));
+            const local = [];
+            let guard = 0;
+            let i = 1;
+            while (local.length < count && guard < count * 28) {
+                guard++;
+                const n1 = hash(Math.floor(cx) + p * 31 + i * 19, Math.floor(cz) + 3);
+                const n2 = hash(Math.floor(cx) + 5, Math.floor(cz) + p * 17 + i * 23);
+                i++;
+                const ang = n1 * Math.PI * 2;
+                const dist = Math.sqrt(n2) * r * 0.92;
+                const x = cx + Math.cos(ang) * dist;
+                const z = cz + Math.sin(ang) * dist;
+                if (!groveClear(x, z)) continue;
+                let close = false;
+                for (const spot of local) {
+                    if (Math.hypot(spot.x - x, spot.z - z) < 3.05) close = true;
+                }
+                if (!close) {
+                    for (const tree of trees) {
+                        if ((tree.kind === "pine" || tree.kind === "oak") && Math.hypot(tree.x - x, tree.z - z) < 5) close = true;
+                    }
+                }
+                if (close) continue;
+                const pine = hash(Math.floor(x) + p + 11, Math.floor(z) + 4) < 0.72;
+                local.push({ x, z, kind: pine ? "pine" : "oak", forest: true });
+            }
+            for (const spot of local) trees.push(spot);
+        }
+    }
+    plantEditorForestGroves();
 
     function keepLevel(x, z, w, d) {
         shelves.push({ x: x, z: z, w: w, d: d, y: heightAt(x + w * 0.5, z + d * 0.5) });
@@ -1497,6 +1553,7 @@
         turfShade,
         inField,
         forestAt,
+        editForests,
         trackOf,
         coastField,
         cottageLayout,
