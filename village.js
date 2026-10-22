@@ -3639,8 +3639,8 @@ const meadowProps = [];
 plantFocusTrees();
 
 // One step above the old High lock. The canvas was the soft part. The haze still hides the next town.
-function gfx() {
-    return {
+const GFX_PRESETS = {
+    low: {
         scale: 0.6,
         far: 420,
         fogNear: 230,
@@ -3658,8 +3658,59 @@ function gfx() {
         personDraw: 70,
         personStep: 55,
         farEvery: 120,
-        miniEvery: 5
-    };
+        miniEvery: 5,
+        groundStipple: 1
+    },
+    medium: {
+        scale: 1,
+        far: 420,
+        fogNear: 230,
+        fogSpan: 170,
+        drawFar: 380,
+        treeNear: 100,
+        treeMid: 230,
+        treeFar: 360,
+        treeCap: 150,
+        treeMidCap: 400,
+        treeFarCap: 620,
+        meadowReach: 120,
+        meadowStep: 36,
+        meadowProps: true,
+        personDraw: 85,
+        personStep: 60,
+        farEvery: 100,
+        miniEvery: 4,
+        groundStipple: 0
+    }
+};
+
+let gfxMode = typeof GfxSettings !== "undefined" ? GfxSettings.load() : "medium";
+
+function gfx() {
+    return GFX_PRESETS[gfxMode] || GFX_PRESETS.medium;
+}
+
+function setGfxMode(mode) {
+    gfxMode = mode === "low" ? "low" : "medium";
+    if (typeof GfxSettings !== "undefined") GfxSettings.save(gfxMode);
+    nearMarkX = 1e9;
+    nearMarkZ = 1e9;
+    resize();
+    paintGfxButton();
+}
+
+function toggleGfxMode() {
+    setGfxMode(gfxMode === "medium" ? "low" : "medium");
+}
+
+function paintGfxButton() {
+    const button = document.getElementById("gfx-toggle");
+    if (!button || typeof GfxSettings === "undefined") return;
+    button.textContent = GfxSettings.label(gfxMode);
+    button.setAttribute("aria-pressed", gfxMode === "medium" ? "true" : "false");
+    button.title = gfxMode === "medium"
+        ? "Sharper view (full resolution on desktop). Click for Low."
+        : "Performance mode (60% resolution). Click for Medium.";
 }
 
 function growMeadow(x, z, yaw) {
@@ -10398,7 +10449,7 @@ function draw() {
         gl.bindTexture(gl.TEXTURE_2D, textures[kind]);
         gl.enable(gl.POLYGON_OFFSET_FILL);
         gl.polygonOffset(-1, -4);
-        gl.uniform1f(loc.stipple, kind === "trail" ? 0 : 1);
+        gl.uniform1f(loc.stipple, kind === "trail" ? 0 : gfx().groundStipple);
         if (kind === "trail") gl.disable(gl.CULL_FACE);
         gl.drawArrays(gl.TRIANGLES, 0, blend.count);
         gl.disable(gl.POLYGON_OFFSET_FILL);
@@ -12272,6 +12323,11 @@ bindFly(document.getElementById("fly-up"), 1);
 bindFly(document.getElementById("fly-down"), -1);
 const flyFast = document.getElementById("fly-fast");
 if (flyFast) flyFast.addEventListener("click", toggleFast);
+const gfxToggle = document.getElementById("gfx-toggle");
+if (gfxToggle) {
+    paintGfxButton();
+    gfxToggle.addEventListener("click", toggleGfxMode);
+}
 window.addEventListener("pagehide", saveSpot);
 
 const jumpBtn = document.getElementById("jump");

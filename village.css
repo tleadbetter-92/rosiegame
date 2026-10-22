@@ -29,13 +29,26 @@ html, body {
 }
 
 .back,
-.campaign-link {
+.campaign-link,
+.gfx-toggle {
     color: white;
     font-size: 0.95rem;
     font-weight: 650;
     text-decoration: none;
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.65);
 }
+
+.gfx-toggle {
+    font: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+}
+
+.gfx-toggle:hover { color: #f0d2b4; }
+
+.gfx-toggle[aria-pressed="true"] { color: #e8f4c8; }
 
 .back:hover,
 .campaign-link:hover { color: #f0d2b4; }

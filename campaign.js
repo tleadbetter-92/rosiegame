@@ -513,6 +513,21 @@ function paintAssetRoster() {
 
 paintAssetRoster();
 
+(function bindGfxToggle() {
+    const button = document.getElementById("gfx-toggle");
+    if (!button || typeof GfxSettings === "undefined") return;
+    function paint() {
+        const mode = GfxSettings.load();
+        button.textContent = GfxSettings.label(mode);
+        button.setAttribute("aria-pressed", mode === "medium" ? "true" : "false");
+    }
+    paint();
+    button.addEventListener("click", () => {
+        GfxSettings.toggle();
+        paint();
+    });
+})();
+
 clock.textContent = "Loading the campaign.";
 refresh().catch(() => {
     clock.textContent = "The campaign could not be loaded.";
