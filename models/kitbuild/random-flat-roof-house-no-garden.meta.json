@@ -1,0 +1,20 @@
+{
+  "kind": "kitbuild",
+  "name": "random flat roof house no garden",
+  "cx": 6,
+  "cz": 1,
+  "materials": [
+    {
+      "mat": "wood",
+      "verts": 8334
+    },
+    {
+      "mat": "plaster",
+      "verts": 1206
+    },
+    {
+      "mat": "brick",
+      "verts": 1530
+    }
+  ]
+}

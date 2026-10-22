@@ -1,8 +1,8 @@
 /**
  * Mixamo Godwin (peasant girl 2): FBX → GLB in models/kaykit/
- * Expects With Skin exports in models/:
- *   idle woman2.fbx
- *   walk woman2.fbx  (or walking woman2.fbx / Walking woman2.fbx)
+ * Expects With Skin export in models/:
+ *   idle woman2.fbx  (required)
+ * Optional walk: walk woman2.fbx — if missing, walk GLB is copied from idle (innkeeper stays idle).
  * Then: node tools/bake-kaykit.js mixamo-godwin
  */
 const fs = require("fs");
@@ -28,11 +28,7 @@ async function main() {
     const idleFbx = pick(idleCandidates);
     const walkFbx = pick(walkCandidates);
     if (!idleFbx) {
-        console.error("Missing idle FBX — add one of:", idleCandidates.join(", "), "in models/");
-        process.exit(1);
-    }
-    if (!walkFbx) {
-        console.error("Missing walk FBX — add one of:", walkCandidates.join(", "), "in models/");
+        console.error("Missing idle FBX — copy With Skin export to models/ as one of:", idleCandidates.join(", "));
         process.exit(1);
     }
     fs.mkdirSync(kaykit, { recursive: true });
@@ -40,8 +36,13 @@ async function main() {
     const walkGlb = path.join(kaykit, "godwin-walk.glb");
     await convert(idleFbx, idleGlb);
     console.log("Wrote", idleGlb);
-    await convert(walkFbx, walkGlb);
-    console.log("Wrote", walkGlb);
+    if (walkFbx) {
+        await convert(walkFbx, walkGlb);
+        console.log("Wrote", walkGlb);
+    } else {
+        fs.copyFileSync(idleGlb, walkGlb);
+        console.log("No walk FBX — copied idle to", walkGlb, "(Godwin idle-only until walk is added)");
+    }
     console.log("Next: node tools/bake-kaykit.js mixamo-godwin");
 }
 

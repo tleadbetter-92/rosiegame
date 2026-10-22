@@ -4317,7 +4317,10 @@ function loadKaykit() {
     });
     take("mixamo-godwin-0").then((part) => {
         if (!part) return;
-        const pack = { frames: part.frames, parts: [part], walk: [1, 8] };
+        const idleOnly = part.frames <= 9;
+        const pack = idleOnly
+            ? { frames: part.frames, parts: [part] }
+            : { frames: part.frames, parts: [part], walk: [1, 8] };
         folkMesh.godwin = pack;
         folkMesh.innkeeper = pack;
     });

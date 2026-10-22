@@ -664,8 +664,13 @@ if (process.argv[2] === "mixamo") {
     writeClip(sampled, idle.json, idle.bin, "mixamo-monster", 0, true);
 } else if (process.argv[2] === "mixamo-godwin") {
     const idle = sampleClip(path.join("models", "kaykit", "godwin-idle.glb"), 1);
-    const walk = sampleClip(path.join("models", "kaykit", "godwin-walk.glb"), 8);
-    const sampled = idle.sampled.concat(walk.sampled);
+    const walkPath = path.join("models", "kaykit", "godwin-walk.glb");
+    let walkSampled = idle.sampled;
+    if (fs.existsSync(walkPath)) {
+        const walk = sampleClip(walkPath, 8);
+        walkSampled = walk.sampled;
+    }
+    const sampled = idle.sampled.concat(walkSampled);
     writeClip(sampled, idle.json, idle.bin, "mixamo-godwin", 0, true);
 } else if (process.argv[2] === "mixamo-peasant") {
     const idle = sampleClip(path.join("models", "kaykit", "mixamo-idle.glb"), 1);
