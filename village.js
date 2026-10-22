@@ -4183,7 +4183,7 @@ function flushKitBuildMeshes() {
 function queueSouthwestShowcaseBuilds() {
     const home = places[2];
     if (!home) return;
-    queueKitBuild("my-building", home.ox - 26, home.oz + 42, 0);
+    queueKitBuild("random-flat-roof-house", home.ox - 26, home.oz + 42, 0);
 }
 
 function runKitBuildQueue() {

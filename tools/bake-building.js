@@ -69,9 +69,21 @@ function shade(n) {
 }
 
 const cache = {};
+function isOverhangCorner2(name) {
+    return /OverhangCorner2$/.test(name);
+}
+function gltfSourceName(name) {
+    return isOverhangCorner2(name) ? name.replace(/2$/, "") : name;
+}
+function mirrorXZ(v) {
+    return [-v[0], v[1], -v[2]];
+}
+
 function piece(name) {
     if (cache[name]) return cache[name];
-    const { gltf, bin } = loadGltf(name);
+    const srcName = gltfSourceName(name);
+    const mirror = isOverhangCorner2(name);
+    const { gltf, bin } = loadGltf(srcName);
     const groups = {};
     for (const mesh of gltf.meshes) {
         for (const prim of mesh.primitives) {
@@ -82,9 +94,14 @@ function piece(name) {
             const idx = readAccessor(gltf, bin, prim.indices);
             if (!groups[key]) groups[key] = [];
             const list = groups[key];
-            for (let i = 0; i < idx.length; i++) {
-                const v = idx[i];
-                list.push([pos[v], nrm[v], uv[v]]);
+            for (let i = 0; i < idx.length; i += 3) {
+                const tri = mirror ? [idx[i], idx[i + 2], idx[i + 1]] : [idx[i], idx[i + 1], idx[i + 2]];
+                for (let t = 0; t < 3; t++) {
+                    const v = tri[t];
+                    const p = mirror ? mirrorXZ(pos[v]) : pos[v];
+                    const n = mirror ? mirrorXZ(nrm[v]) : nrm[v];
+                    list.push([p, n, uv[v]]);
+                }
             }
         }
     }

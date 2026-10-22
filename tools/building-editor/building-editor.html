@@ -51,6 +51,7 @@
             <summary style="cursor:pointer;color:#e8c896;">Floors &amp; props (megakit)</summary>
             <ul style="margin:6px 0 0;padding-left:18px;">
                 <li><b>Floor</b> — <code>Floor_Brick</code>, <code>Floor_RedBrick</code>, <code>Floor_UnevenBrick</code>, <code>Floor_WoodDark</code> / <code>Floor_WoodLight</code> (+ half tiles &amp; overhang corners).</li>
+                <li><b>OverhangCorner / OverhangCorner2</b> — same L-floor; <b>2</b> is the <b>opposite</b> corner (mirrored lip). Use <b>1</b> on one outer corner of a deck, <b>2</b> on the diagonally opposite outer corner; use <b>R</b> on each cell so lips face open air.</li>
                 <li><b>Prop</b> — crates, wagon, chimneys, vines, fences, border trim; search <b>prop</b> or <b>floor</b> above.</li>
                 <li>Medieval <b>street lamps</b> are not in this kit — use the town editor lamp or add CC0 models under <code>models/town-props/</code> (see README there).</li>
             </ul>
@@ -272,22 +273,44 @@
             statusEl.textContent = text;
         }
 
+        function isOverhangCorner2(pieceId) {
+            return /OverhangCorner2$/.test(pieceId || "");
+        }
+
+        /** Corner2 is always the X+Z mirror of Corner1 (opposite outer corner). */
+        function gltfSourceName(pieceId) {
+            return isOverhangCorner2(pieceId) ? pieceId.replace(/2$/, "") : pieceId;
+        }
+
+        const EDITOR_BUILD = 6;
+
         function pieceUrl(name) {
-            return manifest.piecesDir + encodeURIComponent(name) + ".gltf";
+            return manifest.piecesDir + encodeURIComponent(name) + ".gltf?v=" + EDITOR_BUILD;
         }
 
         async function loadTemplate(name) {
             if (templateCache.has(name)) return templateCache.get(name);
+            const srcName = gltfSourceName(name);
             const promise = new Promise((resolve, reject) => {
-                loader.load(pieceUrl(name), (gltf) => {
-                    const root = gltf.scene;
-                    root.traverse((o) => {
-                        if (o.isMesh) {
-                            o.castShadow = true;
-                            o.receiveShadow = true;
+                loader.load(pieceUrl(srcName), (gltf) => {
+                    const wrap = new THREE.Group();
+                    const mesh = gltf.scene;
+                    const mirrorGeo = isOverhangCorner2(name);
+                    mesh.traverse((o) => {
+                        if (!o.isMesh) return;
+                        o.castShadow = true;
+                        o.receiveShadow = true;
+                        o.material = o.material.clone();
+                        o.material.side = THREE.DoubleSide;
+                        if (mirrorGeo) {
+                            const g = o.geometry.clone();
+                            g.scale(-1, 1, -1);
+                            g.computeVertexNormals();
+                            o.geometry = g;
                         }
                     });
-                    resolve(root);
+                    wrap.add(mesh);
+                    resolve(wrap);
                 }, undefined, reject);
             });
             templateCache.set(name, promise);
@@ -435,6 +458,13 @@
             setStatus("Loaded " + placed.length + " pieces");
         }
 
+        function pieceLabel(name) {
+            const label = name.replace(/_/g, " ");
+            if (/OverhangCorner2$/.test(name)) return label + " (mirrored — opposite corner)";
+            if (/OverhangCorner$/.test(name)) return label + " (corner A)";
+            return label;
+        }
+
         function fillPieceList() {
             const q = searchEl.value.trim().toLowerCase();
             const cat = categoryEl.value;
@@ -443,7 +473,7 @@
             for (const name of list) {
                 const opt = document.createElement("option");
                 opt.value = name;
-                opt.textContent = name.replace(/_/g, " ");
+                opt.textContent = pieceLabel(name);
                 pieceEl.appendChild(opt);
             }
             if (list.length) {
@@ -493,8 +523,13 @@
 
         categoryEl.addEventListener("change", fillPieceList);
         pieceEl.addEventListener("change", () => {
-            selectedPiece = pieceEl.value;
             ghostTemplate = null;
+            selectedPiece = pieceEl.value;
+            if (isOverhangCorner2(selectedPiece)) {
+                setStatus("Floor corner 2 (mirrored) — opposite outer corner from corner A.");
+            } else if (/OverhangCorner$/.test(selectedPiece)) {
+                setStatus("Floor corner A — pair with corner 2 on the diagonally opposite deck corner.");
+            }
             updateFloorGuide();
             updateGhost();
         });
@@ -675,7 +710,7 @@
                     setStatus("Ready — " + Object.values(manifest.categories).flat().length + " kit pieces.");
                 }
             } else {
-                setStatus("Ready — pick a piece and click the grid.");
+                setStatus("Ready (editor v" + EDITOR_BUILD + ") — pick a piece and click the grid.");
             }
         }
 
