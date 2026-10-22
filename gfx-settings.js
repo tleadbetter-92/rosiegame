@@ -11,7 +11,7 @@
             const saved = localStorage.getItem(KEY);
             if (saved === "low" || saved === "medium") return saved;
         } catch (err) { /* private mode */ }
-        return coarsePhone() ? "low" : "medium";
+        return "low";
     }
 
     function save(mode) {

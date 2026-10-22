@@ -2770,11 +2770,12 @@ function stampEditorBlock(block, ox, oz) {
         const z = cell[1] + oz;
         const w = 2;
         const d = 2;
+        const y = yAt(x + 1, z + 1) + 0.06;
         pushQuad(list,
-            [x, yAt(x, z) + 0.06, z, x / 4, z / 4, 1],
-            [x, yAt(x, z + d) + 0.06, z + d, x / 4, (z + d) / 4, 1],
-            [x + w, yAt(x + w, z + d) + 0.06, z + d, (x + w) / 4, (z + d) / 4, 1],
-            [x + w, yAt(x + w, z) + 0.06, z, (x + w) / 4, z / 4, 1]
+            [x, y, z, x / 4, z / 4, 1],
+            [x, y, z + d, x / 4, (z + d) / 4, 1],
+            [x + w, y, z + d, (x + w) / 4, (z + d) / 4, 1],
+            [x + w, y, z, (x + w) / 4, z / 4, 1]
         );
     };
     const groundLayers = [
@@ -3525,60 +3526,77 @@ function hamletEditorLayout(index) {
     return EditorBlocks.hamlet || null;
 }
 
-function dressHamlets() {
+const HAMLET_DRESS_RADIUS = 300;
+const hamletDressed = [];
+const HAMLET_DECOR_MESH = ["grass", "dirt", "cobble", "sand", "plow", "yardgravel", "bill", "billFront", "plaster", "roof", "trunk"];
+
+function uploadHamletDecorMeshes() {
+    if (typeof mesh === "undefined") return;
+    for (let i = 0; i < HAMLET_DECOR_MESH.length; i++) {
+        const name = HAMLET_DECOR_MESH[i];
+        if (batches[name] && batches[name].length) uploadMesh(name, batches[name]);
+    }
+}
+
+function dressHamletIndex(index) {
+    if (hamletDressed[index]) return;
+    hamletDressed[index] = true;
     const hamlets = World.hamlets || [];
+    const hamlet = hamlets[index];
+    if (!hamlet) return;
     const lists = { wall: batches.bill, front: batches.billFront, plaster: batches.plaster, roof: batches.roof };
     const sizes = { farmhouse: [4.7, 4.7], vshop: [5.5, 5], stores: [8, 5.5] };
-    hamlets.forEach((hamlet, index) => {
-        const village = places.length + index;
-        const ox = hamlet.x + 1;
-        const oz = hamlet.z + 25.5;
-        const layout = hamletEditorLayout(index);
-        const townBlock = index === HAMLET_TOWN_BLOCK_INDEX && typeof EditorBlocks !== "undefined" && layout === EditorBlocks.hamletTown;
-        if (layout) {
-            stampEditorBlock(layout, ox, oz);
-            const half = (layout.size || 192) * 0.5;
-            if (townBlock) {
-                hamletPads.push({ x: ox - half, z: oz - half, w: layout.size || 192, d: layout.size || 192 });
-            } else {
-                hamletPads.push({ x: ox - 22, z: oz - 46, w: 58, d: 56 });
-            }
-            for (let i = 0; i < layout.buildings.length; i++) {
-                const piece = layout.buildings[i];
-                if (piece.t === "kit" && piece.id) {
-                    queueKitBuild(piece.id, piece.x + ox, piece.z + oz, editorLiveYaw(piece.yaw));
-                    continue;
-                }
-                if (piece.t === "lamp") continue;
-                const spec = sizes[piece.t] || sizes.farmhouse;
-                const yaw = editorLiveYaw(piece.yaw);
-                const turned = Math.abs(Math.sin(yaw)) > 0.9;
-                const w = turned ? spec[1] : spec[0];
-                const d = turned ? spec[0] : spec[1];
-                const x = piece.x + ox;
-                const z = piece.z + oz;
-                const house = {
-                    x: x,
-                    z: z,
-                    y: Math.max(0, World.heightAt(x, z)),
-                    yaw: yaw,
-                    w: w,
-                    d: d,
-                    minX: x - w / 2,
-                    minZ: z - d / 2,
-                    mesh: "house",
-                    role: piece.t === "farmhouse" ? "farmhouse" : "house",
-                    doorSide: 0,
-                    village: village,
-                    quiet: true
-                };
-                stampFlatKitHouse(lists, house);
-                shutDoor(house);
-                scenery.push({ x: house.minX, z: house.minZ, w: w, d: d, top: house.y + 4.2 });
-                if (piece.t === "farmhouse" && townBlock) Town.buildings.push(house);
-            }
+    const village = places.length + index;
+    const ox = hamlet.x + 1;
+    const oz = hamlet.z + 25.5;
+    const layout = hamletEditorLayout(index);
+    const townBlock = index === HAMLET_TOWN_BLOCK_INDEX && typeof EditorBlocks !== "undefined" && layout === EditorBlocks.hamletTown;
+    let kitQueued = false;
+    if (layout) {
+        stampEditorBlock(layout, ox, oz);
+        const half = (layout.size || 192) * 0.5;
+        if (townBlock) {
+            hamletPads.push({ x: ox - half, z: oz - half, w: layout.size || 192, d: layout.size || 192 });
+        } else {
+            hamletPads.push({ x: ox - 22, z: oz - 46, w: 58, d: 56 });
         }
-        if (townBlock) return;
+        for (let i = 0; i < layout.buildings.length; i++) {
+            const piece = layout.buildings[i];
+            if (piece.t === "kit" && piece.id) {
+                queueKitBuild(piece.id, piece.x + ox, piece.z + oz, editorLiveYaw(piece.yaw));
+                kitQueued = true;
+                continue;
+            }
+            if (piece.t === "lamp") continue;
+            const spec = sizes[piece.t] || sizes.farmhouse;
+            const yaw = editorLiveYaw(piece.yaw);
+            const turned = Math.abs(Math.sin(yaw)) > 0.9;
+            const w = turned ? spec[1] : spec[0];
+            const d = turned ? spec[0] : spec[1];
+            const x = piece.x + ox;
+            const z = piece.z + oz;
+            const house = {
+                x: x,
+                z: z,
+                y: Math.max(0, World.heightAt(x, z)),
+                yaw: yaw,
+                w: w,
+                d: d,
+                minX: x - w / 2,
+                minZ: z - d / 2,
+                mesh: "house",
+                role: piece.t === "farmhouse" ? "farmhouse" : "house",
+                doorSide: 0,
+                village: village,
+                quiet: true
+            };
+            stampFlatKitHouse(lists, house);
+            shutDoor(house);
+            scenery.push({ x: house.minX, z: house.minZ, w: w, d: d, top: house.y + 4.2 });
+            if (piece.t === "farmhouse" && townBlock) Town.buildings.push(house);
+        }
+    }
+    if (!townBlock) {
         const farm = hamletFarmAt(hamlet, index);
         dressDesignedFarm(farm.x - 4, farm.z + 26);
         const size = 4.7;
@@ -3598,10 +3616,31 @@ function dressHamlets() {
         };
         Town.buildings.push(house);
         stampFlatKitHouse(lists, house);
-    });
+    }
+    uploadHamletDecorMeshes();
+    if (kitQueued && typeof runKitBuildQueue === "function") runKitBuildQueue();
 }
 
-dressHamlets();
+function dressHamletsNear(x, z, radius) {
+    const hamlets = World.hamlets || [];
+    const r = radius != null ? radius : HAMLET_DRESS_RADIUS;
+    const r2 = r * r;
+    for (let i = 0; i < hamlets.length; i++) {
+        const dx = x - hamlets[i].x;
+        const dz = z - hamlets[i].z;
+        if (dx * dx + dz * dz <= r2) dressHamletIndex(i);
+    }
+}
+
+let hamletDressMarkX = 1e9;
+let hamletDressMarkZ = 1e9;
+
+function tickHamletDress() {
+    if (Math.hypot(cam.x - hamletDressMarkX, cam.z - hamletDressMarkZ) < 48) return;
+    hamletDressMarkX = cam.x;
+    hamletDressMarkZ = cam.z;
+    dressHamletsNear(cam.x, cam.z);
+}
 dressFlatHouses();
 placeStudyHouse();
 growScenery();
@@ -3620,6 +3659,8 @@ for (const name of Object.keys(batches)) {
 if (mesh.dfYard) mesh.dfYard.cull = false;
 if (mesh.plow) mesh.plow.cull = false;
 if (mesh.yardgravel) mesh.yardgravel.cull = false;
+dressHamletsNear(cam.x, cam.z);
+uploadHamletDecorMeshes();
 const blendMesh = {};
 for (const kind of Object.keys(blends)) {
     const data = new Float32Array(blends[kind]);
@@ -3666,20 +3707,20 @@ const GFX_PRESETS = {
         far: 420,
         fogNear: 230,
         fogSpan: 170,
-        drawFar: 380,
-        treeNear: 100,
-        treeMid: 230,
-        treeFar: 360,
-        treeCap: 150,
-        treeMidCap: 400,
-        treeFarCap: 620,
-        meadowReach: 120,
-        meadowStep: 36,
+        drawFar: 372,
+        treeNear: 96,
+        treeMid: 220,
+        treeFar: 350,
+        treeCap: 132,
+        treeMidCap: 340,
+        treeFarCap: 540,
+        meadowReach: 115,
+        meadowStep: 38,
         meadowProps: true,
-        personDraw: 85,
-        personStep: 60,
-        farEvery: 100,
-        miniEvery: 4,
+        personDraw: 78,
+        personStep: 56,
+        farEvery: 110,
+        miniEvery: 5,
         groundStipple: 0
     }
 };
@@ -12052,6 +12093,7 @@ function frame(now) {
     stepGateShowcase(dt);
     swingDoors(dt);
     updateFocusTown();
+    tickHamletDress();
     maybeRemeshLand();
     stampRaisedPlots();
     refreshNearTrees();
