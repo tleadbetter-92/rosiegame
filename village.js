@@ -3553,7 +3553,6 @@ function registerHamletTerrainFlats() {
 // Ashby — closest minor hamlet to Southwest (homeVillage 2); pilot for saved town-block layout.
 // dressHamlets() queues kit pieces at load — must exist before that runs.
 const kitBuildQueue = [];
-const kitBuildLayers = {};
 const kitShells = [];
 let kitTexturesReady = null;
 
@@ -4288,7 +4287,7 @@ function kitWorldRect(rect, wx, wz, cx, cz, yaw, baseY) {
     };
 }
 
-function registerKitPhysics(id, wx, wz, baseY, meta, physics) {
+function registerKitPhysics(id, wx, wz, baseY, meta, physics, building) {
     if (!physics) return;
     const cx = meta.cx;
     const cz = meta.cz;
@@ -4334,6 +4333,9 @@ function registerKitPhysics(id, wx, wz, baseY, meta, physics) {
             y: baseY,
             entry: door
         });
+        if (building) {
+            building.box = { minX: box.x, minZ: box.z, w: box.w, d: box.d, y: baseY, h: shell.h || 6 };
+        }
         townBuildGrid = null;
     }
     for (const solid of physics.solids || []) {
@@ -4404,82 +4406,235 @@ function queueKitBuild(id, wx, wz, yaw) {
     kitBuildQueue.push({ id: id, wx: wx, wz: wz, yaw: yaw || 0 });
 }
 
-function appendKitMesh(meshName, data) {
-    const prev = kitBuildLayers[meshName];
-    if (!prev) {
-        kitBuildLayers[meshName] = data;
+// Shell stays in the street. A heavy skin (the tower's metal and rock) loads for the one
+// building you are walking up to. Furniture and props load only while you are inside that house.
+const KIT_SHELL_MATS = { plaster: 1, brick: 1, wood: 1, tiles: 1, rock: 1, metal: 1 };
+const KIT_INTERIOR_MATS = {
+    furniture: 1, propmetal: 1, propcloth: 1, proppack: 1,
+    mosaicTerra: 1, mosaicBW: 1, mosaicMed: 1, mosaicMeander: 1, mosaicPH: 1
+};
+const KIT_DETAIL_VERTS = 40000;
+const kitBinCache = {};
+const kitPlaced = [];
+let kitDetailHold = null;
+
+function kitMeshName(mat) {
+    return "kitBuild" + mat.charAt(0).toUpperCase() + mat.slice(1);
+}
+
+function kitRole(mat, verts) {
+    if (KIT_INTERIOR_MATS[mat]) return "interior";
+    if (!KIT_SHELL_MATS[mat]) return null;
+    if ((mat === "metal" || mat === "rock") && verts > KIT_DETAIL_VERTS) return "detail";
+    return "shell";
+}
+
+function kitAnchor(building) {
+    if (building.box) {
+        return { x: building.box.minX + building.box.w * 0.5, z: building.box.minZ + building.box.d * 0.5 };
+    }
+    return { x: building.wx, z: building.wz };
+}
+
+function kitInside(building, x, z, y) {
+    const box = building.box;
+    if (!box) return false;
+    const pad = building.interiorOn ? 5.5 : 2.2;
+    if (x < box.minX - pad || x > box.minX + box.w + pad) return false;
+    if (z < box.minZ - pad || z > box.minZ + box.d + pad) return false;
+    if (y > box.y + (box.h || 6) + 2.5) return false;
+    return true;
+}
+
+function loadKitRaw(id, mat) {
+    const slot = kitBinCache[id] || (kitBinCache[id] = { bins: {}, jobs: {} });
+    if (slot.bins[mat]) return Promise.resolve(slot.bins[mat]);
+    if (slot.jobs[mat]) return slot.jobs[mat];
+    slot.jobs[mat] = fetch("models/kitbuild/" + id + "-" + mat + ".bin")
+        .then((res) => {
+            if (!res.ok) throw new Error("missing bake: " + id + " " + mat);
+            return res.arrayBuffer();
+        })
+        .then((buf) => {
+            const data = new Float32Array(buf);
+            slot.bins[mat] = data;
+            delete slot.jobs[mat];
+            return data;
+        })
+        .catch((err) => {
+            delete slot.jobs[mat];
+            throw err;
+        });
+    return slot.jobs[mat];
+}
+
+function publishKitMat(mat) {
+    let count = 0;
+    const parts = [];
+    for (let i = 0; i < kitPlaced.length; i++) {
+        const data = kitPlaced[i].live[mat];
+        if (!data || !data.length) continue;
+        parts.push(data);
+        count += data.length;
+    }
+    const merged = new Float32Array(count);
+    let offset = 0;
+    for (let i = 0; i < parts.length; i++) {
+        merged.set(parts[i], offset);
+        offset += parts[i].length;
+    }
+    const name = kitMeshName(mat);
+    uploadMesh(name, merged);
+    if (mesh[name]) mesh[name].cull = false;
+    const texKey = KIT_TEX_FOR[mat] || "kitPlaster";
+    textures[name] = textures[texKey] || textures.plaster;
+}
+
+function applyKitMats(building, mats) {
+    return Promise.all(mats.map((item) => loadKitRaw(building.id, item.mat).then((raw) => {
+        building.live[item.mat] = transformKitVerts(
+            raw, building.wx, building.wz, building.baseY, building.meta.cx, building.meta.cz, building.yaw
+        );
+    }))).then(() => {
+        const seen = {};
+        for (let i = 0; i < mats.length; i++) {
+            if (seen[mats[i].mat]) continue;
+            seen[mats[i].mat] = 1;
+            publishKitMat(mats[i].mat);
+        }
+    });
+}
+
+function dropKitMats(building, mats) {
+    const seen = {};
+    for (let i = 0; i < mats.length; i++) {
+        if (!building.live[mats[i].mat]) continue;
+        delete building.live[mats[i].mat];
+        seen[mats[i].mat] = 1;
+    }
+    const names = Object.keys(seen);
+    for (let i = 0; i < names.length; i++) publishKitMat(names[i]);
+}
+
+function matsForRole(building, role) {
+    const list = building.groups[role] || [];
+    if (role === "interior" && gfxMode === "low") {
+        return list.filter((item) => item.verts <= 45000);
+    }
+    return list;
+}
+
+function wantKitRole(building, role) {
+    const mats = matsForRole(building, role);
+    if (!mats.length) {
+        building[role + "On"] = true;
+        return Promise.resolve();
+    }
+    if (building[role + "On"] || building[role + "Job"]) return building[role + "Job"] || Promise.resolve();
+    building.drop[role] = false;
+    const job = applyKitMats(building, mats).then(() => {
+        building[role + "Job"] = null;
+        if (building.drop[role]) {
+            building.drop[role] = false;
+            dropKitMats(building, mats);
+            return;
+        }
+        building[role + "On"] = true;
+    }).catch((err) => {
+        building[role + "Job"] = null;
+        console.warn("Kit " + role + ":", building.id, err);
+    });
+    building[role + "Job"] = job;
+    return job;
+}
+
+function dropKitRole(building, role) {
+    if (building[role + "Job"]) {
+        building.drop[role] = true;
         return;
     }
-    const next = new Float32Array(prev.length + data.length);
-    next.set(prev);
-    next.set(data, prev.length);
-    kitBuildLayers[meshName] = next;
+    if (!building[role + "On"]) return;
+    building[role + "On"] = false;
+    dropKitMats(building, building.groups[role] || []);
 }
 
-// Walk view only draws the shell. Furniture and props stay out. Low also drops a single
-// material once it is past 40k triangles — the tall tower's metal is 299k and its rock is 112k.
-function kitMaterialKept(mat, verts) {
-    if (mat !== "plaster" && mat !== "brick" && mat !== "wood" && mat !== "tiles" && mat !== "rock" && mat !== "metal") return false;
-    const low = gfxMode === "low";
-    if (low) {
-        if (mat === "metal") return false;
-        if (verts > 40000) return false;
-    } else if (verts > 160000) {
-        return false;
+function tickKitStream() {
+    if (!kitPlaced.length) return;
+    const eye = inside ? inside.view : cam;
+    const high = flying && eye.y > 48;
+    const loadR = gfxMode === "low" ? 28 : 50;
+    const dropR = gfxMode === "low" ? 42 : 72;
+    let nearest = null;
+    let nearestD = Infinity;
+    if (!high && !inside) {
+        for (let i = 0; i < kitPlaced.length; i++) {
+            const building = kitPlaced[i];
+            if (!building.groups.detail.length) continue;
+            const anchor = kitAnchor(building);
+            const dist = Math.hypot(eye.x - anchor.x, eye.z - anchor.z);
+            const limit = building === kitDetailHold ? dropR : loadR;
+            if (dist < limit && dist < nearestD) {
+                nearest = building;
+                nearestD = dist;
+            }
+        }
     }
-    return true;
-}
-
-function kitLayerVisible(name) {
-    if (name.indexOf("kitBuild") !== 0) return true;
-    const count = mesh[name] && mesh[name].count;
-    if (!count) return false;
-    const low = gfxMode === "low";
-    if (low && name === "kitBuildMetal") return false;
-    if (low && count > 40000) return false;
-    if (!low && count > 160000) return false;
-    return true;
+    if (kitDetailHold && kitDetailHold !== nearest) dropKitRole(kitDetailHold, "detail");
+    kitDetailHold = nearest;
+    if (nearest) wantKitRole(nearest, "detail");
+    if (flying || inside) {
+        for (let i = 0; i < kitPlaced.length; i++) dropKitRole(kitPlaced[i], "interior");
+        return;
+    }
+    for (let i = 0; i < kitPlaced.length; i++) {
+        const building = kitPlaced[i];
+        if (!building.groups.interior.length) continue;
+        if (kitInside(building, eye.x, eye.z, eye.y)) wantKitRole(building, "interior");
+        else dropKitRole(building, "interior");
+    }
 }
 
 function stampKitBuildOnce(id, wx, wz, yaw) {
     const baseY = Math.max(0, World.heightAt(wx, wz));
+    const building = {
+        id: id, wx: wx, wz: wz, yaw: yaw, baseY: baseY,
+        meta: null, box: null,
+        groups: { shell: [], detail: [], interior: [] },
+        live: {},
+        drop: { shell: false, detail: false, interior: false },
+        shellOn: false, detailOn: false, interiorOn: false,
+        shellJob: null, detailJob: null, interiorJob: null
+    };
+    kitPlaced.push(building);
     return fetch("models/kitbuild/" + id + ".meta.json")
         .then((res) => {
             if (!res.ok) throw new Error("missing bake: " + id);
             return res.json();
         })
         .then((meta) => {
+            building.meta = meta;
             meta._yaw = yaw;
-            const mats = meta.materials.filter((item) => kitMaterialKept(item.mat, item.verts || 0));
-            const meshJob = Promise.all(
-                mats.map(({ mat }) =>
-                    fetch("models/kitbuild/" + id + "-" + mat + ".bin")
-                        .then((r) => r.arrayBuffer())
-                        .then((buf) => {
-                            const data = transformKitVerts(new Float32Array(buf), wx, wz, baseY, meta.cx, meta.cz, yaw);
-                            const meshName = "kitBuild" + mat.charAt(0).toUpperCase() + mat.slice(1);
-                            appendKitMesh(meshName, data);
-                        })
-                )
-            );
+            for (let i = 0; i < meta.materials.length; i++) {
+                const item = meta.materials[i];
+                const role = kitRole(item.mat, item.verts || 0);
+                if (role) building.groups[role].push(item);
+            }
             const physJob = fetch("models/kitbuild/" + id + ".physics.json")
-                .then((r) => (r.ok ? r.json() : null))
-                .then((physics) => registerKitPhysics(id, wx, wz, baseY, meta, physics))
+                .then((res) => (res.ok ? res.json() : null))
+                .then((physics) => registerKitPhysics(id, wx, wz, baseY, meta, physics, building))
                 .catch(() => null);
-            return Promise.all([meshJob, physJob]);
+            return Promise.all([physJob, wantKitRole(building, "shell")]);
         });
 }
 
 function flushKitBuildMeshes() {
-    for (const meshName of Object.keys(kitBuildLayers)) {
-        const list = kitBuildLayers[meshName];
-        if (!list.length) continue;
-        uploadMesh(meshName, new Float32Array(list));
-        if (mesh[meshName]) mesh[meshName].cull = false;
-        const mat = meshName.slice("kitBuild".length).toLowerCase();
-        const tk = KIT_TEX_FOR[mat] || "kitPlaster";
-        textures[meshName] = textures[tk] || textures.plaster;
+    const mats = {};
+    for (let i = 0; i < kitPlaced.length; i++) {
+        const names = Object.keys(kitPlaced[i].live);
+        for (let n = 0; n < names.length; n++) mats[names[n]] = 1;
     }
+    const list = Object.keys(mats);
+    for (let i = 0; i < list.length; i++) publishKitMat(list[i]);
 }
 
 function queueSouthwestShowcaseBuilds() {
@@ -4695,7 +4850,9 @@ const outdoorDrawList = [
     "cloth0", "cloth1", "cloth2", "cloth3", "cloth4", "skin", "pants", "steel",
     "placeGhost",
     "swintrunk", "swinplaster", "swinlinen", "swinrock", "swinglow", "swindoor", "swinroof", "swingoods",
-    "kitBuildPlaster", "kitBuildBrick", "kitBuildWood", "kitBuildTiles", "kitBuildRock", "kitBuildMetal"
+    "kitBuildPlaster", "kitBuildBrick", "kitBuildWood", "kitBuildTiles", "kitBuildRock", "kitBuildMetal",
+    "kitBuildFurniture", "kitBuildPropmetal", "kitBuildPropcloth", "kitBuildProppack",
+    "kitBuildMosaicTerra", "kitBuildMosaicBW", "kitBuildMosaicMed", "kitBuildMosaicMeander", "kitBuildMosaicPH"
 ];
 
 function uploadMesh(name, floats) {
@@ -10695,7 +10852,6 @@ function draw() {
     const stride = 24;
     gl.clear(gl.DEPTH_BUFFER_BIT);
     for (let i = 0; i < outdoorDrawList.length; i++) {
-        if (!kitLayerVisible(outdoorDrawList[i])) continue;
         gl.uniform1f(loc.glow, outdoorDrawList[i] === "glow" ? 2 : 0);
         drawMesh(outdoorDrawList[i], 1, dark, proj);
     }
@@ -12327,6 +12483,7 @@ function frame(now) {
     swingDoors(dt);
     updateFocusTown();
     tickHamletDress();
+    tickKitStream();
     maybeRemeshLand();
     stampRaisedPlots();
     refreshNearTrees();
