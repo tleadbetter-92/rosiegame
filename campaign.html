@@ -6,123 +6,40 @@
     <title>Campaign</title>
     <link rel="stylesheet" href="campaign.css">
 </head>
-<body>
+<body class="play">
     <header>
         <nav>
             <a href="village.html">Village</a>
-            <a href="total-war.html">War map</a>
-            <a href="island-lab.html">Skirmish Isle</a>
             <a href="village.html?fly=1">Survey</a>
-            <a href="board.html">Board</a>
             <button type="button" id="gfx-toggle" class="gfx-toggle">Graphics: Medium</button>
         </nav>
         <div>
-            <p class="eyebrow">Strategy</p>
-            <h1>Campaign</h1>
+            <p class="eyebrow">Campaign</p>
+            <h1 id="when-who">Faction A's turn</h1>
         </div>
-        <p id="clock">Recruiting takes five minutes</p>
-        <div class="header-actions">
-            <div class="goblin-tools">
-                <button id="goblin-raid" type="button">Goblin raid now</button>
-                <button id="goblin-camp" type="button">+5 in woods camp</button>
-                <p id="goblin-status" class="goblin-status"></p>
-            </div>
-            <div class="goblin-tools brute-tools">
-                <button id="brute-raid" type="button">Brute raid now</button>
-                <p id="brute-status" class="goblin-status"></p>
-            </div>
-            <button id="restart" type="button">Restart</button>
+        <div class="play-when">
+            <p id="when-day">Day 1</p>
+            <p id="when-turn">Turn 1 of 2 · Morning</p>
         </div>
+        <button id="end-turn" type="button">End turn</button>
     </header>
-    <p class="lead">You are the Southwest campaign player. Place a farm, lumberyard, or mine, select it, and grow workers there. They stay at that building. A farm holds 4. A mine or lumberyard holds 100. End your turn when you are finished.</p>
-    <section class="sheet roster-sheet">
-        <h2>Game assets (keep list)</h2>
-        <p class="roster-lead">Characters and creatures we are keeping for Rosiegame — Southwest experiments use these meshes first.</p>
-        <div class="scroll">
-            <table id="asset-roster">
-                <thead><tr><th>Name</th><th>Pack id</th><th>Status</th><th>In game</th></tr></thead>
-                <tbody></tbody>
-            </table>
-        </div>
-    </section>
-    <section class="sheet place-sheet">
-        <h2>Place a building</h2>
-        <div class="kinds" id="kinds"></div>
-        <p id="hint"></p>
-        <p id="coords"></p>
-        <div class="place-layout">
-            <canvas id="place-land" width="680" height="640" aria-label="Southwest building spots"></canvas>
-            <aside>
-                <ul id="facts"></ul>
-                <button id="remove" type="button" hidden>Remove selected</button>
-            </aside>
-        </div>
-    </section>
-    <section class="sheet">
-        <h2>Factions</h2>
-        <div class="scroll">
-            <table id="factions">
-                <thead><tr><th>Faction</th><th>Holds</th><th>Pop</th><th>Soldiers</th><th>Houses</th><th>Farms</th><th>Yards</th><th>Mines</th><th>Food</th><th>Upkeep a day</th><th>Wood</th><th>Stone</th><th>Gold</th><th>Working on</th></tr></thead>
-                <tbody></tbody>
-            </table>
-        </div>
-    </section>
-    <details class="sheet guide">
-        <summary>How it works</summary>
-        <p id="guide-basics"></p>
-        <h3>Buildings that can be built</h3>
-        <div class="scroll"><table id="guide-buildings"><thead><tr><th>Building</th><th>Cost</th><th>Build time</th><th>Gives</th><th>When</th></tr></thead><tbody></tbody></table></div>
-        <h3>Starting buildings (cannot be built yet)</h3>
-        <div class="scroll"><table id="guide-fixed"><thead><tr><th>Building</th><th>What it is</th></tr></thead><tbody></tbody></table></div>
-        <h3>Units that can be trained</h3>
-        <div class="scroll"><table id="guide-units"><thead><tr><th>Unit</th><th>Cost</th><th>Training time</th><th>Does</th></tr></thead><tbody></tbody></table></div>
-    </details>
-    <figure class="island">
-        <canvas id="land" width="680" height="640" aria-label="The whole island from above"></canvas>
-    </figure>
-    <div class="map" aria-label="Campaign map">
-        <article class="hold" data-i="0">
-            <h2>Northwest</h2>
-            <p class="owner" data-owner>Held by Northwest</p>
-            <p class="count">pop <span data-pop>0/20</span> · <span data-count>0</span> soldiers · <span data-workers>0 workers</span> · <label class="food">food <input data-food type="number" min="0" max="99999" step="1" value="0" aria-label="Northwest food"></label> · <span data-wood>0</span> wood</p>
-            <label class="stance"><span data-stance-name>Southwest and Northwest:</span> <select data-stance="0" aria-label="Southwest and Northwest"><option value="war">War</option><option value="peace">Peace</option><option value="ally">Allied</option></select></label>
-            <p class="status" data-status></p>
-            <div class="men" data-men></div>
-        </article>
-        <article class="hold" data-i="1">
-            <h2>Northeast</h2>
-            <p class="owner" data-owner>Held by Northeast</p>
-            <p class="count">pop <span data-pop>0/20</span> · <span data-count>0</span> soldiers · <span data-workers>0 workers</span> · <label class="food">food <input data-food type="number" min="0" max="99999" step="1" value="0" aria-label="Northeast food"></label> · <span data-wood>0</span> wood</p>
-            <label class="stance"><span data-stance-name>Southwest and Northeast:</span> <select data-stance="1" aria-label="Southwest and Northeast"><option value="war">War</option><option value="peace">Peace</option><option value="ally">Allied</option></select></label>
-            <p class="status" data-status></p>
-            <div class="men" data-men></div>
-        </article>
-        <article class="hold" data-i="2">
-            <h2>Southwest</h2>
-            <p class="owner" data-owner>Held by Southwest</p>
-            <p class="count">pop <span data-pop>0/20</span> · <span data-count>0</span> soldiers · <span data-workers>0 workers</span> · <label class="food">food <input data-food type="number" min="0" max="99999" step="1" value="0" aria-label="Southwest food"></label> · <span data-wood>0</span> wood</p>
-            <label class="stance" hidden><span data-stance-name>Southwest and Southwest:</span> <select data-stance="2" aria-label="Southwest and the holder"><option value="war">War</option><option value="peace">Peace</option><option value="ally">Allied</option></select></label>
-            <p class="status" data-status></p>
-            <div class="men" data-men></div>
-        </article>
-        <article class="hold" data-i="3">
-            <h2>Southeast</h2>
-            <p class="owner" data-owner>Held by Southeast</p>
-            <p class="count">pop <span data-pop>0/20</span> · <span data-count>0</span> soldiers · <span data-workers>0 workers</span> · <label class="food">food <input data-food type="number" min="0" max="99999" step="1" value="0" aria-label="Southeast food"></label> · <span data-wood>0</span> wood</p>
-            <label class="stance"><span data-stance-name>Southwest and Southeast:</span> <select data-stance="3" aria-label="Southwest and Southeast"><option value="war">War</option><option value="peace">Peace</option><option value="ally">Allied</option></select></label>
-            <p class="status" data-status></p>
-            <div class="men" data-men></div>
-        </article>
-    </div>
-    <section class="log">
-        <h2>Latest turn</h2>
-        <ul id="log"></ul>
-    </section>
+    <main class="play-main">
+        <figure class="play-map">
+            <canvas id="land" width="960" height="720" aria-label="Faction A and Faction B"></canvas>
+        </figure>
+        <aside class="play-side">
+            <p class="lead-play">Two turns make a game day. Morning is Faction A. Evening is Faction B. The map is two regions, and each region is three districts.</p>
+            <h2>Regions</h2>
+            <div id="regions"></div>
+            <h2>Settlement</h2>
+            <div id="settlement"><p class="quiet">Click a town or a capital.</p></div>
+            <h2>Latest</h2>
+            <ul id="log"></ul>
+        </aside>
+    </main>
     <script src="gfx-settings.js"></script>
     <script src="world-edit.js"></script>
     <script src="world.js"></script>
-    <script src="asset-roster.js"></script>
-    <script src="campaign.js"></script>
-    <script src="board.js"></script>
+    <script src="campaign-play.js?v=districts"></script>
 </body>
 </html>

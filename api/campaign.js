@@ -22,9 +22,9 @@ const CAP = 10;
 const FIELD = CAP;
 
 const factions = [
-    { id: "northwest", name: "Northwest", color: "#c45c3a" },
+    { id: "northwest", name: "Faction B", color: "#c45c3a" },
     { id: "northeast", name: "Northeast", color: "#3d6b8a" },
-    { id: "southwest", name: "Southwest", color: "#6a7a3a" },
+    { id: "southwest", name: "Faction A", color: "#6a7a3a" },
     { id: "southeast", name: "Southeast", color: "#8a5a7a" }
 ];
 
@@ -41,6 +41,11 @@ function getPlaces() {
     if (!campaignScope.isIslandCampaign()) return World.places;
     return IslandLab.placesFromPlacements() || World.places.slice(0, 2);
 }
+function majorOnMap(faction) {
+    if (campaignScope.isIslandCampaign()) return true;
+    const place = getPlaces()[faction];
+    return !!(place && place.onMap !== false);
+}
 function getPlayerFaction() {
     if (!campaignScope.isIslandCampaign()) return 2;
     const acting = campaignScope.getActingFaction();
@@ -55,7 +60,8 @@ function worldStorageKey() {
 }
 
 // Rural communities: minor factions numbered from MINOR_BASE. They farm, keep no soldiers, and seek a protector.
-const minors = [
+// The catalog stays. Only hamlets that are actually on the map become minors.
+const minorCatalog = [
     { name: "Ashby", color: "#b0883a" },
     { name: "Fernlow", color: "#7a9a4a", ally: 2 },
     { name: "Brackwick", color: "#9a7a4a", ally: 2 },
@@ -63,7 +69,8 @@ const minors = [
     { name: "Hollins", color: "#6a8a6a", ally: 2 },
     { name: "Redmere", color: "#a0624a", ally: 2 },
     { name: "Westerby", color: "#7a6a9a", ally: 2 }
-].map((minor, index) => Object.assign({}, World.hamlets[index], minor));
+];
+const minors = (World.hamlets || []).map((hamlet, index) => Object.assign({}, hamlet, minorCatalog[index] || { name: hamlet.id || ("Hamlet " + (index + 1)), color: "#b0883a" }));
 const FOLK_PER_HOUSE = 2;
 const WORK_MS = 60000;
 const WORK_YIELD = 10;
@@ -370,6 +377,26 @@ async function writeState(state) {
 
 function turnOf(state, clock) {
     return Math.floor(Math.max(0, clock - state.startedAt) / TURN_MS);
+}
+
+// A game day is two campaign turns: morning is Southwest, evening is Southhold.
+function campaignHand(playMs) {
+    const play = Number.isFinite(playMs) ? playMs : Math.round(8 / 24 * Clock.DAY_MS);
+    const hour = Clock.hours(play);
+    const turn = hour < 12 ? 1 : 2;
+    const faction = turn === 1 ? getPlayerFaction() : 0;
+    const row = getActiveFactions()[faction] || { name: "Faction", color: "#888" };
+    return {
+        day: Clock.day(play) + 1,
+        turn,
+        of: 2,
+        part: turn === 1 ? "Morning" : "Evening",
+        hour: Clock.label(play),
+        faction,
+        name: row.name,
+        color: row.color,
+        player: faction === getPlayerFaction()
+    };
 }
 
 function keyOf(faction, index) {
@@ -689,6 +716,7 @@ function strongest(state, faction) {
 function attackTarget(state, from, faction, turn) {
     const enemies = [];
     for (let village = 0; village < getMajor(); village++) {
+        if (!majorOnMap(village)) continue;
         if (!atWar(state, faction, state.owners[village])) continue;
         if (state.attacks.some((attack) => !attack.resolved && attack.to === village)) continue;
         enemies.push({ village, neighbor: World.links[from].includes(village) });
@@ -700,6 +728,7 @@ function attackTarget(state, from, faction, turn) {
 }
 
 function maybeAttack(state, faction, turn, now) {
+    if (!majorOnMap(faction)) return false;
     if (state.attacks.some((attack) => !attack.resolved && attack.faction === faction)) return false;
     const from = strongest(state, faction);
     if (from < 0) return;
@@ -2096,9 +2125,13 @@ function settle(state, turn, now) {
     if (state.settledTurn >= turn) return false;
     while (state.settledTurn < turn) {
         state.settledTurn += 1;
-        for (let faction = 0; faction < getMajor(); faction++) recruit(state, faction);
+        for (let faction = 0; faction < getMajor(); faction++) {
+            if (majorOnMap(faction)) recruit(state, faction);
+        }
         recruitFishOnTurn(state, now);
-        for (let faction = 0; faction < getMajor(); faction++) maybeAttack(state, faction, state.settledTurn, now);
+        for (let faction = 0; faction < getMajor(); faction++) {
+            if (majorOnMap(faction)) maybeAttack(state, faction, state.settledTurn, now);
+        }
     }
     return true;
 }
@@ -2703,6 +2736,7 @@ function present(state, now, turn, paused, opts) {
         maxHealth: MAX_HP,
         restartedAt: state.restartedAt || 0,
         playMs: Number.isFinite(state.playMs) ? state.playMs : null,
+        hand: campaignHand(state.playMs),
         owners: state.owners.slice(),
         log: state.log.slice(),
         food: state.food.slice(),
@@ -2913,6 +2947,7 @@ function present(state, now, turn, paused, opts) {
             return {
                 index,
                 name: place.name,
+                onMap: majorOnMap(index),
                 x: spot.x,
                 z: spot.z,
                 owner,
@@ -3019,20 +3054,30 @@ function present(state, now, turn, paused, opts) {
                     .concat((state.farmJobs || []).filter((job) => job.payer === getMinorBase() + index).map(() => "farm"))
             };
         }),
+        regions: (state.regions || []).map((region) => {
+            const stores = state.campaignStores && state.campaignStores[String(region.faction)];
+            const army = state.campaignArmies && state.campaignArmies[String(region.faction)];
+            return Object.assign({}, region, {
+                stores: stores || null,
+                army: { soldiers: army && Number.isFinite(army.soldiers) ? army.soldiers : 0 }
+            });
+        }),
         factions: getActiveFactions().slice(0, getMajor()).map((faction, index) => {
             let alive = 0;
             eachLiving(state, index, () => { alive += 1; });
-            const held = ownedBy(state, index);
+            const held = ownedBy(state, index).filter((village) => majorOnMap(village));
+            const regionTowns = (state.regions || []).filter((region) => region.faction === index).flatMap((region) => region.towns.map((town) => town.name));
             return {
                 id: faction.id,
                 name: faction.name,
                 color: faction.color,
+                onMap: majorOnMap(index),
                 village: index,
                 soldiers: state.nextIndex[index],
                 alive,
                 food: state.food[index] || 0,
                 units: shown[index].units,
-                holds: held.map((village) => factions[village].name),
+                holds: held.map((village) => factions[village].name).concat(regionTowns),
                 pop: factionPop(state, index),
                 limit: popLimit(state, index),
                 upkeep: dailyFood(state, index),
@@ -3422,6 +3467,109 @@ function ensureMinors(state) {
     return dirty;
 }
 
+function ensureMapOwners(state) {
+    let dirty = false;
+    if (!state.mapTwo) {
+        for (let village = 0; village < getMajor(); village++) {
+            if (majorOnMap(village)) state.owners[village] = village;
+        }
+        state.mapTwo = true;
+        dirty = true;
+    }
+    if (!state.mapTwoPeace) {
+        const before = (state.attacks || []).length;
+        state.attacks = (state.attacks || []).filter((attack) => attack.resolved);
+        state.mapTwoPeace = true;
+        if (state.attacks.length !== before) dirty = true;
+        else dirty = true;
+    }
+    return dirty;
+}
+
+function ensureRegions(state) {
+    const source = World.regions || [];
+    const next = source.map((region) => ({
+        id: region.id,
+        name: region.name,
+        faction: region.faction,
+        factionName: region.factionName || "",
+        capital: region.capital ? { x: region.capital.x, z: region.capital.z } : null,
+        towns: (region.towns || []).map((town) => ({
+            id: town.id,
+            name: town.name,
+            x: town.x,
+            z: town.z,
+            owner: region.faction
+        }))
+    }));
+    if (JSON.stringify(state.regions || []) === JSON.stringify(next)) return false;
+    state.regions = next;
+    return true;
+}
+
+const CAMPAIGN_GOODS = ["gold", "stone", "food", "salt", "iron", "wood", "copper", "tin", "other"];
+const TOWN_YIELD = {
+    westfield: ["salt"],
+    southfield: ["wood"],
+    eastwatch: ["stone"],
+    westwatch: ["gold", "iron"]
+};
+
+function blankStores() {
+    const row = {};
+    for (let i = 0; i < CAMPAIGN_GOODS.length; i++) row[CAMPAIGN_GOODS[i]] = 1000;
+    return row;
+}
+
+function ensureCampaignStores(state) {
+    if (!state.campaignStores || typeof state.campaignStores !== "object") state.campaignStores = {};
+    let dirty = false;
+    for (const region of state.regions || World.regions || []) {
+        const key = String(region.faction);
+        if (!state.campaignStores[key]) {
+            state.campaignStores[key] = blankStores();
+            dirty = true;
+        }
+    }
+    return dirty;
+}
+
+function produceCampaign(state, faction) {
+    ensureCampaignStores(state);
+    const stores = state.campaignStores[String(faction)];
+    if (!stores) return;
+    const regions = (state.regions || []).filter((region) => region.faction === faction);
+    for (let i = 0; i < regions.length; i++) {
+        const region = regions[i];
+        stores.food += 6 * 5 * 50;
+        for (const town of region.towns || []) {
+            stores.food += 2 * 5 * 50;
+            const goods = TOWN_YIELD[town.id] || [];
+            for (let g = 0; g < goods.length; g++) stores[goods[g]] += 10 * 50;
+        }
+    }
+}
+
+function ensureCampaignArmies(state) {
+    if (!state.campaignArmies || typeof state.campaignArmies !== "object") state.campaignArmies = {};
+    let dirty = false;
+    for (const region of state.regions || World.regions || []) {
+        const key = String(region.faction);
+        if (!state.campaignArmies[key] || !Number.isFinite(state.campaignArmies[key].soldiers)) {
+            state.campaignArmies[key] = { soldiers: 0 };
+            dirty = true;
+        }
+    }
+    return dirty;
+}
+
+function trainCampaign(state, faction) {
+    ensureCampaignArmies(state);
+    const army = state.campaignArmies[String(faction)];
+    if (!army) return;
+    army.soldiers += 10;
+}
+
 function nearestMajor(state, minorIndex, accept) {
     const spot = minors[minorIndex];
     let best = -1;
@@ -3610,7 +3758,9 @@ function stepHolds(state, now) {
     let dirty = false;
     const keep = [];
     for (const hold of state.holds) {
-        const name = minors[hold.minor].name;
+        const minor = minors[hold.minor];
+        if (!minor) continue;
+        const name = minor.name;
         const living = hold.indexes.filter((index) => healthOf(state, hold.faction, index) > 0);
         if (living.length !== hold.indexes.length) {
             hold.indexes = living;
@@ -5416,6 +5566,10 @@ function syncWorld(state, now) {
     keep("economy", () => ensureEconomy(state, now));
     keep("lodges", () => ensureLodges(state));
     keep("minors", () => ensureMinors(state));
+    keep("regions", () => ensureRegions(state));
+    keep("stores", () => ensureCampaignStores(state));
+    keep("armies", () => ensureCampaignArmies(state));
+    keep("map owners", () => ensureMapOwners(state));
     keep("starts", () => ensureStarts(state));
     keep("kit farms", () => migrateKitFarms(state));
     keep("farms", () => ensureFarms(state));
@@ -5799,10 +5953,36 @@ async function hit(village, index) {
     return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
 }
 
+async function endCampaignTurn() {
+    const state = await readState();
+    const now = Date.now();
+    if (!Number.isFinite(state.playMs)) state.playMs = Math.round(8 / 24 * Clock.DAY_MS);
+    const leaving = campaignHand(state.playMs);
+    ensureCampaignStores(state);
+    produceCampaign(state, leaving.faction);
+    trainCampaign(state, leaving.faction);
+    state.playMs += Clock.DAY_MS / 2;
+    syncWorld(state, now);
+    const entering = campaignHand(state.playMs);
+    note(state, leaving.name + " ends the turn.");
+    note(state, "Day " + entering.day + " · " + entering.part + " · " + entering.name + ".");
+    if (!entering.player && majorOnMap(entering.faction)) {
+        recruit(state, entering.faction);
+        maybeAttack(state, entering.faction, entering.day, now);
+    }
+    await writeState(state);
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+}
+
 async function campaignHandler(req, res) {
     res.setHeader("Cache-Control", "no-store");
     try {
         if (req.method === "POST") {
+            if (req.body && req.body.endTurn) {
+                res.status(200).json(await endCampaignTurn());
+                return;
+            }
             if (req.body && Number.isInteger(req.body.setFood) && Number.isFinite(Number(req.body.amount))) {
                 res.status(200).json(await setFood(req.body.setFood, req.body.amount));
                 return;

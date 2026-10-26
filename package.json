@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "node server.js",
+    "dev:island": "node -r ./tools/island-lab-preload.js server.js",
     "start": "node server.js",
     "serve:editors": "npx --yes serve -p 8080",
     "bake:creatures": "node tools/bake-creature.js all"

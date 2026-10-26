@@ -7,7 +7,7 @@ const islandCampaign = window.CAMPAIGN_ISLAND === true;
 const playerHome = window.CAMPAIGN_PLAYER_VILLAGE != null ? window.CAMPAIGN_PLAYER_VILLAGE : 2;
 const playerLabel = window.CAMPAIGN_PLAYER_LABEL || "Southwest";
 const homeColors = ["#c45c3a", "#3d6b8a", "#6a7a3a", "#8a5a7a"];
-const placeNames = ["Northwest", "Northeast", "Southwest", "Southeast"];
+const placeNames = ["Southhold", "Northeast", "Southwest", "Southeast"];
 const mapX0 = -3800;
 const mapX1 = 3700;
 const mapZ0 = -3400;
@@ -88,7 +88,8 @@ function bakeIsland() {
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.strokeStyle = "rgba(150, 108, 62, 0.9)";
-    for (const link of [[0, 1], [0, 2], [2, 3], [1, 3]]) {
+    for (const link of [[0, 2]]) {
+        if (World.places[link[0]].onMap === false || World.places[link[1]].onMap === false) continue;
         const spots = [World.places[link[0]]]
             .concat(World.trackOf(link[0], link[1]).map((spot) => ({ x: spot[0], z: spot[1] })))
             .concat([World.places[link[1]]]);
@@ -113,10 +114,11 @@ function showVillages(villages) {
     ctx.drawImage(islandBase, 0, 0);
     ctx.textAlign = "center";
     (villages || []).forEach((village, index) => {
+        if (village.onMap === false) return;
         const place = (village.x != null && village.z != null)
             ? { x: village.x, z: village.z }
             : World.places[index];
-        if (!place) return;
+        if (!place || place.onMap === false) return;
         const p = mapPoint(place.x, place.z);
         const label = village.name || placeNames[index];
         ctx.beginPath();
@@ -152,6 +154,24 @@ function showVillages(villages) {
         ctx.fillStyle = "#f7f4ea";
         ctx.strokeText(minor.name, p.x, p.y + 20);
         ctx.fillText(minor.name, p.x, p.y + 20);
+    });
+    (World.regions || []).forEach((region) => {
+        const color = (villages && villages[region.faction] && villages[region.faction].color) || "#f4efe4";
+        (region.towns || []).forEach((town) => {
+            const p = mapPoint(town.x, town.z);
+            ctx.beginPath();
+            ctx.fillStyle = "#f4efe4";
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.font = "700 12px Segoe UI, system-ui, sans-serif";
+            ctx.strokeStyle = "rgba(20, 24, 18, 0.75)";
+            ctx.fillStyle = "#f7f4ea";
+            ctx.strokeText(town.name, p.x, p.y + 18);
+            ctx.fillText(town.name, p.x, p.y + 18);
+        });
     });
     let spot = null;
     try { spot = JSON.parse(localStorage.getItem("village-spot") || "null"); } catch (err) { spot = null; }
@@ -253,6 +273,8 @@ function paint(data) {
     villages.forEach((village, index) => {
         const hold = holds[index];
         if (!hold) return;
+        hold.hidden = village.onMap === false;
+        if (hold.hidden) return;
         const title = hold.querySelector("h2");
         if (title && village.name) title.textContent = village.name;
         hold.style.borderTop = "6px solid " + village.color;
@@ -406,7 +428,7 @@ function duration(ms, dayMs) {
 }
 
 function paintFactions(list) {
-    rows(document.getElementById("factions"), list.map((f) => {
+    rows(document.getElementById("factions"), list.filter((f) => f.onMap !== false).map((f) => {
         const work = f.building.map((kind) => "building a " + (buildNames[kind] || kind))
             .concat(f.training.map((kind) => "training a " + (unitNames[kind] || kind)));
         return [

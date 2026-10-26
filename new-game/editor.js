@@ -16,9 +16,12 @@
     let painting = false;
     let hover = null;
 
+    const HALL_W = 3;
+    const HALL_H = 2;
+
     function isHall(c, r) {
         return halls.some(function (hall) {
-            return c >= hall.c && c < hall.c + 2 && r >= hall.r && r < hall.r + 2;
+            return c >= hall.c && c < hall.c + HALL_W && r >= hall.r && r < hall.r + HALL_H;
         });
     }
 
@@ -28,14 +31,19 @@
         let gold = 0;
         let stone = 0;
         let iron = 0;
+        let mountain = 0;
+        let road = 0;
         Object.keys(tiles).forEach(function (key) {
             if (tiles[key] === "water") water += 1;
             else if (tiles[key] === "forest") forest += 1;
             else if (tiles[key] === "gold") gold += 1;
             else if (tiles[key] === "stone") stone += 1;
             else if (tiles[key] === "iron") iron += 1;
+            else if (tiles[key] === "mountain") mountain += 1;
+            else if (tiles[key] === "road") road += 1;
         });
-        return water + " water, " + forest + " forest, " + gold + " gold, " + stone + " stone, " + iron + " iron";
+        return water + " water, " + forest + " forest, " + gold + " gold, " + stone + " stone, " + iron + " iron, "
+            + mountain + " mountain, " + road + " road";
     }
 
     function paint(c, r) {
@@ -93,7 +101,7 @@
 
     document.getElementById("clear").addEventListener("click", function () {
         if (!Object.keys(tiles).length) return;
-        if (!window.confirm("Clear all water and forest?")) return;
+        if (!window.confirm("Clear every painted tile?")) return;
         tiles = {};
         BattleMap.save(tiles);
     });
@@ -136,7 +144,7 @@
         const view = editorView.beginFrame(ctx);
         BattleMap.drawGround(ctx, tiles, view);
 
-        if (view.c1 - view.c0 < 48) {
+        if ((view.zoom || 1) * TILE >= 20) {
             ctx.strokeStyle = "rgba(26, 36, 16, 0.28)";
             ctx.lineWidth = 1;
             for (let c = view.c0; c <= view.c1; c++) {
@@ -153,7 +161,20 @@
             }
         }
 
-        halls.forEach(drawHall);
+        halls.forEach(function (hall) {
+            if (hall.c + HALL_W - 1 < view.c0 || hall.c > view.c1 || hall.r + HALL_H - 1 < view.r0 || hall.r > view.r1) return;
+            if ((view.zoom || 1) * TILE < 8) {
+                ctx.fillStyle = hall.color;
+                ctx.fillRect(hall.c * TILE, hall.r * TILE, TILE * HALL_W, TILE * HALL_H);
+                return;
+            }
+            if (window.BattleArt && BattleArt.drawHall(ctx, hall.c * TILE, hall.r * TILE, TILE * HALL_W, TILE * HALL_H)) {
+                ctx.fillStyle = hall.color;
+                ctx.fillRect(hall.c * TILE + TILE * HALL_W / 2 - 10, hall.r * TILE + 8, 20, 16);
+                return;
+            }
+            drawHall(hall);
+        });
 
         if (hover && hover.c >= 0 && hover.r >= 0 && hover.c < COLS && hover.r < ROWS) {
             ctx.strokeStyle = isHall(hover.c, hover.r) ? "#e05040" : "#f4f0d8";
@@ -161,10 +182,10 @@
             ctx.strokeRect(hover.c * TILE + 2, hover.r * TILE + 2, TILE - 4, TILE - 4);
         }
 
-        const names = { gold: "gold mine", stone: "stone mine", iron: "iron mine" };
+        const names = { gold: "gold mine", stone: "stone mine", iron: "iron mine", mountain: "mountain", road: "road" };
         const label = names[brush] || brush;
         statusEl.textContent = "Painting " + label + ". " + counts()
-            + ". Scroll the wheel to zoom. Arrow keys or WASD move the view. Soldiers cannot walk on water, forest, or mines. Workers gather food, wood, gold, stone, and iron from them. Settlement squares stay as they are.";
+            + ". Scroll the wheel to zoom. Arrow keys or WASD move the view. Soldiers cannot walk on water, forest, mines, or mountains. Roads are open ground. Workers gather food, wood, gold, stone, and iron. Settlement squares stay as they are.";
         requestAnimationFrame(draw);
     }
 

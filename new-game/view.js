@@ -110,6 +110,32 @@
         let drag = null;
         let pinch = null;
         let suppressClick = false;
+        let holdTimer = null;
+
+        function clearHold() {
+            if (!holdTimer) return;
+            clearTimeout(holdTimer);
+            holdTimer = null;
+        }
+
+        function armHold(x, y) {
+            clearHold();
+            if (!dragPans) return;
+            holdTimer = setTimeout(function () {
+                holdTimer = null;
+                if (!drag || drag.moved || pointerList().length > 1) return;
+                suppressClick = true;
+                drag.moved = true;
+                canvas.dispatchEvent(new MouseEvent("contextmenu", {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y,
+                    button: 2,
+                    buttons: 2
+                }));
+            }, 450);
+        }
 
         function pointerList() {
             return Object.keys(pointers).map(function (id) { return pointers[id]; });
@@ -130,12 +156,14 @@
             pointers[event.pointerId] = { x: event.clientX, y: event.clientY };
             suppressClick = false;
             if (pointerList().length >= 2) {
+                clearHold();
                 drag = null;
                 pinch = pinchSpan();
                 return;
             }
             if (!dragPans) return;
             drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
+            if (event.pointerType === "touch") armHold(event.clientX, event.clientY);
         });
 
         scroller.addEventListener("pointermove", function (event) {
@@ -156,6 +184,7 @@
             const dy = event.clientY - drag.y;
             if (!drag.moved && Math.hypot(dx, dy) < 10) return;
             drag.moved = true;
+            clearHold();
             drag.x = event.clientX;
             drag.y = event.clientY;
             if (stickToFit) return;
@@ -166,11 +195,16 @@
 
         function endPointer(event) {
             delete pointers[event.pointerId];
+            clearHold();
             if (pointerList().length < 2) pinch = null;
             if (!drag || event.pointerId !== drag.id) return;
             if (drag.moved) suppressClick = true;
             drag = null;
         }
+
+        scroller.addEventListener("contextmenu", function (event) {
+            event.preventDefault();
+        });
 
         scroller.addEventListener("pointerup", endPointer);
         scroller.addEventListener("pointercancel", endPointer);
@@ -212,7 +246,8 @@
                 c0: Math.max(0, Math.floor(x0 / TILE) - 1),
                 r0: Math.max(0, Math.floor(y0 / TILE) - 1),
                 c1: Math.min(global.BattleMap.COLS - 1, Math.ceil(x1 / TILE) + 1),
-                r1: Math.min(global.BattleMap.ROWS - 1, Math.ceil(y1 / TILE) + 1)
+                r1: Math.min(global.BattleMap.ROWS - 1, Math.ceil(y1 / TILE) + 1),
+                zoom: zoom
             };
         }
 

@@ -6,13 +6,22 @@
     const TILE = 60;
     const KEY = "rosiesgame.new-battle-map";
     const SHIFT_FLAG = "rosiesgame.new-battle-map-shift";
+    let cachedRaw = null;
+    let cachedTiles = null;
+
+    function remember(raw, tiles) {
+        cachedRaw = raw;
+        cachedTiles = tiles;
+        return tiles;
+    }
 
     function load() {
         try {
             const raw = localStorage.getItem(KEY);
+            if (cachedTiles && raw === cachedRaw) return cachedTiles;
             const data = raw ? JSON.parse(raw) : {};
-            if (!data || typeof data !== "object" || Array.isArray(data)) return {};
-            if (localStorage.getItem(SHIFT_FLAG) === "1") return data;
+            if (!data || typeof data !== "object" || Array.isArray(data)) return remember(raw, {});
+            if (localStorage.getItem(SHIFT_FLAG) === "1") return remember(raw, data);
             const shifted = {};
             Object.keys(data).forEach(function (key) {
                 const parts = key.split(",");
@@ -21,26 +30,30 @@
                 if (!isFinite(c) || !isFinite(r)) return;
                 shifted[(c + SHIFT_C) + "," + (r + SHIFT_R)] = data[key];
             });
-            localStorage.setItem(KEY, JSON.stringify(shifted));
+            const next = JSON.stringify(shifted);
+            localStorage.setItem(KEY, next);
             localStorage.setItem(SHIFT_FLAG, "1");
-            return shifted;
+            return remember(next, shifted);
         } catch (err) {
             return {};
         }
     }
 
     function save(tiles) {
-        localStorage.setItem(KEY, JSON.stringify(tiles));
+        const raw = JSON.stringify(tiles);
+        localStorage.setItem(KEY, raw);
+        remember(raw, tiles);
     }
 
     function kind(tiles, c, r) {
         const value = tiles[c + "," + r];
-        if (value === "water" || value === "forest" || value === "gold" || value === "stone" || value === "iron") return value;
+        if (value === "water" || value === "forest" || value === "gold" || value === "stone" || value === "iron" || value === "mountain" || value === "road") return value;
         return "grass";
     }
 
     function blocked(tiles, c, r) {
-        return kind(tiles, c, r) !== "grass";
+        const tile = kind(tiles, c, r);
+        return tile !== "grass" && tile !== "road";
     }
 
     function grassColor(c, r) {
@@ -105,15 +118,66 @@
         ctx.fillRect(x + 18, y + 40, 5, 4);
     }
 
+    function drawMountain(ctx, c, r) {
+        const x = c * TILE;
+        const y = r * TILE;
+        ctx.fillStyle = "#6a7a48";
+        ctx.fillRect(x, y, TILE, TILE);
+        ctx.fillStyle = "#5c564e";
+        ctx.beginPath();
+        ctx.moveTo(x + 2, y + 54);
+        ctx.lineTo(x + 16, y + 22);
+        ctx.lineTo(x + 30, y + 6);
+        ctx.lineTo(x + 46, y + 24);
+        ctx.lineTo(x + 58, y + 56);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = "#8d877c";
+        ctx.beginPath();
+        ctx.moveTo(x + 22, y + 30);
+        ctx.lineTo(x + 30, y + 6);
+        ctx.lineTo(x + 40, y + 28);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = "#3c3834";
+        ctx.fillRect(x + 12, y + 42, 9, 5);
+        ctx.fillRect(x + 36, y + 46, 11, 5);
+    }
+
+    function roadMask(tiles, c, r) {
+        const pathC = 7 + SHIFT_C;
+        function joins(nc, nr) {
+            if (tiles[nc + "," + nr] === "road") return true;
+            return nc === pathC || nc === pathC + 1;
+        }
+        let mask = 0;
+        if (joins(c, r - 1)) mask += 1;
+        if (joins(c + 1, r)) mask += 2;
+        if (joins(c, r + 1)) mask += 4;
+        if (joins(c - 1, r)) mask += 8;
+        return mask;
+    }
+
+    function drawRoad(ctx, c, r) {
+        const x = c * TILE;
+        const y = r * TILE;
+        ctx.fillStyle = (c + r) % 2 === 0 ? "#c6a15a" : "#b8924c";
+        ctx.fillRect(x, y, TILE, TILE);
+        ctx.fillStyle = "rgba(90, 60, 24, 0.22)";
+        ctx.fillRect(x + 8 + (r % 3) * 4, y + 16, 14, 6);
+        ctx.fillRect(x + 30, y + 38, 16, 6);
+    }
+
     function drawGround(ctx, tiles, view) {
         const c0 = view ? view.c0 : 0;
         const r0 = view ? view.r0 : 0;
         const c1 = view ? view.c1 : COLS - 1;
         const r1 = view ? view.r1 : ROWS - 1;
-        const span = (c1 - c0 + 1) * (r1 - r0 + 1);
-        const detailed = span <= 900;
+        const px = view && view.zoom ? view.zoom * TILE : TILE;
+        const near = px >= 20;
+        const far = px < 8;
 
-        if (detailed) {
+        if (near) {
             for (let r = r0; r <= r1; r++) {
                 for (let c = c0; c <= c1; c++) {
                     ctx.fillStyle = grassColor(c, r);
@@ -131,16 +195,22 @@
         ctx.fillRect((15 + SHIFT_C) * TILE, r0 * TILE, 6 * TILE, (r1 - r0 + 1) * TILE);
 
         const pathC = 7 + SHIFT_C;
-        for (let r = r0; r <= r1; r++) {
-            ctx.fillStyle = (r % 2 === 0) ? "#c6a15a" : "#b8924c";
-            ctx.fillRect(pathC * TILE, r * TILE, TILE * 2, TILE);
-            if (!detailed) continue;
-            ctx.fillStyle = "rgba(90, 60, 24, 0.18)";
-            ctx.fillRect(pathC * TILE + 8, r * TILE + 18, 10, 6);
-            ctx.fillRect((pathC + 1) * TILE + 28, r * TILE + 36, 12, 6);
+        if (pathC <= c1 && pathC + 1 >= c0) {
+            if (near) {
+                for (let r = r0; r <= r1; r++) {
+                    ctx.fillStyle = (r % 2 === 0) ? "#c6a15a" : "#b8924c";
+                    ctx.fillRect(pathC * TILE, r * TILE, TILE * 2, TILE);
+                    ctx.fillStyle = "rgba(90, 60, 24, 0.18)";
+                    ctx.fillRect(pathC * TILE + 8, r * TILE + 18, 10, 6);
+                    ctx.fillRect((pathC + 1) * TILE + 28, r * TILE + 36, 12, 6);
+                }
+            } else {
+                ctx.fillStyle = "#c6a15a";
+                ctx.fillRect(pathC * TILE, r0 * TILE, TILE * 2, (r1 - r0 + 1) * TILE);
+            }
         }
 
-        if (detailed) {
+        if (near) {
             for (let r = r0; r <= r1; r++) {
                 for (let c = c0; c <= c1; c++) {
                     if ((c * 13 + r * 7) % 11 !== 0) continue;
@@ -156,21 +226,41 @@
             }
         }
 
+        const flat = {
+            water: "#2a6eae",
+            forest: "#2f6a32",
+            mountain: "#5c564e",
+            road: "#c6a15a",
+            gold: "#e6c14a",
+            stone: "#8d939a",
+            iron: "#c45a32"
+        };
         Object.keys(tiles).forEach(function (key) {
             const parts = key.split(",");
             const c = Number(parts[0]);
             const r = Number(parts[1]);
             if (c < c0 || r < r0 || c > c1 || r > r1) return;
             if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return;
-            if (tiles[key] === "water") {
-                if (!global.BattleArt || !global.BattleArt.drawWater(ctx, c, r)) drawWater(ctx, c, r);
+            const x = c * TILE;
+            const y = r * TILE;
+            if (far) {
+                ctx.fillStyle = flat[tiles[key]] || "#74b43c";
+                ctx.fillRect(x, y, TILE, TILE);
+            } else if (tiles[key] === "water") {
+                if (near && global.BattleArt && global.BattleArt.drawWater(ctx, c, r)) return;
+                drawWater(ctx, c, r);
             } else if (tiles[key] === "forest") {
                 ctx.fillStyle = grassColor(c, r);
-                ctx.fillRect(c * TILE, r * TILE, TILE, TILE);
-                if (!global.BattleArt || !global.BattleArt.drawTree(ctx, c, r)) drawForest(ctx, c, r);
+                ctx.fillRect(x, y, TILE, TILE);
+                if (near && global.BattleArt && global.BattleArt.drawTree(ctx, c, r)) return;
+                drawForest(ctx, c, r);
             } else if (tiles[key] === "gold") drawRock(ctx, c, r, "#6a5a40", "#e6c14a");
             else if (tiles[key] === "stone") drawRock(ctx, c, r, "#8d939a", "#d5dde4");
             else if (tiles[key] === "iron") drawRock(ctx, c, r, "#4e4542", "#c45a32");
+            else if (tiles[key] === "mountain") drawMountain(ctx, c, r);
+            else if (tiles[key] === "road") {
+                if (far || !global.BattleArt || !global.BattleArt.drawRoad(ctx, c, r, roadMask(tiles, c, r))) drawRoad(ctx, c, r);
+            }
         });
     }
 

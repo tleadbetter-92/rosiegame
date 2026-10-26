@@ -1,6 +1,21 @@
 {
   "buildings": [
     {
+      "id": "blacksmith",
+      "name": "Blacksmith",
+      "file": "blacksmith.json",
+      "cx": 4,
+      "cz": 1,
+      "minX": -7,
+      "maxX": 15,
+      "minZ": -7,
+      "maxZ": 9,
+      "maxY": 6.1,
+      "spanX": 24,
+      "spanZ": 18,
+      "pieces": 263
+    },
+    {
       "id": "flat-roof-house-with-fence",
       "name": "Flat roof house with fence",
       "file": "flat-roof-house-with-fence.json",
@@ -46,6 +61,21 @@
       "pieces": 187
     },
     {
+      "id": "lorsmanor-courtyard",
+      "name": "lorsManor courtyard",
+      "file": "lorsmanor-courtyard.json",
+      "cx": 13.5,
+      "cz": 17,
+      "minX": -2,
+      "maxX": 29,
+      "minZ": 6,
+      "maxZ": 28,
+      "maxY": 3.05,
+      "spanX": 33,
+      "spanZ": 24,
+      "pieces": 358
+    },
+    {
       "id": "flat roor garden house",
       "name": "random flat roof house",
       "file": "flat roor garden house.json",
@@ -89,6 +119,21 @@
       "spanX": 8,
       "spanZ": 8,
       "pieces": 83
+    },
+    {
+      "id": "storehouse",
+      "name": "StoreHouse",
+      "file": "storehouse.json",
+      "cx": 17.5,
+      "cz": 7.5,
+      "minX": 9,
+      "maxX": 26,
+      "minZ": -1,
+      "maxZ": 16,
+      "maxY": 3,
+      "spanX": 19,
+      "spanZ": 19,
+      "pieces": 214
     },
     {
       "id": "tall-tower",

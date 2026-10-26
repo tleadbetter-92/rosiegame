@@ -20,6 +20,12 @@
             border: 1px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.06);
             color: white; text-align: left; cursor: pointer; font: 600 13px "Segoe UI", sans-serif;
         }
+        #townName {
+            display: block; width: 100%; box-sizing: border-box;
+            margin: 4px 0; padding: 6px 8px; border-radius: 6px;
+            border: 1px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.92);
+            color: #1c140c; font: 600 13px "Segoe UI", sans-serif;
+        }
         label.tool.on { background: #8a5a32; border-color: #f0d8b0; }
         #file { display: none; }
         #status { font-size: 12px; color: #f0d8b0; min-height: 1.2em; }
@@ -36,7 +42,7 @@
         <h1>Town editor</h1>
         <a class="jump" href="../building-editor/building-editor.html">Building editor</a>
         <p style="font-size:12px;margin:0 0 6px;font-weight:600;">Towns</p>
-        <p style="font-size:11px;color:#d9cbb4;margin:0 0 6px;line-height:1.35;">These are the layouts saved in the game. Southwest and the other map villages are not separate files here.</p>
+        <p style="font-size:11px;color:#d9cbb4;margin:0 0 6px;line-height:1.35;">Built-in layouts, plus any town you save by name. Opening one replaces the block on screen.</p>
         <div id="townList"></div>
         <p>The piece sits under the cursor. Left click sets it down. R turns it. Right-drag looks. WASD moves. Ground paints in a brush — hold left click and drag. <b>Erase</b> removes with the brush; <b>Clear all</b> wipes the block.</p>
         <label for="groundBrush" style="display:block;font-size:12px;color:#d9cbb4;margin:8px 0 4px;">Ground brush (cells)</label>
@@ -63,6 +69,8 @@
         <label class="tool"><input type="radio" name="tool" value="sand"> Sand</label>
         <label class="tool"><input type="radio" name="tool" value="grass"> Grass</label>
         <label class="tool"><input type="radio" name="tool" value="fence"> Fence</label>
+        <label class="tool"><input type="radio" name="tool" value="wall"> Village wall</label>
+        <label class="tool"><input type="radio" name="tool" value="gate"> Village gate</label>
         <label class="tool"><input type="radio" name="tool" value="lamp"> Street lamp</label>
         <label class="tool"><input type="radio" name="tool" value="plow"> Plowed field</label>
         <label class="tool"><input type="radio" name="tool" value="farmhouse"> Farmhouse</label>
@@ -73,6 +81,9 @@
             <div id="kitBuildList"></div>
         </div>
         <button type="button" id="save">Save in this browser</button>
+        <label for="townName" style="display:block;font-size:12px;color:#d9cbb4;margin:8px 0 4px;">Town name</label>
+        <input id="townName" type="text" placeholder="Type a town name" autocomplete="off">
+        <button type="button" id="saveTown">Save as town</button>
         <button type="button" id="export">Download block</button>
         <button type="button" id="load">Load block</button>
         <button type="button" id="clearAll" style="margin-top:8px;border-color:rgba(255,120,100,0.45);">Clear all</button>
@@ -569,6 +580,33 @@
                 [-1.3, 2.4, z1, 0, 0, 1], [-1.3, 2.4, z1 + 1.15, 0, 1, 1],
                 [1.3, 2.4, z1 + 1.15, 1, 1, 0.9], [1.3, 2.4, z1, 1, 0, 0.9]);
         }
+        function palisadeMesh(gate) {
+            const wood = [];
+            const post = (x) => {
+                pushQuad(wood, [x, 0, -0.09, 0, 0, 0.85], [x, 2.15, -0.09, 0, 1, 0.85], [x + 0.16, 2.15, -0.09, 1, 1, 0.85], [x + 0.16, 0, -0.09, 1, 0, 0.85]);
+                pushQuad(wood, [x + 0.16, 0, 0.09, 0, 0, 0.7], [x + 0.16, 2.15, 0.09, 0, 1, 0.7], [x, 2.15, 0.09, 1, 1, 0.7], [x, 0, 0.09, 1, 0, 0.7]);
+            };
+            for (let x = 0; x <= 3.84; x += 0.48) {
+                if (gate && x > 0.55 && x < 3.35) continue;
+                post(x);
+            }
+            const rail = (y, x0, x1) => pushQuad(wood,
+                [x0, y, -0.04, 0, 0, 0.8], [x0, y + 0.1, -0.04, 0, 1, 0.8],
+                [x1, y + 0.1, -0.04, 1, 1, 0.8], [x1, y, -0.04, 1, 0, 0.8]);
+            if (gate) {
+                rail(0.72, 0.1, 0.55);
+                rail(1.4, 0.1, 0.55);
+                rail(0.72, 3.35, 3.9);
+                rail(1.4, 3.35, 3.9);
+                pushQuad(wood, [0.7, 0, -0.02, 0, 0, 0.75], [0.7, 1.9, -0.02, 0, 1, 0.75], [1.85, 1.9, -0.02, 1, 1, 0.75], [1.85, 0, -0.02, 1, 0, 0.75]);
+                pushQuad(wood, [2.15, 0, -0.02, 0, 0, 0.75], [2.15, 1.9, -0.02, 0, 1, 0.75], [3.3, 1.9, -0.02, 1, 1, 0.75], [3.3, 0, -0.02, 1, 0, 0.75]);
+                rail(2.05, 0.55, 3.4);
+            } else {
+                rail(0.72, 0.1, 3.9);
+                rail(1.4, 0.1, 3.9);
+            }
+            return wood;
+        }
         function fenceMesh() {
             const wood = [];
             const post = (x) => {
@@ -624,7 +662,7 @@
             return { stone, plaster, roof, wood, glow };
         }
         const kit = {
-            street: streetMesh(), long: longMesh(), fence: fenceMesh(), lamp: lampMesh(), farmhouse: farmhouseMesh(), yard: { parts: [] },
+            street: streetMesh(), long: longMesh(), fence: fenceMesh(), wall: palisadeMesh(false), gate: palisadeMesh(true), lamp: lampMesh(), farmhouse: farmhouseMesh(), yard: { parts: [] },
             cot: gableMesh(-2.6, 2.6, -2, 2, 2.5, 4.5, 0.3),
             shop: shopMesh(),
             gable: gableMesh(-3.4, 3.4, -5.5, 5.5, 3.5, 6.4, 0.4),
@@ -905,6 +943,10 @@
                     stamp(buckets.glow, kit.lamp.glow, b.x, b.z, b.yaw);
                 } else if (civicTools.indexOf(b.t) >= 0) {
                     stampCivic(buckets, kit[b.t], b.x, b.z, b.yaw, stamp);
+                } else if (b.t === "wall") {
+                    stamp(buckets.wood, kit.wall, b.x, b.z, b.yaw);
+                } else if (b.t === "gate") {
+                    stamp(buckets.wood, kit.gate, b.x, b.z, b.yaw);
                 } else if (b.t === "kit" && b.id) {
                     if (!stampKitBaked(buckets, kitBakedCache[b.id], b.x, b.z, b.yaw || 0)) {
                         stampKitFootprint(buckets.mark, kitEntry(b.id), b.x, b.z, b.yaw);
@@ -974,6 +1016,10 @@
                     ghostFarmLayout(bags, x, z, yaw);
                 } else if (tool === "fence") {
                     stampGhost(bags.wood, kit.fence, x, z, yaw);
+                } else if (tool === "wall") {
+                    stampGhost(bags.wood, kit.wall, x, z, yaw);
+                } else if (tool === "gate") {
+                    stampGhost(bags.wood, kit.gate, x, z, yaw);
                 } else if (tool === "lamp") {
                     stampGhost(bags.stone, kit.lamp.stone, x, z, yaw);
                     stampGhost(bags.wood, kit.lamp.wood, x, z, yaw);
@@ -1213,6 +1259,8 @@
                 block.buildings.push({ t: tool, x: x, z: z, yaw: yaw });
             } else if (tool === "fence") {
                 block.fences.push({ x: x, z: z, yaw: yaw });
+            } else if (tool === "wall" || tool === "gate") {
+                block.buildings.push({ t: tool, x: x, z: z, yaw: yaw });
             }
             lastGroundPaintKey = "";
             refreshBlock();
@@ -1443,14 +1491,37 @@
             return { ground: ground, buildings: src.buildings || [], fences: fences };
         }
 
-        function fillTownList() {
-            const towns = [
-                { id: "hamletTown", name: "Ashby hamlet (Southwest)" },
-                { id: "hamletTownBig", name: "Large hamlet" },
-                { id: "hamlet", name: "Small hamlet" },
-                { id: "farm", name: "Farm" },
-                { id: "islandBasicTown", name: "Island town" }
-            ];
+        const builtinTowns = [
+            { id: "hamletTown", name: "Ashby hamlet (Southwest)" },
+            { id: "hamletTownBig", name: "Large hamlet" },
+            { id: "hamlet", name: "Small hamlet" },
+            { id: "farm", name: "Farm" },
+            { id: "islandBasicTown", name: "Island town" }
+        ];
+
+        function openTown(town) {
+            const src = typeof EditorBlocks !== "undefined" ? EditorBlocks[town.id] : null;
+            if (!src) {
+                document.getElementById("status").textContent = town.name + " is not in the game file.";
+                return;
+            }
+            const busy = block.buildings.length || block.fences.length || Object.keys(block.ground).length;
+            if (busy && !confirm("Open " + town.name + "?\n\nThis replaces the block on screen.")) return;
+            applyPayload(editorBlockToPayload(src));
+            const nameBox = document.getElementById("townName");
+            if (nameBox) nameBox.value = town.name;
+            document.getElementById("status").textContent = "Opened " + town.name + ".";
+        }
+
+        function fillTownList(extra) {
+            const seen = {};
+            const towns = builtinTowns.slice();
+            for (let i = 0; i < towns.length; i++) seen[towns[i].id] = true;
+            for (let i = 0; i < (extra || []).length; i++) {
+                if (seen[extra[i].id]) continue;
+                seen[extra[i].id] = true;
+                towns.push(extra[i]);
+            }
             const list = document.getElementById("townList");
             if (!list) return;
             list.innerHTML = "";
@@ -1459,20 +1530,49 @@
                 const button = document.createElement("button");
                 button.type = "button";
                 button.textContent = town.name;
-                button.addEventListener("click", () => {
-                    const src = typeof EditorBlocks !== "undefined" ? EditorBlocks[town.id] : null;
-                    if (!src) {
-                        document.getElementById("status").textContent = town.name + " is not in the game file.";
-                        return;
-                    }
-                    const busy = block.buildings.length || block.fences.length || Object.keys(block.ground).length;
-                    if (busy && !confirm("Open " + town.name + "?\n\nThis replaces the block on screen. It does not change the game until that layout is saved back.")) return;
-                    applyPayload(editorBlockToPayload(src));
-                    document.getElementById("status").textContent = "Opened " + town.name + ".";
-                });
+                button.addEventListener("click", () => openTown(town));
                 list.appendChild(button);
             }
         }
+
+        function loadTownList() {
+            fetch("/api/town-save", { cache: "no-store" })
+                .then((res) => res.ok ? res.json() : { towns: [] })
+                .then((data) => fillTownList(data.towns || []))
+                .catch(() => fillTownList([]));
+        }
+
+        document.getElementById("saveTown").addEventListener("click", async () => {
+            const trimmed = document.getElementById("townName").value.trim();
+            const status = document.getElementById("status");
+            if (!trimmed) {
+                status.textContent = "Type a town name.";
+                document.getElementById("townName").focus();
+                return;
+            }
+            const body = Object.assign({ name: trimmed, replace: true }, payload());
+            status.textContent = "Saving " + trimmed + "…";
+            const res = await fetch("/api/town-save", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body)
+            });
+            if (!res.ok) {
+                let message = "Could not save the town.";
+                try {
+                    const err = await res.json();
+                    if (err.error) message = err.error;
+                } catch (err) { /* keep the plain message */ }
+                status.textContent = message;
+                return;
+            }
+            const saved = await res.json();
+            if (typeof EditorBlocks !== "undefined" && saved.layout) EditorBlocks[saved.id] = saved.layout;
+            loadTownList();
+            status.textContent = saved.replaced
+                ? "Replaced " + saved.name + "."
+                : "Saved as " + saved.name + ". It is in the town list.";
+        });
 
         const saved = localStorage.getItem(storeKey);
         if (saved) {
@@ -1482,7 +1582,7 @@
             refreshBlock();
         }
         loadMegakitTextures();
-        fillTownList();
+        loadTownList();
         loadKitCatalog();
         fetch("/models/roblox/lumberyard.json").then((res) => res.json()).then(yardFromModel).catch(() => {
             document.getElementById("status").textContent = "Lumber yard model did not load.";

@@ -39,6 +39,11 @@
       "Floor_Brick",
       "Floor_RedBrick",
       "Floor_UnevenBrick",
+      "Floor_Mosaic_Terra",
+      "Floor_Mosaic_BlackWhite",
+      "Floor_Mosaic_Medallion",
+      "Floor_Mosaic_Meander",
+      "Floor_Mosaic_PolyHaven",
       "Floor_WoodDark",
       "Floor_WoodDark_Half1",
       "Floor_WoodDark_Half2",
@@ -167,27 +172,31 @@
       "Stairs_Exterior_Straight_L",
       "Stairs_Exterior_Straight_R"
     ],
-    "Wall": [
-      "Wall_Arch",
-      "Wall_BottomCover",
-      "Wall_Plaster_Door_Flat",
-      "Wall_Plaster_Door_Round",
-      "Wall_Plaster_Door_RoundInset",
+    "Wall_Plaster": [
       "Wall_Plaster_Straight",
       "Wall_Plaster_Straight_Base",
       "Wall_Plaster_Straight_L",
       "Wall_Plaster_Straight_R",
+      "Wall_Plaster_WoodGrid",
+      "Wall_Plaster_Door_Flat",
+      "Wall_Plaster_Door_Round",
+      "Wall_Plaster_Door_RoundInset",
       "Wall_Plaster_Window_Thin_Round",
       "Wall_Plaster_Window_Wide_Flat",
       "Wall_Plaster_Window_Wide_Flat2",
-      "Wall_Plaster_Window_Wide_Round",
-      "Wall_Plaster_WoodGrid",
+      "Wall_Plaster_Window_Wide_Round"
+    ],
+    "Wall_Brick": [
+      "Wall_UnevenBrick_Straight",
       "Wall_UnevenBrick_Door_Flat",
       "Wall_UnevenBrick_Door_Round",
-      "Wall_UnevenBrick_Straight",
       "Wall_UnevenBrick_Window_Thin_Round",
       "Wall_UnevenBrick_Window_Wide_Flat",
       "Wall_UnevenBrick_Window_Wide_Round"
+    ],
+    "Wall_Special": [
+      "Wall_Arch",
+      "Wall_BottomCover"
     ],
     "WindowShutters": [
       "WindowShutters_Thin_Flat_Closed",

@@ -10,21 +10,41 @@
     const editForests = edit.forests || [];
     let bridges = null;
     let loaded = false;
+    // Two capitals on the map. Northeast and Southeast stay in the faction list so the mechanic still exists, but they are not placed.
+    // The second capital sits on the cube from the terrain map (editor px,pz times 16).
     const places = [
-        { x: -1480, z: -980, ox: -1480, oz: -980 },
-        { x: 1220, z: -1560, ox: 1220, oz: -1560 },
-        { x: -2480, z: 620, ox: -2480, oz: 620 },
-        { x: 780, z: 1320, ox: 780, oz: 1320 }
+        { x: -2560, z: -240, ox: -2560, oz: -240, onMap: true },
+        { x: 1220, z: -1560, ox: 1220, oz: -1560, onMap: false },
+        { x: -2344, z: 742, ox: -2344, oz: 742, onMap: true },
+        { x: 780, z: 1320, ox: 780, oz: 1320, onMap: false }
     ];
-    const links = [[1, 2], [0, 3], [0, 3], [1, 2]];
-    const hamlets = [
-        { id: "ashby", x: -2000, z: 940 },
-        { id: "fernlow", x: -2672, z: -64 },
-        { id: "brackwick", x: -2512, z: -384 },
-        { id: "stoneacre", x: -2740, z: -699 },
-        { id: "hollins", x: -2540, z: -913 },
-        { id: "redmere", x: -2272, z: -160 },
-        { id: "westerby", x: -3245, z: -60 }
+    const links = [[2], [], [0], []];
+    // Minor factions stay in the campaign code. An empty list means none are on the map until they are added back here.
+    const hamlets = [];
+    // Two regions. Positions stay until a new set is placed.
+    const regions = [
+        {
+            id: "southwest",
+            faction: 2,
+            name: "River Crossing",
+            factionName: "Faction A",
+            capital: { x: -2344, z: 742 },
+            towns: [
+                { id: "westfield", name: "Salt Town", x: -2961, z: 747 },
+                { id: "southfield", name: "Wuden", x: -2124, z: 456 }
+            ]
+        },
+        {
+            id: "southhold",
+            faction: 0,
+            name: "Mountain Pass",
+            factionName: "Faction B",
+            capital: { x: -2560, z: -240 },
+            towns: [
+                { id: "westwatch", name: "The Mines", x: -2703, z: -51 },
+                { id: "eastwatch", name: "Kings Rock", x: -2370, z: -348 }
+            ]
+        }
     ];
 
     function hash(ix, iz) {
@@ -160,14 +180,8 @@
     }
 
     const tracks = {
-        "0-1": [[-1280, -1080], [-820, -1240], [-280, -1400], [160, -1560], [280, -1680], [560, -1740], [900, -1620], [1100, -1560]],
-        "1-0": [[1100, -1560], [900, -1620], [560, -1740], [280, -1680], [160, -1560], [-280, -1400], [-820, -1240], [-1280, -1080]],
-        "0-2": [[-1560, -780], [-1680, -280], [-1860, 80], [-2100, 360], [-2300, 520]],
-        "2-0": [[-2300, 520], [-2100, 360], [-1860, 80], [-1680, -280], [-1560, -780]],
-        "2-3": [[-2280, 760], [-1760, 860], [-1120, 980], [-480, 1080], [40, 1160], [280, 1220], [520, 1260]],
-        "3-2": [[520, 1260], [280, 1220], [40, 1160], [-480, 1080], [-1120, 980], [-1760, 860], [-2280, 760]],
-        "1-3": [[1280, -1360], [1460, -860], [1380, -240], [1180, 280], [980, 760], [860, 1120]],
-        "3-1": [[860, 1120], [980, 760], [1180, 280], [1380, -240], [1460, -860], [1280, -1360]]
+        "0-2": [[-2506, 6], [-2452, 251], [-2398, 497]],
+        "2-0": [[-2398, 497], [-2452, 251], [-2506, 6]]
     };
 
     function trackOf(from, to) {
@@ -1680,6 +1694,7 @@
     return {
         places,
         hamlets,
+        regions,
         links,
         fields,
         fishTrail,

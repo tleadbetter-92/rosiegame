@@ -19,6 +19,12 @@ module.exports = function buildingSave(req, res) {
     fs.mkdirSync(savesDir, { recursive: true });
     const relFile = path.join("tools", "building-editor", "saves", id + ".json");
     const absFile = path.join(root, relFile);
+    const backupDir = path.join(savesDir, ".backup");
+    if (fs.existsSync(absFile)) {
+        fs.mkdirSync(backupDir, { recursive: true });
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        fs.copyFileSync(absFile, path.join(backupDir, id + "." + stamp + ".json"));
+    }
     fs.writeFileSync(absFile, JSON.stringify({ ...data, name: data.name || id }, null, 2));
 
     let indexed = false;

@@ -15,7 +15,7 @@
         #bar h1 { font-size: 15px; margin: 0 0 6px; font-weight: 650; }
         #bar p.hint { font-size: 11px; line-height: 1.45; margin: 0 0 10px; color: #c9b89a; }
         label { display: block; font-size: 12px; font-weight: 600; margin: 8px 0 4px; color: #d9cbb4; }
-        input[type="text"], select {
+        input[type="text"], input[type="number"], select {
             width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 6px;
             border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.35); color: #fff;
             font: 13px "Segoe UI", sans-serif;
@@ -42,6 +42,9 @@
         #file { display: none; }
         .row { display: flex; gap: 6px; }
         .row button { flex: 1; text-align: center; font-size: 12px; padding: 6px 4px; }
+        .row.room-size { align-items: center; }
+        .row.room-size input { flex: 1; text-align: center; }
+        .row.room-size span { font-size: 12px; color: #d9cbb4; }
     </style>
     <script type="importmap">
     {
@@ -57,7 +60,7 @@
     <div id="bar">
         <h1>Building editor</h1>
         <a class="jump" href="../town-editor/town-editor.html">Town editor</a>
-        <p class="hint">2&nbsp;m grid — <b>Shift + click</b> to place or erase. <b>WASD</b> pans. <b>R</b> rotate. <b>Q/E</b> height ±0.5&nbsp;m (half square, for tables); <b>Shift+Q/E</b> jump a full storey.</p>
+        <p class="hint">2&nbsp;m grid — <b>Shift + click</b> to place or erase. Holding Shift keeps the view still. <b>WASD</b> pans. <b>R</b> rotate. <b>Q/E</b> height ±0.5&nbsp;m (half square, for tables); <b>Shift+Q/E</b> jump a full storey.</p>
         <details class="hint" style="margin:6px 0;font-size:11px;line-height:1.45;color:#d9cbb4;">
             <summary style="cursor:pointer;color:#e8c896;">Floors &amp; props (megakit)</summary>
             <ul style="margin:6px 0 0;padding-left:18px;">
@@ -83,7 +86,9 @@
             <ol style="margin:6px 0 0;padding-left:18px;">
                 <li><b>Q/E</b> to the top floor (same footprint as walls).</li>
                 <li><b>Roof → Roof RoundTiles N×M</b> — same cell-centre snap as floors; size name ≈ metres (4×4 ≈ 4&nbsp;m).</li>
-                <li><b>Overhang</b> — same tile-centre click as floors; long pieces extend ~2&nbsp;m along +Z at rotation 0.</li>
+                <li><b>Overhang straight and side caps</b> — same edge as the wall on that square. <b>R</b> points the lip outward. Short sticks out about 1&nbsp;m, Long about 2&nbsp;m. Place <b>L</b> or <b>R</b> on the same spot as the straight; they are the two ends of that square.</li>
+                <li><b>Overhang corner</b> — sits on the corner of the square, where two walls meet. <b>Corner Front</b> goes on the same corner. <b>R</b> turns it.</li>
+                <li><b>Overhang roof</b> and <b>roof incline</b> — still the middle of the square.</li>
                 <li><b>Roof → Roof Front Brick4/6/8</b> — gable end; rotate to face the end wall.</li>
             </ol>
         </details>
@@ -107,6 +112,35 @@
         <label>Tool</label>
         <button type="button" class="mode on" data-mode="place">Place (Shift+click)</button>
         <button type="button" class="mode" data-mode="erase">Erase (Shift+click)</button>
+        <label>Room</label>
+        <div class="row room-size">
+            <input id="roomX" type="number" min="1" max="20" value="4" aria-label="Squares along X">
+            <span>by</span>
+            <input id="roomZ" type="number" min="1" max="20" value="4" aria-label="Squares along Z">
+            <span>storey</span>
+            <input id="roomStorey" type="number" min="1" max="8" value="1" aria-label="Storey">
+        </div>
+        <label for="roomWall">Wall</label>
+        <select id="roomWall">
+            <option value="Wall_Plaster_Straight">Plaster</option>
+            <option value="Wall_UnevenBrick_Straight">Uneven brick</option>
+            <option value="Wall_Plaster_WoodGrid">Half-timber</option>
+        </select>
+        <label for="roomFloor">Floor</label>
+        <select id="roomFloor">
+            <option value="Floor_WoodDark">Wood, dark</option>
+            <option value="Floor_WoodLight">Wood, light</option>
+            <option value="Floor_Brick">Brick</option>
+            <option value="Floor_RedBrick">Red brick</option>
+            <option value="Floor_UnevenBrick">Uneven brick</option>
+            <option value="Floor_Mosaic_Terra">Mosaic, terra</option>
+            <option value="Floor_Mosaic_BlackWhite">Mosaic, black and white</option>
+            <option value="Floor_Mosaic_Medallion">Mosaic, medallion</option>
+            <option value="Floor_Mosaic_Meander">Mosaic, meander</option>
+            <option value="Floor_Mosaic_PolyHaven">Mosaic, photo</option>
+        </select>
+        <button type="button" id="addRoom">Add room</button>
+        <p class="hint">Squares are 2&nbsp;m. Storey 1 is the ground. Storey 2 is the next floor, so it can sit on a ground room. Aim the cursor where the corner should go. No doors, windows, or roof. Undo removes the whole room.</p>
         <div class="row">
             <button type="button" id="undo" title="Ctrl+Z">Undo</button>
             <button type="button" id="clear">Clear all</button>
@@ -150,6 +184,7 @@
         /** structure = 2&nbsp;m megakit; furnish = Furnishing_* only, 1&nbsp;m snap. */
         let editMode = "structure";
         let hover = null;
+        let roomAim = null;
         const placed = [];
         const loader = new GLTFLoader();
         const templateCache = new Map();
@@ -269,6 +304,19 @@
             return pieceId && pieceId.startsWith("Corner_");
         }
 
+        /** Eave corner. Sits on the square's corner, same point as a wall corner. */
+        function isOverhangCornerPiece(pieceId) {
+            return !!(pieceId && pieceId.startsWith("Overhang_") && pieceId.indexOf("Corner") >= 0);
+        }
+
+        /** Straight eave or its end cap. Same anchor as the wall on that square. */
+        function isOverhangWallPiece(pieceId) {
+            if (!pieceId || !pieceId.startsWith("Overhang_")) return false;
+            if (pieceId.indexOf("Corner") >= 0) return false;
+            if (pieceId.indexOf("Roof") >= 0) return false;
+            return true;
+        }
+
         /** Wall sconces — authored like walls (mount on tile edge, not centre). */
         function isWallMountedPiece(pieceId) {
             return pieceId === "Lantern_Wall" || pieceId === "Torch_Metal";
@@ -316,7 +364,7 @@
 
         function normalizePiece(p) {
             const yaw = canonicalYaw(p.yaw);
-            if (isCornerPiece(p.id)) {
+            if (isCornerPiece(p.id) || isOverhangCornerPiece(p.id)) {
                 return {
                     id: p.id,
                     x: canonicalGridLine(p.x),
@@ -329,7 +377,7 @@
                 const xz = canonicalWallEdgeXZ(p, yaw, true);
                 return { id: p.id, x: xz.x, z: xz.z, y: p.y || 0, yaw };
             }
-            if (isWallAnchoredPiece(p.id)) {
+            if (isWallAnchoredPiece(p.id) || isOverhangWallPiece(p.id)) {
                 const xz = canonicalWallEdgeXZ(p, yaw, false);
                 return { id: p.id, x: xz.x, z: xz.z, y: p.y || 0, yaw };
             }
@@ -353,8 +401,11 @@
 
         /** Floors: tile centre. Walls: centre along run, grid line on thickness. Corners: grid-line intersection. */
         function snapForPiece(pieceId, x, z, pieceYaw) {
-            if (isCornerPiece(pieceId)) {
+            if (isCornerPiece(pieceId) || isOverhangCornerPiece(pieceId)) {
                 return { x: snapGridLine(x), z: snapGridLine(z) };
+            }
+            if (isOverhangWallPiece(pieceId)) {
+                return snapWallEdgeXZ(pieceId, x, z, pieceYaw);
             }
             if (isWallMountedPiece(pieceId)) {
                 if (wallRunsAlongX(pieceYaw)) return { x: snapFurnish(x, pieceId), z: snapGridLine(z) };
@@ -398,9 +449,75 @@
             return doorLeafForWall(pieceId) || doorLeafForFrame(pieceId);
         }
 
+        let undoBatch = 1;
+        let grouping = false;
+
         function pushPlaced(record) {
             placed.push(record);
             rootGroup.add(makeInstance(record));
+            if (!grouping) undoBatch = 1;
+        }
+
+        function undoLast() {
+            if (!placed.length) return;
+            const n = Math.min(undoBatch, placed.length);
+            for (let i = 0; i < n; i++) placed.pop();
+            undoBatch = 1;
+            rebuildScene();
+            setStatus("Undo · " + placed.length + " pieces");
+        }
+
+        function roomSquares(input) {
+            const n = Math.round(Number(input.value));
+            if (!Number.isFinite(n)) return 1;
+            return Math.max(1, Math.min(20, n));
+        }
+
+        function roomStorey() {
+            const n = Math.round(Number(document.getElementById("roomStorey").value));
+            if (!Number.isFinite(n)) return 1;
+            return Math.max(1, Math.min(8, n));
+        }
+
+        function addRoom() {
+            const across = roomSquares(document.getElementById("roomX"));
+            const depth = roomSquares(document.getElementById("roomZ"));
+            const storey = roomStorey();
+            const wallId = document.getElementById("roomWall").value;
+            const floorId = document.getElementById("roomFloor").value;
+            const y = snapLiftHalf((storey - 1) * STOREY_H);
+            const spot = roomAim || controls.target;
+            const x0 = snapGridLine(spot.x);
+            const z0 = snapGridLine(spot.z);
+            const batch = [];
+            for (let ix = 0; ix < across; ix++) {
+                for (let iz = 0; iz < depth; iz++) {
+                    batch.push({
+                        id: floorId,
+                        x: x0 + ix * CELL + CELL / 2,
+                        z: z0 + iz * CELL + CELL / 2,
+                        y: y,
+                        yaw: 0
+                    });
+                }
+            }
+            for (let ix = 0; ix < across; ix++) {
+                const x = x0 + ix * CELL + CELL / 2;
+                batch.push({ id: wallId, x: x, z: z0, y: y, yaw: Math.PI });
+                batch.push({ id: wallId, x: x, z: z0 + depth * CELL, y: y, yaw: 0 });
+            }
+            for (let iz = 0; iz < depth; iz++) {
+                const z = z0 + iz * CELL + CELL / 2;
+                batch.push({ id: wallId, x: x0, z: z, y: y, yaw: Math.PI * 1.5 });
+                batch.push({ id: wallId, x: x0 + across * CELL, z: z, y: y, yaw: Math.PI / 2 });
+            }
+            grouping = true;
+            batch.forEach((piece) => pushPlaced(normalizePiece(piece)));
+            grouping = false;
+            undoBatch = batch.length;
+            const wallName = document.getElementById("roomWall").selectedOptions[0].textContent;
+            const floorName = document.getElementById("roomFloor").selectedOptions[0].textContent;
+            setStatus("Room " + across + " by " + depth + " · storey " + storey + " · y " + y.toFixed(2) + " · " + wallName + " · " + floorName);
         }
 
         function placeY() {
@@ -716,6 +833,7 @@
             raycaster.setFromCamera(ndc, camera);
             const hit = new THREE.Vector3();
             if (!raycaster.ray.intersectPlane(groundPlane, hit)) return null;
+            roomAim = { x: hit.x, z: hit.z };
             const xz = snapXZ(hit.x, hit.z, selectedPiece, yaw);
             const pos = worldPlace(xz.x, xz.z, selectedPiece, yaw);
             return {
@@ -869,6 +987,12 @@
                 setStatus("Floor corner 2 (mirrored) — opposite outer corner from corner A.");
             } else if (/OverhangCorner$/.test(selectedPiece)) {
                 setStatus("Floor corner A — pair with corner 2 on the diagonally opposite deck corner.");
+            } else if (isOverhangCornerPiece(selectedPiece)) {
+                setStatus("Overhang corner — snaps to the corner of the square. R turns the lips outward.");
+            } else if (isOverhangWallPiece(selectedPiece)) {
+                setStatus("Overhang — snaps to the wall edge. R points the lip out. Side L and R are the two ends of this square.");
+            } else if (selectedPiece && selectedPiece.startsWith("Overhang_")) {
+                setStatus("Overhang roof — snaps to the middle of the square.");
             }
             updateFloorGuide();
             updateGhost();
@@ -894,6 +1018,9 @@
             });
         });
 
+        canvas.addEventListener("pointerdown", (e) => {
+            if (e.button === 0 && e.shiftKey) e.stopPropagation();
+        }, true);
         canvas.addEventListener("contextmenu", (e) => e.preventDefault());
         canvas.addEventListener("mousemove", (e) => {
             if (e.buttons === 2) return;
@@ -966,11 +1093,7 @@
             }
             if (e.code === "KeyZ" && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
-                if (placed.length) {
-                    placed.pop();
-                    rebuildScene();
-                    setStatus("Undo · " + placed.length + " pieces");
-                }
+                undoLast();
             }
             if (editMode === "furnish" && (e.code === "ArrowUp" || e.code === "ArrowDown" || e.code === "ArrowLeft" || e.code === "ArrowRight")) {
                 e.preventDefault();
@@ -991,13 +1114,8 @@
         });
         window.addEventListener("blur", () => panKeys.clear());
 
-        document.getElementById("undo").addEventListener("click", () => {
-            if (placed.length) {
-                placed.pop();
-                rebuildScene();
-                setStatus("Undo · " + placed.length + " pieces");
-            }
-        });
+        document.getElementById("undo").addEventListener("click", undoLast);
+        document.getElementById("addRoom").addEventListener("click", addRoom);
         document.getElementById("clear").addEventListener("click", () => {
             if (placed.length && !confirm("Clear all " + placed.length + " pieces?")) return;
             placed.length = 0;

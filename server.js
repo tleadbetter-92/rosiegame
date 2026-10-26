@@ -39,6 +39,7 @@ const routes = {
     "/api/npc-chat": require("./api/npc-chat"),
     "/api/npc-tts": require("./api/npc-tts"),
     "/api/building-save": require("./api/building-save"),
+    "/api/town-save": require("./api/town-save"),
     "/api/survey-terrain": require("./api/survey-terrain")
 };
 

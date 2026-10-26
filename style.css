@@ -209,6 +209,8 @@ main {
 .c10 .cover { background: linear-gradient(160deg, #ead48a, #8a6a16); }
 .c11 .cover { background: linear-gradient(160deg, #b9d4ef, #2a628a); }
 .c12 .cover { background: linear-gradient(160deg, #b7e0d2, #1c6b62); }
+.c13 .cover { background: linear-gradient(160deg, #f3ead8, #6b4a22); }
+.c14 .cover { background: linear-gradient(160deg, #7ec8ea, #3d7a48); }
 
 @media (max-width: 800px) {
     .grid { grid-template-columns: repeat(2, 1fr); }

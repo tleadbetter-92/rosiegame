@@ -1,0 +1,2073 @@
+{
+  "kind": "building",
+  "kit": "village-megakit",
+  "grid": 2,
+  "name": "roman coutyard houed",
+  "pieces": [
+    {
+      "id": "Balcony_Cross_Corner",
+      "x": 29,
+      "z": 13,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Balcony_Cross_Corner",
+      "x": 29,
+      "z": 21,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Balcony_Cross_Straight",
+      "x": 29,
+      "z": 19,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Balcony_Cross_Straight",
+      "x": 29,
+      "z": 15,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Balcony_Cross_Straight",
+      "x": 27,
+      "z": 21,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Balcony_Cross_Straight",
+      "x": 27,
+      "z": 13,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_Plaster_Window_Wide_Round",
+      "x": 24,
+      "z": 19,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_Plaster_Window_Wide_Round",
+      "x": 24,
+      "z": 15,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_Plaster_Door_RoundInset",
+      "x": 24,
+      "z": 17,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Door_1_Round",
+      "x": 23,
+      "z": 17,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_Plaster_Straight_Base",
+      "x": 24,
+      "z": 21,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_Plaster_Straight_Base",
+      "x": 24,
+      "z": 13,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_Plaster_Straight_R",
+      "x": 23,
+      "z": 22,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_Plaster_Straight_R",
+      "x": 19,
+      "z": 22,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_Plaster_Straight_L",
+      "x": 23,
+      "z": 12,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_Plaster_Window_Thin_Round",
+      "x": 21,
+      "z": 12,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_Plaster_Window_Thin_Round",
+      "x": 17,
+      "z": 12,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_Plaster_Window_Thin_Round",
+      "x": 17,
+      "z": 22,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_Plaster_Window_Thin_Round",
+      "x": 21,
+      "z": 22,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_Plaster_Straight_L",
+      "x": 19,
+      "z": 12,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Balcony_Cross_Straight",
+      "x": 25,
+      "z": 21,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Balcony_Cross_Straight",
+      "x": 25,
+      "z": 13,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 23,
+      "z": 13,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 21,
+      "z": 13,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 19,
+      "z": 13,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 17,
+      "z": 13,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 15,
+      "z": 13,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 15,
+      "z": 15,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 17,
+      "z": 15,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 19,
+      "z": 15,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 21,
+      "z": 15,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 23,
+      "z": 15,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 15,
+      "z": 17,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 17,
+      "z": 17,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 19,
+      "z": 17,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 21,
+      "z": 17,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 23,
+      "z": 17,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 23,
+      "z": 19,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 21,
+      "z": 19,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 19,
+      "z": 19,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 17,
+      "z": 19,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 15,
+      "z": 19,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 15,
+      "z": 21,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 17,
+      "z": 21,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 19,
+      "z": 21,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 21,
+      "z": 21,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 23,
+      "z": 21,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 11,
+      "z": 28,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 9,
+      "z": 28,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 5,
+      "z": 28,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 3,
+      "z": 28,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 15,
+      "z": 28,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": -1,
+      "z": 28,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": -2,
+      "z": 27,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": -2,
+      "z": 25,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": -2,
+      "z": 23,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": -2,
+      "z": 21,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": -2,
+      "z": 19,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": -2,
+      "z": 17,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": -2,
+      "z": 13,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": -2,
+      "z": 11,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": -2,
+      "z": 15,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 16,
+      "z": 27,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 16,
+      "z": 25,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 16,
+      "z": 23,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_Plaster_Straight_L",
+      "x": 14,
+      "z": 21,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_Plaster_Straight_L",
+      "x": 14,
+      "z": 13,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_Plaster_Straight_L",
+      "x": 2,
+      "z": 23,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_Plaster_Straight_L",
+      "x": 2,
+      "z": 15,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_Plaster_Straight_L",
+      "x": 3,
+      "z": 24,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_Plaster_Straight_L",
+      "x": 9,
+      "z": 24,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_Plaster_Straight_L",
+      "x": 13,
+      "z": 24,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_Plaster_Straight_L",
+      "x": 14,
+      "z": 23,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_Plaster_Straight_L",
+      "x": 2,
+      "z": 19,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_Plaster_Straight_L",
+      "x": 14,
+      "z": 11,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_Plaster_Straight_L",
+      "x": 13,
+      "z": 10,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_Plaster_Straight_L",
+      "x": 3,
+      "z": 10,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_Plaster_Straight_L",
+      "x": 9,
+      "z": 10,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_Plaster_Straight_L",
+      "x": 2,
+      "z": 11,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_Plaster_Door_Round",
+      "x": 2,
+      "z": 17,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Door_1_Round",
+      "x": 1,
+      "z": 17,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_Plaster_Door_Round",
+      "x": 14,
+      "z": 17,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Door_1_Round",
+      "x": 15,
+      "z": 17,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_Plaster_Door_Round",
+      "x": 7,
+      "z": 24,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Door_1_Round",
+      "x": 7,
+      "z": 23,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_Plaster_Door_Round",
+      "x": 7,
+      "z": 10,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Door_1_Round",
+      "x": 7,
+      "z": 9,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 13,
+      "z": 15,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 13,
+      "z": 19,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 13,
+      "z": 17,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 13,
+      "z": 21,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 13,
+      "z": 23,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 11,
+      "z": 23,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 9,
+      "z": 23,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 3,
+      "z": 13,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 3,
+      "z": 17,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 3,
+      "z": 15,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 3,
+      "z": 19,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 3,
+      "z": 21,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 3,
+      "z": 23,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 5,
+      "z": 23,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 5,
+      "z": 11,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 7,
+      "z": 11,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 9,
+      "z": 11,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 11,
+      "z": 11,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 13,
+      "z": 13,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 3,
+      "z": 11,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 13,
+      "z": 11,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Medallion",
+      "x": 7,
+      "z": 23,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 11,
+      "z": 13,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 9,
+      "z": 13,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 7,
+      "z": 13,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 5,
+      "z": 13,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 5,
+      "z": 15,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 5,
+      "z": 17,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 5,
+      "z": 19,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 5,
+      "z": 21,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 7,
+      "z": 21,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 9,
+      "z": 21,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 11,
+      "z": 21,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 11,
+      "z": 15,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 11,
+      "z": 17,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 11,
+      "z": 19,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_PolyHaven",
+      "x": 7,
+      "z": 17,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_PolyHaven",
+      "x": 7,
+      "z": 15,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_PolyHaven",
+      "x": 9,
+      "z": 15,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_PolyHaven",
+      "x": 9,
+      "z": 17,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_PolyHaven",
+      "x": 9,
+      "z": 19,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Mosaic_PolyHaven",
+      "x": 7,
+      "z": 19,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Balcony_Cross_Corner",
+      "x": 11,
+      "z": 13,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Balcony_Cross_Corner",
+      "x": 11,
+      "z": 21,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Balcony_Cross_Corner",
+      "x": 5,
+      "z": 21,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Balcony_Cross_Corner",
+      "x": 5,
+      "z": 13,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Balcony_Cross_Straight",
+      "x": 11,
+      "z": 15,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Balcony_Cross_Straight",
+      "x": 11,
+      "z": 19,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Balcony_Cross_Straight",
+      "x": 5,
+      "z": 19,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Balcony_Cross_Straight",
+      "x": 5,
+      "z": 15,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 15,
+      "z": 27,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 13,
+      "z": 25,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 11,
+      "z": 27,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 9,
+      "z": 25,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 7,
+      "z": 27,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 5,
+      "z": 25,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 3,
+      "z": 27,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 1,
+      "z": 25,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": -1,
+      "z": 27,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": -1,
+      "z": 23,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 1,
+      "z": 21,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": -1,
+      "z": 19,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 1,
+      "z": 17,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": -1,
+      "z": 15,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 1,
+      "z": 13,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": -1,
+      "z": 11,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 1,
+      "z": 9,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": -1,
+      "z": 7,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 3,
+      "z": 7,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 5,
+      "z": 9,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 7,
+      "z": 7,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 9,
+      "z": 9,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 11,
+      "z": 7,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 13,
+      "z": 9,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 15,
+      "z": 7,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 15,
+      "z": 23,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_BlackWhite",
+      "x": 15,
+      "z": 11,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 9,
+      "z": 27,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 7,
+      "z": 25,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 13,
+      "z": 27,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 11,
+      "z": 25,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 15,
+      "z": 25,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 9,
+      "z": 7,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 13,
+      "z": 7,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 11,
+      "z": 9,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 15,
+      "z": 9,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 5,
+      "z": 7,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 7,
+      "z": 9,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 1,
+      "z": 7,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 3,
+      "z": 9,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": -1,
+      "z": 9,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 1,
+      "z": 11,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": -1,
+      "z": 13,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 1,
+      "z": 15,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": -1,
+      "z": 17,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 1,
+      "z": 19,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 1,
+      "z": 23,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": -1,
+      "z": 21,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 1,
+      "z": 27,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": -1,
+      "z": 25,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 3,
+      "z": 25,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Mosaic_Meander",
+      "x": 5,
+      "z": 27,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Stairs_Exterior_NoFirstStep",
+      "x": 9,
+      "z": 15,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Stairs_Exterior_NoFirstStep",
+      "x": 7,
+      "z": 15,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Stairs_Exterior_NoFirstStep",
+      "x": 9,
+      "z": 19,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Stairs_Exterior_NoFirstStep",
+      "x": 7,
+      "z": 19,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Stairs_Exterior_Platform",
+      "x": 7,
+      "z": 17,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Stairs_Exterior_Platform",
+      "x": 9,
+      "z": 17,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_UnevenBrick_Window_Wide_Round",
+      "x": 1,
+      "z": 28,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_UnevenBrick_Window_Wide_Round",
+      "x": 7,
+      "z": 28,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_UnevenBrick_Window_Wide_Round",
+      "x": 13,
+      "z": 28,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_UnevenBrick_Window_Wide_Round",
+      "x": 5,
+      "z": 24,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_UnevenBrick_Window_Wide_Round",
+      "x": 11,
+      "z": 24,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_UnevenBrick_Window_Wide_Round",
+      "x": 11,
+      "z": 10,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_UnevenBrick_Window_Wide_Round",
+      "x": 5,
+      "z": 10,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_UnevenBrick_Window_Wide_Round",
+      "x": 14,
+      "z": 15,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_UnevenBrick_Window_Wide_Round",
+      "x": 14,
+      "z": 19,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_UnevenBrick_Window_Wide_Round",
+      "x": 2,
+      "z": 13,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_UnevenBrick_Window_Wide_Round",
+      "x": 2,
+      "z": 21,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 15,
+      "z": 27,
+      "y": 3.05,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 15,
+      "z": 25,
+      "y": 3.05,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 15,
+      "z": 23,
+      "y": 3.05,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 13,
+      "z": 25,
+      "y": 3.05,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 13,
+      "z": 27,
+      "y": 3.05,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 11,
+      "z": 27,
+      "y": 3.05,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 11,
+      "z": 25,
+      "y": 3.05,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 23,
+      "z": 21,
+      "y": 3.05,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 23,
+      "z": 19,
+      "y": 3.05,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 23,
+      "z": 17,
+      "y": 3.05,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 23,
+      "z": 15,
+      "y": 3.05,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 23,
+      "z": 13,
+      "y": 3.05,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 21,
+      "z": 21,
+      "y": 3.05,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 19,
+      "z": 21,
+      "y": 3.05,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 17,
+      "z": 21,
+      "y": 3.05,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 15,
+      "z": 21,
+      "y": 3.05,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Vase_4",
+      "x": 7,
+      "y": 0,
+      "z": 17,
+      "yaw": 0
+    },
+    {
+      "id": "Vase_2",
+      "x": 5,
+      "y": 0,
+      "z": 15,
+      "yaw": 0
+    },
+    {
+      "id": "Vase_2",
+      "x": 9,
+      "y": 0,
+      "z": 19,
+      "yaw": 0
+    },
+    {
+      "id": "Vase_2",
+      "x": 3,
+      "y": 0,
+      "z": 21,
+      "yaw": 0
+    },
+    {
+      "id": "Vase_2",
+      "x": 11,
+      "y": 0,
+      "z": 13,
+      "yaw": 0
+    },
+    {
+      "id": "Chalice",
+      "x": 6.5,
+      "y": 0,
+      "z": 16.5,
+      "yaw": 0
+    },
+    {
+      "id": "Coin_Pile",
+      "x": 8.5,
+      "y": 0,
+      "z": 17.5,
+      "yaw": 0
+    },
+    {
+      "id": "Coin_Pile_2",
+      "x": 7.5,
+      "y": 0,
+      "z": 18.5,
+      "yaw": 0
+    },
+    {
+      "id": "Bench",
+      "x": 1,
+      "y": 0,
+      "z": 17,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Bench",
+      "x": 13,
+      "y": 0,
+      "z": 17,
+      "yaw": -1.5707963267948966
+    },
+    {
+      "id": "Bench",
+      "x": 7,
+      "y": 0,
+      "z": 9,
+      "yaw": 0
+    },
+    {
+      "id": "Bench",
+      "x": 7,
+      "y": 0,
+      "z": 25,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Stool",
+      "x": 5,
+      "y": 0,
+      "z": 19,
+      "yaw": 0
+    },
+    {
+      "id": "Stool",
+      "x": 9,
+      "y": 0,
+      "z": 15,
+      "yaw": 0
+    },
+    {
+      "id": "Banner_1",
+      "x": 5,
+      "y": 0,
+      "z": 11,
+      "yaw": 0
+    },
+    {
+      "id": "Banner_2",
+      "x": 9,
+      "y": 0,
+      "z": 23,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Banner_1_Cloth",
+      "x": 5,
+      "y": 0,
+      "z": 11,
+      "yaw": 0
+    },
+    {
+      "id": "Banner_2_Cloth",
+      "x": 9,
+      "y": 0,
+      "z": 23,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Peg_Rack",
+      "x": 11,
+      "y": 0,
+      "z": 11,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Whetstone",
+      "x": 3,
+      "y": 0,
+      "z": 15,
+      "yaw": 0
+    },
+    {
+      "id": "Table_Large",
+      "x": 19,
+      "y": 0,
+      "z": 17,
+      "yaw": 0
+    },
+    {
+      "id": "Chair_1",
+      "x": 18,
+      "y": 0,
+      "z": 16,
+      "yaw": 0
+    },
+    {
+      "id": "Chair_1",
+      "x": 20,
+      "y": 0,
+      "z": 16,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Chair_1",
+      "x": 18,
+      "y": 0,
+      "z": 18,
+      "yaw": 0
+    },
+    {
+      "id": "Chair_1",
+      "x": 20,
+      "y": 0,
+      "z": 18,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Table_Plate",
+      "x": 19,
+      "y": 0,
+      "z": 17,
+      "yaw": 0
+    },
+    {
+      "id": "Table_Fork",
+      "x": 18.5,
+      "y": 0,
+      "z": 17.5,
+      "yaw": 0
+    },
+    {
+      "id": "Table_Knife",
+      "x": 19.5,
+      "y": 0,
+      "z": 17.5,
+      "yaw": 0
+    },
+    {
+      "id": "Table_Spoon",
+      "x": 19,
+      "y": 0,
+      "z": 16.5,
+      "yaw": 0
+    },
+    {
+      "id": "Mug",
+      "x": 20,
+      "y": 0,
+      "z": 17,
+      "yaw": 0
+    },
+    {
+      "id": "Bookcase_2",
+      "x": 22,
+      "y": 0,
+      "z": 19,
+      "yaw": -1.5707963267948966
+    },
+    {
+      "id": "BookStand",
+      "x": 21,
+      "y": 0,
+      "z": 19,
+      "yaw": 0
+    },
+    {
+      "id": "Book_Stack_1",
+      "x": 21.5,
+      "y": 0,
+      "z": 18.5,
+      "yaw": 0
+    },
+    {
+      "id": "Book_Stack_2",
+      "x": 22.5,
+      "y": 0,
+      "z": 18.5,
+      "yaw": 0
+    },
+    {
+      "id": "Scroll_1",
+      "x": 20.5,
+      "y": 0,
+      "z": 19,
+      "yaw": 0
+    },
+    {
+      "id": "Scroll_2",
+      "x": 21,
+      "y": 0,
+      "z": 18,
+      "yaw": 0
+    },
+    {
+      "id": "Chest_Wood",
+      "x": 16,
+      "y": 0,
+      "z": 13,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Bed_Twin1",
+      "x": 22,
+      "y": 0,
+      "z": 13,
+      "yaw": -1.5707963267948966
+    },
+    {
+      "id": "Nightstand_Shelf",
+      "x": 21,
+      "y": 0,
+      "z": 13,
+      "yaw": 0
+    },
+    {
+      "id": "CandleStick_Stand",
+      "x": 17,
+      "y": 0,
+      "z": 17,
+      "yaw": 0
+    },
+    {
+      "id": "CandleStick_Triple",
+      "x": 23,
+      "y": 0,
+      "z": 15,
+      "yaw": 0
+    },
+    {
+      "id": "Candle_1",
+      "x": 16.5,
+      "y": 0,
+      "z": 15.5,
+      "yaw": 0
+    },
+    {
+      "id": "Candle_2",
+      "x": 23.5,
+      "y": 0,
+      "z": 17.5,
+      "yaw": 0
+    },
+    {
+      "id": "Barrel",
+      "x": 23,
+      "y": 0,
+      "z": 21,
+      "yaw": 0
+    },
+    {
+      "id": "Bucket_Wooden_1",
+      "x": 15,
+      "y": 0,
+      "z": 15,
+      "yaw": 0
+    },
+    {
+      "id": "Cauldron",
+      "x": 13,
+      "y": 0,
+      "z": 25,
+      "yaw": 0
+    },
+    {
+      "id": "Pot_1",
+      "x": 13,
+      "y": 0,
+      "z": 23,
+      "yaw": 0
+    },
+    {
+      "id": "Pot_1_Lid",
+      "x": 13.5,
+      "y": 0,
+      "z": 23,
+      "yaw": 0
+    },
+    {
+      "id": "Barrel_Apples",
+      "x": 11,
+      "y": 0,
+      "z": 27,
+      "yaw": 0
+    },
+    {
+      "id": "Barrel",
+      "x": 15,
+      "y": 0,
+      "z": 27,
+      "yaw": 0
+    },
+    {
+      "id": "FarmCrate_Apple",
+      "x": 15,
+      "y": 0,
+      "z": 25,
+      "yaw": 0
+    },
+    {
+      "id": "FarmCrate_Carrot",
+      "x": 11,
+      "y": 0,
+      "z": 25,
+      "yaw": 0
+    },
+    {
+      "id": "FarmCrate_Empty",
+      "x": 13,
+      "y": 0,
+      "z": 27,
+      "yaw": 0
+    },
+    {
+      "id": "Table_Large",
+      "x": 13,
+      "y": 0,
+      "z": 23,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Stool",
+      "x": 12,
+      "y": 0,
+      "z": 23,
+      "yaw": 0
+    },
+    {
+      "id": "Stool",
+      "x": 14,
+      "y": 0,
+      "z": 23,
+      "yaw": 0
+    },
+    {
+      "id": "Carrot",
+      "x": 13.5,
+      "y": 0,
+      "z": 22.5,
+      "yaw": 0
+    },
+    {
+      "id": "Bottle_1",
+      "x": 12.5,
+      "y": 0,
+      "z": 24,
+      "yaw": 0
+    },
+    {
+      "id": "SmallBottles_1",
+      "x": 14.5,
+      "y": 0,
+      "z": 24,
+      "yaw": 0
+    },
+    {
+      "id": "Torch_Metal",
+      "x": 2,
+      "y": 0,
+      "z": 17,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Torch_Metal",
+      "x": 12,
+      "y": 0,
+      "z": 17,
+      "yaw": -1.5707963267948966
+    },
+    {
+      "id": "Torch_Metal",
+      "x": 7,
+      "y": 0,
+      "z": 8,
+      "yaw": 0
+    },
+    {
+      "id": "Torch_Metal",
+      "x": 7,
+      "y": 0,
+      "z": 24,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Lantern_Wall",
+      "x": 0,
+      "y": 0,
+      "z": 17,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Lantern_Wall",
+      "x": 14,
+      "y": 0,
+      "z": 17,
+      "yaw": -1.5707963267948966
+    },
+    {
+      "id": "Lantern_Wall",
+      "x": 7,
+      "y": 0,
+      "z": 6,
+      "yaw": 0
+    },
+    {
+      "id": "Lantern_Wall",
+      "x": 7,
+      "y": 0,
+      "z": 26,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Prop_Vine2",
+      "x": 29,
+      "y": 0,
+      "z": 15,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Prop_Vine5",
+      "x": 29,
+      "y": 0,
+      "z": 21,
+      "yaw": -1.5707963267948966
+    },
+    {
+      "id": "Prop_Vine6",
+      "x": -2,
+      "y": 0,
+      "z": 15,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Prop_Vine9",
+      "x": -2,
+      "y": 0,
+      "z": 21,
+      "yaw": -1.5707963267948966
+    },
+    {
+      "id": "Prop_Vine1",
+      "x": 15,
+      "y": 0,
+      "z": 27,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Prop_Crate",
+      "x": 23,
+      "y": 0,
+      "z": 23,
+      "yaw": 0
+    }
+  ]
+}

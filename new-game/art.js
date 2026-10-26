@@ -10,6 +10,33 @@
         return img;
     }
 
+    function loadRoot(path) {
+        const img = new Image();
+        img.src = path.split("/").map(function (part) {
+            return encodeURIComponent(part);
+        }).join("/");
+        return img;
+    }
+
+    const ART = "free-buildings/kenney-medieval-rts/PNG/Default size/";
+    const hall = loadRoot(ART + "Structure/medievalStructure_06.png");
+    const house = loadRoot(ART + "Structure/medievalStructure_17.png");
+    const tower = loadRoot(ART + "Structure/medievalStructure_12.png");
+    const mill = loadRoot(ART + "Structure/medievalStructure_08.png");
+    const blades = [
+        loadRoot(ART + "Structure/medievalStructure_13.png"),
+        loadRoot(ART + "Structure/medievalStructure_14.png"),
+        loadRoot(ART + "Structure/medievalStructure_15.png")
+    ];
+    const roadFiles = {
+        0: "02", 1: "34", 2: "33", 3: "31", 4: "35", 5: "03", 6: "17", 7: "21",
+        8: "19", 9: "32", 10: "04", 11: "07", 12: "18", 13: "20", 14: "06", 15: "05"
+    };
+    const roads = {};
+    Object.keys(roadFiles).forEach(function (mask) {
+        roads[mask] = loadRoot(ART + "Tile/medievalTile_" + roadFiles[mask] + ".png");
+    });
+
     const knight = load("Entities/Npc's/Knight/Run/Run-Sheet.png");
     const rogue = load("Entities/Npc's/Rogue/Run/Run-Sheet.png");
     const peasant = load("Entities/Npc's/Citizen_F/Peasant_A/Walk/Walk-Sheet.png");
@@ -55,6 +82,49 @@
             ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
         }
         return true;
+    }
+
+    function drawFit(ctx, img, x, y, w, h) {
+        if (!ready(img)) return false;
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(img, x, y, w, h);
+        ctx.imageSmoothingEnabled = false;
+        return true;
+    }
+
+    function drawOpaque(ctx, img, sx, sy, sw, sh, x, y, dw, dh) {
+        if (!ready(img) || sw <= 0 || sh <= 0) return false;
+        const scale = Math.min(dw / sw, dh / sh);
+        const pw = sw * scale;
+        const ph = sh * scale;
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(img, sx, sy, sw, sh, x + (dw - pw) / 2, y + dh - ph, pw, ph);
+        ctx.imageSmoothingEnabled = false;
+        return true;
+    }
+
+    function drawHall(ctx, x, y, w, h) {
+        return drawOpaque(ctx, hall, 2, 0, 60, 38, x, y, w, h || w);
+    }
+
+    function drawHouse(ctx, x, y, w, h) {
+        return drawOpaque(ctx, house, 10, 2, 44, 60, x, y, w, h || w);
+    }
+
+    function drawTower(ctx, x, y, w, h) {
+        return drawOpaque(ctx, tower, 22, 14, 20, 36, x, y, w, h || w);
+    }
+
+    function drawMill(ctx, x, y, w, h, time) {
+        const height = h || w;
+        if (!drawFit(ctx, mill, x, y, w, height)) return false;
+        const blade = blades[Math.floor(time / 180) % blades.length];
+        drawFit(ctx, blade, x, y, w, height);
+        return true;
+    }
+
+    function drawRoad(ctx, c, r, mask) {
+        return drawFit(ctx, roads[mask] || roads[0], c * TILE, r * TILE, TILE, TILE);
     }
 
     function drawWater(ctx, c, r) {
@@ -111,6 +181,11 @@
     global.BattleArt = {
         drawWater: drawWater,
         drawTree: drawTree,
-        drawPerson: drawPerson
+        drawPerson: drawPerson,
+        drawHall: drawHall,
+        drawHouse: drawHouse,
+        drawTower: drawTower,
+        drawMill: drawMill,
+        drawRoad: drawRoad
     };
 })(window);

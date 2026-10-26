@@ -1,0 +1,589 @@
+{
+  "kind": "building",
+  "kit": "village-megakit",
+  "grid": 2,
+  "name": "simple house",
+  "pieces": [
+    {
+      "id": "Wall_Plaster_Straight",
+      "x": 22,
+      "z": 21,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_Plaster_Straight",
+      "x": 22,
+      "z": 17,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_Plaster_Straight",
+      "x": 23,
+      "z": 22,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_Plaster_Straight",
+      "x": 27,
+      "z": 22,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_Plaster_Straight",
+      "x": 27,
+      "z": 16,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_Plaster_Straight",
+      "x": 23,
+      "z": 16,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_Plaster_Straight",
+      "x": 28,
+      "z": 21,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_Plaster_Straight",
+      "x": 28,
+      "z": 17,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_Plaster_Window_Wide_Flat2",
+      "x": 22,
+      "z": 19,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_Plaster_Window_Wide_Flat2",
+      "x": 25,
+      "z": 16,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_Plaster_Window_Wide_Flat2",
+      "x": 25,
+      "z": 22,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_Plaster_Door_Round",
+      "x": 28,
+      "z": 19,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Window_Wide_Flat1",
+      "x": 22,
+      "z": 19,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Window_Wide_Flat1",
+      "x": 25,
+      "z": 22,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Window_Wide_Flat1",
+      "x": 25,
+      "z": 16,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 23,
+      "z": 17,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 23,
+      "z": 19,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 25,
+      "z": 19,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 25,
+      "z": 17,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 23,
+      "z": 21,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 25,
+      "z": 21,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 27,
+      "z": 21,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 27,
+      "z": 19,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark",
+      "x": 27,
+      "z": 17,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Stair_Interior_Simple",
+      "x": 23,
+      "z": 17,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Table_Large",
+      "x": 26,
+      "z": 21,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Bench",
+      "x": 26,
+      "z": 20,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Stool",
+      "x": 24,
+      "z": 21.5,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Stool",
+      "x": 24,
+      "z": 21,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Bag",
+      "x": 22.5,
+      "z": 21.5,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Barrel_Apples",
+      "x": 22.5,
+      "z": 21,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Crate_Wooden",
+      "x": 23,
+      "z": 19,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "FarmCrate_Carrot",
+      "x": 23,
+      "z": 21.5,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Bucket_Metal",
+      "x": 26.5,
+      "z": 16.5,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Bucket_Metal",
+      "x": 27,
+      "z": 16.5,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Barrel",
+      "x": 26,
+      "z": 16.5,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Barrel",
+      "x": 25,
+      "z": 16.5,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "SmallBottle",
+      "x": 27.5,
+      "z": 16.5,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "SmallBottle",
+      "x": 27,
+      "z": 17,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 27,
+      "z": 17,
+      "y": 3,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 25,
+      "z": 17,
+      "y": 3,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 25,
+      "z": 19,
+      "y": 3,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 27,
+      "z": 19,
+      "y": 3,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 25,
+      "z": 21,
+      "y": 3,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 27,
+      "z": 21,
+      "y": 3,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 23,
+      "z": 17,
+      "y": 3,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Floor_WoodDark_Half1",
+      "x": 23,
+      "z": 21,
+      "y": 3,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_Plaster_Straight",
+      "x": 22,
+      "z": 17,
+      "y": 3,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_Plaster_Straight",
+      "x": 22,
+      "z": 21,
+      "y": 3,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_Plaster_Straight",
+      "x": 22,
+      "z": 19,
+      "y": 3,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_Plaster_Straight",
+      "x": 28,
+      "z": 19,
+      "y": 3,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_Plaster_Straight",
+      "x": 23,
+      "z": 22,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_Plaster_Straight",
+      "x": 27,
+      "z": 22,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_Plaster_Straight",
+      "x": 27,
+      "z": 16,
+      "y": 3,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_Plaster_Straight",
+      "x": 25,
+      "z": 16,
+      "y": 3,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_Plaster_Window_Wide_Flat",
+      "x": 23,
+      "z": 16,
+      "y": 3,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_Plaster_Window_Wide_Flat",
+      "x": 28,
+      "z": 17,
+      "y": 3,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_Plaster_Window_Wide_Flat",
+      "x": 28,
+      "z": 21,
+      "y": 3,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_Plaster_Window_Wide_Flat",
+      "x": 25,
+      "z": 22,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Window_Wide_Flat1",
+      "x": 28,
+      "z": 17,
+      "y": 3,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Window_Wide_Flat1",
+      "x": 28,
+      "z": 21,
+      "y": 3,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Window_Wide_Flat1",
+      "x": 25,
+      "z": 22,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Window_Wide_Flat1",
+      "x": 25,
+      "z": 22,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Window_Wide_Flat1",
+      "x": 23,
+      "z": 16,
+      "y": 3,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Bed_Twin1",
+      "x": 26,
+      "z": 21,
+      "y": 3,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Bed_Twin1",
+      "x": 26,
+      "z": 17,
+      "y": 3,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Nightstand_Shelf",
+      "x": 27.5,
+      "z": 18.5,
+      "y": 3,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Nightstand_Shelf",
+      "x": 27.5,
+      "z": 19.5,
+      "y": 3,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "BookGroup_Small_3",
+      "x": 26.5,
+      "z": 20,
+      "y": 3,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "BookGroup_Small_2",
+      "x": 26.5,
+      "z": 18,
+      "y": 3,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "SmallBottle",
+      "x": 27,
+      "z": 20,
+      "y": 3,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Stool",
+      "x": 24.5,
+      "z": 21.5,
+      "y": 3,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Stool",
+      "x": 24.5,
+      "z": 16.5,
+      "y": 3,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 27,
+      "z": 17,
+      "y": 6,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 25,
+      "z": 17,
+      "y": 6,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 27,
+      "z": 19,
+      "y": 6,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 25,
+      "z": 21,
+      "y": 6,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 25,
+      "z": 21,
+      "y": 6,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 27,
+      "z": 21,
+      "y": 6,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 25,
+      "z": 19,
+      "y": 6,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 23,
+      "z": 19,
+      "y": 6,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 23,
+      "z": 21,
+      "y": 6,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 23,
+      "z": 17,
+      "y": 6,
+      "yaw": 0
+    }
+  ]
+}

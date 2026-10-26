@@ -231,7 +231,7 @@
 
     const root = typeof self !== "undefined" ? self : globalThis;
     const islandLabTowns = root.IslandLab && root.IslandLab.enabled;
-    const towns = islandLabTowns ? [] : [0, 1, 2, 3].map(buildVillage);
+    const towns = islandLabTowns ? [] : [0, 1, 2, 3].map(() => ({ buildings: [], lines: [], why: {}, slots: 0 }));
     const buildings = towns.reduce((all, town) => all.concat(town.buildings), []);
     const streets = towns.reduce((all, town) => all.concat(town.lines), []);
 
@@ -359,6 +359,7 @@
         }
     ];
     for (const farm of farms) {
+        if (farm.village !== 2) continue;
         for (const building of farm.buildings) buildings.push(building);
     }
     buildings.push(timberBuilding(2, "lumber", -2000, 478, 9, 5.6, Math.PI, "south"));
@@ -383,6 +384,7 @@
         const sites = [];
         for (let i = 0; i < farms.length; i++) {
             const farm = farms[i];
+            if (farm.village !== 2) continue;
             const house = farm.buildings.find((b) => b.role === "farmhouse");
             if (!house) continue;
             const door = kitDoor(house);
@@ -432,6 +434,7 @@
 
     function coverDist(x, z, line, accept) {
         let best = 1e9;
+        if (!line || line.length < 2) return best;
         for (let i = 1; i < line.length; i++) {
             const a = line[i - 1];
             const b = line[i];

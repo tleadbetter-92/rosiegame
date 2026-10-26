@@ -9,7 +9,7 @@ const removeButton = document.getElementById("remove");
 const islandBoardEarly = window.CAMPAIGN_ISLAND === true;
 const placeNames = islandBoardEarly
     ? ["Westhold", "Easthold"]
-    : ["Northwest", "Northeast", "Southwest", "Southeast"];
+    : ["Southhold", "Northeast", "Southwest", "Southeast"];
 const hamletNames = ["Ashby", "Fernlow", "Brackwick", "Stoneacre", "Hollins", "Redmere", "Westerby"];
 const homeColors = ["#c45c3a", "#3d6b8a", "#6a7a3a", "#8a5a7a"];
 const kinds = [
@@ -42,14 +42,24 @@ let view = { x0: home.x - 280, x1: home.x + 280, z0: home.z - 250, z1: home.z + 
 let islandBase = null;
 let bakePending = 0;
 
-const settlements = World.places.map((place, index) => ({
+const settlements = World.places.filter((place) => place.onMap !== false).map((place) => {
+    const index = World.places.indexOf(place);
+    return {
     kind: "town",
     index,
     name: placeNames[index],
     color: homeColors[index],
     x: place.x,
     z: place.z
-})).concat(World.hamlets.map((hamlet, index) => ({
+    };
+}).concat((World.regions || []).flatMap((region) => (region.towns || []).map((town) => ({
+    kind: "region",
+    index: region.faction,
+    name: town.name,
+    color: homeColors[region.faction] || "#b0883a",
+    x: town.x,
+    z: town.z
+})))).concat(World.hamlets.map((hamlet, index) => ({
     kind: "hamlet",
     index,
     name: hamletNames[index] || hamlet.id,
@@ -58,7 +68,10 @@ const settlements = World.places.map((place, index) => ({
     z: hamlet.z
 })));
 
-const southwest = settlements[playerVillage] || settlements[2];
+function settlementByFaction(index) {
+    return settlements.find((place) => place.kind === "town" && place.index === index) || null;
+}
+const southwest = settlementByFaction(playerVillage) || settlements[0];
 const capitalName = islandBoard ? (playerVillage === 1 ? "Easthold" : "Westhold") : "Southwest";
 
 function woodStand(place, slot) {
@@ -374,7 +387,7 @@ function paint() {
         const cap = crewCap(item.kind);
         if (cap) {
             const owner = item.owner == null ? playerVillage : item.owner;
-            const place = settlements[owner] || settlements[playerVillage];
+            const place = settlementByFaction(owner) || southwest;
             const metres = Math.hypot(item.x - place.x, item.z - place.z);
             extra = "   " + (item.crew || 0) + "/" + cap + " workers";
             if (resourceKind(item.kind)) extra += ", " + Math.round(metres) + " m from " + place.name + ", " + dayTake(item.crew || 0, metres) + " a day";
@@ -387,7 +400,8 @@ function paint() {
 }
 
 function factionOrder(index) {
-    const place = settlements[index];
+    const place = settlementByFaction(index);
+    if (!place) return;
     const kind = kinds[index % kinds.length];
     const spot = resourceKind(kind.id) ? closestResource(place, kind.id) : (place.slots || []).find((item) => !taken(item));
     if (!spot) turnLog.push(place.name + " passes.");

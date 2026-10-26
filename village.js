@@ -6,6 +6,13 @@ if (!gl) {
 }
 
 const places = World.places;
+function placeOnMap(village) {
+    const place = places[village];
+    return !!(place && place.onMap !== false);
+}
+function palisadeLive() {
+    return false;
+}
 const islandLabOn = typeof IslandLab !== "undefined" && IslandLab.enabled;
 const homeVillage = islandLabOn ? IslandLab.playerVillage : 2;
 const flying = new URLSearchParams(location.search).get("fly") === "1";
@@ -132,6 +139,8 @@ const homeDoors = ["east", "west", "east", "west", "south", "south"];
 const homeRise = [1.9, 1.5, 1.35, 1.45, 1.6, 1.7];
 // Civic kit houses inside every major village keep (same layout as Southwest).
 for (let village = 0; village < 4; village++) {
+    if (!placeOnMap(village)) continue;
+    if (typeof EditorBlocks !== "undefined" && EditorBlocks.hamletTownBig) continue;
     const place = places[village];
     housePlan.forEach((house, index) => {
         houses.push({
@@ -1538,6 +1547,7 @@ function addYard(place) {
 }
 function spawnGarrison() {
     for (let village = 0; village < places.length; village++) {
+        if (!placeOnMap(village)) continue;
         const place = places[village];
         for (let slot = 0; slot < 6; slot++) {
             const home = homeOf(place, slot);
@@ -2257,7 +2267,11 @@ function focusCenters() {
     const list = [];
     for (let i = 0; i < World.places.length; i++) {
         const p = World.places[i];
+        if (p.onMap === false) continue;
         list.push({ id: "p" + i, x: p.ox, z: p.oz });
+    }
+    for (const region of World.regions || []) {
+        for (const town of region.towns || []) list.push({ id: town.id, x: town.x, z: town.z });
     }
     for (let i = 0; i < (World.hamlets || []).length; i++) {
         const h = World.hamlets[i];
@@ -3539,6 +3553,24 @@ function registerHamletTerrainFlats() {
         }
     }
     const hamlets = World.hamlets || [];
+    const islandTown = typeof EditorBlocks !== "undefined" ? EditorBlocks.islandBasicTown : null;
+    const islandSpan = islandTown && islandTown.size ? islandTown.size : 192;
+    for (const region of World.regions || []) {
+        for (const town of region.towns || []) {
+            const rect = hamletTownBlockRect(town.x, town.z, islandSpan);
+            levelPads.push({ minX: rect.minX, minZ: rect.minZ, w: rect.w, d: rect.d, y: medianTerrainHeight(rect) });
+        }
+    }
+    const largeHamlet = typeof EditorBlocks !== "undefined" ? EditorBlocks.hamletTownBig : null;
+    if (largeHamlet) {
+        const span = largeHamlet.size || 192;
+        for (let i = 0; i < (World.places || []).length; i++) {
+            const place = World.places[i];
+            if (!place || place.onMap === false) continue;
+            const rect = hamletTownBlockRect(place.x, place.z, span);
+            levelPads.push({ minX: rect.minX, minZ: rect.minZ, w: rect.w, d: rect.d, y: medianTerrainHeight(rect) });
+        }
+    }
     const ashby = hamlets[HAMLET_TOWN_BLOCK_INDEX];
     if (ashby && typeof EditorBlocks !== "undefined" && EditorBlocks.hamletTown) {
         const ox = ashby.x + 1;
@@ -3626,6 +3658,10 @@ function dressEditorHamletAt(layout, ox, oz, options) {
             continue;
         }
         if (piece.t === "lamp") continue;
+        if (piece.t === "wall" || piece.t === "gate") {
+            stampTownPalisade(piece, ox, oz);
+            continue;
+        }
         const spec = sizes[piece.t] || sizes.farmhouse;
         const yaw = editorLiveYaw(piece.yaw);
         const turned = Math.abs(Math.sin(yaw)) > 0.9;
@@ -3750,6 +3786,55 @@ function dressSphereHamletsNear(x, z, radius) {
     }
 }
 
+const regionTownDressed = {};
+
+function dressRegionTowns() {
+    if (typeof EditorBlocks === "undefined" || !EditorBlocks.islandBasicTown) return;
+    for (const region of World.regions || []) {
+        for (const town of region.towns || []) {
+            if (regionTownDressed[town.id]) continue;
+            regionTownDressed[town.id] = true;
+            dressEditorHamletAt(EditorBlocks.islandBasicTown, town.x, town.z, {
+                townBlockPad: true,
+                village: region.faction,
+                registerFarmhouse: false
+            });
+        }
+    }
+}
+
+const majorTownDressed = {};
+
+function dressMajorTowns() {
+    if (typeof EditorBlocks === "undefined" || !EditorBlocks.hamletTownBig) return;
+    for (let village = 0; village < places.length; village++) {
+        if (!placeOnMap(village) || majorTownDressed[village]) continue;
+        majorTownDressed[village] = true;
+        dressEditorHamletAt(EditorBlocks.hamletTownBig, places[village].x, places[village].z, {
+            townBlockPad: true,
+            village: village,
+            registerFarmhouse: false
+        });
+    }
+}
+
+function stampTownPalisade(piece, ox, oz) {
+    const yaw = piece.yaw || 0;
+    const c = Math.cos(yaw);
+    const s = Math.sin(yaw);
+    const x0 = piece.x + ox;
+    const z0 = piece.z + oz;
+    const gate = piece.t === "gate";
+    for (let i = 0; i <= 8; i++) {
+        const along = i * 0.48;
+        if (gate && along > 0.55 && along < 3.35) continue;
+        addBox(batches.trunk, x0 + c * along, 0, z0 + s * along, 0.16, 2.15, 0.16);
+    }
+    if (!gate) return;
+    addBox(batches.trunk, x0 + c * 1.2, 0, z0 + s * 1.2, 0.12, 1.9, 1.05);
+    addBox(batches.trunk, x0 + c * 2.6, 0, z0 + s * 2.6, 0.12, 1.9, 1.05);
+}
+
 function dressHamletsNear(x, z, radius) {
     const hamlets = World.hamlets || [];
     const r = radius != null ? radius : HAMLET_DRESS_RADIUS;
@@ -3760,6 +3845,8 @@ function dressHamletsNear(x, z, radius) {
         if (dx * dx + dz * dz <= r2) dressHamletIndex(i);
     }
     dressSphereHamletsNear(x, z, radius);
+    dressRegionTowns();
+    dressMajorTowns();
 }
 
 let hamletDressMarkX = 1e9;
@@ -7209,6 +7296,7 @@ function mergeArchers(data) {
     const next = [];
     const keep = new Set();
     for (let village = 0; village < 4; village++) {
+        if (!placeOnMap(village) || !palisadeLive()) continue;
         const row = rows[village] || [];
         for (let side = 0; side < 4; side++) {
             const health = row[side] || 0;
@@ -8706,8 +8794,10 @@ function sweptNear(x0, y0, z0, x1, y1, z1, cx, cy, cz, radius, yTol) {
 }
 
 function arrowGate(arrow, x0, y0, z0) {
+    if (!palisadeLive()) return null;
     if (!arrow.fromPlayer || !campaign || !campaign.owners) return null;
     for (let village = 0; village < 4; village++) {
+        if (!placeOnMap(village)) continue;
         for (let side = 0; side < 4; side++) {
             if (gateHealth(village, side) <= 0) continue;
             const spot = gateCenter(village, side);
@@ -8720,6 +8810,7 @@ function arrowGate(arrow, x0, y0, z0) {
 }
 
 function wallStopT(x0, y0, z0, x1, y1, z1) {
+    if (!palisadeLive()) return null;
     let best = null;
     const offer = (t) => {
         if (t > 0.02 && t <= 1 && (best == null || t < best)) best = t;
@@ -8738,6 +8829,7 @@ function wallStopT(x0, y0, z0, x1, y1, z1) {
         if (y0 + (y1 - y0) * t < 2.25) offer(t);
     };
     for (let village = 0; village < 4; village++) {
+        if (!placeOnMap(village)) continue;
         const box = palisadeBox(village);
         cross("z", box.minZ, box.minX, box.maxX, box.cx);
         cross("z", box.maxZ, box.minX, box.maxX, box.cx);
@@ -9672,8 +9764,10 @@ function gatePasses(village, side, faction) {
 }
 
 function wallBlocks(x, z, faction) {
+    if (!palisadeLive()) return false;
     const t = 0.36;
     for (let village = 0; village < 4; village++) {
+        if (!placeOnMap(village)) continue;
         const box = palisadeBox(village);
         if (z > box.minZ - t && z < box.minZ + t && x > box.minX - t && x < box.maxX + t) {
             if (!(gatePasses(village, 0, faction) && Math.abs(x - box.cx) < GATE_HALF - 0.15)) return true;
@@ -9902,9 +9996,11 @@ function pinsGatesOpen(village) {
 }
 
 function scanGates() {
+    if (!palisadeLive()) return;
     const feet = floorAt(cam.x, cam.z, cam.y - 1.62);
     const playerUp = onTower(cam.x, cam.z);
     for (let village = 0; village < 4; village++) {
+        if (!placeOnMap(village)) continue;
         if (pinsGatesOpen(village)) {
             for (let side = 0; side < 4; side++) gateWanted[village][side] = gateHealth(village, side) <= 0 ? 0 : 1;
             continue;
@@ -9943,10 +10039,12 @@ function scanGates() {
 }
 
 function gateInReach(ox, oz, fx, fy, fz, reach) {
+    if (!palisadeLive()) return null;
     if (!campaign || !campaign.owners) return null;
     let best = null;
     let bestT = reach;
     for (let village = 0; village < 4; village++) {
+        if (!placeOnMap(village)) continue;
         if (campaign.owners[village] === homeVillage) continue;
         for (let side = 0; side < 4; side++) {
             if (gateHealth(village, side) <= 0) continue;
@@ -10317,6 +10415,7 @@ function prepareTowers() {
     solids.length = 0;
     const post = 0.16;
     for (let village = 0; village < 4; village++) {
+        if (!placeOnMap(village) || !palisadeLive()) continue;
         for (let side = 0; side < 4; side++) {
             const layout = towerLayout(village, side);
             floors.push({ x: layout.x, z: layout.z, w: layout.w, d: layout.d, y: layout.floor, tower: true });
@@ -10392,9 +10491,16 @@ function hitsSolid(x, z, feet) {
 }
 
 function rebuildWalls() {
+    if (!palisadeLive()) {
+        uploadMesh("wood", []);
+        uploadMesh("palisade", []);
+        if (mesh.palisade) mesh.palisade.cull = false;
+        return;
+    }
     const list = [];
     const flat = [];
     for (let village = 0; village < 4; village++) {
+        if (!placeOnMap(village)) continue;
         const box = palisadeBox(village);
         addFlatWall(flat, box.minX, box.minZ, box.maxX, box.minZ, box.cx, "x", 0.98);
         addFlatWall(flat, box.minX, box.maxZ, box.maxX, box.maxZ, box.cx, "x", 0.74);
@@ -10408,8 +10514,13 @@ function rebuildWalls() {
 }
 
 function rebuildDoors() {
+    if (!palisadeLive()) {
+        uploadMesh("gates", []);
+        return;
+    }
     const list = [];
     for (let village = 0; village < 4; village++) {
+        if (!placeOnMap(village)) continue;
         for (let side = 0; side < 4; side++) {
             if (gateHealth(village, side) <= 0) continue;
             addGateDoors(list, village, side, gateAnim[village][side]);
@@ -10429,6 +10540,7 @@ function updatePalisade(dt) {
     let healthKey = "";
     let swingKey = "";
     for (let village = 0; village < 4; village++) {
+        if (!placeOnMap(village)) continue;
         for (let side = 0; side < 4; side++) {
             const want = gateWanted[village][side];
             const current = gateAnim[village][side];
@@ -11653,7 +11765,10 @@ function cpuFarm(place, village, cx, cz) {
 
 function cpuPlayers() {
     const list = [];
-    for (let i = 0; i < places.length; i++) list.push({ index: i, place: places[i], hamlet: false });
+    for (let i = 0; i < places.length; i++) {
+        if (!placeOnMap(i)) continue;
+        list.push({ index: i, place: places[i], hamlet: false });
+    }
     const hamlets = World.hamlets || [];
     for (let i = 0; i < hamlets.length; i++) list.push({ index: places.length + i, place: hamlets[i], hamlet: true });
     return list;

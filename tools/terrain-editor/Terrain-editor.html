@@ -170,6 +170,7 @@
                 <label><input type="radio" name="brushMode" value="river"> River</label>
                 <label><input type="radio" name="brushMode" value="bridge"> Stone bridge (click once on the crossing)</label>
                 <label><input type="radio" name="brushMode" value="ore"> Ore (mine; click once where workers dig stone and gold)</label>
+                <label><input type="radio" name="brushMode" value="brute-lair"> Brute lair (The Brutes spawn; one marker, then sync)</label>
             </div>
         </div>
         <div class="control-group">
@@ -1266,9 +1267,10 @@
             else if (type === 'river') geom = new THREE.CylinderGeometry(0.9, 0.9, 0.3, 16);
             else if (type === 'bridge') geom = new THREE.BoxGeometry(1.6, 0.6, 1.6);
             else if (type === 'ore') geom = new THREE.DodecahedronGeometry(1);
+            else if (type === 'brute-lair') geom = new THREE.OctahedronGeometry(1.1);
             else geom = new THREE.CylinderGeometry(0.5, 0.5, 0.4, 12);
-            geom.translate(0, forest ? 0.3 : type === 'cliff' ? 2 : type === 'bridge' ? 0.3 : type === 'ore' ? 0.8 : 0.2, 0);
-            const colors = { forest: 0x2f6b2a, road: 0x9a9a92, cliff: 0x6f675c, path: 0x8a6a3c, river: 0x2f7fd0, bridge: 0xc8b48a, ore: 0xd4a52a };
+            geom.translate(0, forest ? 0.3 : type === 'cliff' ? 2 : type === 'bridge' ? 0.3 : type === 'ore' ? 0.8 : type === 'brute-lair' ? 0.95 : 0.2, 0);
+            const colors = { forest: 0x2f6b2a, road: 0x9a9a92, cliff: 0x6f675c, path: 0x8a6a3c, river: 0x2f7fd0, bridge: 0xc8b48a, ore: 0xd4a52a, 'brute-lair': 0x8b3a2a };
             const mat = new THREE.MeshStandardMaterial({
                 color: colors[type],
                 roughness: 0.9,
@@ -1285,6 +1287,7 @@
             // One bridge per crossing, however long the click is held.
             if (type === 'bridge' && placedObjects.some(o => o.type === 'bridge' && o.object.position.distanceTo(point) < 3)) return;
             if (type === 'ore' && placedObjects.some(o => o.type === 'ore' && o.object.position.distanceTo(point) < 3)) return;
+            if (type === 'brute-lair' && placedObjects.some(o => o.type === 'brute-lair')) return;
 
             let clone = null;
             let visibleChildIndex = -1;
@@ -1320,7 +1323,7 @@
                 scene.add(sim.mesh);
                 waterSims.push(sim);
                 clone = sim.mesh;
-            } else if (['forest', 'path', 'road', 'cliff', 'river', 'bridge', 'ore'].includes(type)) {
+            } else if (['forest', 'path', 'road', 'cliff', 'river', 'bridge', 'ore', 'brute-lair'].includes(type)) {
                 clone = markerMesh(type);
             } else if (groundColors[type]) {
                 clone = groundMesh(type);
@@ -1529,7 +1532,7 @@
                               const sim = new WaterSim(6, 12);
                               waterSims.push(sim);
                               clone = sim.mesh;
-                          } else if (['forest', 'path', 'road', 'cliff', 'river', 'bridge', 'ore'].includes(data.type)) {
+                          } else if (['forest', 'path', 'road', 'cliff', 'river', 'bridge', 'ore', 'brute-lair'].includes(data.type)) {
                               clone = markerMesh(data.type);
                           } else if (groundColors[data.type]) {
                               clone = groundMesh(data.type);

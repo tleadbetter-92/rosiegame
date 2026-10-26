@@ -9,6 +9,7 @@
     const workerBtn = document.getElementById("train-worker");
     const archerBtn = document.getElementById("train-archer");
     const houseBtn = document.getElementById("build-house");
+    const millBtn = document.getElementById("build-mill");
     const mineBtn = document.getElementById("build-mine");
     const ironBtn = document.getElementById("build-iron");
     const yardBtn = document.getElementById("build-yard");
@@ -43,6 +44,17 @@
     const ARCHER_RANGE = 4;
     const HOUSE_HP = 200;
     const HOUSE_COST = 10;
+    const HALL_W = 3;
+    const HALL_H = 2;
+    const HOUSE_W = 2;
+    const HOUSE_H = 2;
+    const TOWER_W = 2;
+    const TOWER_H = 3;
+    const MILL_W = 2;
+    const MILL_H = 2;
+    const MILL_COST = 10;
+    const MILL_FOOD = 10;
+    const MILL_MS = 60000;
     const HOUSE_RANGE = 10;
     const POP_START = 10;
     const POP_PER_HOUSE = 5;
@@ -114,7 +126,7 @@
             trained: false,
             building: { c: 1 + OX, r: 3 + OY, hp: BUILDING_HP, maxHp: BUILDING_HP, dead: false, hurt: 0 },
             muster: [
-                [3 + OX, 3 + OY], [3 + OX, 4 + OY], [3 + OX, 2 + OY], [3 + OX, 5 + OY],
+                [OX, 3 + OY], [OX, 4 + OY], [3 + OX, 2 + OY], [3 + OX, 5 + OY],
                 [4 + OX, 3 + OY], [4 + OX, 4 + OY], [4 + OX, 2 + OY], [4 + OX, 5 + OY]
             ],
             soldiers: [],
@@ -122,6 +134,7 @@
             works: [],
             walls: [],
             towers: [],
+            windmills: [],
             carts: []
         },
         {
@@ -149,6 +162,7 @@
             works: [],
             walls: [],
             towers: [],
+            windmills: [],
             carts: []
         }
     ];
@@ -180,48 +194,70 @@
         return findSoldier(selected.id);
     }
 
+    function boxTiles(c, r, w, h) {
+        const tiles = [];
+        for (let dc = 0; dc < w; dc++) {
+            for (let dr = 0; dr < h; dr++) tiles.push({ c: c + dc, r: r + dr });
+        }
+        return tiles;
+    }
+
+    function inBox(c, r, originC, originR, w, h) {
+        return c >= originC && c < originC + w && r >= originR && r < originR + h;
+    }
+
     function buildingTiles(faction) {
         const b = faction.building;
-        return [
-            { c: b.c, r: b.r },
-            { c: b.c + 1, r: b.r },
-            { c: b.c, r: b.r + 1 },
-            { c: b.c + 1, r: b.r + 1 }
-        ];
+        return boxTiles(b.c, b.r, HALL_W, HALL_H);
     }
 
     function isBuildingTile(c, r) {
         return factions.some(function (f) {
-            if (!f.building.dead) {
-                const b = f.building;
-                if (c >= b.c && c < b.c + 2 && r >= b.r && r < b.r + 2) return true;
-            }
+            if (!f.building.dead && inBox(c, r, f.building.c, f.building.r, HALL_W, HALL_H)) return true;
             return f.houses.some(function (house) {
-                return !house.dead && house.c === c && house.r === r;
+                return !house.dead && inBox(c, r, house.c, house.r, HOUSE_W, HOUSE_H);
             }) || f.works.some(function (work) {
-                return !work.dead && c >= work.c && c < work.c + 2 && r >= work.r && r < work.r + 2;
+                return !work.dead && inBox(c, r, work.c, work.r, 2, 2);
             }) || f.walls.some(function (wall) {
                 return !wall.dead && wall.c === c && wall.r === r;
             }) || f.towers.some(function (tower) {
-                return !tower.dead && tower.c === c && tower.r === r;
+                return !tower.dead && inBox(c, r, tower.c, tower.r, TOWER_W, TOWER_H);
+            }) || f.windmills.some(function (mill) {
+                return !mill.dead && inBox(c, r, mill.c, mill.r, MILL_W, MILL_H);
             });
         });
     }
 
     function buildingAt(c, r) {
         return factions.find(function (f) {
-            if (f.building.dead) return false;
-            const b = f.building;
-            return c >= b.c && c < b.c + 2 && r >= b.r && r < b.r + 2;
+            return !f.building.dead && inBox(c, r, f.building.c, f.building.r, HALL_W, HALL_H);
         });
     }
 
     function houseAt(c, r) {
         for (let i = 0; i < factions.length; i++) {
             const house = factions[i].houses.find(function (item) {
-                return !item.dead && item.c === c && item.r === r;
+                return !item.dead && inBox(c, r, item.c, item.r, HOUSE_W, HOUSE_H);
             });
             if (house) return { faction: factions[i], house: house };
+        }
+        return null;
+    }
+
+    function millAt(c, r) {
+        for (let i = 0; i < factions.length; i++) {
+            const mill = factions[i].windmills.find(function (item) {
+                return !item.dead && inBox(c, r, item.c, item.r, MILL_W, MILL_H);
+            });
+            if (mill) return { faction: factions[i], mill: mill };
+        }
+        return null;
+    }
+
+    function findMill(id) {
+        for (let i = 0; i < factions.length; i++) {
+            const mill = factions[i].windmills.find(function (item) { return item.id === id; });
+            if (mill) return { faction: factions[i], mill: mill };
         }
         return null;
     }
@@ -234,10 +270,12 @@
         return null;
     }
 
-    function pieceAt(listName, c, r) {
+    function pieceAt(listName, c, r, w, h) {
+        const width = w || 1;
+        const height = h || width;
         for (let i = 0; i < factions.length; i++) {
             const piece = factions[i][listName].find(function (item) {
-                return !item.dead && item.c === c && item.r === r;
+                return !item.dead && inBox(c, r, item.c, item.r, width, height);
             });
             if (piece) return { faction: factions[i], piece: piece };
         }
@@ -252,23 +290,43 @@
         return null;
     }
 
-    function distToHall(faction, c, r) {
-        const b = faction.building;
+    function distToBox(originC, originR, w, h, c, r) {
         let dc = 0;
         let dr = 0;
-        if (c < b.c) dc = b.c - c;
-        else if (c >= b.c + 2) dc = c - (b.c + 1);
-        if (r < b.r) dr = b.r - r;
-        else if (r >= b.r + 2) dr = r - (b.r + 1);
+        if (c < originC) dc = originC - c;
+        else if (c >= originC + w) dc = c - (originC + w - 1);
+        if (r < originR) dr = originR - r;
+        else if (r >= originR + h) dr = r - (originR + h - 1);
         return Math.max(dc, dr);
     }
 
-    function canPlaceHouse(faction, c, r) {
+    function distToHall(faction, c, r) {
+        const b = faction.building;
+        return distToBox(b.c, b.r, HALL_W, HALL_H, c, r);
+    }
+
+    function canPlaceBox(faction, c, r, w, h) {
         if (!faction || faction.building.dead) return false;
-        if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return false;
-        const dist = distToHall(faction, c, r);
-        if (dist === 0 || dist > HOUSE_RANGE) return false;
-        return !occupied(c, r, null);
+        for (let dc = 0; dc < w; dc++) {
+            for (let dr = 0; dr < h; dr++) {
+                const tc = c + dc;
+                const tr = r + dr;
+                if (tc < 0 || tr < 0 || tc >= COLS || tr >= ROWS) return false;
+                if (occupied(tc, tr, null)) return false;
+            }
+        }
+        return true;
+    }
+
+    function canPlaceHouse(faction, c, r) {
+        if (!canPlaceBox(faction, c, r, HOUSE_W, HOUSE_H)) return false;
+        for (let dc = 0; dc < HOUSE_W; dc++) {
+            for (let dr = 0; dr < HOUSE_H; dr++) {
+                const dist = distToHall(faction, c + dc, r + dr);
+                if (dist === 0 || dist > HOUSE_RANGE) return false;
+            }
+        }
+        return true;
     }
 
     function placeHouse(faction, c, r) {
@@ -284,7 +342,7 @@
             dead: false
         });
         floaters.push({
-            x: c * TILE + TILE / 2,
+            x: (c + HOUSE_W / 2) * TILE,
             y: r * TILE + 24,
             life: 900,
             text: "+5 population"
@@ -324,13 +382,13 @@
     }
 
     function canPlaceBlock(faction, c, r) {
-        if (!faction || faction.building.dead) return false;
-        if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return false;
-        return !occupied(c, r, null);
+        return canPlaceBox(faction, c, r, 1, 1);
     }
 
     function placeBlock(faction, kind, c, r) {
-        if (faction.wood < HOUSE_COST || !canPlaceBlock(faction, c, r)) return false;
+        const w = kind === "tower" ? TOWER_W : 1;
+        const h = kind === "tower" ? TOWER_H : 1;
+        if (faction.wood < HOUSE_COST || !canPlaceBox(faction, c, r, w, h)) return false;
         faction.wood -= HOUSE_COST;
         const hp = kind === "tower" ? TOWER_HP : WALL_HP;
         const piece = {
@@ -357,9 +415,46 @@
         return true;
     }
 
+    function canAffordMill(faction) {
+        return faction
+            && faction.gold >= MILL_COST
+            && faction.food >= MILL_COST
+            && faction.wood >= MILL_COST
+            && faction.stone >= MILL_COST
+            && faction.iron >= MILL_COST;
+    }
+
+    function placeMill(faction, c, r) {
+        if (!canAffordMill(faction) || !canPlaceBox(faction, c, r, MILL_W, MILL_H)) return false;
+        faction.gold -= MILL_COST;
+        faction.food -= MILL_COST;
+        faction.wood -= MILL_COST;
+        faction.stone -= MILL_COST;
+        faction.iron -= MILL_COST;
+        faction.windmills.push({
+            id: nextId++,
+            c: c,
+            r: r,
+            hp: WORK_HP,
+            maxHp: WORK_HP,
+            hurt: 0,
+            dead: false,
+            foodLeft: MILL_MS
+        });
+        floaters.push({
+            x: (c + MILL_W / 2) * TILE,
+            y: r * TILE + 24,
+            life: 900,
+            text: "-10 each"
+        });
+        return true;
+    }
+
     function canPlaceKind(faction, kind, c, r) {
         if (kind === "house") return canPlaceHouse(faction, c, r);
-        if (kind === "wall" || kind === "tower") return canPlaceBlock(faction, c, r);
+        if (kind === "wall") return canPlaceBlock(faction, c, r);
+        if (kind === "tower") return canPlaceBox(faction, c, r, TOWER_W, TOWER_H);
+        if (kind === "mill") return canPlaceBox(faction, c, r, MILL_W, MILL_H);
         return canPlaceWork(faction, c, r);
     }
 
@@ -510,7 +605,17 @@
                 kind: "house",
                 faction: found.faction,
                 ref: found.house,
-                tiles: [{ c: found.house.c, r: found.house.r }]
+                tiles: boxTiles(found.house.c, found.house.r, HOUSE_W, HOUSE_H)
+            };
+        }
+        if (order.kind === "mill") {
+            const found = findMill(order.id);
+            if (!found || found.mill.dead || found.mill.hp <= 0) return null;
+            return {
+                kind: "mill",
+                faction: found.faction,
+                ref: found.mill,
+                tiles: boxTiles(found.mill.c, found.mill.r, MILL_W, MILL_H)
             };
         }
         if (order.kind === "work") {
@@ -535,7 +640,7 @@
                 kind: order.kind,
                 faction: found.faction,
                 ref: found.piece,
-                tiles: [{ c: found.piece.c, r: found.piece.r }]
+                tiles: boxTiles(found.piece.c, found.piece.r, order.kind === "tower" ? TOWER_W : 1, order.kind === "tower" ? TOWER_H : 1)
             };
         }
         const found = findSoldier(order.id);
@@ -729,10 +834,12 @@
     function besideBox(soldier, box) {
         let dc = 0;
         let dr = 0;
+        const bw = box.w || box.span;
+        const bh = box.h || box.span;
         if (soldier.c < box.c) dc = box.c - soldier.c;
-        else if (soldier.c >= box.c + box.span) dc = soldier.c - (box.c + box.span - 1);
+        else if (soldier.c >= box.c + bw) dc = soldier.c - (box.c + bw - 1);
         if (soldier.r < box.r) dr = box.r - soldier.r;
-        else if (soldier.r >= box.r + box.span) dr = soldier.r - (box.r + box.span - 1);
+        else if (soldier.r >= box.r + bh) dr = soldier.r - (box.r + bh - 1);
         return Math.max(dc, dr) === 1;
     }
 
@@ -757,14 +864,16 @@
         }
         if (site) return { c: site.c, r: site.r, span: 2, name: info.drop, work: site };
         order.dropId = null;
-        return { c: faction.building.c, r: faction.building.r, span: 2, name: "settlement", work: null };
+        return { c: faction.building.c, r: faction.building.r, w: HALL_W, h: HALL_H, span: HALL_W, name: "settlement", work: null };
     }
 
     function ringTiles(box) {
         const tiles = [];
-        for (let c = box.c - 1; c <= box.c + box.span; c++) {
-            for (let r = box.r - 1; r <= box.r + box.span; r++) {
-                if (c >= box.c && c < box.c + box.span && r >= box.r && r < box.r + box.span) continue;
+        const bw = box.w || box.span;
+        const bh = box.h || box.span;
+        for (let c = box.c - 1; c <= box.c + bw; c++) {
+            for (let r = box.r - 1; r <= box.r + bh; r++) {
+                if (c >= box.c && c < box.c + bw && r >= box.r && r < box.r + bh) continue;
                 if (c < 0 || r < 0 || c >= COLS || r >= ROWS) continue;
                 tiles.push({ c: c, r: r });
             }
@@ -811,7 +920,7 @@
                     }
                     return;
                 }
-                const box = { c: hall.c, r: hall.r, span: 2 };
+                const box = { c: hall.c, r: hall.r, w: HALL_W, h: HALL_H, span: HALL_W };
                 if (besideBox(cart, box)) {
                     faction[cart.key] += cart.amount;
                     floaters.push({
@@ -1012,6 +1121,10 @@
                 if (tower.dead) tower.hp = 0;
             });
             faction.towers = faction.towers.filter(function (tower) { return !tower.dead; });
+            faction.windmills.forEach(function (mill) {
+                if (mill.dead) mill.hp = 0;
+            });
+            faction.windmills = faction.windmills.filter(function (mill) { return !mill.dead; });
             faction.soldiers = faction.soldiers.filter(function (soldier) { return !soldier.dead; });
             faction.soldiers.forEach(function (soldier) {
                 if (soldier.order && !resolveOrder(soldier)) {
@@ -1025,6 +1138,7 @@
         if (selected && selected.kind === "work" && !findWork(selected.id)) selected = null;
         if (selected && selected.kind === "wall" && !findPiece("walls", selected.id)) selected = null;
         if (selected && selected.kind === "tower" && !findPiece("towers", selected.id)) selected = null;
+        if (selected && selected.kind === "mill" && !findMill(selected.id)) selected = null;
         if (selected && selected.kind === "building" && factionById(selected.factionId).building.dead) {
             selected = null;
         }
@@ -1137,14 +1251,14 @@
         let dist = TOWER_RANGE + 1;
         foe.soldiers.forEach(function (soldier) {
             if (soldier.dead || soldier.hp <= 0) return;
-            const d = chebyshev(tower.c, tower.r, soldier.c, soldier.r);
+            const d = distToBox(tower.c, tower.r, TOWER_W, TOWER_H, soldier.c, soldier.r);
             if (d <= TOWER_RANGE && d < dist) {
                 dist = d;
                 best = soldier;
             }
         });
         if (player && !player.dead && hostile[faction.id]) {
-            const d = chebyshev(tower.c, tower.r, player.c, player.r);
+            const d = distToBox(tower.c, tower.r, TOWER_W, TOWER_H, player.c, player.r);
             if (d <= TOWER_RANGE && d < dist) best = player;
         }
         return best;
@@ -1159,8 +1273,8 @@
         }
         const pos = drawPos(foe);
         arrows.push({
-            x1: tower.c * TILE + TILE / 2,
-            y1: tower.r * TILE + 16,
+            x1: tower.c * TILE + TOWER_W * TILE / 2,
+            y1: tower.r * TILE + TOWER_H * TILE / 2,
             x2: pos.c * TILE + TILE / 2,
             y2: pos.r * TILE + 28,
             life: 280
@@ -1201,6 +1315,28 @@
             });
             faction.towers.forEach(function (tower) {
                 if (tower.hurt > 0) tower.hurt -= dt;
+            });
+            faction.windmills.forEach(function (mill) {
+                if (mill.hurt > 0) mill.hurt -= dt;
+                if (mill.dead || mill.hp <= 0) return;
+                mill.foodLeft -= dt;
+                while (mill.foodLeft <= 0) {
+                    mill.foodLeft += MILL_MS;
+                    faction.food += MILL_FOOD;
+                    floaters.push({
+                        x: mill.c * TILE + TILE / 2,
+                        y: mill.r * TILE + 16,
+                        life: 900,
+                        text: "+10 food"
+                    });
+                }
+                if (selected && selected.kind === "mill" && selected.id === mill.id) {
+                    const sec = secondsLeft(mill.foodLeft);
+                    if (sec !== mill.shown) {
+                        mill.shown = sec;
+                        updateHud();
+                    }
+                }
             });
             tickEconomy(faction, dt);
             faction.soldiers.forEach(function (soldier) {
@@ -1251,6 +1387,7 @@
         const side = target.faction.name.toLowerCase();
         if (target.kind === "building") return target.faction.hall;
         if (target.kind === "house") return "a " + side + " house";
+        if (target.kind === "mill") return "a " + side + " windmill";
         if (target.kind === "work") return "a " + side + " " + WORK_NAMES[target.ref.kind].toLowerCase();
         if (target.kind === "wall") return "a " + side + " wall";
         if (target.kind === "tower") return "a " + side + " watchtower";
@@ -1314,6 +1451,10 @@
             item[0].disabled = handsOff || (!open && !active);
             item[0].textContent = active ? "Cancel " + item[2] : "Make " + item[2];
         });
+        const milling = !!(placing && faction && placing.factionId === faction.id && placing.kind === "mill");
+        millBtn.disabled = handsOff || (!canAffordMill(faction) && !milling) || !!(faction && faction.building.dead);
+        if (!faction) millBtn.disabled = true;
+        millBtn.textContent = milling ? "Cancel windmill" : "Make windmill";
     }
 
     function showPlayerHud() {
@@ -1321,7 +1462,7 @@
         if (!player) {
             nameEl.textContent = "You";
             countEl.textContent = "Waiting";
-            statusEl.textContent = "WASD moves. Click an enemy to attack.";
+            statusEl.textContent = "WASD moves. Right-click an enemy to attack. On a phone, press and hold.";
             return;
         }
         nameEl.textContent = "You";
@@ -1342,7 +1483,7 @@
         } else if (target) {
             statusEl.textContent = "Walking in. You hit for " + player.damage + " beside the enemy, then once a second. " + peace;
         } else {
-            statusEl.textContent = "WASD moves. Click an enemy to attack. Blue is a computer. "
+            statusEl.textContent = "WASD moves. Right-click an enemy to attack. On a phone, press and hold. Blue is a computer. "
                 + (redCpu ? "Red is a computer. " : "You can still command Red. ")
                 + peace;
         }
@@ -1355,6 +1496,7 @@
         if (selected && selected.kind === "work" && !findWork(selected.id)) selected = null;
         if (selected && selected.kind === "wall" && !findPiece("walls", selected.id)) selected = null;
         if (selected && selected.kind === "tower" && !findPiece("towers", selected.id)) selected = null;
+        if (selected && selected.kind === "mill" && !findMill(selected.id)) selected = null;
         if (placing && sideCpu(placing.factionId)) {
             placing = null;
             placeHint = "";
@@ -1370,7 +1512,8 @@
         paintTrain(trainFaction);
         paintHouse(trainFaction);
 
-        if (playerMode && !manualSelection()) {
+        const lookingAtYou = !selected || (mine && !mine.faction);
+        if (playerMode && lookingAtYou && !manualSelection()) {
             showPlayerHud();
             return;
         }
@@ -1402,7 +1545,7 @@
             nameEl.textContent = faction.name + " " + personWord(soldier);
             countEl.textContent = "Health " + soldier.hp + " / " + soldier.maxHp + "  ·  " + stockBits(faction);
             const say = function (line) {
-                statusEl.textContent = redCpu && faction.id === "red"
+                statusEl.textContent = sideCpu(faction.id)
                     ? line + " The computer keeps this order."
                     : line;
             };
@@ -1429,11 +1572,11 @@
             }
             if (!target) {
                 if (soldier.role === "worker") {
-                    say("Click water, forest, or a gold, stone, or iron mine. They stay 10 seconds, drop the load at a fishing port, lumberyard, mine, or iron mine when you have one, and go again. Those buildings keep the load until a cart takes 50 to the settlement. This worker hits for 5.");
+                    say("Right-click water, forest, or a gold, stone, or iron mine. On a phone, press and hold. They stay 10 seconds, drop the load at a fishing port, lumberyard, mine, or iron mine when you have one, and go again. Those buildings keep the load until a cart takes 50 to the settlement. This worker hits for 5.");
                 } else if (soldier.role === "archer") {
-                    say("Click an empty square to walk there, or click an enemy to shoot. This archer has 60 health and hits for " + soldier.damage + ", out to 4 squares.");
+                    say("Right-click an empty square to walk there, or an enemy to shoot. On a phone, press and hold. This archer has 60 health and hits for " + soldier.damage + ", out to 4 squares.");
                 } else {
-                    say("Click an empty square to walk there, or click an enemy to attack. This soldier hits for " + soldier.damage + ".");
+                    say("Right-click an empty square to walk there, or an enemy to attack. On a phone, press and hold. This soldier hits for " + soldier.damage + ".");
                 }
             } else if (soldier.wasInRange) {
                 say("Hitting " + struckName(target) + " for " + soldier.damage + " each second. Health left " + target.ref.hp + " / " + target.ref.maxHp + ".");
@@ -1450,7 +1593,16 @@
             const house = found.house;
             nameEl.textContent = faction.name + " house";
             countEl.textContent = "Health " + house.hp + " / " + house.maxHp + "  ·  " + stockBits(faction);
-            statusEl.textContent = "Houses cost 10 wood and have to be within 10 squares of the settlement. Each house adds 5 to the population limit, which starts at 10.";
+            statusEl.textContent = "A house covers 2 by 2 squares, costs 10 wood, and has to sit within 10 squares of the settlement. Each house adds 5 to the population limit, which starts at 10.";
+            return;
+        }
+
+        if (selected.kind === "mill") {
+            const found = findMill(selected.id);
+            const mill = found.mill;
+            nameEl.textContent = faction.name + " windmill";
+            countEl.textContent = "Health " + mill.hp + " / " + mill.maxHp + "  ·  " + stockBits(faction);
+            statusEl.textContent = "A windmill covers 2 by 2 squares and costs 10 gold, food, wood, stone, and iron. It adds 10 food every minute. Next food in " + secondsPhrase(mill.foodLeft) + ".";
             return;
         }
 
@@ -1481,7 +1633,7 @@
             const tower = found.piece;
             nameEl.textContent = faction.name + " watchtower";
             countEl.textContent = "Health " + tower.hp + " / " + tower.maxHp + "  ·  " + stockBits(faction);
-            statusEl.textContent = "This watchtower shoots one arrow every 1.5 seconds for 10 damage, out to 4 squares.";
+            statusEl.textContent = "A watchtower covers 2 by 3 squares. It shoots one arrow every 1.5 seconds for 10 damage, out to 4 squares.";
             return;
         }
 
@@ -1491,12 +1643,16 @@
 
         if (placing && placing.factionId === faction.id) {
             const lead = placing.kind === "house"
-                ? "Click an open square within 10 of this settlement."
-                : (placing.kind === "wall" || placing.kind === "tower")
-                    ? "Click an open square anywhere on the map."
-                    : "Click the top-left square of a free 2 by 2 anywhere on the map.";
-            statusEl.textContent = placeHint
-                || (lead + " It costs 10 wood. You have " + faction.wood + " wood.");
+                ? "Right-click the top-left square of a free 2 by 2 within 10 of this settlement. On a phone, press and hold."
+                : placing.kind === "wall"
+                    ? "Right-click an open square anywhere on the map. On a phone, press and hold."
+                    : placing.kind === "tower"
+                        ? "Right-click the top-left square of a free 2 by 3 anywhere on the map. On a phone, press and hold."
+                        : "Right-click the top-left square of a free 2 by 2 anywhere on the map. On a phone, press and hold.";
+            const price = placing.kind === "mill"
+                ? " It costs 10 of each resource. You have " + faction.gold + " gold, " + faction.food + " food, " + faction.wood + " wood, " + faction.stone + " stone, and " + faction.iron + " iron."
+                : " It costs 10 wood. You have " + faction.wood + " wood.";
+            statusEl.textContent = placeHint || (lead + price);
             return;
         }
 
@@ -1505,7 +1661,7 @@
                 statusEl.textContent = "The computer is training " + trainPhrase(faction.trainKind) + ". They step out in " + secondsPhrase(faction.trainLeft) + ". Red is trying to destroy Blue.";
                 return;
             }
-            statusEl.textContent = "The computer is running Red and trying to destroy Blue. Its soldiers cost 10 food, 10 iron, and 10 wood. It trains workers and builds a lumberyard, an iron mine, and a fishing port beside those resources. Switch Red to you to command this settlement.";
+            statusEl.textContent = "The computer is running Red and trying to destroy Blue. Its soldiers cost 10 food, 10 iron, and 10 wood. It trains workers. A lumberyard, iron mine, or fishing port is built beside a resource that is at least 12 squares from the settlement. Closer resources are carried straight back. Switch Red to you to command this settlement.";
             return;
         }
 
@@ -1580,28 +1736,63 @@
         soldier.attackWait = 0;
     }
 
-    canvas.addEventListener("click", function (event) {
-        if (battleView.swallowClick()) return;
+    function tileHit(event) {
         const tile = battleView.tileFromEvent(event);
         const c = tile.c;
         const r = tile.r;
-        if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return;
-
+        if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return null;
         const hall = buildingAt(c, r);
         const house = houseAt(c, r);
         const work = workAt(c, r);
         const wall = pieceAt("walls", c, r);
-        const tower = pieceAt("towers", c, r);
+        const tower = pieceAt("towers", c, r, TOWER_W, TOWER_H);
+        const mill = millAt(c, r);
         const unit = soldierAt(c, r);
-        const ownerId = hall ? hall.id
-            : house ? house.faction.id
-            : work ? work.faction.id
-            : wall ? wall.faction.id
-            : tower ? tower.faction.id
-            : unit && unit.faction ? unit.faction.id
-            : null;
+        return {
+            c: c,
+            r: r,
+            hall: hall,
+            house: house,
+            work: work,
+            wall: wall,
+            tower: tower,
+            mill: mill,
+            unit: unit,
+            ownerId: hall ? hall.id
+                : house ? house.faction.id
+                : work ? work.faction.id
+                : wall ? wall.faction.id
+                : tower ? tower.faction.id
+                : mill ? mill.faction.id
+                : unit && unit.faction ? unit.faction.id
+                : null
+        };
+    }
+
+    function selectHit(hit) {
+        if (hit.hall) selected = { kind: "building", factionId: hit.hall.id };
+        else if (hit.house) selected = { kind: "house", id: hit.house.house.id, factionId: hit.house.faction.id };
+        else if (hit.work) selected = { kind: "work", id: hit.work.work.id, factionId: hit.work.faction.id };
+        else if (hit.wall) selected = { kind: "wall", id: hit.wall.piece.id, factionId: hit.wall.faction.id };
+        else if (hit.tower) selected = { kind: "tower", id: hit.tower.piece.id, factionId: hit.tower.faction.id };
+        else if (hit.mill) selected = { kind: "mill", id: hit.mill.mill.id, factionId: hit.mill.faction.id };
+        else if (hit.unit) selected = { kind: "soldier", id: hit.unit.soldier.id };
+        else selected = null;
+        updateHud();
+    }
+
+    function actHit(hit) {
         const mine = selectedSoldier();
         const canOrder = mine && mine.faction && !sideCpu(mine.faction.id);
+        const hall = hit.hall;
+        const house = hit.house;
+        const work = hit.work;
+        const wall = hit.wall;
+        const tower = hit.tower;
+        const unit = hit.unit;
+        const ownerId = hit.ownerId;
+        const c = hit.c;
+        const r = hit.r;
         if (playerMode && player && !player.dead && ownerId && sideCpu(ownerId) && !(canOrder && ownerId !== mine.faction.id)) {
             if (hall) {
                 orderAttack(player, { kind: "building", factionId: hall.id });
@@ -1618,6 +1809,9 @@
             } else if (tower) {
                 orderAttack(player, { kind: "tower", id: tower.piece.id });
                 hostile[tower.faction.id] = true;
+            } else if (hit.mill) {
+                orderAttack(player, { kind: "mill", id: hit.mill.mill.id });
+                hostile[hit.mill.faction.id] = true;
             } else if (unit && unit.faction) {
                 orderAttack(player, { kind: "soldier", id: unit.soldier.id });
                 hostile[unit.faction.id] = true;
@@ -1625,12 +1819,6 @@
             updateHud();
             return;
         }
-        if (playerMode && !ownerId && !canOrder && !placing) {
-            if (player) selected = { kind: "soldier", id: player.id };
-            updateHud();
-            return;
-        }
-
         if (canOrder && hall && hall.id !== mine.faction.id) {
             orderAttack(mine.soldier, { kind: "building", factionId: hall.id });
             updateHud();
@@ -1656,32 +1844,40 @@
             updateHud();
             return;
         }
+        if (canOrder && hit.mill && hit.mill.faction.id !== mine.faction.id) {
+            orderAttack(mine.soldier, { kind: "mill", id: hit.mill.mill.id });
+            updateHud();
+            return;
+        }
         if (canOrder && unit && unit.soldier.id !== mine.soldier.id && unit.faction.id !== mine.faction.id) {
             orderAttack(mine.soldier, { kind: "soldier", id: unit.soldier.id });
             updateHud();
             return;
         }
-        if (placing && !hall && !unit && !house && !work && !wall && !tower) {
+        if (placing && !hall && !unit && !house && !work && !wall && !tower && !hit.mill) {
             const faction = factionById(placing.factionId);
             const ok = canPlaceKind(faction, placing.kind, c, r);
             if (ok) {
                 if (placing.kind === "house") placeHouse(faction, c, r);
+                else if (placing.kind === "mill") placeMill(faction, c, r);
                 else if (placing.kind === "wall" || placing.kind === "tower") placeBlock(faction, placing.kind, c, r);
                 else placeWork(faction, placing.kind, c, r);
                 placeHint = "";
-                if (faction.wood < HOUSE_COST) placing = null;
+                if (placing.kind === "mill" ? !canAffordMill(faction) : faction.wood < HOUSE_COST) placing = null;
                 updateHud();
                 return;
             }
             placeHint = placing.kind === "house"
-                ? "That square is out of reach or not open. Stay within 10 squares of the settlement."
-                : (placing.kind === "wall" || placing.kind === "tower")
+                ? "Those four squares need to be open and within 10 of the settlement."
+                : placing.kind === "wall"
                     ? "That square is not open."
-                    : "Those four squares need to be open.";
+                    : placing.kind === "tower"
+                        ? "Those six squares need to be open."
+                        : "Those four squares need to be open.";
             updateHud();
             return;
         }
-        if (canOrder && mine.soldier.role === "worker" && !hall && !unit && !house && !work && !wall && !tower) {
+        if (canOrder && mine.soldier.role === "worker" && !hall && !unit && !house && !work && !wall && !tower && !hit.mill) {
             const groundKind = BattleMap.kind(ground, c, r);
             if (GATHER[groundKind]) {
                 mine.soldier.order = {
@@ -1700,43 +1896,25 @@
                 return;
             }
         }
-        if (canOrder && !hall && !unit && !house && !work && !wall && !tower) {
+        if (canOrder && !hall && !unit && !house && !work && !wall && !tower && !hit.mill) {
             if (!occupied(c, r, mine.soldier)) orderMove(mine.soldier, c, r);
             updateHud();
-            return;
         }
-        if (hall) {
-            selected = { kind: "building", factionId: hall.id };
-            updateHud();
-            return;
-        }
-        if (house) {
-            selected = { kind: "house", id: house.house.id, factionId: house.faction.id };
-            updateHud();
-            return;
-        }
-        if (work) {
-            selected = { kind: "work", id: work.work.id, factionId: work.faction.id };
-            updateHud();
-            return;
-        }
-        if (wall) {
-            selected = { kind: "wall", id: wall.piece.id, factionId: wall.faction.id };
-            updateHud();
-            return;
-        }
-        if (tower) {
-            selected = { kind: "tower", id: tower.piece.id, factionId: tower.faction.id };
-            updateHud();
-            return;
-        }
-        if (unit) {
-            selected = { kind: "soldier", id: unit.soldier.id };
-            updateHud();
-            return;
-        }
-        selected = null;
-        updateHud();
+    }
+
+    canvas.addEventListener("click", function (event) {
+        if (event.button !== 0) return;
+        if (battleView.swallowClick()) return;
+        const hit = tileHit(event);
+        if (!hit) return;
+        selectHit(hit);
+    });
+
+    canvas.addEventListener("contextmenu", function (event) {
+        event.preventDefault();
+        const hit = tileHit(event);
+        if (!hit) return;
+        actHit(hit);
     });
 
     function spendTrain(faction, role) {
@@ -1781,7 +1959,7 @@
             updateHud();
             return;
         }
-        if (faction.wood < HOUSE_COST) return;
+        if (kind === "mill" ? !canAffordMill(faction) : faction.wood < HOUSE_COST) return;
         placing = { factionId: faction.id, kind: kind };
         placeHint = "";
         updateHud();
@@ -1794,6 +1972,7 @@
     portBtn.addEventListener("click", function () { beginPlace("port"); });
     wallBtn.addEventListener("click", function () { beginPlace("wall"); });
     towerBtn.addEventListener("click", function () { beginPlace("tower"); });
+    millBtn.addEventListener("click", function () { beginPlace("mill"); });
 
     function paintCpu() {
         cpuBtn.textContent = redCpu ? "Red: computer" : "Red: you";
@@ -1898,19 +2077,15 @@
     }
 
     function playerStart() {
-        const spots = [
-            [100 + OX, 56 + OY], [101 + OX, 56 + OY], [100 + OX, 57 + OY], [99 + OX, 56 + OY],
-            [102 + OX, 56 + OY], [100 + OX, 55 + OY], [100 + OX, 58 + OY], [96 + OX, 56 + OY]
-        ];
+        const blue = factionById("blue");
+        const hall = blue.building;
+        const c = hall.c + Math.floor(HALL_W / 2);
+        const r = hall.r + HALL_H + 2;
+        const spots = [[c, r], [c - 1, r], [c + 1, r], [c, r - 1], [c, r + 1]];
         for (let i = 0; i < spots.length; i++) {
             if (!occupied(spots[i][0], spots[i][1], player)) return spots[i];
         }
-        for (let r = 1; r < ROWS - 1; r++) {
-            for (let c = 90 + OX; c < 112 + OX; c++) {
-                if (!occupied(c, r, player)) return [c, r];
-            }
-        }
-        return [100 + OX, 56 + OY];
+        return [c, r];
     }
 
     function placePlayer(resetPeace) {
@@ -2009,6 +2184,7 @@
         { source: "iron", work: "iron" },
         { source: "water", work: "port" }
     ];
+    const CPU_HAUL = 12;
 
     function tilesOf(kind) {
         const list = [];
@@ -2063,7 +2239,9 @@
             return !work.dead && work.hp > 0 && work.kind === job.work;
         });
         if (already || faction.wood < HOUSE_COST) return false;
-        const tiles = tilesOf(job.source);
+        const tiles = tilesOf(job.source).filter(function (tile) {
+            return distToHall(faction, tile.c, tile.r) >= CPU_HAUL;
+        });
         tiles.sort(function (a, b) {
             return distToHall(faction, a.c, a.r) - distToHall(faction, b.c, b.r);
         });
@@ -2129,11 +2307,20 @@
             return !(worker.order && worker.order.kind === "gather");
         });
         const queues = CPU_JOBS.map(function (job) {
+            const site = faction.works.find(function (work) {
+                return !work.dead && work.hp > 0 && work.kind === job.work;
+            });
             const tiles = tilesOf(job.source).filter(function (tile) {
                 return !taken[tile.c + "," + tile.r];
             });
             tiles.sort(function (a, b) {
-                return distToHall(faction, a.c, a.r) - distToHall(faction, b.c, b.r);
+                const distA = site
+                    ? Math.max(Math.abs(a.c - site.c), Math.abs(a.r - site.r))
+                    : distToHall(faction, a.c, a.r);
+                const distB = site
+                    ? Math.max(Math.abs(b.c - site.c), Math.abs(b.r - site.r))
+                    : distToHall(faction, b.c, b.r);
+                return distA - distB;
             });
             return { job: job, tiles: tiles };
         }).filter(function (queue) { return queue.tiles.length; });
@@ -2282,6 +2469,18 @@
         return c < soldier.c;
     }
 
+    let frameView = null;
+    let frameDetail = "near";
+
+    function seen(x, y, w, h) {
+        if (!frameView) return true;
+        const x0 = frameView.c0 * TILE;
+        const y0 = frameView.r0 * TILE;
+        const x1 = (frameView.c1 + 1) * TILE;
+        const y1 = (frameView.r1 + 1) * TILE;
+        return x + w >= x0 && x <= x1 && y + h >= y0 && y <= y1;
+    }
+
     function drawBar(x, y, w, h, hp, max) {
         ctx.fillStyle = INK;
         ctx.fillRect(x, y, w, h);
@@ -2294,7 +2493,14 @@
         const b = faction.building;
         const x = b.c * TILE;
         const y = b.r * TILE;
-        const w = TILE * 2;
+        const w = HALL_W * TILE;
+        const h = HALL_H * TILE;
+        if (!seen(x, y - TILE, w, h + TILE)) return;
+        if (frameDetail === "far") {
+            ctx.fillStyle = b.dead ? "#6a5844" : faction.color;
+            ctx.fillRect(x, y, w, h);
+            return;
+        }
 
         if (b.dead) {
             ctx.fillStyle = "#6a5844";
@@ -2311,6 +2517,13 @@
             return;
         }
 
+        const pictured = window.BattleArt && BattleArt.drawHall(ctx, x, y, w, h);
+        if (pictured) {
+            ctx.fillStyle = faction.color;
+            ctx.fillRect(x + w / 2 - 10, y + Math.round(w * 0.18), 20, 16);
+        }
+
+        if (!pictured) {
         ctx.fillStyle = "rgba(20, 36, 12, 0.28)";
         ctx.fillRect(x + 14, y + TILE * 2 - 10, w - 20, 12);
 
@@ -2348,6 +2561,7 @@
         ctx.fillRect(x + 26, y + 73, 18, 2);
         ctx.fillRect(x + w - 36, y + 66, 2, 16);
         ctx.fillRect(x + w - 44, y + 73, 18, 2);
+        }
 
         ctx.font = "700 13px Segoe UI, system-ui, sans-serif";
         ctx.textAlign = "center";
@@ -2373,35 +2587,26 @@
     function drawHouse(faction, house) {
         const x = house.c * TILE;
         const y = house.r * TILE;
-        ctx.fillStyle = "rgba(20, 36, 12, 0.28)";
-        ctx.fillRect(x + 10, y + 48, 40, 8);
-        ctx.fillStyle = house.hurt > 0 ? "#fff6ea" : "#efe6cf";
-        ctx.fillRect(x + 14, y + 28, 32, 26);
-        ctx.fillStyle = INK;
-        ctx.fillRect(x + 12, y + 26, 36, 3);
-        ctx.beginPath();
-        ctx.moveTo(x + 8, y + 30);
-        ctx.lineTo(x + 30, y + 8);
-        ctx.lineTo(x + 52, y + 30);
-        ctx.closePath();
-        ctx.fill();
-        ctx.fillStyle = faction.color;
-        ctx.beginPath();
-        ctx.moveTo(x + 14, y + 28);
-        ctx.lineTo(x + 30, y + 14);
-        ctx.lineTo(x + 46, y + 28);
-        ctx.closePath();
-        ctx.fill();
-        ctx.fillStyle = faction.dark;
-        ctx.fillRect(x + 26, y + 38, 10, 16);
-        ctx.fillStyle = "#9ad7ea";
-        ctx.fillRect(x + 16, y + 34, 8, 8);
-        drawBar(x + 8, y + 2, 44, 6, house.hp, house.maxHp);
+        const w = HOUSE_W * TILE;
+        const h = HOUSE_H * TILE;
+        if (!seen(x, y, w, h)) return;
+        if (frameDetail === "far" || !window.BattleArt || !BattleArt.drawHouse(ctx, x, y, w, h)) {
+            ctx.fillStyle = faction.color;
+            ctx.fillRect(x, y, w, h);
+            if (frameDetail === "far") return;
+        }
+        drawBar(x + 8, y + 2, w - 16, 6, house.hp, house.maxHp);
     }
 
     function drawWall(faction, wall) {
         const x = wall.c * TILE;
         const y = wall.r * TILE;
+        if (!seen(x, y, TILE, TILE)) return;
+        if (frameDetail !== "near") {
+            ctx.fillStyle = faction.color;
+            ctx.fillRect(x, y, TILE, TILE);
+            return;
+        }
         ctx.fillStyle = wall.hurt > 0 ? "#d8d2c4" : "#6e685c";
         ctx.fillRect(x + 4, y + 14, 52, 40);
         ctx.fillStyle = faction.color;
@@ -2418,24 +2623,42 @@
     function drawTower(faction, tower) {
         const x = tower.c * TILE;
         const y = tower.r * TILE;
-        ctx.fillStyle = "rgba(20, 36, 12, 0.28)";
-        ctx.fillRect(x + 16, y + 50, 28, 6);
-        ctx.fillStyle = tower.hurt > 0 ? "#d8d2c4" : "#7a756c";
-        ctx.fillRect(x + 16, y + 22, 28, 32);
-        ctx.fillStyle = faction.color;
-        ctx.fillRect(x + 12, y + 16, 36, 8);
-        ctx.fillRect(x + 12, y + 8, 8, 10);
-        ctx.fillRect(x + 26, y + 8, 8, 10);
-        ctx.fillRect(x + 40, y + 8, 8, 10);
-        ctx.fillStyle = INK;
-        ctx.fillRect(x + 26, y + 32, 8, 10);
-        drawBar(x + 8, y + 2, 44, 6, tower.hp, tower.maxHp);
+        const w = TOWER_W * TILE;
+        const h = TOWER_H * TILE;
+        if (!seen(x, y, w, h)) return;
+        if (frameDetail === "far" || !window.BattleArt || !BattleArt.drawTower(ctx, x, y, w, h)) {
+            ctx.fillStyle = faction.color;
+            ctx.fillRect(x, y, w, h);
+            if (frameDetail === "far") return;
+        }
+        drawBar(x + 8, y + 2, w - 16, 6, tower.hp, tower.maxHp);
+    }
+
+    function drawWindmill(faction, mill, time) {
+        const x = mill.c * TILE;
+        const y = mill.r * TILE;
+        const w = MILL_W * TILE;
+        const h = MILL_H * TILE;
+        if (!seen(x, y, w, h)) return;
+        if (frameDetail === "far" || !window.BattleArt || !BattleArt.drawMill(ctx, x, y, w, h, time)) {
+            ctx.fillStyle = faction.color;
+            ctx.fillRect(x, y, w, h);
+            if (frameDetail === "far") return;
+        }
+        drawBar(x + 8, y + 2, w - 16, 6, mill.hp, mill.maxHp);
     }
 
     function drawWork(faction, work) {
         const x = work.c * TILE;
         const y = work.r * TILE;
         const w = TILE * 2;
+        if (!seen(x, y, w, w)) return;
+        if (frameDetail !== "near") {
+            ctx.fillStyle = faction.color;
+            ctx.fillRect(x, y, w, w);
+            if (frameDetail === "mid") drawBar(x + 10, y + 6, w - 20, 7, work.hp, work.maxHp);
+            return;
+        }
         ctx.fillStyle = "rgba(20, 36, 12, 0.28)";
         ctx.fillRect(x + 16, y + 100, w - 28, 12);
         if (work.kind === "port") {
@@ -2499,8 +2722,21 @@
     }
 
     function drawSoldier(faction, soldier, time) {
-        const left = faceLeft(soldier, faction);
         const p = drawPos(soldier);
+        if (!seen(p.c * TILE, p.r * TILE, TILE, TILE)) return;
+        if (frameDetail !== "near") {
+            const color = soldier.role === "worker" ? "#c4a15a"
+                : soldier.role === "archer" ? "#3d6b3a"
+                : faction.color;
+            const inset = frameDetail === "far" ? 12 : 18;
+            ctx.fillStyle = color;
+            ctx.fillRect(p.c * TILE + inset, p.r * TILE + inset, TILE - inset * 2, TILE - inset * 2);
+            if (frameDetail === "mid" && soldier.hurt > 0) {
+                drawBar(p.c * TILE + 8, p.r * TILE + 1, 44, 7, soldier.hp, soldier.maxHp);
+            }
+            return;
+        }
+        const left = faceLeft(soldier, faction);
         if (window.BattleArt && BattleArt.drawPerson(ctx, soldier, faction, p, left, time)) {
             if (soldier.hurt > 0) {
                 ctx.fillStyle = "rgba(220, 40, 40, 0.35)";
@@ -2581,6 +2817,14 @@
         const p = drawPos(cart);
         const x = p.c * TILE;
         const y = p.r * TILE;
+        if (!seen(x, y, TILE, TILE)) return;
+        if (frameDetail !== "near") {
+            ctx.fillStyle = "#6a4428";
+            ctx.fillRect(x + 16, y + 22, 28, 18);
+            ctx.fillStyle = faction.color;
+            ctx.fillRect(x + 20, y + 26, 20, 10);
+            return;
+        }
         const left = cart.step ? cart.step.toC < cart.c : faction.id === "red";
         ctx.fillStyle = "rgba(20, 36, 12, 0.28)";
         ctx.fillRect(x + 12, y + 46, 36, 6);
@@ -2623,11 +2867,14 @@
 
     function draw(time) {
         const view = battleView.beginFrame(ctx);
+        frameView = view;
+        const tilePx = (view.zoom || 1) * TILE;
+        frameDetail = tilePx >= 20 ? "near" : tilePx >= 8 ? "mid" : "far";
         ground = BattleMap.load();
         BattleMap.drawGround(ctx, ground, view);
 
         const active = selected && selected.kind === "building" ? factionById(selected.factionId) : null;
-        if (active && !active.building.dead) {
+        if (frameDetail === "near" && active && !active.building.dead) {
             active.muster.forEach(function (spot) {
                 const taken = occupied(spot[0], spot[1], null);
                 ctx.fillStyle = taken ? "rgba(244, 240, 216, 0.12)" : "rgba(244, 240, 216, 0.38)";
@@ -2635,7 +2882,7 @@
             });
         }
 
-        if (view.c1 - view.c0 < 48) {
+        if (frameDetail === "near") {
             ctx.strokeStyle = "rgba(26, 36, 16, 0.28)";
             ctx.lineWidth = 1;
             for (let c = view.c0; c <= view.c1; c++) {
@@ -2663,6 +2910,9 @@
             faction.towers.forEach(function (tower) {
                 drawTower(faction, tower);
             });
+            faction.windmills.forEach(function (mill) {
+                drawWindmill(faction, mill, time);
+            });
             faction.works.forEach(function (work) {
                 drawWork(faction, work);
             });
@@ -2678,6 +2928,7 @@
         if (playerMode && player && !player.dead) drawSoldier(PLAYER_LOOK, player, time);
 
         slashes.forEach(function (slash) {
+            if (!seen(Math.min(slash.x1, slash.x2), Math.min(slash.y1, slash.y2), Math.abs(slash.x2 - slash.x1), Math.abs(slash.y2 - slash.y1))) return;
             ctx.strokeStyle = "rgba(255, 244, 210, " + Math.max(0, slash.life / 140) + ")";
             ctx.lineWidth = 3;
             ctx.beginPath();
@@ -2687,6 +2938,7 @@
         });
 
         arrows.forEach(function (arrow) {
+            if (!seen(Math.min(arrow.x1, arrow.x2), Math.min(arrow.y1, arrow.y2), Math.abs(arrow.x2 - arrow.x1), Math.abs(arrow.y2 - arrow.y1))) return;
             const alpha = Math.max(0, arrow.life / 280);
             ctx.strokeStyle = "rgba(244, 236, 210, " + alpha + ")";
             ctx.lineWidth = 3;
@@ -2703,12 +2955,13 @@
         ctx.font = "700 16px Segoe UI, system-ui, sans-serif";
         ctx.textAlign = "center";
         floaters.forEach(function (floater) {
+            if (!seen(floater.x - 40, floater.y - 40, 80, 80)) return;
             const rise = (1 - floater.life / 700) * 22;
             ctx.fillStyle = floater.text === "Down" ? "#f4f0d8" : "#fff";
             ctx.fillText(floater.text, floater.x, floater.y - 20 - rise);
         });
 
-        if (placing) {
+        if (placing && frameDetail === "near") {
             const faction = factionById(placing.factionId);
             const allowed = function (c, r) { return canPlaceKind(faction, placing.kind, c, r); };
             if (faction) {
@@ -2728,8 +2981,8 @@
                 drawBrackets(
                     faction.building.c * TILE + 2,
                     faction.building.r * TILE + 2,
-                    TILE * 2 - 4,
-                    TILE * 2 - 4
+                    HALL_W * TILE - 4,
+                    HALL_H * TILE - 4
                 );
             }
         }
@@ -2740,8 +2993,8 @@
                 drawBrackets(
                     found.house.c * TILE + 4,
                     found.house.r * TILE + 4,
-                    TILE - 8,
-                    TILE - 8
+                    HOUSE_W * TILE - 8,
+                    HOUSE_H * TILE - 8
                 );
             }
         }
@@ -2758,22 +3011,37 @@
             }
         }
 
+        if (selected && selected.kind === "mill") {
+            const found = findMill(selected.id);
+            if (found) {
+                drawBrackets(
+                    found.mill.c * TILE + 4,
+                    found.mill.r * TILE + 4,
+                    MILL_W * TILE - 8,
+                    MILL_H * TILE - 8
+                );
+            }
+        }
+
         if (selected && (selected.kind === "wall" || selected.kind === "tower")) {
             const found = findPiece(selected.kind === "wall" ? "walls" : "towers", selected.id);
             if (found) {
+                const tw = selected.kind === "tower" ? TOWER_W : 1;
+                const th = selected.kind === "tower" ? TOWER_H : 1;
                 drawBrackets(
                     found.piece.c * TILE + 4,
                     found.piece.r * TILE + 4,
-                    TILE - 8,
-                    TILE - 8
+                    tw * TILE - 8,
+                    th * TILE - 8
                 );
-                if (selected.kind === "tower") {
+                if (selected.kind === "tower" && frameDetail !== "far") {
                     ctx.fillStyle = "rgba(232, 200, 74, 0.16)";
-                    for (let c = found.piece.c - TOWER_RANGE; c <= found.piece.c + TOWER_RANGE; c++) {
-                        for (let r = found.piece.r - TOWER_RANGE; r <= found.piece.r + TOWER_RANGE; r++) {
+                    for (let c = found.piece.c - TOWER_RANGE; c <= found.piece.c + tw - 1 + TOWER_RANGE; c++) {
+                        for (let r = found.piece.r - TOWER_RANGE; r <= found.piece.r + th - 1 + TOWER_RANGE; r++) {
+                            if (c < view.c0 || r < view.r0 || c > view.c1 || r > view.r1) continue;
                             if (c < 0 || r < 0 || c >= COLS || r >= ROWS) continue;
-                            if (c === found.piece.c && r === found.piece.r) continue;
-                            if (chebyshev(found.piece.c, found.piece.r, c, r) > TOWER_RANGE) continue;
+                            if (distToBox(found.piece.c, found.piece.r, tw, th, c, r) === 0) continue;
+                            if (distToBox(found.piece.c, found.piece.r, tw, th, c, r) > TOWER_RANGE) continue;
                             ctx.fillRect(c * TILE + 8, r * TILE + 8, TILE - 16, TILE - 16);
                         }
                     }
@@ -2785,7 +3053,7 @@
         if (mine) {
             const p = drawPos(mine.soldier);
             drawBrackets(p.c * TILE + 8, p.r * TILE + 6, 44, 48, "#f4f0d8");
-            if (mine.soldier.role === "archer") {
+            if (mine.soldier.role === "archer" && frameDetail !== "far") {
                 ctx.fillStyle = "rgba(232, 200, 74, 0.16)";
                 for (let c = mine.soldier.c - ARCHER_RANGE; c <= mine.soldier.c + ARCHER_RANGE; c++) {
                     for (let r = mine.soldier.r - ARCHER_RANGE; r <= mine.soldier.r + ARCHER_RANGE; r++) {
@@ -2807,16 +3075,16 @@
                 drawBrackets(
                     target.faction.building.c * TILE + 2,
                     target.faction.building.r * TILE + 2,
-                    TILE * 2 - 4,
-                    TILE * 2 - 4,
+                    HALL_W * TILE - 4,
+                    HALL_H * TILE - 4,
                     "#e05040"
                 );
             } else if (target && target.kind === "house") {
                 drawBrackets(
                     target.ref.c * TILE + 4,
                     target.ref.r * TILE + 4,
-                    TILE - 8,
-                    TILE - 8,
+                    HOUSE_W * TILE - 8,
+                    HOUSE_H * TILE - 8,
                     "#e05040"
                 );
             } else if (target && target.kind === "work") {
@@ -2827,12 +3095,22 @@
                     TILE * 2 - 4,
                     "#e05040"
                 );
-            } else if (target && (target.kind === "wall" || target.kind === "tower")) {
+            } else if (target && target.kind === "mill") {
                 drawBrackets(
                     target.ref.c * TILE + 4,
                     target.ref.r * TILE + 4,
-                    TILE - 8,
-                    TILE - 8,
+                    MILL_W * TILE - 8,
+                    MILL_H * TILE - 8,
+                    "#e05040"
+                );
+            } else if (target && (target.kind === "wall" || target.kind === "tower")) {
+                const tw = target.kind === "tower" ? TOWER_W : 1;
+                const th = target.kind === "tower" ? TOWER_H : 1;
+                drawBrackets(
+                    target.ref.c * TILE + 4,
+                    target.ref.r * TILE + 4,
+                    tw * TILE - 8,
+                    th * TILE - 8,
                     "#e05040"
                 );
             } else if (target && target.kind === "soldier") {

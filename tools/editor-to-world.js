@@ -28,9 +28,14 @@ function grid(tiles) {
     return map;
 }
 
+const root = path.join(__dirname, "..");
 const dir = path.join(__dirname, "terrain-editor");
+const afterArg = process.argv[2] || "my-island.js";
+const afterPath = fs.existsSync(path.join(root, afterArg))
+    ? path.join(root, afterArg)
+    : path.join(dir, afterArg);
 const before = read(path.join(dir, "our-island.js"));
-const after = read(path.join(dir, process.argv[2] || "my-island.js"));
+const after = read(afterPath);
 const was = grid(before.tiles);
 const now = grid(after.tiles);
 
