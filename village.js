@@ -4637,9 +4637,6 @@ function flushKitBuildMeshes() {
 }
 
 function queueSouthwestShowcaseBuilds() {
-    const home = places[2];
-    if (!home) return;
-    queueKitBuild("random-flat-roof-house", home.ox - 26, home.oz + 42, 0);
 }
 
 function runKitBuildQueue() {
@@ -10385,6 +10382,7 @@ function hitsSolid(x, z, feet) {
     if (parapet != null && body > parapet && feet < parapet + 0.93) return true;
     for (const solid of solidsNear(x, z)) {
         // Roblox stairs are blocks down to the ground: a top within a step of the feet is climbed, not bumped.
+        if (solid.stair) continue;
         if (solid.raised && solid.y1 <= feet + 0.55) continue;
         const r = solid.raised ? 0.25 : 0;
         if (x <= solid.x - r || x >= solid.x + solid.w + r || z <= solid.z - r || z >= solid.z + solid.d + r) continue;

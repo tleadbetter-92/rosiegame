@@ -228,28 +228,28 @@ function stairBoxes(p) {
     const yaw = p.yaw || 0;
     const alongX = wallAlongX(yaw);
     const len = 1.9;
-    const w = alongX ? len : 1.35;
-    const d = alongX ? 1.35 : len;
+    const wide = 1.35;
+    const w = alongX ? len : wide;
+    const d = alongX ? wide : len;
     const x = p.x - w / 2;
     const z = p.z - d / 2;
     const y0 = p.y || 0;
-    const solids = [{ x, z, w, d, y0, y1: y0 + STOREY, stair: true }];
-    const floors = [];
     const steps = 5;
+    const run = (alongX ? w : d) / steps;
+    const floors = [];
     for (let i = 0; i < steps; i++) {
         const py = y0 + ((i + 1) / steps) * STOREY;
-        const run = d / steps;
         floors.push({
-            x,
+            x: x + (alongX ? i * run : 0),
             z: z + (alongX ? 0 : i * run),
-            w: alongX ? w / steps : w,
+            w: alongX ? run : w,
             d: alongX ? d : run,
             y: py - 0.08,
             stair: true
         });
     }
     floors.push({ x, z, w, d, y: y0 + STOREY, stair: false });
-    return { solids, floors };
+    return { solids: [], floors };
 }
 
 function physicsFromPieces(pieces) {
@@ -281,8 +281,16 @@ function physicsFromPieces(pieces) {
             solids.push(fenceBox(p));
         } else if (id.startsWith("Stair")) {
             const stair = stairBoxes(p);
-            solids.push(...stair.solids);
             floors.push(...stair.floors);
+        } else if (id.startsWith("Floor_")) {
+            floors.push({
+                x: p.x - 1,
+                z: p.z - 1,
+                w: 2,
+                d: 2,
+                y: (p.y || 0) + 0.06,
+                stair: false
+            });
         }
     }
 
