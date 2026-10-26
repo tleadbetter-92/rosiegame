@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>New game</title>
+    <link rel="stylesheet" href="new-game.css?v=phone">
+</head>
+<body>
+    <header class="bar">
+        <div class="links">
+            <a href="../index.html">Roulette home</a>
+            <a href="editor.html">Map editor</a>
+        </div>
+        <p class="eyebrow">Two settlements</p>
+    </header>
+
+    <main>
+        <section class="stage" aria-label="Play area">
+            <div class="map-scroll">
+                <div class="map-zoom">
+                    <canvas id="stage" data-drag-pan="yes" width="960" height="540"></canvas>
+                </div>
+            </div>
+            <div class="command">
+                <div class="who">
+                    <span id="swatch" class="swatch"></span>
+                    <div>
+                        <p id="sel-name" class="sel-name">No building selected</p>
+                        <p id="sel-count" class="sel-count">Click the blue or red settlement</p>
+                    </div>
+                </div>
+                <div class="train-buttons">
+                    <button id="player-mode" class="cpu-btn" type="button" aria-pressed="false">Player: off</button>
+                    <button id="red-cpu" class="cpu-btn on" type="button" aria-pressed="true">Red: computer</button>
+                    <button id="train" class="train-btn" type="button" disabled>Make soldier</button>
+                    <button id="train-worker" class="train-btn" type="button" disabled>Make worker</button>
+                    <button id="train-archer" class="train-btn" type="button" disabled>Make archer</button>
+                    <button id="build-house" class="train-btn" type="button" disabled>Make house</button>
+                    <button id="build-mine" class="train-btn" type="button" disabled>Make mine</button>
+                    <button id="build-iron" class="train-btn" type="button" disabled>Make iron mine</button>
+                    <button id="build-yard" class="train-btn" type="button" disabled>Make lumberyard</button>
+                    <button id="build-port" class="train-btn" type="button" disabled>Make fishing port</button>
+                    <button id="build-wall" class="train-btn" type="button" disabled>Make wall</button>
+                    <button id="build-tower" class="train-btn" type="button" disabled>Make watchtower</button>
+                </div>
+            </div>
+            <p id="status" class="status">Each settlement pays 10 gold and 10 food every 10 seconds. A soldier costs 10 gold and 10 food. A worker costs 10 food.</p>
+            <div id="pad" class="pad">
+                <button type="button" data-key="w" aria-label="Move up">▲</button>
+                <button type="button" data-key="a" aria-label="Move left">◀</button>
+                <button type="button" data-key="d" aria-label="Move right">▶</button>
+                <button type="button" data-key="s" aria-label="Move down">▼</button>
+            </div>
+        </section>
+    </main>
+
+    <script src="map-store.js?v=margin"></script>
+    <script src="view.js?v=phone"></script>
+    <script src="art.js?v=archer2"></script>
+    <script src="new-game.js?v=phone"></script>
+</body>
+</html>

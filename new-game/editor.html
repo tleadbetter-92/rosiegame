@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Map editor</title>
+    <link rel="stylesheet" href="new-game.css?v=phone">
+</head>
+<body>
+    <header class="bar">
+        <div class="links">
+            <a href="index.html">Back to the battle</a>
+            <a href="../index.html">Roulette home</a>
+        </div>
+        <p class="eyebrow">Map editor</p>
+    </header>
+
+    <main>
+        <section class="stage" aria-label="Map editor">
+            <div class="map-scroll">
+                <div class="map-zoom">
+                    <canvas id="stage" width="960" height="540"></canvas>
+                </div>
+            </div>
+            <div class="command">
+                <div class="brushes" role="group" aria-label="Paint">
+                    <button type="button" class="brush on" data-kind="water">Water</button>
+                    <button type="button" class="brush" data-kind="forest">Forest</button>
+                    <button type="button" class="brush" data-kind="gold">Gold mine</button>
+                    <button type="button" class="brush" data-kind="stone">Stone mine</button>
+                    <button type="button" class="brush" data-kind="iron">Iron mine</button>
+                    <button type="button" class="brush" data-kind="grass">Grass</button>
+                    <button type="button" id="clear">Clear paint</button>
+                </div>
+            </div>
+            <p id="status" class="status">Click and drag. Arrow keys or WASD move the view. Water and forest block soldiers. Settlement squares stay as they are.</p>
+        </section>
+    </main>
+
+    <script src="map-store.js?v=margin"></script>
+    <script src="view.js?v=phone"></script>
+    <script src="art.js?v=wide"></script>
+    <script src="editor.js?v=phone"></script>
+</body>
+</html>

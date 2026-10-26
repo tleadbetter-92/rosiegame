@@ -1,0 +1,189 @@
+(function (global) {
+    const SHIFT_C = 80;
+    const SHIFT_R = 48;
+    const COLS = 202 + SHIFT_C;
+    const ROWS = 114 + SHIFT_R;
+    const TILE = 60;
+    const KEY = "rosiesgame.new-battle-map";
+    const SHIFT_FLAG = "rosiesgame.new-battle-map-shift";
+
+    function load() {
+        try {
+            const raw = localStorage.getItem(KEY);
+            const data = raw ? JSON.parse(raw) : {};
+            if (!data || typeof data !== "object" || Array.isArray(data)) return {};
+            if (localStorage.getItem(SHIFT_FLAG) === "1") return data;
+            const shifted = {};
+            Object.keys(data).forEach(function (key) {
+                const parts = key.split(",");
+                const c = Number(parts[0]);
+                const r = Number(parts[1]);
+                if (!isFinite(c) || !isFinite(r)) return;
+                shifted[(c + SHIFT_C) + "," + (r + SHIFT_R)] = data[key];
+            });
+            localStorage.setItem(KEY, JSON.stringify(shifted));
+            localStorage.setItem(SHIFT_FLAG, "1");
+            return shifted;
+        } catch (err) {
+            return {};
+        }
+    }
+
+    function save(tiles) {
+        localStorage.setItem(KEY, JSON.stringify(tiles));
+    }
+
+    function kind(tiles, c, r) {
+        const value = tiles[c + "," + r];
+        if (value === "water" || value === "forest" || value === "gold" || value === "stone" || value === "iron") return value;
+        return "grass";
+    }
+
+    function blocked(tiles, c, r) {
+        return kind(tiles, c, r) !== "grass";
+    }
+
+    function grassColor(c, r) {
+        const n = (c * 17 + r * 5) % 4;
+        if (n === 0) return "#7fbf45";
+        if (n === 1) return "#74b43c";
+        if (n === 2) return "#88c84e";
+        return "#6aaa38";
+    }
+
+    function drawWater(ctx, c, r) {
+        const x = c * TILE;
+        const y = r * TILE;
+        ctx.fillStyle = (c + r) % 2 === 0 ? "#2a6eae" : "#24649f";
+        ctx.fillRect(x, y, TILE, TILE);
+        ctx.fillStyle = "#3d88c8";
+        ctx.fillRect(x + 8 + (r % 3) * 4, y + 16, 20, 5);
+        ctx.fillRect(x + 28, y + 38, 16, 5);
+        ctx.fillStyle = "#b7e4f2";
+        ctx.fillRect(x + 10 + (r % 3) * 4, y + 16, 7, 2);
+    }
+
+    function drawForest(ctx, c, r) {
+        const x = c * TILE;
+        const y = r * TILE;
+        ctx.fillStyle = "#3c7634";
+        ctx.fillRect(x, y, TILE, TILE);
+        ctx.fillStyle = "#2a5a28";
+        ctx.fillRect(x + 6, y + 40, 48, 10);
+        const shift = (c * 3 + r) % 2 === 0 ? 0 : 6;
+        ctx.fillStyle = "#173e1c";
+        ctx.beginPath();
+        ctx.arc(x + 22 + shift, y + 28, 14, 0, Math.PI * 2);
+        ctx.arc(x + 40 - shift, y + 34, 11, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#3f8a3c";
+        ctx.beginPath();
+        ctx.arc(x + 18 + shift, y + 24, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#6a4428";
+        ctx.fillRect(x + 20 + shift, y + 36, 4, 14);
+        ctx.fillRect(x + 38 - shift, y + 40, 4, 10);
+    }
+
+    function drawRock(ctx, c, r, body, chip) {
+        const x = c * TILE;
+        const y = r * TILE;
+        ctx.fillStyle = "#6aaa38";
+        ctx.fillRect(x, y, TILE, TILE);
+        ctx.fillStyle = body;
+        ctx.beginPath();
+        ctx.moveTo(x + 8, y + 46);
+        ctx.lineTo(x + 16, y + 22);
+        ctx.lineTo(x + 30, y + 14);
+        ctx.lineTo(x + 48, y + 24);
+        ctx.lineTo(x + 54, y + 48);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = chip;
+        ctx.fillRect(x + 22, y + 28, 7, 6);
+        ctx.fillRect(x + 36, y + 34, 6, 5);
+        ctx.fillRect(x + 18, y + 40, 5, 4);
+    }
+
+    function drawGround(ctx, tiles, view) {
+        const c0 = view ? view.c0 : 0;
+        const r0 = view ? view.r0 : 0;
+        const c1 = view ? view.c1 : COLS - 1;
+        const r1 = view ? view.r1 : ROWS - 1;
+        const span = (c1 - c0 + 1) * (r1 - r0 + 1);
+        const detailed = span <= 900;
+
+        if (detailed) {
+            for (let r = r0; r <= r1; r++) {
+                for (let c = c0; c <= c1; c++) {
+                    ctx.fillStyle = grassColor(c, r);
+                    ctx.fillRect(c * TILE, r * TILE, TILE, TILE);
+                }
+            }
+        } else {
+            ctx.fillStyle = "#74b43c";
+            ctx.fillRect(c0 * TILE, r0 * TILE, (c1 - c0 + 1) * TILE, (r1 - r0 + 1) * TILE);
+        }
+
+        ctx.fillStyle = "rgba(60, 94, 200, 0.14)";
+        ctx.fillRect(SHIFT_C * TILE, r0 * TILE, 6 * TILE, (r1 - r0 + 1) * TILE);
+        ctx.fillStyle = "rgba(196, 60, 60, 0.14)";
+        ctx.fillRect((15 + SHIFT_C) * TILE, r0 * TILE, 6 * TILE, (r1 - r0 + 1) * TILE);
+
+        const pathC = 7 + SHIFT_C;
+        for (let r = r0; r <= r1; r++) {
+            ctx.fillStyle = (r % 2 === 0) ? "#c6a15a" : "#b8924c";
+            ctx.fillRect(pathC * TILE, r * TILE, TILE * 2, TILE);
+            if (!detailed) continue;
+            ctx.fillStyle = "rgba(90, 60, 24, 0.18)";
+            ctx.fillRect(pathC * TILE + 8, r * TILE + 18, 10, 6);
+            ctx.fillRect((pathC + 1) * TILE + 28, r * TILE + 36, 12, 6);
+        }
+
+        if (detailed) {
+            for (let r = r0; r <= r1; r++) {
+                for (let c = c0; c <= c1; c++) {
+                    if ((c * 13 + r * 7) % 11 !== 0) continue;
+                    if (c >= pathC && c <= pathC + 1) continue;
+                    const x = c * TILE + 18;
+                    const y = r * TILE + 22;
+                    ctx.fillStyle = "#3d7a28";
+                    ctx.fillRect(x + 3, y, 2, 8);
+                    ctx.fillStyle = "#f2e27a";
+                    ctx.fillRect(x, y - 2, 4, 4);
+                    ctx.fillRect(x + 5, y - 2, 4, 4);
+                }
+            }
+        }
+
+        Object.keys(tiles).forEach(function (key) {
+            const parts = key.split(",");
+            const c = Number(parts[0]);
+            const r = Number(parts[1]);
+            if (c < c0 || r < r0 || c > c1 || r > r1) return;
+            if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return;
+            if (tiles[key] === "water") {
+                if (!global.BattleArt || !global.BattleArt.drawWater(ctx, c, r)) drawWater(ctx, c, r);
+            } else if (tiles[key] === "forest") {
+                ctx.fillStyle = grassColor(c, r);
+                ctx.fillRect(c * TILE, r * TILE, TILE, TILE);
+                if (!global.BattleArt || !global.BattleArt.drawTree(ctx, c, r)) drawForest(ctx, c, r);
+            } else if (tiles[key] === "gold") drawRock(ctx, c, r, "#6a5a40", "#e6c14a");
+            else if (tiles[key] === "stone") drawRock(ctx, c, r, "#8d939a", "#d5dde4");
+            else if (tiles[key] === "iron") drawRock(ctx, c, r, "#4e4542", "#c45a32");
+        });
+    }
+
+    global.BattleMap = {
+        COLS: COLS,
+        ROWS: ROWS,
+        TILE: TILE,
+        SHIFT_C: SHIFT_C,
+        SHIFT_R: SHIFT_R,
+        load: load,
+        save: save,
+        kind: kind,
+        blocked: blocked,
+        drawGround: drawGround
+    };
+})(window);

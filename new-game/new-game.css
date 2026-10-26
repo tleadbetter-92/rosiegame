@@ -1,0 +1,344 @@
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    height: 100vh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    background: #c8d4a4;
+    color: #1c1916;
+    font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+.bar {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    max-width: none;
+    margin: 0 auto;
+    padding: 20px 20px 0;
+}
+
+.bar a {
+    color: #1c1916;
+    font-weight: 650;
+    text-decoration: none;
+}
+
+.links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.bar a:hover { text-decoration: underline; }
+
+.eyebrow {
+    margin: 0;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #3d4a28;
+}
+
+main {
+    max-width: none;
+    margin: 0 auto;
+    padding: 16px 20px 16px;
+    flex: 1 0 auto;
+    min-height: auto;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+
+.stage {
+    background: #142018;
+    border: 4px solid #1a2410;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 10px 0 #1a2410;
+    flex: 1 0 auto;
+    min-height: min-content;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+}
+
+.map-scroll {
+    overflow: auto;
+    flex: 1 0 320px;
+    min-height: 320px;
+    background: #6aaa30;
+    touch-action: none;
+}
+
+.map-zoom {
+    position: relative;
+    box-sizing: border-box;
+    min-width: 100%;
+    min-height: 100%;
+}
+
+#stage {
+    position: sticky;
+    top: 0;
+    left: 0;
+    display: block;
+    background: #6aaa30;
+    cursor: pointer;
+    image-rendering: pixelated;
+}
+
+.command {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 10px 16px;
+    width: 100%;
+    min-width: 0;
+    padding: 12px 16px;
+    background: #1c2a18;
+    color: #f4f0d8;
+    border-top: 4px solid #0e160c;
+}
+
+.who {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.swatch {
+    width: 22px;
+    height: 22px;
+    flex: none;
+    border-radius: 4px;
+    background: #3a4034;
+    border: 3px solid #0e160c;
+}
+
+.sel-name,
+.sel-count {
+    margin: 0;
+}
+
+.sel-name {
+    font-weight: 700;
+}
+
+.sel-count {
+    color: #c9d4a8;
+    font-size: 0.9rem;
+}
+
+.train-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+    flex: 1 1 100%;
+    min-width: 0;
+}
+
+.train-btn {
+    flex: none;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 3px solid #f4f0d8;
+    background: #306850;
+    color: #f4f0d8;
+    font: 700 1rem "Segoe UI", system-ui, sans-serif;
+    cursor: pointer;
+}
+
+.train-btn:disabled {
+    opacity: 0.38;
+    cursor: default;
+}
+
+.train-btn:not(:disabled):hover {
+    background: #3d8064;
+}
+
+.cpu-btn {
+    flex: none;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 3px solid #f4f0d8;
+    background: #243028;
+    color: #f4f0d8;
+    font: 700 1rem "Segoe UI", system-ui, sans-serif;
+    cursor: pointer;
+}
+
+.cpu-btn.on {
+    background: #8a3030;
+}
+
+.cpu-btn.player.on {
+    background: #2e7a45;
+}
+
+.cpu-btn:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.cpu-btn:not(:disabled):hover {
+    background: #3d8064;
+}
+
+.cpu-btn.on:hover {
+    background: #a84040;
+}
+
+.cpu-btn.player.on:hover {
+    background: #3c9a58;
+}
+
+.brushes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.brush,
+#clear {
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 3px solid #f4f0d8;
+    background: #243028;
+    color: #f4f0d8;
+    font: 700 0.95rem "Segoe UI", system-ui, sans-serif;
+    cursor: pointer;
+}
+
+.brush.on {
+    background: #306850;
+}
+
+.brush:hover,
+#clear:hover {
+    background: #3d8064;
+}
+
+.zoom-bar {
+    position: absolute;
+    z-index: 2;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.zoom-bar button {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    border: 3px solid #f4f0d8;
+    background: #1c2a18;
+    color: #f4f0d8;
+    font: 700 1.4rem "Segoe UI", system-ui, sans-serif;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.pad {
+    display: none;
+    position: fixed;
+    z-index: 4;
+    left: max(12px, env(safe-area-inset-left));
+    bottom: max(12px, env(safe-area-inset-bottom));
+    grid-template-columns: 52px 52px 52px;
+    grid-template-areas:
+        ". up ."
+        "left . right"
+        ". down .";
+    gap: 6px;
+    touch-action: none;
+}
+
+.pad button {
+    width: 52px;
+    height: 52px;
+    border-radius: 10px;
+    border: 3px solid #f4f0d8;
+    background: rgba(28, 42, 24, 0.92);
+    color: #f4f0d8;
+    font: 700 1.1rem "Segoe UI", system-ui, sans-serif;
+}
+
+.pad button[data-key="w"] { grid-area: up; }
+.pad button[data-key="a"] { grid-area: left; }
+.pad button[data-key="d"] { grid-area: right; }
+.pad button[data-key="s"] { grid-area: down; }
+
+.status {
+    margin: 0;
+    padding: 10px 16px 14px;
+    background: #1c2a18;
+    color: #d5e0b4;
+    font-size: 0.95rem;
+}
+
+@media (max-width: 720px) {
+    body {
+        height: 100dvh;
+    }
+
+    .bar {
+        padding: 10px 12px 0;
+        gap: 8px;
+    }
+
+    main {
+        padding: 8px 8px calc(10px + env(safe-area-inset-bottom));
+    }
+
+    .map-scroll {
+        min-height: 46dvh;
+        flex-basis: 46dvh;
+    }
+
+    .command {
+        gap: 8px;
+        padding: 10px 10px 8px;
+    }
+
+    .sel-count {
+        font-size: 0.8rem;
+    }
+
+    .train-buttons,
+    .brushes {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        gap: 8px;
+        padding-bottom: 4px;
+    }
+
+    .train-btn,
+    .cpu-btn,
+    .brush,
+    #clear {
+        min-height: 44px;
+        flex: 0 0 auto;
+        touch-action: manipulation;
+    }
+
+    .status {
+        font-size: 0.85rem;
+        padding: 8px 10px 12px;
+    }
+
+    .pad.on {
+        display: grid;
+    }
+}
