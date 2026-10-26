@@ -3555,6 +3555,7 @@ function registerHamletTerrainFlats() {
 const kitBuildQueue = [];
 const kitBuildLayers = {};
 const kitShells = [];
+let kitTexturesReady = null;
 
 // Editor door faces +Z. The live house uses the opposite yaw so the door ends up on the same side.
 function editorLiveYaw(yaw) {
@@ -4377,7 +4378,6 @@ const KIT_TEX_FOR = {
     mosaicTerra: "kitMosaicTerra", mosaicBW: "kitMosaicBW", mosaicMed: "kitMosaicMed", mosaicMeander: "kitMosaicMeander",
     mosaicPH: "kitMosaicPH"
 };
-let kitTexturesReady = null;
 
 function ensureKitTextures() {
     if (!kitTexturesReady) {
@@ -4405,9 +4405,40 @@ function queueKitBuild(id, wx, wz, yaw) {
 }
 
 function appendKitMesh(meshName, data) {
-    if (!kitBuildLayers[meshName]) kitBuildLayers[meshName] = [];
-    const list = kitBuildLayers[meshName];
-    for (let i = 0; i < data.length; i++) list.push(data[i]);
+    const prev = kitBuildLayers[meshName];
+    if (!prev) {
+        kitBuildLayers[meshName] = data;
+        return;
+    }
+    const next = new Float32Array(prev.length + data.length);
+    next.set(prev);
+    next.set(data, prev.length);
+    kitBuildLayers[meshName] = next;
+}
+
+// Walk view only draws the shell. Furniture and props stay out. Low also drops a single
+// material once it is past 40k triangles — the tall tower's metal is 299k and its rock is 112k.
+function kitMaterialKept(mat, verts) {
+    if (mat !== "plaster" && mat !== "brick" && mat !== "wood" && mat !== "tiles" && mat !== "rock" && mat !== "metal") return false;
+    const low = gfxMode === "low";
+    if (low) {
+        if (mat === "metal") return false;
+        if (verts > 40000) return false;
+    } else if (verts > 160000) {
+        return false;
+    }
+    return true;
+}
+
+function kitLayerVisible(name) {
+    if (name.indexOf("kitBuild") !== 0) return true;
+    const count = mesh[name] && mesh[name].count;
+    if (!count) return false;
+    const low = gfxMode === "low";
+    if (low && name === "kitBuildMetal") return false;
+    if (low && count > 40000) return false;
+    if (!low && count > 160000) return false;
+    return true;
 }
 
 function stampKitBuildOnce(id, wx, wz, yaw) {
@@ -4419,8 +4450,9 @@ function stampKitBuildOnce(id, wx, wz, yaw) {
         })
         .then((meta) => {
             meta._yaw = yaw;
+            const mats = meta.materials.filter((item) => kitMaterialKept(item.mat, item.verts || 0));
             const meshJob = Promise.all(
-                meta.materials.map(({ mat }) =>
+                mats.map(({ mat }) =>
                     fetch("models/kitbuild/" + id + "-" + mat + ".bin")
                         .then((r) => r.arrayBuffer())
                         .then((buf) => {
@@ -10663,6 +10695,7 @@ function draw() {
     const stride = 24;
     gl.clear(gl.DEPTH_BUFFER_BIT);
     for (let i = 0; i < outdoorDrawList.length; i++) {
+        if (!kitLayerVisible(outdoorDrawList[i])) continue;
         gl.uniform1f(loc.glow, outdoorDrawList[i] === "glow" ? 2 : 0);
         drawMesh(outdoorDrawList[i], 1, dark, proj);
     }
