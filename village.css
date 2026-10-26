@@ -289,6 +289,34 @@ html, body {
 
 #fly-pad[hidden] { display: none; }
 
+#sculpt-bar {
+    position: fixed;
+    left: 16px;
+    bottom: calc(18px + env(safe-area-inset-bottom));
+    z-index: 6;
+    width: 220px;
+    padding: 12px;
+    border-radius: 10px;
+    background: rgba(20, 16, 14, 0.78);
+    color: #f4efe4;
+    font: 14px "Segoe UI", system-ui, sans-serif;
+}
+#sculpt-bar[hidden] { display: none; }
+#sculpt-bar p { margin: 0 0 8px; line-height: 1.35; }
+#sculpt-bar div { display: flex; gap: 6px; margin-bottom: 8px; }
+#sculpt-bar button {
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    color: inherit;
+    padding: 6px 8px;
+    cursor: pointer;
+}
+#sculpt-bar button.on { background: #c6a15a; color: #241c14; border-color: #c6a15a; }
+#sculpt-bar label { display: block; margin-bottom: 8px; }
+#sculpt-bar input { width: 100%; }
+#sculpt-note { min-height: 1.2em; color: #e8c896; }
+
 #fly-pad button {
     width: 64px;
     height: 64px;

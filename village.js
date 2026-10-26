@@ -4303,13 +4303,13 @@ function registerKitPhysics(id, wx, wz, baseY, meta, physics, building) {
             yaw,
             baseY
         );
-        const entry = (physics.doors || [])[0];
-        let door = null;
-        if (entry) {
+        const entries = physics.doors || [];
+        for (let i = 0; i < entries.length; i++) {
+            const entry = entries[i];
             const p = kitWorldPoint(entry.x, entry.z, wx, wz, cx, cz, yaw);
             const faceYaw = yaw + (entry.yaw || 0);
-            door = {
-                id: "kit:" + id,
+            doors.push({
+                id: "kit:" + id + ":" + i,
                 kind: "kit",
                 role: id,
                 x: p.x,
@@ -4321,17 +4321,16 @@ function registerKitPhysics(id, wx, wz, baseY, meta, physics, building) {
                 wide: entry.wide || 0.56,
                 swing: 0,
                 want: false
-            };
-            doors.push(door);
-            doorGrid = null;
+            });
         }
+        if (entries.length) doorGrid = null;
         kitShells.push({
             minX: box.x,
             minZ: box.z,
             w: box.w,
             d: box.d,
             y: baseY,
-            entry: door
+            kit: true
         });
         if (building) {
             building.box = { minX: box.x, minZ: box.z, w: box.w, d: box.d, y: baseY, h: shell.h || 6 };
@@ -4987,7 +4986,11 @@ function requestLand(x, z) {
     }
     landBusy = true;
     const drawFar = typeof gfx === "function" ? gfx().drawFar : 300;
-    worker.postMessage({ x: x, z: z, drawFar: drawFar, levelPads: hamletLevelPadsForWorker });
+    const riseCells = [];
+    sculptMap.forEach((value, index) => {
+        riseCells.push(index, value);
+    });
+    worker.postMessage({ x: x, z: z, drawFar: drawFar, levelPads: hamletLevelPadsForWorker, riseCells: riseCells });
 }
 
 // Stone arch bridges from the map editor: a humped deck with parapets, arches springing from the water between piers.
@@ -7946,6 +7949,110 @@ function respawn() {
     }
 }
 
+const sculptMap = new Map();
+let sculptMode = null;
+let sculpting = false;
+let sculptRadius = 28;
+let sculptPower = 1.1;
+let sculptMeshAt = 0;
+
+function groundUnderAim(maxDist) {
+    const view = aim();
+    const limit = maxDist || 1400;
+    let prevX = cam.x;
+    let prevY = cam.y;
+    let prevZ = cam.z;
+    for (let t = 6; t <= limit; t += 6) {
+        const x = cam.x + view.fx * t;
+        const y = cam.y + view.fy * t;
+        const z = cam.z + view.fz * t;
+        const ground = World.heightAt(x, z);
+        if (y <= ground + 0.15) return { x: x, y: ground, z: z };
+        prevX = x;
+        prevY = y;
+        prevZ = z;
+    }
+    return null;
+}
+
+function rememberSculpt(changed) {
+    for (let i = 0; i < changed.length; i += 2) sculptMap.set(changed[i], changed[i + 1]);
+}
+
+function sculptAt(dt) {
+    if (!flying || !sculptMode || !sculpting || typeof World.sculptRise !== "function") return;
+    const spot = groundUnderAim(1400);
+    if (!spot) return;
+    const delta = (sculptMode === "lower" ? -1 : 1) * sculptPower * Math.min(0.05, Math.max(0.001, dt));
+    const changed = World.sculptRise(spot.x, spot.z, sculptRadius, delta);
+    if (!changed.length) return;
+    rememberSculpt(changed);
+    const now = performance.now();
+    if (now - sculptMeshAt < 140) return;
+    sculptMeshAt = now;
+    landMarkX = 1e9;
+    requestLand(cam.x, cam.z);
+}
+
+function finishSculptStroke() {
+    if (!sculptMap.size) return;
+    landMarkX = 1e9;
+    requestLand(cam.x, cam.z);
+}
+
+function loadSurveyRise() {
+    fetch("/data/survey-rise.json", { cache: "no-store" })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+            const cells = data && data.cells;
+            if (!cells || !cells.length || typeof World.applyRiseCells !== "function") return;
+            World.applyRiseCells(cells);
+            for (let i = 0; i + 1 < cells.length; i += 2) sculptMap.set(cells[i], cells[i + 1]);
+            landMarkX = 1e9;
+            requestLand(cam.x, cam.z);
+        })
+        .catch(() => {});
+}
+
+function saveSurveyRise() {
+    const cells = [];
+    sculptMap.forEach((value, index) => {
+        cells.push(index, value);
+    });
+    const note = document.getElementById("sculpt-note");
+    fetch("/api/survey-terrain", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cells: cells })
+    }).then((res) => {
+        if (note) note.textContent = res.ok ? "Saved. Refresh to see it in a new walk." : "Save failed.";
+    }).catch(() => {
+        if (note) note.textContent = "Save failed.";
+    });
+}
+
+function bindSculptBar() {
+    const bar = document.getElementById("sculpt-bar");
+    if (!bar) return;
+    bar.hidden = !flying;
+    const raise = document.getElementById("sculpt-raise");
+    const lower = document.getElementById("sculpt-lower");
+    const off = document.getElementById("sculpt-off");
+    const size = document.getElementById("sculpt-size");
+    const save = document.getElementById("sculpt-save");
+    function paint() {
+        if (raise) raise.classList.toggle("on", sculptMode === "raise");
+        if (lower) lower.classList.toggle("on", sculptMode === "lower");
+        if (off) off.classList.toggle("on", !sculptMode);
+    }
+    if (raise) raise.addEventListener("click", () => { sculptMode = "raise"; paint(); });
+    if (lower) lower.addEventListener("click", () => { sculptMode = "lower"; paint(); });
+    if (off) off.addEventListener("click", () => { sculptMode = null; sculpting = false; paint(); });
+    if (size) size.addEventListener("input", () => { sculptRadius = Number(size.value) || 28; });
+    if (save) save.addEventListener("click", saveSurveyRise);
+    paint();
+}
+
 function aim() {
     const cp = Math.cos(cam.pitch);
     const sp = Math.sin(cam.pitch);
@@ -10377,6 +10484,7 @@ function blockedOutside(x, z, faction, feet) {
     }
     const nearBuilds = buildingsNear(x, z);
     for (let i = 0; i < nearBuilds.length; i++) {
+        if (nearBuilds[i].building.kit) continue;
         if (hitsShell(nearBuilds[i].building, x, z, r)) return true;
     }
     const nearDoors = doorsNear(x, z);
@@ -12484,6 +12592,7 @@ function frame(now) {
     updateFocusTown();
     tickHamletDress();
     tickKitStream();
+    sculptAt(dt);
     maybeRemeshLand();
     stampRaisedPlots();
     refreshNearTrees();
@@ -12576,6 +12685,10 @@ canvas.addEventListener("mousedown", (e) => {
         return;
     }
     if (e.button !== 0) return;
+    if (flying && sculptMode) {
+        sculpting = true;
+        return;
+    }
     if (placing) {
         confirmPlaceHouse();
         return;
@@ -12592,6 +12705,10 @@ canvas.addEventListener("mousedown", (e) => {
 });
 window.addEventListener("mouseup", (e) => {
     if (e.button !== 0) return;
+    if (sculpting) {
+        sculpting = false;
+        finishSculptStroke();
+    }
     dragging = false;
     if (!gesture) return;
     const g = gesture;
@@ -12664,6 +12781,8 @@ function paintArm() {
     if (where) where.hidden = !flying;
     if (helpLine && placing) {
         helpLine.textContent = "Aim at the ground · click to place · Esc or right-click to cancel";
+    } else if (helpLine && flying && sculptMode) {
+        helpLine.textContent = (sculptMode === "lower" ? "Lower" : "Raise") + " — hold the mouse on the crosshair · WASD still flies";
     } else if (helpLine && flying) {
         helpLine.textContent = fastOn
             ? "WASD to fly · mouse to look · Space up · Shift down · Alt toggles fast · fast on"
@@ -12874,6 +12993,8 @@ if (gl) {
     gl.clearColor(0.55, 0.66, 0.74, 1);
     resize();
     loadClock();
+    loadSurveyRise();
+    bindSculptBar();
     prepareTowers();
     spawnGarrison();
     buildFolk();

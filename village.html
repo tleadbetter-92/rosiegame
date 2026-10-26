@@ -82,6 +82,17 @@
         <button id="fly-fast" type="button" aria-pressed="true">Fast</button>
         <button id="fly-down" type="button">Down</button>
     </div>
+    <div id="sculpt-bar" hidden>
+        <p>Shape the land you are looking at</p>
+        <div>
+            <button id="sculpt-off" type="button">Fly</button>
+            <button id="sculpt-raise" type="button">Raise</button>
+            <button id="sculpt-lower" type="button">Lower</button>
+        </div>
+        <label>Brush <input id="sculpt-size" type="range" min="12" max="80" step="2" value="28"></label>
+        <button id="sculpt-save" type="button">Save land</button>
+        <p id="sculpt-note"></p>
+    </div>
     <div id="pad" role="slider" aria-label="Move" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0" hidden>
         <div class="knob"></div>
     </div>

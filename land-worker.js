@@ -2,6 +2,7 @@ importScripts("world-edit.js", "world.js", "town.js", "sw-square.js", "land-mesh
 
 self.onmessage = function (e) {
     const job = e.data || {};
+    if (job.riseCells && job.riseCells.length && World.applyRiseCells) World.applyRiseCells(job.riseCells);
     if (job.levelPads && job.levelPads.length) World.setLevelPads(job.levelPads);
     const built = LandMesh.build(job.x, job.z, job.drawFar);
     const transfer = [];

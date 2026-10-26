@@ -970,7 +970,31 @@
             if (wave < 0) shaped += Math.max(wave, -Math.max(0, shaped - 0.55));
             else shaped += wave;
         }
-        return carveEditWater(x, z, carveEditRivers(x, z, passCut(x, z, shaped)));
+        return carveEditWater(x, z, carveEditRivers(x, z, passCut(x, z, shaped))) + surveyRise(x, z);
+    }
+
+    // Survey edits sit on top of the baked land, including inside a town's flat pad.
+    let surveyDm = null;
+    function surveyGrid() {
+        if (!surveyDm && edit.rise) surveyDm = new Float32Array(edit.rise.dm.length);
+        return surveyDm;
+    }
+
+    function surveyRise(x, z) {
+        const grid = edit.rise;
+        const dm = surveyDm;
+        if (!grid || !dm) return 0;
+        const fx = (x - grid.x0) / grid.step;
+        const fz = (z - grid.z0) / grid.step;
+        if (fx < 0 || fz < 0 || fx >= grid.nx - 1 || fz >= grid.nz - 1) return 0;
+        const ix = Math.floor(fx);
+        const iz = Math.floor(fz);
+        const tx = fx - ix;
+        const tz = fz - iz;
+        const i = iz * grid.nx + ix;
+        const top = dm[i] * (1 - tx) + dm[i + 1] * tx;
+        const bottom = dm[i + grid.nx] * (1 - tx) + dm[i + grid.nx + 1] * tx;
+        return (top * (1 - tz) + bottom * tz) * 0.1;
     }
 
     function editRise(x, z) {
@@ -987,6 +1011,57 @@
         const top = r.dm[i] * (1 - tx) + r.dm[i + 1] * tx;
         const bottom = r.dm[i + r.nx] * (1 - tx) + r.dm[i + r.nx + 1] * tx;
         return (top * (1 - tz) + bottom * tz) * 0.1;
+    }
+
+    // Survey brush. dm is tenths of a metre on the editor grid. Only the touched cells change.
+    function sculptRise(x, z, radius, deltaMeters) {
+        const grid = edit.rise;
+        const dm = surveyGrid();
+        if (!grid || !dm || !Number.isFinite(x) || !Number.isFinite(z) || !deltaMeters) return [];
+        const rad = Math.max(grid.step, Math.min(120, radius || grid.step));
+        const ix0 = Math.max(0, Math.floor((x - rad - grid.x0) / grid.step));
+        const ix1 = Math.min(grid.nx - 1, Math.ceil((x + rad - grid.x0) / grid.step));
+        const iz0 = Math.max(0, Math.floor((z - rad - grid.z0) / grid.step));
+        const iz1 = Math.min(grid.nz - 1, Math.ceil((z + rad - grid.z0) / grid.step));
+        const changed = [];
+        for (let iz = iz0; iz <= iz1; iz++) {
+            for (let ix = ix0; ix <= ix1; ix++) {
+                const gx = grid.x0 + ix * grid.step;
+                const gz = grid.z0 + iz * grid.step;
+                const dist = Math.hypot(gx - x, gz - z);
+                if (dist > rad) continue;
+                const t = dist / rad;
+                const fall = (1 - t) * (1 - t) * (1 + 2 * t);
+                const add = deltaMeters * 10 * fall;
+                if (Math.abs(add) < 0.02) continue;
+                const index = iz * grid.nx + ix;
+                const next = Math.max(-800, Math.min(800, (dm[index] || 0) + add));
+                if (next === dm[index]) continue;
+                dm[index] = next;
+                changed.push(index, next);
+            }
+        }
+        if (changed.length) heightCache.clear();
+        return changed;
+    }
+
+    function applyRiseCells(cells) {
+        const grid = edit.rise;
+        const dm = surveyGrid();
+        if (!grid || !dm || !cells) return;
+        for (let n = 0; n + 1 < cells.length; n += 2) {
+            const index = cells[n];
+            if (index >= 0 && index < dm.length) dm[index] = cells[n + 1];
+        }
+        heightCache.clear();
+    }
+
+    function absorbSurveyRise() {
+        if (typeof require !== "function") return;
+        try {
+            const saved = require("./data/survey-rise.json");
+            if (saved && saved.cells) applyRiseCells(saved.cells);
+        } catch (err) { /* no survey edits yet */ }
     }
 
     const waterBoxes = edit.water.map(boxOf);
@@ -1600,6 +1675,7 @@
         return list;
     }
 
+    absorbSurveyRise();
     loaded = true;
     return {
         places,
@@ -1620,6 +1696,8 @@
         bridgeWall,
         deckY,
         heightAt,
+        sculptRise,
+        applyRiseCells,
         meshHeight,
         bareHeight,
         setPads,

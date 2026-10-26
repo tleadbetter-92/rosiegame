@@ -1,7 +1,8 @@
 const fs = require("fs");
 const path = require("path");
 
-const src = path.join(__dirname, "..", "models", "village-megakit", "glTF");
+const srcVillage = path.join(__dirname, "..", "models", "village-megakit", "glTF");
+const srcFantasy = path.join(__dirname, "..", "models", "fantasy-props", "glTF");
 const outDir = path.join(__dirname, "..", "models", "kitbuild");
 const buildingPath = process.argv[2] || path.join(__dirname, "testbuild.json");
 const outName = process.argv[3] || "testbuild";
@@ -14,15 +15,33 @@ const names = {
     "T_MetalOrnaments_BaseColor.png": "metal",
     "T_RockTrim_BaseColor.png": "rock",
     "T_RedBrick_BaseColor.png": "brick",
-    "T_UnevenBrick_BaseColor.png": "brick"
+    "T_UnevenBrick_BaseColor.png": "brick",
+    "T_Mosaic_Terra_BaseColor.png": "mosaicTerra",
+    "T_Mosaic_BlackWhite_BaseColor.png": "mosaicBW",
+    "T_Mosaic_Medallion_BaseColor.png": "mosaicMed",
+    "T_Mosaic_Meander_BaseColor.png": "mosaicMeander",
+    "T_Mosaic_PolyHaven_BaseColor.jpg": "mosaicPH",
+    "T_Trim_Furniture_BaseColor.png": "furniture",
+    "T_Trim_Metal_BaseColor.png": "propmetal",
+    "T_Trim_Cloth_BaseColor.png": "propcloth",
+    "T_Trim_Props_BaseColor.png": "proppack"
 };
 
+function gltfSrcDir(name) {
+    const v = path.join(srcVillage, name + ".gltf");
+    if (fs.existsSync(v)) return srcVillage;
+    const f = path.join(srcFantasy, name + ".gltf");
+    if (fs.existsSync(f)) return srcFantasy;
+    return null;
+}
+
 function loadGltf(name) {
-    const gltfPath = path.join(src, name + ".gltf");
-    if (!fs.existsSync(gltfPath)) throw new Error("Missing glTF: " + name);
+    const dir = gltfSrcDir(name);
+    if (!dir) throw new Error("Missing glTF: " + name);
+    const gltfPath = path.join(dir, name + ".gltf");
     const gltf = JSON.parse(fs.readFileSync(gltfPath, "utf8"));
-    const bin = fs.readFileSync(path.join(src, gltf.buffers[0].uri));
-    return { gltf, bin };
+    const bin = fs.readFileSync(path.join(dir, gltf.buffers[0].uri));
+    return { gltf, bin, dir };
 }
 
 function readAccessor(gltf, bin, index) {
@@ -169,6 +188,25 @@ function wallAlongX(yaw) {
     return Math.abs(Math.cos(yaw)) >= Math.abs(Math.sin(yaw));
 }
 
+function fenceBox(p) {
+    const yaw = p.yaw || 0;
+    const alongX = wallAlongX(yaw);
+    const len = 1.9;
+    const thick = 0.22;
+    const w = alongX ? len : thick;
+    const d = alongX ? thick : len;
+    const tall = String(p.id).includes("Wooden") ? 1.05 : 2.7;
+    return {
+        x: p.x - w / 2,
+        z: p.z - d / 2,
+        w,
+        d,
+        y0: p.y || 0,
+        y1: (p.y || 0) + tall,
+        stair: false
+    };
+}
+
 function wallBox(p) {
     const yaw = p.yaw || 0;
     const alongX = wallAlongX(yaw);
@@ -222,7 +260,7 @@ function physicsFromPieces(pieces) {
     let maxY = 0;
     const solids = [];
     const floors = [];
-    let doorAnchor = null;
+    const doorAnchors = [];
 
     for (const p of pieces) {
         const id = p.id;
@@ -233,12 +271,14 @@ function physicsFromPieces(pieces) {
         maxY = Math.max(maxY, (p.y || 0) + STOREY);
         if (id.startsWith("Wall_")) {
             if (id.includes("_Door_")) {
-                doorAnchor = p;
+                doorAnchors.push(p);
                 continue;
             }
             solids.push(wallBox(p));
         } else if (id.startsWith("DoorFrame_")) {
-            if (!doorAnchor) doorAnchor = p;
+            doorAnchors.push(p);
+        } else if (id.includes("Fence")) {
+            solids.push(fenceBox(p));
         } else if (id.startsWith("Stair")) {
             const stair = stairBoxes(p);
             solids.push(...stair.solids);
@@ -254,12 +294,11 @@ function physicsFromPieces(pieces) {
         y0: 0,
         h: maxY
     };
-    const doors = [];
-    if (doorAnchor) {
+    const doors = doorAnchors.map((doorAnchor) => {
         const yaw = doorAnchor.yaw || 0;
         const s = Math.sin(yaw);
         const c = Math.cos(yaw);
-        doors.push({
+        return {
             x: doorAnchor.x,
             z: doorAnchor.z,
             y: doorAnchor.y || 0,
@@ -267,8 +306,8 @@ function physicsFromPieces(pieces) {
             fz: -c,
             yaw,
             wide: 0.56
-        });
-    }
+        };
+    });
     floors.push({
         x: shell.minX + 0.45,
         z: shell.minZ + 0.45,
@@ -286,7 +325,12 @@ console.log(outName + ".physics.json", "solids", physics.solids.length, "doors",
 
 const texOut = path.join(__dirname, "..", "models");
 for (const uri of Object.keys(names)) {
-    const from = path.join(src, uri);
-    if (fs.existsSync(from)) fs.copyFileSync(from, path.join(texOut, names[uri] + ".png"));
+    const fromV = path.join(srcVillage, uri);
+    const fromF = path.join(srcFantasy, uri);
+    const from = fs.existsSync(fromV) ? fromV : fromF;
+    if (fs.existsSync(from)) {
+        const ext = path.extname(uri) || ".png";
+        fs.copyFileSync(from, path.join(texOut, names[uri] + ext));
+    }
 }
 console.log("Wrote", path.join(outDir, outName + ".meta.json"), "center", cx.toFixed(2), cz.toFixed(2));
