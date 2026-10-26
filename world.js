@@ -690,6 +690,24 @@
     const noPads = [];
 
     let padStamp = "";
+    function fillPadGrid(target, list) {
+        for (let i = 0; i < list.length; i++) {
+            const pad = list[i];
+            const c0 = Math.floor((pad.minX - 40) / padCell);
+            const c1 = Math.floor((pad.minX + pad.w + 40) / padCell);
+            const r0 = Math.floor((pad.minZ - 40) / padCell);
+            const r1 = Math.floor((pad.minZ + pad.d + 40) / padCell);
+            for (let c = c0; c <= c1; c++) {
+                for (let r = r0; r <= r1; r++) {
+                    const key = c + "," + r;
+                    let cell = target.get(key);
+                    if (!cell) target.set(key, cell = []);
+                    cell.push(pad);
+                }
+            }
+        }
+    }
+
     function setPads(list) {
         const next = list || [];
         let stamp = "";
@@ -702,25 +720,36 @@
         heightCache.clear();
         pads = next;
         padGrid = new Map();
-        for (let i = 0; i < pads.length; i++) {
-            const pad = pads[i];
-            const c0 = Math.floor((pad.minX - 40) / padCell);
-            const c1 = Math.floor((pad.minX + pad.w + 40) / padCell);
-            const r0 = Math.floor((pad.minZ - 40) / padCell);
-            const r1 = Math.floor((pad.minZ + pad.d + 40) / padCell);
-            for (let c = c0; c <= c1; c++) {
-                for (let r = r0; r <= r1; r++) {
-                    const key = c + "," + r;
-                    let cell = padGrid.get(key);
-                    if (!cell) padGrid.set(key, cell = []);
-                    cell.push(pad);
-                }
-            }
+        fillPadGrid(padGrid, pads);
+    }
+
+    // Hamlet / town-block sites: cut and fill to a level y, with a soft bank at the edge.
+    const LEVEL_BANK = 42;
+    let levelPads = [];
+    let levelPadGrid = new Map();
+    let levelPadStamp = "";
+
+    function setLevelPads(list) {
+        const next = list || [];
+        let stamp = "";
+        for (let i = 0; i < next.length; i++) {
+            const p = next[i];
+            stamp += p.minX + "," + p.minZ + "," + p.w + "," + p.d + "," + p.y + ";";
         }
+        if (stamp === levelPadStamp) return;
+        levelPadStamp = stamp;
+        heightCache.clear();
+        levelPads = next;
+        levelPadGrid = new Map();
+        fillPadGrid(levelPadGrid, levelPads);
     }
 
     function padsNear(x, z) {
         return padGrid.get(Math.floor(x / padCell) + "," + Math.floor(z / padCell)) || noPads;
+    }
+
+    function levelPadsNear(x, z) {
+        return levelPadGrid.get(Math.floor(x / padCell) + "," + Math.floor(z / padCell)) || noPads;
     }
 
     // Where the goblins of the camp ringed by cones on the editor map stand: n dry spots spread evenly inside the ring,
@@ -764,20 +793,31 @@
         return wildCache;
     }
 
-    // Region 1 — brute lurkers ~500 m southwest of the main Southwest town (places[2]).
+    let bruteLairJson = null;
+    try {
+        if (typeof require === "function") bruteLairJson = require("./data/brute-lair.json");
+    } catch (err) { /* browser or missing file */ }
+
+    function readBruteLairPlacement() {
+        if (typeof BruteLairPlacement !== "undefined" && BruteLairPlacement) return BruteLairPlacement;
+        return bruteLairJson;
+    }
+
     let bruteLairCache = null;
-    function southwestBruteLair(count) {
+    let bruteLairCacheKey = "";
+
+    function bruteLairAt(cx, cz, count, options) {
+        const opts = options || {};
         const n = Math.max(1, Math.min(24, count || 20));
-        if (bruteLairCache && bruteLairCache.n === n) return bruteLairCache;
-        const home = places[2];
-        const dist = 500;
-        const cx = home.x - dist * Math.SQRT1_2;
-        const cz = home.z - dist * Math.SQRT1_2;
-        const radius = 52;
+        const radius = opts.radius || 52;
+        const minFrom = opts.minDistFromTown;
+        const key = n + "@" + cx + "," + cz + "@" + radius;
+        if (bruteLairCache && bruteLairCacheKey === key) return bruteLairCache;
         const roll = (x, z) => {
             const v = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
             return v - Math.floor(v);
         };
+        const home = places[2];
         const spots = [];
         for (let i = 0; i < n; i++) {
             const base = (i / n) * Math.PI * 2 + roll(cx + i, cz - i) * 0.35;
@@ -787,7 +827,7 @@
                 const ang = base + tryRing * 0.41;
                 const px = cx + Math.cos(ang) * r;
                 const pz = cz + Math.sin(ang) * r;
-                if (Math.hypot(px - home.x, pz - home.z) < dist * 0.68) continue;
+                if (minFrom && home && Math.hypot(px - home.x, pz - home.z) < minFrom) continue;
                 if (wet(px, pz) || heightAt(px, pz) < 0.5) continue;
                 placed = { x: Math.round(px * 10) / 10, z: Math.round(pz * 10) / 10 };
             }
@@ -799,14 +839,38 @@
             }
             spots.push(placed);
         }
+        bruteLairCacheKey = key;
         bruteLairCache = {
             n,
             centre: { x: Math.round(cx * 10) / 10, z: Math.round(cz * 10) / 10 },
             radius,
-            dist,
             spots
         };
+        if (home) bruteLairCache.dist = Math.hypot(cx - home.x, cz - home.z);
         return bruteLairCache;
+    }
+
+    /** Brute lair from terrain marker / data/brute-lair.json, else legacy spot ~500 m SW of town. */
+    function bruteLair(count) {
+        const p = readBruteLairPlacement();
+        if (p && p.enabled !== false && Number.isFinite(Number(p.worldX))) {
+            return bruteLairAt(Number(p.worldX), Number(p.worldZ), count, {
+                radius: Number(p.radius) || 52,
+                minDistFromTown: Number(p.minDistFromTown) || 90
+            });
+        }
+        return southwestBruteLair(count);
+    }
+
+    // Region 1 — legacy fallback ~500 m southwest of the main Southwest town (places[2]).
+    function southwestBruteLair(count) {
+        const home = places[2];
+        const dist = 500;
+        const cx = home.x - dist * Math.SQRT1_2;
+        const cz = home.z - dist * Math.SQRT1_2;
+        const lair = bruteLairAt(cx, cz, count, { radius: 52, minDistFromTown: dist * 0.68 });
+        lair.dist = dist;
+        return lair;
     }
 
     // Ground under a building pad is cleared of trees and bushes.
@@ -814,6 +878,11 @@
         const near = padsNear(x, z);
         for (let i = 0; i < near.length; i++) {
             const p = near[i];
+            if (x > p.minX - margin && x < p.minX + p.w + margin && z > p.minZ - margin && z < p.minZ + p.d + margin) return true;
+        }
+        const level = levelPadsNear(x, z);
+        for (let i = 0; i < level.length; i++) {
+            const p = level[i];
             if (x > p.minX - margin && x < p.minX + p.w + margin && z > p.minZ - margin && z < p.minZ + p.d + margin) return true;
         }
         return false;
@@ -851,6 +920,16 @@
             if (dx > 40 || dz > 40) continue;
             const top = p.y - Math.max(0, Math.hypot(dx, dz) - PAD_LIP) * PAD_BANK;
             if (top > h) h = top;
+        }
+        const levelNear = levelPadsNear(x, z);
+        for (let i = 0; i < levelNear.length; i++) {
+            const p = levelNear[i];
+            const dx = Math.max(p.minX - x, 0, x - p.minX - p.w);
+            const dz = Math.max(p.minZ - z, 0, z - p.minZ - p.d);
+            const dist = Math.hypot(dx, dz);
+            if (dist >= LEVEL_BANK) continue;
+            const blend = dist <= PAD_LIP ? 1 : Math.max(0, 1 - (dist - PAD_LIP) / (LEVEL_BANK - PAD_LIP));
+            h = h * (1 - blend) + p.y * blend;
         }
         if (heightCache.size >= 80000) {
             const drop = heightCache.keys();
@@ -1544,6 +1623,7 @@
         meshHeight,
         bareHeight,
         setPads,
+        setLevelPads,
         onPad,
         waterLevel,
         wet,
@@ -1566,7 +1646,10 @@
         // Ore placed on the editor map, [x, z]: where mine workers dig stone and gold.
         ores: edit.ores || [],
         wildSpots,
+        bruteLairAt,
+        bruteLair,
         southwestBruteLair,
+        readBruteLairPlacement,
         cliffRocks,
         groundStones
     };

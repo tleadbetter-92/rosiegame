@@ -3,6 +3,9 @@ const mapBox = document.querySelector(".map");
 const log = document.getElementById("log");
 const clock = document.getElementById("clock");
 const land = document.getElementById("land");
+const islandCampaign = window.CAMPAIGN_ISLAND === true;
+const playerHome = window.CAMPAIGN_PLAYER_VILLAGE != null ? window.CAMPAIGN_PLAYER_VILLAGE : 2;
+const playerLabel = window.CAMPAIGN_PLAYER_LABEL || "Southwest";
 const homeColors = ["#c45c3a", "#3d6b8a", "#6a7a3a", "#8a5a7a"];
 const placeNames = ["Northwest", "Northeast", "Southwest", "Southeast"];
 const mapX0 = -3800;
@@ -30,6 +33,7 @@ function terrainColor(h, wet) {
 let islandBase = null;
 let shownVillages = null;
 let shownMinors = [];
+let shownBruteLair = null;
 const minorSpots = window.World ? World.hamlets : [];
 
 function bakeIsland() {
@@ -109,9 +113,12 @@ function showVillages(villages) {
     ctx.drawImage(islandBase, 0, 0);
     ctx.textAlign = "center";
     (villages || []).forEach((village, index) => {
-        const place = World.places[index];
+        const place = (village.x != null && village.z != null)
+            ? { x: village.x, z: village.z }
+            : World.places[index];
         if (!place) return;
         const p = mapPoint(place.x, place.z);
+        const label = village.name || placeNames[index];
         ctx.beginPath();
         ctx.fillStyle = "#f4efe4";
         ctx.strokeStyle = village.color || homeColors[index];
@@ -123,11 +130,12 @@ function showVillages(villages) {
         ctx.lineWidth = 3;
         ctx.strokeStyle = "rgba(20, 24, 18, 0.75)";
         ctx.fillStyle = "#f7f4ea";
-        const below = index === 1 || index === 3;
+        const below = islandCampaign ? index === 1 : index === 1 || index === 3;
         const ly = below ? p.y + 24 : p.y - 14;
-        ctx.strokeText(placeNames[index], p.x, ly);
-        ctx.fillText(placeNames[index], p.x, ly);
+        ctx.strokeText(label, p.x, ly);
+        ctx.fillText(label, p.x, ly);
     });
+    if (islandCampaign) return;
     shownMinors.forEach((minor, index) => {
         const spot = minorSpots[index];
         if (!spot) return;
@@ -176,6 +184,24 @@ function showVillages(villages) {
     ctx.fillStyle = "#f2d15a";
     ctx.strokeText("You", labelX, labelY);
     ctx.fillText("You", labelX, labelY);
+    if (shownBruteLair && Number.isFinite(shownBruteLair.x)) {
+        const bp = mapPoint(shownBruteLair.x, shownBruteLair.z);
+        ctx.beginPath();
+        ctx.fillStyle = "#f4efe4";
+        ctx.strokeStyle = "#8b3a2a";
+        ctx.lineWidth = 3;
+        ctx.moveTo(bp.x, bp.y - 7);
+        ctx.lineTo(bp.x + 6, bp.y + 5);
+        ctx.lineTo(bp.x - 6, bp.y + 5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.font = "700 12px Segoe UI, system-ui, sans-serif";
+        ctx.strokeStyle = "rgba(20, 24, 18, 0.75)";
+        ctx.fillStyle = "#f7f4ea";
+        ctx.strokeText("Brutes", bp.x, bp.y + 20);
+        ctx.fillText("Brutes", bp.x, bp.y + 20);
+    }
 }
 
 function rememberSpot(x, z) {
@@ -226,6 +252,9 @@ function paint(data) {
     const villages = data.villages || [];
     villages.forEach((village, index) => {
         const hold = holds[index];
+        if (!hold) return;
+        const title = hold.querySelector("h2");
+        if (title && village.name) title.textContent = village.name;
         hold.style.borderTop = "6px solid " + village.color;
         hold.classList.toggle("defending", Boolean(village.attacked));
         hold.classList.toggle("marching", Boolean(village.marching));
@@ -256,11 +285,26 @@ function paint(data) {
         const select = hold.querySelector("[data-stance]");
         if (select) {
             select.dataset.stance = String(village.owner);
-            select.setAttribute("aria-label", "Southwest and " + village.ownerName);
-            select.closest(".stance").hidden = village.owner === 2;
-            hold.querySelector("[data-stance-name]").textContent = "Southwest and " + village.ownerName + ":";
+            select.setAttribute("aria-label", playerLabel + " and " + village.ownerName);
+            select.closest(".stance").hidden = village.owner === playerHome;
+            hold.querySelector("[data-stance-name]").textContent = playerLabel + " and " + village.ownerName + ":";
         }
     });
+    if (islandCampaign) {
+        for (const select of document.querySelectorAll("[data-stance]")) {
+            const kind = (data.stance || [])[Number(select.dataset.stance)];
+            if (kind && document.activeElement !== select) select.value = kind;
+        }
+        showVillages(villages);
+        paintFactions(data.factions || []);
+        paintGuide(data.rules);
+        const lines = data.log || [];
+        log.innerHTML = lines.length
+            ? lines.map((line) => "<li>" + line + "</li>").join("")
+            : "<li>The houses are choosing who to recruit.</li>";
+        paintClock();
+        return;
+    }
     (data.minors || []).forEach((minor) => {
         const hold = holds[minor.index] || minorCard(minor);
         hold.style.borderTop = "6px solid " + minor.ownerColor;
@@ -298,6 +342,28 @@ function paint(data) {
         log.innerHTML = lines.map((line) => "<li>" + line + "</li>").join("");
     }
     paintGoblins(data);
+    paintBrutes(data);
+    shownBruteLair = data.bruteLair || shownBruteLair;
+    showVillages(villages);
+}
+
+function paintBrutes(data) {
+    const status = document.getElementById("brute-status");
+    if (!status) return;
+    const rules = data.rules && data.rules.brutes;
+    let text = rules && rules.lair
+        ? "Lair ~" + Math.round(rules.lair.x) + ", " + Math.round(rules.lair.z)
+        : "Brute lair (terrain marker)";
+    const raid = data.brutes;
+    if (raid && raid.hp) {
+        const alive = raid.hp.filter((hp) => hp > 0).length;
+        text += " · Raid: " + alive + " marching or fighting";
+    } else if (data.nextBrutesAt) {
+        const left = Math.max(0, data.nextBrutesAt - Date.now());
+        const min = Math.max(1, Math.round(left / 60000));
+        text += " · Next auto raid ~" + min + " min";
+    }
+    status.textContent = text;
 }
 
 function paintGoblins(data) {
@@ -371,14 +437,24 @@ function paintGuide(rules) {
     guideShown = key;
     const dayMin = Math.round(rules.dayMs / 60000);
     const raid = rules.goblins;
-    document.getElementById("guide-basics").textContent =
+    const brutes = rules.brutes;
+    let basics =
         "A game day lasts " + dayMin + " minutes. A faction holds " + rules.popBase + " people, plus " + rules.housePop +
         " for every house it builds. Soldiers and workers each take 1 place and eat " + rules.upkeep +
         " food a day. Gate repairs cost " + rules.repair.wood + " wood a time (gates have " + rules.repair.gateHp +
-        " hit points). Goblins raid " + raid.target + " about every " + duration(raid.every, rules.dayMs) +
-        ", " + raid.min + " to " + raid.max + " at a time." +
-        (raid.camp ? " The goblin camp in the woods gains " + raid.camp.daily + " goblins a day; at " + raid.camp.max +
-            " they all run at " + raid.target + " and the camp starts again from " + raid.camp.after + "." : "");
+        " hit points).";
+    if (!islandCampaign && raid) {
+        basics += " Goblins raid " + raid.target + " about every " + duration(raid.every, rules.dayMs) +
+            ", " + raid.min + " to " + raid.max + " at a time." +
+            (raid.camp ? " The goblin camp in the woods gains " + raid.camp.daily + " goblins a day; at " + raid.camp.max +
+                " they all run at " + raid.target + " and the camp starts again from " + raid.camp.after + "." : "") +
+            (brutes ? " " + brutes.target + " also faces " + brutes.min + "–" + brutes.max + " brutes from their lair (" +
+                brutes.hp + " hit points each), about every " + duration(brutes.every, rules.dayMs) +
+                " — faster when the lair is close." : "");
+    } else if (islandCampaign) {
+        basics += " Skirmish Isle: two capitals only — march, siege gates, grow your town.";
+    }
+    document.getElementById("guide-basics").textContent = basics;
     rows(document.getElementById("guide-buildings"), rules.buildings.map((b) =>
         [b.name, b.wood + " wood", duration(b.ms, rules.dayMs), escapeHtml(b.gives), escapeHtml(b.when)]));
     rows(document.getElementById("guide-fixed"), rules.fixed.map((b) => [b.name, escapeHtml(b.gives)]));
@@ -472,15 +548,27 @@ async function postCampaign(body) {
     return res.json();
 }
 
-document.getElementById("goblin-raid").addEventListener("click", async () => {
-    const data = await postCampaign({ goblinRaid: true });
-    if (data) take(data);
-});
-
-document.getElementById("goblin-camp").addEventListener("click", async () => {
-    const data = await postCampaign({ addCampGoblins: 5 });
-    if (data) take(data);
-});
+const goblinRaidBtn = document.getElementById("goblin-raid");
+if (goblinRaidBtn) {
+    goblinRaidBtn.addEventListener("click", async () => {
+        const data = await postCampaign({ goblinRaid: true });
+        if (data) take(data);
+    });
+}
+const goblinCampBtn = document.getElementById("goblin-camp");
+if (goblinCampBtn) {
+    goblinCampBtn.addEventListener("click", async () => {
+        const data = await postCampaign({ addCampGoblins: 5 });
+        if (data) take(data);
+    });
+}
+const bruteRaidBtn = document.getElementById("brute-raid");
+if (bruteRaidBtn) {
+    bruteRaidBtn.addEventListener("click", async () => {
+        const data = await postCampaign({ bruteRaid: true });
+        if (data) take(data);
+    });
+}
 
 document.getElementById("restart").addEventListener("click", async () => {
     if (!window.confirm("Start again? Every village goes back to its starting soldiers, farmers, food, and wood.")) return;

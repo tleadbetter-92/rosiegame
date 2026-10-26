@@ -229,7 +229,9 @@
         return { buildings: placed.filter(Boolean), lines: lines, why: why, slots: slots.length };
     }
 
-    const towns = [0, 1, 2, 3].map(buildVillage);
+    const root = typeof self !== "undefined" ? self : globalThis;
+    const islandLabTowns = root.IslandLab && root.IslandLab.enabled;
+    const towns = islandLabTowns ? [] : [0, 1, 2, 3].map(buildVillage);
     const buildings = towns.reduce((all, town) => all.concat(town.buildings), []);
     const streets = towns.reduce((all, town) => all.concat(town.lines), []);
 

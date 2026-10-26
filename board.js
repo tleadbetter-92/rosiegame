@@ -6,7 +6,10 @@ const hint = document.getElementById("hint");
 const coords = document.getElementById("coords");
 const kindsBox = document.getElementById("kinds");
 const removeButton = document.getElementById("remove");
-const placeNames = ["Northwest", "Northeast", "Southwest", "Southeast"];
+const islandBoardEarly = window.CAMPAIGN_ISLAND === true;
+const placeNames = islandBoardEarly
+    ? ["Westhold", "Easthold"]
+    : ["Northwest", "Northeast", "Southwest", "Southeast"];
 const hamletNames = ["Ashby", "Fernlow", "Brackwick", "Stoneacre", "Hollins", "Redmere", "Westerby"];
 const homeColors = ["#c45c3a", "#3d6b8a", "#6a7a3a", "#8a5a7a"];
 const kinds = [
@@ -16,8 +19,10 @@ const kinds = [
     { id: "mine", name: "Mine" }
 ];
 const BUILD_HOURS = 1;
-const ORDER_KEY = "sw-build-orders";
-const home = World.places[2];
+const islandBoard = window.CAMPAIGN_ISLAND === true;
+const playerVillage = islandBoard && window.CAMPAIGN_PLAYER_VILLAGE != null ? window.CAMPAIGN_PLAYER_VILLAGE : 2;
+const ORDER_KEY = islandBoard ? "island-build-orders-" + playerVillage : "sw-build-orders";
+const home = World.places[playerVillage] || World.places[2];
 const you = { x: -2376.6, z: 539.2 };
 
 function crewCap(kind) {
@@ -53,7 +58,8 @@ const settlements = World.places.map((place, index) => ({
     z: hamlet.z
 })));
 
-const southwest = settlements[2];
+const southwest = settlements[playerVillage] || settlements[2];
+const capitalName = islandBoard ? (playerVillage === 1 ? "Easthold" : "Westhold") : "Southwest";
 
 function woodStand(place, slot) {
     const n = slot % 8;
@@ -311,7 +317,7 @@ function line(text) {
 }
 
 function yours(order) {
-    return !order || order.owner == null || order.owner === 2;
+    return !order || order.owner == null || order.owner === playerVillage;
 }
 
 function paint() {
@@ -339,10 +345,10 @@ function paint() {
             : acting >= 0 ? placeNames[acting] + " is taking a turn." : "You ended your turn.";
         placeLand.style.cursor = "grab";
     } else if (chosenKind === "yard") {
-        hint.textContent = "Lumberyard is selected. Click a wood stand. It can sit outside the village. Each 100 m from Southwest takes 1% off 120 a day, and that loss is rounded up.";
+        hint.textContent = "Lumberyard is selected. Click a wood stand. It can sit outside the village. Each 100 m from " + capitalName + " takes 1% off 120 a day, and that loss is rounded up.";
         placeLand.style.cursor = "crosshair";
     } else if (chosenKind === "mine") {
-        hint.textContent = "Mine is selected. Click an ore. It can sit outside the village. Each 100 m from Southwest takes 1% off 120 a day, and that loss is rounded up.";
+        hint.textContent = "Mine is selected. Click an ore. It can sit outside the village. Each 100 m from " + capitalName + " takes 1% off 120 a day, and that loss is rounded up.";
         placeLand.style.cursor = "crosshair";
     } else if (chosenKind) {
         hint.textContent = kindName(chosenKind) + " is selected. Click a yellow spot. Each one takes " + BUILD_HOURS + " hour, and they are all built together when the 12 hours have passed. End your turn when you are finished.";
@@ -363,12 +369,12 @@ function paint() {
     if (!orders.length) line("No building ordered.");
     orders.forEach((item, index) => {
         const mark = index === selected ? "selected  " : "";
-        const who = item.owner == null || item.owner === 2 ? "" : placeNames[item.owner] + "  ";
+        const who = item.owner == null || item.owner === playerVillage ? "" : placeNames[item.owner] + "  ";
         let extra = "";
         const cap = crewCap(item.kind);
         if (cap) {
-            const owner = item.owner == null ? 2 : item.owner;
-            const place = settlements[owner] || settlements[2];
+            const owner = item.owner == null ? playerVillage : item.owner;
+            const place = settlements[owner] || settlements[playerVillage];
             const metres = Math.hypot(item.x - place.x, item.z - place.z);
             extra = "   " + (item.crew || 0) + "/" + cap + " workers";
             if (resourceKind(item.kind)) extra += ", " + Math.round(metres) + " m from " + place.name + ", " + dayTake(item.crew || 0, metres) + " a day";
@@ -398,7 +404,7 @@ function endTurn() {
     phase = "theirs";
     chosenKind = null;
     turnLog.push("You ended your turn.");
-    const queue = [0, 1, 3];
+    const queue = islandBoard ? [0, 1].filter((i) => i !== playerVillage) : [0, 1, 3];
     let step = 0;
     function next() {
         if (step >= queue.length) {
@@ -445,7 +451,7 @@ function clickAt(px, py) {
         const list = chosenKind === "mine" ? ores : stands;
         const site = nearest(list.filter((item) => !taken(item)), at, reach);
         if (site) {
-            orders.push({ kind: chosenKind, x: Math.round(site.x), z: Math.round(site.z), hours: BUILD_HOURS, owner: 2 });
+            orders.push({ kind: chosenKind, x: Math.round(site.x), z: Math.round(site.z), hours: BUILD_HOURS, owner: playerVillage });
             selected = orders.length - 1;
             saveOrders();
             draw();
@@ -462,7 +468,7 @@ function clickAt(px, py) {
     if (phase !== "you" || resourceKind(chosenKind)) return;
     const spot = chosenKind ? nearest(southwest.slots.filter((item) => !taken(item)), at, reach) : null;
     if (spot) {
-        orders.push({ kind: chosenKind, x: Math.round(spot.x), z: Math.round(spot.z), hours: BUILD_HOURS, owner: 2 });
+        orders.push({ kind: chosenKind, x: Math.round(spot.x), z: Math.round(spot.z), hours: BUILD_HOURS, owner: playerVillage });
         selected = orders.length - 1;
         saveOrders();
         draw();

@@ -6,11 +6,13 @@ if (!gl) {
 }
 
 const places = World.places;
+const islandLabOn = typeof IslandLab !== "undefined" && IslandLab.enabled;
+const homeVillage = islandLabOn ? IslandLab.playerVillage : 2;
 const flying = new URLSearchParams(location.search).get("fly") === "1";
 // Legacy spawns — saved positions here are moved to the village inn on load.
 const START_FARM = { x: -2372, z: 744.5 };
-const OLD_TOWN_SPAWN = { x: places[2].ox, z: places[2].oz + 20 };
-const VILLAGE_SPAWN_FALLBACK = { x: places[2].ox, z: places[2].oz + 12, yaw: 0 };
+const OLD_TOWN_SPAWN = { x: places[homeVillage].ox, z: places[homeVillage].oz + 20 };
+const VILLAGE_SPAWN_FALLBACK = { x: places[homeVillage].ox, z: places[homeVillage].oz + 12, yaw: 0 };
 function setCamAt(x, z, yaw) {
     cam.x = x;
     cam.z = z;
@@ -80,6 +82,8 @@ function ensureVillageSpawnClear() {
 }
 let resumeWalkSpot = false;
 const cam = { x: VILLAGE_SPAWN_FALLBACK.x, y: 1.62, z: VILLAGE_SPAWN_FALLBACK.z, yaw: VILLAGE_SPAWN_FALLBACK.yaw, pitch: 0 };
+const HAMLET_TOWN_BLOCK_INDEX = 0;
+let hamletLevelPadsForWorker = [];
 cam.y = 1.62 + Math.max(0, World.heightAt(cam.x, cam.z));
 if (!flying) {
     try {
@@ -96,7 +100,6 @@ if (flying) {
     cam.z = 980;
     cam.pitch = -0.62;
 }
-const homeVillage = 2;
 let inside = null;
 function activeCam() {
     return inside ? inside.view : cam;
@@ -108,7 +111,7 @@ const chaseLeash = townLeash * 3;
 const TOWN_VIEW = 320;
 // Hard RTS unit budget: only this many nearest people are simmed/drawn in 3D.
 const UNIT_CAP = 16;
-let focusTown = { id: "p2", x: places[2].ox, z: places[2].oz };
+let focusTown = { id: "p" + homeVillage, x: places[homeVillage].ox, z: places[homeVillage].oz };
 const player = { hp: 40, max: 40, guard: 0, dead: 0, shake: 0 };
 let hero = Hero.create();
 let heroReady = false;
@@ -883,9 +886,11 @@ function copyLand(built) {
     }
 }
 
+let gfxLive = false;
+
 function buildLand() {
     clearLandBatches();
-    const drawFar = typeof gfx === "function" ? gfx().drawFar : 300;
+    const drawFar = gfxLive ? gfx().drawFar : 372;
     copyLand(LandMesh.build(cam.x, cam.z, drawFar));
 }
 
@@ -901,6 +906,8 @@ function addWater(x, z, w, d) {
     );
 }
 
+const HAMLET_FLAT_MARGIN = 14;
+registerHamletTerrainFlats();
 buildLand();
 landMarkX = cam.x;
 landMarkZ = cam.z;
@@ -1646,12 +1653,14 @@ function spawnCommander() {
 }
 
 // Region 1 (Rosiegame_AI_World_Bible/Region 1/) — Godwin at Southwest inn only until borders are marked.
-// Region 1 — prop/brute lurkers in the wild (~500 m southwest of town).
-const BRUTE_FACTION = 11;
-const BRUTE_COUNT = 20;
-/** Southwest: show Kaykit brute at the gate only — no wild lair brutes until we want combat again. */
-const SW_WILD_BRUTES = false;
+// Region 1 — The Brutes (faction 11): lair from terrain marker → brute-lair-placements.js
+const BRUTE_FACTION = BrutesFaction.FACTION_ID;
+const BRUTE_COUNT = BrutesFaction.LAIR_COUNT;
 const BRUTE_RESPAWN_MS = Clock.DAY_MS;
+
+function brutesLairActive() {
+    return typeof BruteLairPlacement !== "undefined" && BruteLairPlacement && BruteLairPlacement.enabled !== false;
+}
 const bruteRespawnQueue = [];
 let markersDirty = true;
 
@@ -1686,8 +1695,8 @@ function rebuildWorldMarkers() {
         if (!pick.taken) addLootMarkerVerts(loot, pick.x, pick.z);
     }
     uploadMesh("worldMarkerLoot", loot);
-    if (homeVillage === 2 && SW_WILD_BRUTES && World.southwestBruteLair) {
-        const lair = World.southwestBruteLair(BRUTE_COUNT);
+    if (homeVillage === 2 && brutesLairActive() && World.bruteLair) {
+        const lair = World.bruteLair(BRUTE_COUNT);
         addCampMarkerVerts(camp, lair.centre.x, lair.centre.z, lair.radius, 22);
     }
     const wild = World.wildSpots(50);
@@ -1733,12 +1742,12 @@ function drawWorldMarkers(dark, proj) {
 function spawnOneBrute(spot, slot) {
     men.push({
         brute: true,
-        name: "Brute",
+        name: BrutesFaction.UNIT.name,
         fisher: false,
         faction: BRUTE_FACTION,
         post: -1,
         index: -80 - slot,
-        health: 4,
+        health: BrutesFaction.UNIT.hp,
         x: spot.x,
         z: spot.z,
         homeX: spot.x,
@@ -1757,14 +1766,14 @@ function spawnOneBrute(spot, slot) {
 }
 
 function spawnSouthwestBrutes() {
-    if (homeVillage !== 2 || !World.southwestBruteLair) return;
-    if (!SW_WILD_BRUTES) {
+    if (homeVillage !== 2 || !World.bruteLair) return;
+    if (!brutesLairActive()) {
         for (let i = men.length - 1; i >= 0; i--) {
             if (men[i].brute) men.splice(i, 1);
         }
         return;
     }
-    const lair = World.southwestBruteLair(BRUTE_COUNT);
+    const lair = World.bruteLair(BRUTE_COUNT);
     lair.spots.forEach((spot, slot) => spawnOneBrute(spot, slot));
     markWorldMarkersDirty();
 }
@@ -3484,8 +3493,64 @@ function dressFlatHouses() {
 }
 
 const hamletPads = [];
+
+function hamletTownBlockRect(ox, oz, size) {
+    const half = (size || 192) * 0.5;
+    const m = HAMLET_FLAT_MARGIN;
+    return {
+        minX: ox - half - m,
+        minZ: oz - half - m,
+        w: (size || 192) + m * 2,
+        d: (size || 192) + m * 2
+    };
+}
+
+function medianTerrainHeight(rect) {
+    const samples = [];
+    const step = 8;
+    for (let x = rect.minX; x <= rect.minX + rect.w; x += step) {
+        for (let z = rect.minZ; z <= rect.minZ + rect.d; z += step) {
+            samples.push(World.heightAt(x, z));
+        }
+    }
+    if (!samples.length) return 0;
+    samples.sort((a, b) => a - b);
+    return samples[Math.floor(samples.length * 0.5)];
+}
+
+function registerHamletTerrainFlats() {
+    const levelPads = [];
+    if (islandLabOn && IslandLab.settlements.length && typeof EditorBlocks !== "undefined") {
+        for (let i = 0; i < IslandLab.settlements.length; i++) {
+            const s = IslandLab.settlements[i];
+            const layout = EditorBlocks[s.layout || IslandLab.layoutKey];
+            if (!layout) continue;
+            const rect = hamletTownBlockRect(s.ox, s.oz, layout.size);
+            levelPads.push({ minX: rect.minX, minZ: rect.minZ, w: rect.w, d: rect.d, y: medianTerrainHeight(rect) });
+        }
+    }
+    if (typeof HamletSpherePlacements !== "undefined" && HamletSpherePlacements.length && typeof EditorBlocks !== "undefined") {
+        for (let i = 0; i < HamletSpherePlacements.length; i++) {
+            const p = HamletSpherePlacements[i];
+            const layout = EditorBlocks[p.layout];
+            if (!layout) continue;
+            const rect = hamletTownBlockRect(p.ox, p.oz, layout.size);
+            levelPads.push({ minX: rect.minX, minZ: rect.minZ, w: rect.w, d: rect.d, y: medianTerrainHeight(rect) });
+        }
+    }
+    const hamlets = World.hamlets || [];
+    const ashby = hamlets[HAMLET_TOWN_BLOCK_INDEX];
+    if (ashby && typeof EditorBlocks !== "undefined" && EditorBlocks.hamletTown) {
+        const ox = ashby.x + 1;
+        const oz = ashby.z + 25.5;
+        const rect = hamletTownBlockRect(ox, oz, EditorBlocks.hamletTown.size);
+        levelPads.push({ minX: rect.minX, minZ: rect.minZ, w: rect.w, d: rect.d, y: medianTerrainHeight(rect) });
+    }
+    hamletLevelPadsForWorker = levelPads;
+    if (levelPads.length) World.setLevelPads(levelPads);
+}
+
 // Ashby — closest minor hamlet to Southwest (homeVillage 2); pilot for saved town-block layout.
-const HAMLET_TOWN_BLOCK_INDEX = 0;
 // dressHamlets() queues kit pieces at load — must exist before that runs.
 const kitBuildQueue = [];
 const kitBuildLayers = {};
@@ -3538,65 +3603,81 @@ function uploadHamletDecorMeshes() {
     }
 }
 
+function dressEditorHamletAt(layout, ox, oz, options) {
+    if (!layout) return false;
+    const opts = options || {};
+    const townBlockPad = !!opts.townBlockPad;
+    const village = opts.village != null ? opts.village : places.length + 100;
+    const lists = { wall: batches.bill, front: batches.billFront, plaster: batches.plaster, roof: batches.roof };
+    const sizes = { farmhouse: [4.7, 4.7], vshop: [5.5, 5], stores: [8, 5.5] };
+    let kitQueued = false;
+    stampEditorBlock(layout, ox, oz);
+    const half = (layout.size || 192) * 0.5;
+    if (townBlockPad) {
+        hamletPads.push({ x: ox - half, z: oz - half, w: layout.size || 192, d: layout.size || 192 });
+    } else {
+        hamletPads.push({ x: ox - 22, z: oz - 46, w: 58, d: 56 });
+    }
+    for (let i = 0; i < layout.buildings.length; i++) {
+        const piece = layout.buildings[i];
+        if (piece.t === "kit" && piece.id) {
+            queueKitBuild(piece.id, piece.x + ox, piece.z + oz, editorLiveYaw(piece.yaw));
+            kitQueued = true;
+            continue;
+        }
+        if (piece.t === "lamp") continue;
+        const spec = sizes[piece.t] || sizes.farmhouse;
+        const yaw = editorLiveYaw(piece.yaw);
+        const turned = Math.abs(Math.sin(yaw)) > 0.9;
+        const w = turned ? spec[1] : spec[0];
+        const d = turned ? spec[0] : spec[1];
+        const x = piece.x + ox;
+        const z = piece.z + oz;
+        const house = {
+            x: x,
+            z: z,
+            y: Math.max(0, World.heightAt(x, z)),
+            yaw: yaw,
+            w: w,
+            d: d,
+            minX: x - w / 2,
+            minZ: z - d / 2,
+            mesh: "house",
+            role: piece.t === "farmhouse" ? "farmhouse" : "house",
+            doorSide: 0,
+            village: village,
+            quiet: true
+        };
+        stampFlatKitHouse(lists, house);
+        shutDoor(house);
+        scenery.push({ x: house.minX, z: house.minZ, w: w, d: d, top: house.y + 4.2 });
+        if (piece.t === "farmhouse" && opts.registerFarmhouse) Town.buildings.push(house);
+    }
+    uploadHamletDecorMeshes();
+    if (kitQueued && typeof runKitBuildQueue === "function") runKitBuildQueue();
+    return kitQueued;
+}
+
 function dressHamletIndex(index) {
     if (hamletDressed[index]) return;
     hamletDressed[index] = true;
     const hamlets = World.hamlets || [];
     const hamlet = hamlets[index];
     if (!hamlet) return;
-    const lists = { wall: batches.bill, front: batches.billFront, plaster: batches.plaster, roof: batches.roof };
-    const sizes = { farmhouse: [4.7, 4.7], vshop: [5.5, 5], stores: [8, 5.5] };
     const village = places.length + index;
     const ox = hamlet.x + 1;
     const oz = hamlet.z + 25.5;
     const layout = hamletEditorLayout(index);
     const townBlock = index === HAMLET_TOWN_BLOCK_INDEX && typeof EditorBlocks !== "undefined" && layout === EditorBlocks.hamletTown;
-    let kitQueued = false;
     if (layout) {
-        stampEditorBlock(layout, ox, oz);
-        const half = (layout.size || 192) * 0.5;
-        if (townBlock) {
-            hamletPads.push({ x: ox - half, z: oz - half, w: layout.size || 192, d: layout.size || 192 });
-        } else {
-            hamletPads.push({ x: ox - 22, z: oz - 46, w: 58, d: 56 });
-        }
-        for (let i = 0; i < layout.buildings.length; i++) {
-            const piece = layout.buildings[i];
-            if (piece.t === "kit" && piece.id) {
-                queueKitBuild(piece.id, piece.x + ox, piece.z + oz, editorLiveYaw(piece.yaw));
-                kitQueued = true;
-                continue;
-            }
-            if (piece.t === "lamp") continue;
-            const spec = sizes[piece.t] || sizes.farmhouse;
-            const yaw = editorLiveYaw(piece.yaw);
-            const turned = Math.abs(Math.sin(yaw)) > 0.9;
-            const w = turned ? spec[1] : spec[0];
-            const d = turned ? spec[0] : spec[1];
-            const x = piece.x + ox;
-            const z = piece.z + oz;
-            const house = {
-                x: x,
-                z: z,
-                y: Math.max(0, World.heightAt(x, z)),
-                yaw: yaw,
-                w: w,
-                d: d,
-                minX: x - w / 2,
-                minZ: z - d / 2,
-                mesh: "house",
-                role: piece.t === "farmhouse" ? "farmhouse" : "house",
-                doorSide: 0,
-                village: village,
-                quiet: true
-            };
-            stampFlatKitHouse(lists, house);
-            shutDoor(house);
-            scenery.push({ x: house.minX, z: house.minZ, w: w, d: d, top: house.y + 4.2 });
-            if (piece.t === "farmhouse" && townBlock) Town.buildings.push(house);
-        }
+        dressEditorHamletAt(layout, ox, oz, {
+            townBlockPad: townBlock,
+            village: village,
+            registerFarmhouse: townBlock
+        });
     }
     if (!townBlock) {
+        const lists = { wall: batches.bill, front: batches.billFront, plaster: batches.plaster, roof: batches.roof };
         const farm = hamletFarmAt(hamlet, index);
         dressDesignedFarm(farm.x - 4, farm.z + 26);
         const size = 4.7;
@@ -3616,9 +3697,57 @@ function dressHamletIndex(index) {
         };
         Town.buildings.push(house);
         stampFlatKitHouse(lists, house);
+        uploadHamletDecorMeshes();
     }
-    uploadHamletDecorMeshes();
-    if (kitQueued && typeof runKitBuildQueue === "function") runKitBuildQueue();
+}
+
+const sphereHamletDressed = {};
+
+const islandLabDressed = {};
+
+function initIslandLabSettlements() {
+    if (!islandLabOn || !IslandLab.settlements.length || typeof EditorBlocks === "undefined") return;
+    for (let i = 0; i < IslandLab.settlements.length; i++) {
+        const s = IslandLab.settlements[i];
+        if (islandLabDressed[s.id]) continue;
+        islandLabDressed[s.id] = true;
+        const layout = EditorBlocks[s.layout || IslandLab.layoutKey];
+        if (!layout) {
+            console.warn("Island lab missing EditorBlocks." + (s.layout || IslandLab.layoutKey));
+            continue;
+        }
+        dressEditorHamletAt(layout, s.ox, s.oz, {
+            townBlockPad: true,
+            village: s.faction,
+            registerFarmhouse: s.faction === homeVillage
+        });
+    }
+}
+
+function dressSphereHamletsNear(x, z, radius) {
+    if (islandLabOn) initIslandLabSettlements();
+    if (typeof HamletSpherePlacements === "undefined" || !HamletSpherePlacements.length) return;
+    if (typeof EditorBlocks === "undefined") return;
+    const r = radius != null ? radius : HAMLET_DRESS_RADIUS;
+    const r2 = r * r;
+    for (let i = 0; i < HamletSpherePlacements.length; i++) {
+        const p = HamletSpherePlacements[i];
+        if (sphereHamletDressed[p.id]) continue;
+        const dx = x - p.worldX;
+        const dz = z - p.worldZ;
+        if (dx * dx + dz * dz > r2) continue;
+        const layout = EditorBlocks[p.layout];
+        if (!layout) {
+            console.warn("Hamlet sphere marker missing EditorBlocks." + p.layout);
+            continue;
+        }
+        sphereHamletDressed[p.id] = true;
+        dressEditorHamletAt(layout, p.ox, p.oz, {
+            townBlockPad: true,
+            village: 880 + i,
+            registerFarmhouse: false
+        });
+    }
 }
 
 function dressHamletsNear(x, z, radius) {
@@ -3630,6 +3759,7 @@ function dressHamletsNear(x, z, radius) {
         const dz = z - hamlets[i].z;
         if (dx * dx + dz * dz <= r2) dressHamletIndex(i);
     }
+    dressSphereHamletsNear(x, z, radius);
 }
 
 let hamletDressMarkX = 1e9;
@@ -3726,6 +3856,7 @@ const GFX_PRESETS = {
 };
 
 let gfxMode = typeof GfxSettings !== "undefined" ? GfxSettings.load() : "medium";
+gfxLive = true;
 
 function gfx() {
     return GFX_PRESETS[gfxMode] || GFX_PRESETS.medium;
@@ -3985,7 +4116,7 @@ function buildFolk() {
     uploadMesh("folkCard", card);
     loadFolkViews();
     loadKaykit();
-    queueSouthwestShowcaseBuilds();
+    if (!islandLabOn) queueSouthwestShowcaseBuilds();
     runKitBuildQueue();
     gl.bindTexture(gl.TEXTURE_2D, textures.folk);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
@@ -4240,7 +4371,12 @@ function registerKitPhysics(id, wx, wz, baseY, meta, physics) {
     floorGrid = null;
     if ((physics.doors || []).length) poseDoors();
 }
-const KIT_TEX_FOR = { plaster: "kitPlaster", brick: "kitBrick", wood: "kitWood", tiles: "kitWood", rock: "kitBrick", metal: "kitWood" };
+const KIT_TEX_FOR = {
+    plaster: "kitPlaster", brick: "kitBrick", wood: "kitWood", tiles: "kitWood", rock: "kitBrick", metal: "kitWood",
+    furniture: "kitFurniture", propmetal: "kitPropmetal", propcloth: "kitPropcloth", proppack: "kitProppack",
+    mosaicTerra: "kitMosaicTerra", mosaicBW: "kitMosaicBW", mosaicMed: "kitMosaicMed", mosaicMeander: "kitMosaicMeander",
+    mosaicPH: "kitMosaicPH"
+};
 let kitTexturesReady = null;
 
 function ensureKitTextures() {
@@ -4248,7 +4384,16 @@ function ensureKitTextures() {
         kitTexturesReady = Promise.all([
             loadMegakitFileTexture("kitPlaster", "models/plaster.png"),
             loadMegakitFileTexture("kitBrick", "models/brick.png"),
-            loadMegakitFileTexture("kitWood", "models/wood.png")
+            loadMegakitFileTexture("kitWood", "models/wood.png"),
+            loadMegakitFileTexture("kitFurniture", "models/furniture.png"),
+            loadMegakitFileTexture("kitPropmetal", "models/propmetal.png"),
+            loadMegakitFileTexture("kitPropcloth", "models/propcloth.png"),
+            loadMegakitFileTexture("kitProppack", "models/proppack.png"),
+            loadMegakitFileTexture("kitMosaicTerra", "models/mosaicTerra.png"),
+            loadMegakitFileTexture("kitMosaicBW", "models/mosaicBW.png"),
+            loadMegakitFileTexture("kitMosaicMed", "models/mosaicMed.png"),
+            loadMegakitFileTexture("kitMosaicMeander", "models/mosaicMeander.png"),
+            loadMegakitFileTexture("kitMosaicPH", "models/mosaicPH.jpg")
         ]).catch(() => null);
     }
     return kitTexturesReady;
@@ -4653,7 +4798,7 @@ function requestLand(x, z) {
     }
     landBusy = true;
     const drawFar = typeof gfx === "function" ? gfx().drawFar : 300;
-    worker.postMessage({ x: x, z: z, drawFar: drawFar });
+    worker.postMessage({ x: x, z: z, drawFar: drawFar, levelPads: hamletLevelPadsForWorker });
 }
 
 // Stone arch bridges from the map editor: a humped deck with parapets, arches springing from the water between piers.
@@ -7062,10 +7207,7 @@ function applyLootDrop(drop) {
     }
 }
 
-const BRUTE_LOOT_DROPS = [
-    { type: "gold", amount: 10 },
-    { type: "weapon", id: "brute_hammer", name: "Brute hammer" }
-];
+const BRUTE_LOOT_DROPS = BrutesFaction.LOOT.slice();
 
 function dropLootForKill(man) {
     if (!man || man.lootDropped || man.decor || man.inn || man.commander) return;
@@ -8705,8 +8847,66 @@ function wildTarget(man) {
     return best;
 }
 
+function bruteWildTarget(man) {
+    const sight = BrutesFaction.UNIT.sight;
+    const leash = BrutesFaction.UNIT.leash;
+    const home = (x, z) => Math.hypot(x - man.homeX, z - man.homeZ) < leash;
+    if (!player.dead && !inside && !flying && home(cam.x, cam.z)) {
+        const d = Math.hypot(cam.x - man.x, cam.z - man.z);
+        if (d < sight) return { x: cam.x, z: cam.z, d, player: true };
+    }
+    let best = null;
+    for (const other of men) {
+        if (other.brute || other.goblin || other.dying || other.health <= 0 || other.archer || other.decor) continue;
+        const d = Math.hypot(other.x - man.x, other.z - man.z);
+        if (d < sight && home(other.x, other.z) && (!best || d < best.d)) best = { x: other.x, z: other.z, d };
+    }
+    return best;
+}
+
 function stepBrute(man, dt) {
-    return stepWild(man, dt);
+    const unit = BrutesFaction.UNIT;
+    man.mode = "guard";
+    const wake = unit.playerWakeRadius || 420;
+    if (Math.hypot(cam.x - man.x, cam.z - man.z) > wake) {
+        if (!man.planted) {
+            man.planted = true;
+            plant(man);
+        }
+        return false;
+    }
+    man.planted = false;
+    let target = bruteWildTarget(man);
+    if (!target && homeVillage === 2 && World.places && World.places[2]) {
+        const sw = World.places[2];
+        const toTown = Math.hypot(man.x - sw.x, man.z - sw.z);
+        if (toTown > 28 && toTown < 440) target = { x: sw.x, z: sw.z - 18, d: toTown };
+    }
+    let moving = false;
+    if (target) {
+        const chase = target.player || target.d < unit.sight + 4;
+        const speed = chase ? unit.speedChase : unit.speedGuard;
+        moving = moveToward(man, target.x, target.z, dt, speed);
+        if (target.d != null && target.d < 1.85) {
+            const cycle = (performance.now() / 1000 + man.index * 0.29) % 0.9;
+            man.swing = cycle < 0.38 ? cycle / 0.38 : -1;
+            man.attackIn = (man.attackIn || 0) - dt;
+            if (man.attackIn <= 0) {
+                man.attackIn = unit.attackIntervalMin + Math.random() * (unit.attackIntervalMax - unit.attackIntervalMin);
+                if (target.player) hurtPlayer(unit.melee);
+            }
+        } else {
+            man.swing = -1;
+        }
+    } else {
+        man.swing = -1;
+        if (Math.hypot(man.x - man.homeX, man.z - man.homeZ) > 2) moving = moveToward(man, man.homeX, man.homeZ, dt, unit.speedGuard);
+    }
+    man.walking = Boolean(moving);
+    man.bob = moving ? Math.sin(performance.now() * 0.016 + man.index) * 0.05 : 0;
+    actorsDirty = true;
+    plant(man);
+    return false;
 }
 
 function stepWild(man, dt) {
@@ -12487,11 +12687,15 @@ if (gl) {
     prepareTowers();
     spawnGarrison();
     buildFolk();
-    spawnKeepers();
-    spawnSouthwestShopkeeper();
-    spawnGodwin();
-    spawnCommander();
-    spawnSouthwestBrutes();
+    if (!islandLabOn) {
+        spawnKeepers();
+        spawnSouthwestShopkeeper();
+        spawnGodwin();
+        spawnCommander();
+        spawnSouthwestBrutes();
+    }
+    initIslandLabSettlements();
+    registerHamletTerrainFlats();
     initStaticPickups();
     markWorldMarkersDirty();
     prepareBow();

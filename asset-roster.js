@@ -9,7 +9,7 @@ window.GAME_ASSET_ROSTER = [
     { name: "Bear", pack: "bear", files: "models/creatures/bear-0.bin", status: "ready", note: "Creature — SW north gate showcase (half size)" },
     { name: "Rat", pack: "rat", files: "models/creatures/rat-0.bin", status: "ready", note: "Creature — SW north gate showcase; pets & wild" },
     { name: "Zombie", pack: "ch10", files: "models/kaykit/ch10-*.bin", status: "ready", note: "Goblin walk mesh — woods raids & camp" },
-    { name: "Brute", pack: "prop", files: "models/kaykit/prop-0.bin", status: "ready", note: "Kaykit prop mesh — SW gate showcase (folkShow bruteShowcase); wild lair off for now" },
+    { name: "Brute", pack: "prop", files: "models/kaykit/prop-0.bin", status: "ready", note: "Kaykit prop mesh — The Brutes faction (lair marker + SW gate showcase)" },
     { name: "Peasant girl 1", pack: "mixamo-peasant", files: "models/kaykit/mixamo-peasant-0.bin", status: "ready", note: "Mixamo — SW workers & gate" },
     { name: "Monster", pack: "mixamo-monster", files: "models/kaykit/mixamo-monster-0.bin", status: "ready", note: "Mixamo — SW gate (walk + hook)" },
     {

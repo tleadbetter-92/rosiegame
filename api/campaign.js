@@ -4,11 +4,15 @@ const World = require("../world");
 const Town = require("../town");
 const Clock = require("../clock");
 const Hero = require("../hero");
+const BrutesFaction = require("../brutes-faction");
 const Region1Quests = require("../lib/region1-quests");
 const Region1Shop = require("../lib/region1-shop");
+const IslandLab = require("../lib/island-lab-config");
+const campaignScope = require("../lib/campaign-scope");
 const { getDb } = require("../lib/db");
 
 const CAMPAIGN_FILE = path.join(__dirname, "..", "data", "campaign-world.json");
+const CAMPAIGN_ISLAND_FILE = path.join(__dirname, "..", "data", "campaign-island-lab.json");
 
 const TURN_MS = 10 * 60 * 1000;
 const BATTLE_MS = 2000;
@@ -24,6 +28,32 @@ const factions = [
     { id: "southeast", name: "Southeast", color: "#8a5a7a" }
 ];
 
+function getMajor() {
+    return campaignScope.isIslandCampaign() ? 2 : 4;
+}
+function getActiveFactions() {
+    return campaignScope.isIslandCampaign() ? IslandLab.LAB_FACTIONS : factions;
+}
+function getMinorBase() {
+    return getActiveFactions().length;
+}
+function getPlaces() {
+    if (!campaignScope.isIslandCampaign()) return World.places;
+    return IslandLab.placesFromPlacements() || World.places.slice(0, 2);
+}
+function getPlayerFaction() {
+    if (!campaignScope.isIslandCampaign()) return 2;
+    const acting = campaignScope.getActingFaction();
+    if (acting === 0 || acting === 1) return acting;
+    return IslandLab.playerFaction;
+}
+function campaignFilePath() {
+    return campaignScope.isIslandCampaign() ? CAMPAIGN_ISLAND_FILE : CAMPAIGN_FILE;
+}
+function worldStorageKey() {
+    return campaignScope.isIslandCampaign() ? "world-island-lab" : "world";
+}
+
 // Rural communities: minor factions numbered from MINOR_BASE. They farm, keep no soldiers, and seek a protector.
 const minors = [
     { name: "Ashby", color: "#b0883a" },
@@ -34,7 +64,6 @@ const minors = [
     { name: "Redmere", color: "#a0624a", ally: 2 },
     { name: "Westerby", color: "#7a6a9a", ally: 2 }
 ].map((minor, index) => Object.assign({}, World.hamlets[index], minor));
-const MINOR_BASE = factions.length;
 const FOLK_PER_HOUSE = 2;
 const WORK_MS = 60000;
 const WORK_YIELD = 10;
@@ -79,8 +108,6 @@ const FILL_MAX = 25;
 // so every building pushes the edge of where the next can go.
 const BUILD_REACH = 500;
 const BUILD_STEP = 200;
-
-const places = World.places;
 
 const MAX_HP = 3;
 const FISHER_HP = 1;
@@ -129,7 +156,6 @@ const YARD_VILLAGE = 2;
 const JACK_MS = 45000;
 const storePlan = { x: -12, z: -16, w: 8, d: 5.5 };
 const GATE_HP = 50;
-const PLAYER_FACTION = 2;
 // Goblin raids on Southwest from the den marked by the sphere on the editor map; move GOBLIN_DEN to change where they come from.
 const GOBLIN_DEN = { x: -2861, z: 255 };
 const GOBLIN_VILLAGE = 2;
@@ -151,7 +177,9 @@ const WALL_CX = -0.5;
 const WALL_CZ = -4;
 
 function palisadeBox(village) {
-    const place = places[village];
+    const places = getPlaces();
+    const place = places && places[village];
+    if (!place || !Number.isFinite(place.x) || !Number.isFinite(place.z)) return null;
     const cx = place.x + WALL_CX;
     const cz = place.z + WALL_CZ;
     return {
@@ -166,6 +194,7 @@ function palisadeBox(village) {
 
 function gateSpot(village, side, out) {
     const box = palisadeBox(village);
+    if (!box) return null;
     const nudge = out == null ? 1.6 : out;
     if (side === 0) return { x: box.cx, z: box.minZ - nudge };
     if (side === 1) return { x: box.maxX + nudge, z: box.cz };
@@ -175,6 +204,7 @@ function gateSpot(village, side, out) {
 
 function sideFacing(village, point) {
     const box = palisadeBox(village);
+    if (!box || !point || !Number.isFinite(point.x) || !Number.isFinite(point.z)) return 0;
     const dx = point.x - box.cx;
     const dz = point.z - box.cz;
     if (Math.abs(dx) > Math.abs(dz)) return dx >= 0 ? 1 : 3;
@@ -183,6 +213,7 @@ function sideFacing(village, point) {
 
 function exitSide(village, from, to) {
     const box = palisadeBox(village);
+    if (!box || !from || !to) return 0;
     const dx = to.x - from.x;
     const dz = to.z - from.z;
     let best = Infinity;
@@ -201,20 +232,20 @@ function exitSide(village, from, to) {
 }
 
 function freshGates() {
-    return [0, 1, 2, 3].map(() => [GATE_HP, GATE_HP, GATE_HP, GATE_HP]);
+    return Array.from({ length: getMajor() }, () => [GATE_HP, GATE_HP, GATE_HP, GATE_HP]);
 }
 
 function freshArchers() {
-    return [0, 1, 2, 3].map(() => [MAX_HP, MAX_HP, MAX_HP, MAX_HP]);
+    return Array.from({ length: getMajor() }, () => [MAX_HP, MAX_HP, MAX_HP, MAX_HP]);
 }
 
 function ensureArchers(state) {
-    if (!Array.isArray(state.archers) || state.archers.length !== 4) {
+    if (!Array.isArray(state.archers) || state.archers.length !== getMajor()) {
         state.archers = freshArchers();
         return true;
     }
     let dirty = false;
-    for (let village = 0; village < 4; village++) {
+    for (let village = 0; village < getMajor(); village++) {
         const row = state.archers[village];
         if (!Array.isArray(row) || row.length !== 4) {
             state.archers[village] = [MAX_HP, MAX_HP, MAX_HP, MAX_HP];
@@ -225,12 +256,12 @@ function ensureArchers(state) {
 }
 
 function ensureGates(state) {
-    if (!Array.isArray(state.gates) || state.gates.length !== 4) {
+    if (!Array.isArray(state.gates) || state.gates.length !== getMajor()) {
         state.gates = freshGates();
         return true;
     }
     let dirty = false;
-    for (let village = 0; village < 4; village++) {
+    for (let village = 0; village < getMajor(); village++) {
         const row = state.gates[village];
         if (!Array.isArray(row) || row.length !== 4) {
             state.gates[village] = [GATE_HP, GATE_HP, GATE_HP, GATE_HP];
@@ -240,10 +271,17 @@ function ensureGates(state) {
     return dirty;
 }
 
-// One shared campaign. On the live site each refresh is a new process, so the world is stored
-// in the database. Without that database it stays in memory for this process only.
-let memoryState = null;
-const WORLD_KEY = "world";
+// Main island and Skirmish Isle use separate saves (file + optional Mongo id).
+const memoryByScope = { main: null, island: null };
+
+function getMemoryState() {
+    return campaignScope.isIslandCampaign() ? memoryByScope.island : memoryByScope.main;
+}
+
+function setMemoryState(state) {
+    if (campaignScope.isIslandCampaign()) memoryByScope.island = state;
+    else memoryByScope.main = state;
+}
 
 function blankState() {
     const now = Date.now();
@@ -264,8 +302,9 @@ async function campaignStore() {
 
 function readCampaignFile() {
     try {
-        if (!fs.existsSync(CAMPAIGN_FILE)) return null;
-        const parsed = JSON.parse(fs.readFileSync(CAMPAIGN_FILE, "utf8"));
+        const file = campaignFilePath();
+        if (!fs.existsSync(file)) return null;
+        const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
         return parsed && typeof parsed === "object" ? parsed : null;
     } catch (err) {
         console.error("campaign file read failed", err);
@@ -275,49 +314,53 @@ function readCampaignFile() {
 
 function writeCampaignFile(state) {
     try {
-        fs.mkdirSync(path.dirname(CAMPAIGN_FILE), { recursive: true });
-        fs.writeFileSync(CAMPAIGN_FILE, JSON.stringify(plainState(state)));
+        const file = campaignFilePath();
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, JSON.stringify(plainState(state)));
     } catch (err) {
         console.error("campaign file write failed", err);
     }
 }
 
 async function readState() {
+    const cached = getMemoryState();
+    if (cached) return cached;
     const store = await campaignStore();
+    const key = worldStorageKey();
     if (store) {
-        const doc = await store.findOne({ _id: WORLD_KEY });
+        const doc = await store.findOne({ _id: key });
         if (doc && doc.state && typeof doc.state === "object") {
-            memoryState = doc.state;
-            return memoryState;
+            setMemoryState(doc.state);
+            return doc.state;
         }
         const fromFile = readCampaignFile();
         if (fromFile) {
-            memoryState = fromFile;
-            await writeState(memoryState);
-            return memoryState;
+            setMemoryState(fromFile);
+            await writeState(fromFile);
+            return fromFile;
         }
-    } else if (memoryState) {
-        return memoryState;
     } else {
         const fromFile = readCampaignFile();
         if (fromFile) {
-            memoryState = fromFile;
-            return memoryState;
+            setMemoryState(fromFile);
+            return fromFile;
         }
     }
-    memoryState = blankState();
-    await writeState(memoryState);
-    return memoryState;
+    const fresh = blankState();
+    setMemoryState(fresh);
+    await writeState(fresh);
+    return fresh;
 }
 
 async function writeState(state) {
-    memoryState = state;
+    setMemoryState(state);
     const snapshot = plainState(state);
     const store = await campaignStore();
+    const key = worldStorageKey();
     if (store) {
         await store.replaceOne(
-            { _id: WORLD_KEY },
-            { _id: WORLD_KEY, state: snapshot, updatedAt: new Date() },
+            { _id: key },
+            { _id: key, state: snapshot, updatedAt: new Date() },
             { upsert: true }
         );
     } else {
@@ -340,7 +383,7 @@ function healthOf(state, faction, index) {
 
 function ownedBy(state, faction) {
     const list = [];
-    for (let village = 0; village < 4; village++) {
+    for (let village = 0; village < getMajor(); village++) {
         if (state.owners[village] === faction) list.push(village);
     }
     return list;
@@ -351,8 +394,31 @@ function note(state, text) {
     if (state.log.length > 8) state.log = state.log.slice(-8);
 }
 
+function factionMeta(faction) {
+    if (!Number.isInteger(faction) || faction < 0) return { name: "Unknown", color: "#888888" };
+    if (faction < getMinorBase()) {
+        const row = getActiveFactions()[faction];
+        return row ? { name: row.name, color: row.color } : { name: "Unknown", color: "#888888" };
+    }
+    const minor = minors[faction - getMinorBase()];
+    return minor ? { name: minor.name, color: minor.color } : { name: "Unknown", color: "#888888" };
+}
+
 function nameOf(faction) {
-    return faction < MINOR_BASE ? factions[faction].name : minors[faction - MINOR_BASE].name;
+    return factionMeta(faction).name;
+}
+
+function ensureOwners(state) {
+    const majors = getMajor();
+    const full = campaignScope.isIslandCampaign() ? [0, 1] : [0, 1, 2, 3];
+    if (!Array.isArray(state.owners) || state.owners.length < full.length) {
+        state.owners = full.map((fallback, index) => {
+            const held = state.owners && state.owners[index];
+            return Number.isInteger(held) && held >= 0 && held < getMinorBase() ? held : fallback;
+        });
+        return true;
+    }
+    return false;
 }
 
 function pairKey(a, b) {
@@ -363,7 +429,7 @@ function relation(state, a, b) {
     if (a === b) return "ally";
     const set = state.relations && state.relations[pairKey(a, b)];
     if (set) return set;
-    return a < MINOR_BASE && b < MINOR_BASE ? "war" : "peace";
+    return a < getMinorBase() && b < getMinorBase() ? "war" : "peace";
 }
 
 function atWar(state, a, b) {
@@ -382,11 +448,11 @@ function setRelation(state, a, b, kind) {
 
 function hamletOwner(state, index) {
     const held = state.minors && state.minors[index] && state.minors[index].owner;
-    return Number.isInteger(held) && held >= 0 ? held : MINOR_BASE + index;
+    return Number.isInteger(held) && held >= 0 ? held : getMinorBase() + index;
 }
 
 function farmOwner(state, village) {
-    return village < MINOR_BASE ? state.owners[village] : hamletOwner(state, village - MINOR_BASE);
+    return village < getMinorBase() ? state.owners[village] : hamletOwner(state, village - getMinorBase());
 }
 
 function eachLiving(state, faction, visit) {
@@ -426,8 +492,8 @@ function fielded(state, faction, village) {
 function seedSoldiers(state) {
     state.health = {};
     state.post = {};
-    state.nextIndex = [0, 0, 0, 0];
-    for (let faction = 0; faction < 4; faction++) {
+    state.nextIndex = Array(getMajor()).fill(0);
+    for (let faction = 0; faction < getMajor(); faction++) {
         for (let index = 0; index < CAP; index++) {
             state.health[keyOf(faction, index)] = MAX_HP;
             state.post[keyOf(faction, index)] = faction;
@@ -438,11 +504,11 @@ function seedSoldiers(state) {
 }
 
 function restartCampaign(state, now) {
-    state.owners = [0, 1, 2, 3];
-    state.food = [START_FOOD, START_FOOD, START_FOOD, START_FOOD];
-    state.wood = [START_WOOD, START_WOOD, START_WOOD, START_WOOD];
-    state.stone = [0, 0, 0, 0];
-    state.gold = [0, 0, 0, 0];
+    state.owners = campaignScope.isIslandCampaign() ? [0, 1] : [0, 1, 2, 3];
+    state.food = campaignScope.isIslandCampaign() ? [START_FOOD, START_FOOD] : [START_FOOD, START_FOOD, START_FOOD, START_FOOD];
+    state.wood = campaignScope.isIslandCampaign() ? [START_WOOD, START_WOOD] : [START_WOOD, START_WOOD, START_WOOD, START_WOOD];
+    state.stone = campaignScope.isIslandCampaign() ? [0, 0] : [0, 0, 0, 0];
+    state.gold = campaignScope.isIslandCampaign() ? [0, 0] : [0, 0, 0, 0];
     seedSoldiers(state);
     state.attacks = [];
     state.training = [];
@@ -463,15 +529,16 @@ function restartCampaign(state, now) {
     state.houses = [];
     state.mines = [];
     state.siteJobs = [];
-    state.fedDay = [-1, -1, -1, -1];
-    state.hamlet = 1;
+    state.fedDay = campaignScope.isIslandCampaign() ? [-1, -1] : [-1, -1, -1, -1];
+    state.hamlet = campaignScope.isIslandCampaign() ? 0 : 1;
     state.minors = [];
     state.relations = {};
     state.trails = [];
     state.holds = [];
     state.tributes = [];
     state.grudges = [];
-    state.goblins = { nextAt: nextGoblinRaid(now), raid: null };
+    state.goblins = campaignScope.isIslandCampaign() ? null : { nextAt: nextGoblinRaid(now), raid: null };
+    state.brutes = campaignScope.isIslandCampaign() ? null : { nextAt: nextBruteRaid(now), raid: null };
     state.wilds = null;
     Region1Quests.resetQuests(state);
     // Player houses stay; they are not faction buildings.
@@ -491,13 +558,13 @@ function ensureHamlet(state) {
 function ensure(state, turn) {
     if (Array.isArray(state.owners) && Array.isArray(state.nextIndex) && state.post) return false;
     state.health = state.health && typeof state.health === "object" ? state.health : {};
-    state.owners = [0, 1, 2, 3];
-    state.nextIndex = [turn, turn, turn, turn];
+    state.owners = campaignScope.isIslandCampaign() ? [0, 1] : [0, 1, 2, 3];
+    state.nextIndex = Array(getMajor()).fill(turn);
     state.settledTurn = turn;
     state.attacks = [];
     state.log = [];
     state.post = {};
-    for (let faction = 0; faction < 4; faction++) {
+    for (let faction = 0; faction < getMajor(); faction++) {
         for (let index = 0; index < turn; index++) {
             if (healthOf(state, faction, index) > 0) state.post[keyOf(faction, index)] = faction;
         }
@@ -533,7 +600,7 @@ function capArmies(state) {
     const health = {};
     const post = {};
     const nextIndex = [0, 0, 0, 0];
-    for (let faction = 0; faction < 4; faction++) {
+    for (let faction = 0; faction < getMajor(); faction++) {
         const kept = [];
         eachLiving(state, faction, (index, hp) => {
             if (kept.length >= CAP) return;
@@ -571,15 +638,15 @@ function roadPoints(from, to) {
     for (const mid of World.links[from]) {
         if (!World.links[mid].includes(to)) continue;
         return World.trackOf(from, mid).map(asPoint)
-            .concat([{ x: places[mid].x, z: places[mid].z }])
+            .concat([{ x: getPlaces()[mid].x, z: getPlaces()[mid].z }])
             .concat(World.trackOf(mid, to).map(asPoint));
     }
     return [];
 }
 
 function marchPath(from, to) {
-    const start = places[from];
-    const end = places[to];
+    const start = getPlaces()[from];
+    const end = getPlaces()[to];
     const mid = roadPoints(from, to);
     const next = mid[0] || end;
     const prev = mid.length ? mid[mid.length - 1] : start;
@@ -621,7 +688,7 @@ function strongest(state, faction) {
 
 function attackTarget(state, from, faction, turn) {
     const enemies = [];
-    for (let village = 0; village < 4; village++) {
+    for (let village = 0; village < getMajor(); village++) {
         if (!atWar(state, faction, state.owners[village])) continue;
         if (state.attacks.some((attack) => !attack.resolved && attack.to === village)) continue;
         enemies.push({ village, neighbor: World.links[from].includes(village) });
@@ -683,20 +750,22 @@ function maybeAttack(state, faction, turn, now) {
 
 // Southwest still walks and carts in the 3D world. The trip does not decide when goods are in the store.
 function showTrip(village) {
-    return village === 2;
+    return village === getPlayerFaction();
 }
 
 function storeExit(village) {
-    const place = places[village];
+    const place = getPlaces()[village];
+    if (!place) return null;
     const x = place.x + storePlan.x;
     const z = place.z + storePlan.z;
     const midX = x + storePlan.w / 2;
-    if (village === 2) return { x: midX, z: z + storePlan.d + 1.05 };
+    if (village === getPlayerFaction()) return { x: midX, z: z + storePlan.d + 1.05 };
     return { x: midX, z: z - 1.05 };
 }
 
 function houseRects(village) {
-    const place = places[village];
+    const place = getPlaces()[village];
+    if (!place) return [];
     const plan = [
         [-10, 3, 6, 5],
         [4, 3, 6, 5],
@@ -735,6 +804,7 @@ function hitsHouse(a, b, rects) {
 
 function gateMouth(village, side) {
     const box = palisadeBox(village);
+    if (!box) return null;
     const inset = 2.4;
     if (side === 0) return { x: box.cx, z: box.minZ + inset };
     if (side === 1) return { x: box.maxX - inset, z: box.cz };
@@ -749,7 +819,7 @@ function pushClear(points, next, rects, village) {
         points.push(next);
         return;
     }
-    const place = places[village];
+    const place = getPlaces()[village];
     const sides = [
         { x: place.x - 2.1, z: prev.z },
         { x: place.x - 15.2, z: prev.z }
@@ -764,13 +834,15 @@ function pushClear(points, next, rects, village) {
 }
 
 function villagerPath(village, dest) {
-    const place = places[village];
-    const rects = houseRects(village);
+    const place = getPlaces()[village];
     const door = storeExit(village);
+    if (!place || !door || !dest) return null;
+    const rects = houseRects(village);
     const lane = { x: door.x, z: place.z - 7.85 };
     const side = exitSide(village, lane, dest);
     const mouth = gateMouth(village, side);
     const gate = gateSpot(village, side, 0);
+    if (!mouth || !gate) return null;
     const points = [door];
     pushClear(points, lane, rects, village);
     pushClear(points, { x: mouth.x, z: lane.z }, rects, village);
@@ -781,11 +853,12 @@ function villagerPath(village, dest) {
 }
 
 function repairRoute(village, side) {
-    const place = places[village];
-    const rects = houseRects(village);
+    const place = getPlaces()[village];
     const door = storeExit(village);
-    const lane = { x: door.x, z: place.z - 7.85 };
     const mouth = gateMouth(village, side);
+    if (!place || !door || !mouth) return null;
+    const rects = houseRects(village);
+    const lane = { x: door.x, z: place.z - 7.85 };
     const points = [door];
     pushClear(points, lane, rects, village);
     pushClear(points, { x: mouth.x, z: lane.z }, rects, village);
@@ -822,13 +895,13 @@ function fishPeriod(village) {
 function woodStand(village, slot) {
     const n = (slot || 0) % 8;
     const ang = n * (Math.PI / 4) + 0.35;
-    if (village >= MINOR_BASE) {
-        const hamlet = World.hamlets[village - MINOR_BASE];
+    if (village >= getMinorBase()) {
+        const hamlet = World.hamlets[village - getMinorBase()];
         if (!hamlet) return { x: 0, z: 0 };
         const r = 34 + (n % 3) * 4;
         return { x: hamlet.x + Math.cos(ang) * r, z: hamlet.z + Math.sin(ang) * r };
     }
-    const place = places[village];
+    const place = getPlaces()[village];
     const r = 48 + (n % 3) * 5;
     return { x: place.ox + Math.cos(ang) * r, z: place.oz + Math.sin(ang) * r };
 }
@@ -865,8 +938,8 @@ function nearestTree(from, slot) {
     // Pick the village/hamlet closest to the store exit, then a stand around it (infinite wood, no felling).
     let village = 0;
     let bestD = Infinity;
-    for (let i = 0; i < places.length; i++) {
-        const d = Math.hypot(places[i].ox - from.x, places[i].oz - from.z);
+    for (let i = 0; i < getPlaces().length; i++) {
+        const d = Math.hypot(getPlaces()[i].ox - from.x, getPlaces()[i].oz - from.z);
         if (d < bestD) {
             bestD = d;
             village = i;
@@ -877,7 +950,7 @@ function nearestTree(from, slot) {
         const d = Math.hypot(h.x - from.x, h.z - from.z);
         if (d < bestD) {
             bestD = d;
-            village = MINOR_BASE + i;
+            village = getMinorBase() + i;
         }
     }
     return woodStand(village, slot);
@@ -906,7 +979,7 @@ function nearestOre(from, slot) {
 
 // Mines and lumberyards go wherever their ore or wood is, however far from the village.
 function oreNear(village) {
-    return !!nearestOre(places[village], 0);
+    return !!nearestOre(getPlaces()[village], 0);
 }
 
 function woodRoute(village, slot, ore) {
@@ -974,7 +1047,7 @@ function popLimit(state, faction) {
 
 function factionPop(state, faction) {
     let n = livingCount(state, faction);
-    for (let village = 0; village < 4; village++) {
+    for (let village = 0; village < getMajor(); village++) {
         if (state.owners[village] !== faction) continue;
         n += state.fishermen.filter((man) => man.village === village && man.health > 0).length;
         n += (state.woodcutters || []).filter((man) => man.village === village && man.health > 0).length;
@@ -1005,18 +1078,19 @@ function dailyFood(state, faction) {
 
 function ensureEconomy(state, now) {
     let dirty = false;
-    if (!Array.isArray(state.food) || state.food.length !== 4) {
-        state.food = [START_FOOD, START_FOOD, START_FOOD, START_FOOD];
+    const econ = campaignScope.isIslandCampaign() ? getMajor() : 4;
+    if (!Array.isArray(state.food) || state.food.length !== econ) {
+        state.food = Array.from({ length: econ }, () => START_FOOD);
         dirty = true;
     }
-    if (!Array.isArray(state.wood) || state.wood.length !== 4) {
-        state.wood = [START_WOOD, START_WOOD, START_WOOD, START_WOOD];
+    if (!Array.isArray(state.wood) || state.wood.length !== econ) {
+        state.wood = Array.from({ length: econ }, () => START_WOOD);
         dirty = true;
     }
     // Stone and gold come from miners digging ore placed on the map.
     for (const key of ["stone", "gold"]) {
-        if (!Array.isArray(state[key]) || state[key].length !== 4) {
-            state[key] = [0, 0, 0, 0];
+        if (!Array.isArray(state[key]) || state[key].length !== econ) {
+            state[key] = Array.from({ length: econ }, () => 0);
             dirty = true;
         }
     }
@@ -1325,7 +1399,7 @@ function besiege(state, now) {
 
 function livingArchers(state, faction) {
     let n = 0;
-    for (let village = 0; village < 4; village++) {
+    for (let village = 0; village < getMajor(); village++) {
         if (state.owners[village] !== faction) continue;
         const row = (state.archers && state.archers[village]) || [];
         for (let side = 0; side < 4; side++) if ((row[side] || 0) > 0) n += 1;
@@ -1338,7 +1412,7 @@ function livingSoldiers(state, faction) {
 }
 
 function emptyTower(state, faction) {
-    for (let village = 0; village < 4; village++) {
+    for (let village = 0; village < getMajor(); village++) {
         if (state.owners[village] !== faction) continue;
         const row = (state.archers && state.archers[village]) || [];
         for (let side = 0; side < 4; side++) {
@@ -1388,7 +1462,7 @@ function finishTraining(state, now) {
 
 function homeVillage(state, faction) {
     if (state.owners[faction] === faction) return faction;
-    for (let village = 0; village < 4; village++) {
+    for (let village = 0; village < getMajor(); village++) {
         if (state.owners[village] === faction) return village;
     }
     return -1;
@@ -1404,7 +1478,7 @@ function workerCount(state, faction, list) {
 
 function orderTraining(state, now) {
     let dirty = false;
-    for (let faction = 0; faction < 4; faction++) {
+    for (let faction = 0; faction < getMajor(); faction++) {
         const village = homeVillage(state, faction);
         if (village < 0) continue;
         const has = (kind) => state.training.some((job) => state.owners[job.village] === faction && job.kind === kind);
@@ -1423,7 +1497,7 @@ function orderTraining(state, now) {
         const woodAim = 1 + Math.floor(factionPop(state, faction) / WOOD_PER_POP);
         const cutters = (state.woodcutters || []).filter((man) => !man.ore);
         const miners = (state.woodcutters || []).filter((man) => man.ore);
-        const digs = (state.mines || []).filter((mine) => state.owners[mine.village] === faction && mine.village < MINOR_BASE && oreNear(mine.village));
+        const digs = (state.mines || []).filter((mine) => state.owners[mine.village] === faction && mine.village < getMinorBase() && oreNear(mine.village));
         if (!has("wood") && workerCount(state, faction, cutters) < woodAim) kind = "wood";
         else if (!has("jack") && yards.length && jacks < 1) {
             kind = "jack";
@@ -1454,7 +1528,7 @@ function considerAttacks(state, now) {
     if (now < (state.marchAfter || 0)) return false;
     let dirty = false;
     const tick = Math.floor(now / 60000);
-    for (let faction = 0; faction < 4; faction++) {
+    for (let faction = 0; faction < getMajor(); faction++) {
         if (maybeAttack(state, faction, tick, now)) dirty = true;
     }
     return dirty;
@@ -1486,10 +1560,13 @@ function buildDue(state, job, now) {
 function consumeFood(state) {
     const play = playClock(state);
     if (play == null) return false;
-    if (!Array.isArray(state.fedDay) || state.fedDay.length !== 4) state.fedDay = [-1, -1, -1, -1];
+    const econ = campaignScope.isIslandCampaign() ? getMajor() : 4;
+    if (!Array.isArray(state.fedDay) || state.fedDay.length !== econ) {
+        state.fedDay = Array.from({ length: econ }, () => -1);
+    }
     const today = Clock.day(play);
     let dirty = false;
-    for (let faction = 0; faction < 4; faction++) {
+    for (let faction = 0; faction < getMajor(); faction++) {
         if (state.fedDay[faction] === today) continue;
         if (state.fedDay[faction] < 0) {
             state.fedDay[faction] = today;
@@ -1611,7 +1688,7 @@ function freshCart(layout) {
 function ensureLodges(state) {
     if (!Array.isArray(state.lodges)) state.lodges = [];
     let dirty = false;
-    for (let village = 0; village < 4; village++) {
+    for (let village = 0; village < getMajor(); village++) {
         const working = state.fishermen.some((man) => man.village === village && man.health > 0);
         if (!working || !fishFar(village)) continue;
         if (state.lodges.some((lodge) => lodge.village === village && lodge.kind === "fish")) continue;
@@ -1686,7 +1763,7 @@ function bedsOf(state) {
     const beds = new Map();
     const naps = new Map();
     const homes = seDwellings();
-    for (let village = 0; village < 4; village++) {
+    for (let village = 0; village < getMajor(); village++) {
         const fishers = state.fishermen.filter((man) => man.village === village && man.health > 0);
         const cutters = (state.woodcutters || []).filter((man) => man.village === village && man.health > 0);
         if (village === 3) {
@@ -1764,6 +1841,7 @@ function moveCarts(state, now) {
         const cart = lodge.cart;
         if (!cart) continue;
         const owner = state.owners[lodge.village];
+        if (owner == null || owner < 0 || owner >= getMinorBase()) continue;
         if (cart.hp <= 0) {
             note(state, "A cart is destroyed and its load is lost.");
             const layout = { park: { x: cart.parkX, z: cart.parkZ } };
@@ -1800,11 +1878,13 @@ function moveCarts(state, now) {
             if (cart.phase === "out") {
                 if (!showTrip(lodge.village)) {
                     state.food[owner] = (state.food[owner] || 0) + (cart.cargo || 0);
-                    note(state, factions[owner].name + " carts in " + (cart.cargo || 0) + " food.");
+                    note(state, nameOf(owner) + " carts in " + (cart.cargo || 0) + " food.");
                 }
                 cart.cargo = 0;
                 cart.goal = "back";
-                startCart(cart, villagerPath(lodge.village, parkPoint(cart)), now, "back");
+                const back = villagerPath(lodge.village, parkPoint(cart));
+                if (!back) continue;
+                startCart(cart, back, now, "back");
             } else {
                 cart.phase = "parked";
                 cart.driver = 0;
@@ -1823,7 +1903,9 @@ function moveCarts(state, now) {
                 lodge.stock = stock - load;
                 cart.cargo = load;
                 cart.goal = "village";
-                startCart(cart, villagerPath(lodge.village, parkPoint(cart)).slice().reverse(), now, "out");
+                const out = villagerPath(lodge.village, parkPoint(cart));
+                if (!out) continue;
+                startCart(cart, out.slice().reverse(), now, "out");
                 dirty = true;
             }
         }
@@ -1943,7 +2025,7 @@ function considerRepairs(state, now) {
     if (!state.gates) return false;
     let dirty = false;
     const jobs = [];
-    for (let village = 0; village < 4; village++) {
+    for (let village = 0; village < getMajor(); village++) {
         if (villageMending(state, village)) continue;
         if (!pickMender(state, village)) continue;
         const row = state.gates[village];
@@ -1966,6 +2048,7 @@ function considerRepairs(state, now) {
         const mender = pickMender(state, job.village);
         if (!mender) continue;
         const route = repairRoute(job.village, job.side);
+        if (!route) continue;
         state.wood[owner] -= chunk;
         mender.repair = {
             side: job.side,
@@ -2013,9 +2096,9 @@ function settle(state, turn, now) {
     if (state.settledTurn >= turn) return false;
     while (state.settledTurn < turn) {
         state.settledTurn += 1;
-        for (let faction = 0; faction < 4; faction++) recruit(state, faction);
+        for (let faction = 0; faction < getMajor(); faction++) recruit(state, faction);
         recruitFishOnTurn(state, now);
-        for (let faction = 0; faction < 4; faction++) maybeAttack(state, faction, state.settledTurn, now);
+        for (let faction = 0; faction < getMajor(); faction++) maybeAttack(state, faction, state.settledTurn, now);
     }
     return true;
 }
@@ -2104,6 +2187,9 @@ function modeOf(state, faction, index, post, now) {
     }
     const raid = state.goblins && state.goblins.raid;
     if (raid && post === GOBLIN_VILLAGE && faction === state.owners[GOBLIN_VILLAGE] && now + 8000 >= raid.arriveAt) return "battle";
+    const bruteRaid = state.brutes && state.brutes.raid;
+    const bruteTarget = BrutesFaction.RAID.targetVillage;
+    if (bruteRaid && post === bruteTarget && faction === state.owners[bruteTarget] && now + 8000 >= bruteRaid.arriveAt) return "battle";
     return "guard";
 }
 
@@ -2120,7 +2206,9 @@ function ensureGoblins(state, now) {
 }
 
 function goblinDenRaidPath() {
-    const path = [{ x: GOBLIN_DEN.x, z: GOBLIN_DEN.z }, gateSpot(GOBLIN_VILLAGE, sideFacing(GOBLIN_VILLAGE, GOBLIN_DEN), 8)];
+    const gate = gateSpot(GOBLIN_VILLAGE, sideFacing(GOBLIN_VILLAGE, GOBLIN_DEN), 8);
+    if (!gate) return null;
+    const path = [{ x: GOBLIN_DEN.x, z: GOBLIN_DEN.z }, gate];
     return { path, length: pathLength(path) };
 }
 
@@ -2137,6 +2225,10 @@ function startDenGoblinRaid(state, now, count, manual) {
         return true;
     }
     const route = goblinDenRaidPath();
+    if (!route) {
+        state.goblins.nextAt = nextGoblinRaid(now);
+        return false;
+    }
     state.goblins.raid = {
         id: "goblins-" + now,
         startedAt: now,
@@ -2189,6 +2281,146 @@ function endGoblinRaid(state, now, text) {
     note(state, text);
 }
 
+function bruteDenPoint() {
+    const p = World.readBruteLairPlacement && World.readBruteLairPlacement();
+    if (p && p.enabled !== false && Number.isFinite(Number(p.worldX))) {
+        return { x: Number(p.worldX), z: Number(p.worldZ) };
+    }
+    const lair = World.bruteLair(BrutesFaction.LAIR_COUNT);
+    return lair.centre || { x: -2706, z: 394 };
+}
+
+function nextBruteRaid(now) {
+    const den = bruteDenPoint();
+    const gate = gateSpot(BrutesFaction.RAID.targetVillage, sideFacing(BrutesFaction.RAID.targetVillage, den), 8);
+    if (!den || !gate) return now + BrutesFaction.RAID.everyMs;
+    const dist = Math.hypot(den.x - gate.x, den.z - gate.z);
+    return now + BrutesFaction.raidIntervalMs(dist);
+}
+
+function ensureBrutes(state, now) {
+    if (!state.brutes) {
+        state.brutes = { nextAt: nextBruteRaid(now), raid: null };
+        return true;
+    }
+    return false;
+}
+
+function bruteLairRaidPath() {
+    const den = bruteDenPoint();
+    const target = BrutesFaction.RAID.targetVillage;
+    const gate = gateSpot(target, sideFacing(target, den), 8);
+    if (!den || !gate) return null;
+    const path = [{ x: den.x, z: den.z }, gate];
+    return { path, length: pathLength(path) };
+}
+
+function startBruteRaid(state, now, count, manual) {
+    ensureBrutes(state, now);
+    const R = BrutesFaction.RAID;
+    const target = R.targetVillage;
+    const place = factions[target].name;
+    const roll = R.min + Math.floor(Math.random() * (R.max - R.min + 1));
+    const n = Math.max(1, Math.min(R.max * 2, Math.floor(Number(count)) || roll));
+    const raid = state.brutes.raid;
+    if (raid) {
+        for (let i = 0; i < n; i++) raid.hp.push(R.hp);
+        note(state, n + " more brutes join the raid on " + place + (manual ? " (campaign)." : "."));
+        return true;
+    }
+    const route = bruteLairRaidPath();
+    if (!route) {
+        state.brutes.nextAt = nextBruteRaid(now);
+        return false;
+    }
+    state.brutes.raid = {
+        id: "brutes-" + now,
+        startedAt: now,
+        arriveAt: now + Math.round(route.length / R.speed * 1000),
+        path: route.path,
+        length: route.length,
+        hp: new Array(n).fill(R.hp),
+        rounds: 0
+    };
+    note(state, n + " brutes march from " + BrutesFaction.NAME + " toward " + place + (manual ? " (campaign)." : "."));
+    return true;
+}
+
+function endBruteRaid(state, now, text) {
+    state.brutes.raid = null;
+    state.brutes.nextAt = nextBruteRaid(now);
+    note(state, text);
+}
+
+function bruteRaids(state, now) {
+    if (ensureBrutes(state, now)) return true;
+    const R = BrutesFaction.RAID;
+    const target = R.targetVillage;
+    const place = factions[target].name;
+    const raid = state.brutes.raid;
+    if (!raid) {
+        if (state.brutes.nextAt > now + R.everyMs * 1.5) state.brutes.nextAt = nextBruteRaid(now);
+        if (Number.isFinite(state.pausedAt) || now < state.brutes.nextAt) return false;
+        if (state.goblins && state.goblins.raid) return false;
+        if (!startBruteRaid(state, now, null, false)) return false;
+        return true;
+    }
+    let dirty = false;
+    while (now >= raid.arriveAt + (raid.rounds + 1) * BATTLE_MS) {
+        raid.rounds += 1;
+        dirty = true;
+        const owner = state.owners[target];
+        const guards = fielded(state, owner, target).map((unit) => unit.index);
+        const left = raid.hp.filter((hp) => hp > 0).length;
+        if (!left) {
+            endBruteRaid(state, now, place + " drives off " + BrutesFaction.NAME + ".");
+            break;
+        }
+        if (!guards.length || raid.rounds > R.rounds) {
+            endBruteRaid(state, now, BrutesFaction.NAME + " break through at " + place + " and withdraw.");
+            break;
+        }
+        for (let i = 0; i < guards.length; i++) {
+            if (Math.random() >= 0.32) continue;
+            const hit = raid.hp.findIndex((hp) => hp > 0);
+            if (hit >= 0) raid.hp[hit] -= 1;
+        }
+        for (let i = 0; i < left; i++) {
+            if (Math.random() < R.hitSoldierChance) wound(state, owner, guards);
+        }
+    }
+    return dirty;
+}
+
+function bruteFactionSnapshot(state) {
+    const den = bruteDenPoint();
+    const raid = state.brutes && state.brutes.raid;
+    const raiders = raid ? raid.hp.filter((hp) => hp > 0).length : 0;
+    return {
+        id: "brutes",
+        name: BrutesFaction.NAME,
+        color: BrutesFaction.COLOR,
+        village: -1,
+        soldiers: BrutesFaction.LAIR_COUNT,
+        alive: raiders || BrutesFaction.LAIR_COUNT,
+        food: 0,
+        units: [],
+        holds: ["Lair ~" + Math.round(den.x) + ", " + Math.round(den.z)],
+        pop: "—",
+        limit: "—",
+        upkeep: 0,
+        wood: 0,
+        stone: 0,
+        gold: 0,
+        mines: 0,
+        houses: 0,
+        farms: 0,
+        yards: 0,
+        building: [],
+        training: raid && raiders ? ["raid on Southwest"] : ["patrol lair"]
+    };
+}
+
 // Goblins have one hit point and land a blow far less often than a soldier, so a garrison usually wins.
 function goblinRaids(state, now) {
     if (ensureGoblins(state, now)) return true;
@@ -2197,7 +2429,7 @@ function goblinRaids(state, now) {
     if (!raid) {
         if (state.goblins.nextAt > now + GOBLIN_EVERY * 1.4) state.goblins.nextAt = nextGoblinRaid(now);
         if (Number.isFinite(state.pausedAt) || now < state.goblins.nextAt) return false;
-        startDenGoblinRaid(state, now, null, false);
+        if (!startDenGoblinRaid(state, now, null, false)) return false;
         return true;
     }
     let dirty = false;
@@ -2252,8 +2484,9 @@ function stepWilds(state, now) {
         dirty = true;
     }
     const alive = wilds.hp.filter((hp) => hp > 0).length;
-    if (alive < WILD_MAX || state.goblins.raid || Number.isFinite(state.pausedAt)) return dirty;
+    if (alive < WILD_MAX || !state.goblins || state.goblins.raid || Number.isFinite(state.pausedAt)) return dirty;
     const gate = gateSpot(GOBLIN_VILLAGE, sideFacing(GOBLIN_VILLAGE, camp.centre), 8);
+    if (!gate) return dirty;
     const path = [camp.centre].concat(landRoute(camp.centre, gate).slice(1, -1), [gate]);
     const length = pathLength(path);
     state.goblins.raid = {
@@ -2290,6 +2523,10 @@ const routeMemo = new Map();
 function routeOf(state, man, cutting) {
     if (man.repair) {
         const route = repairRoute(man.village, man.repair.side);
+        if (!route) {
+            const still = { x: 0, z: 0 };
+            return { cycleStart: man.repair.startedAt, walkMs: 1, from: still, via: still, to: still, path: [still], length: 0 };
+        }
         return {
             cycleStart: man.repair.startedAt,
             walkMs: man.repair.walkMs,
@@ -2410,7 +2647,7 @@ function rosterKey(state) {
         bits.push("w" + man.village + ":" + (man.slot || 0) + ":" + (man.ore ? 1 : 0) + ":" + (man.repair ? man.repair.side : ""));
     }
     (state.minors || []).forEach((minor, index) => {
-        const mine = (state.mines || []).some((item) => item.village === MINOR_BASE + index);
+        const mine = (state.mines || []).some((item) => item.village === getMinorBase() + index);
         bits.push("h" + index + ":" + (minor.workers || 0) + ":" + (mine ? 1 : 0));
     });
     for (const farm of state.farms || []) {
@@ -2422,8 +2659,8 @@ function rosterKey(state) {
 function present(state, now, turn, paused, opts) {
     const elapsed = Math.max(0, (paused ? state.pausedAt : now) - state.startedAt);
     const nextIn = TURN_MS - (elapsed % TURN_MS);
-    const shown = factions.map((faction, index) => ({ faction, index, units: [] }));
-    for (let faction = 0; faction < 4; faction++) {
+    const shown = getActiveFactions().slice(0, getMajor()).map((faction, index) => ({ faction, index, units: [] }));
+    for (let faction = 0; faction < getMajor(); faction++) {
         const slots = [0, 0, 0, 0];
         eachLiving(state, faction, (index, health) => {
             const post = state.post[keyOf(faction, index)];
@@ -2623,7 +2860,7 @@ function present(state, now, turn, paused, opts) {
         holds: (state.holds || []).map((hold) => ({
             id: hold.id,
             faction: hold.faction,
-            minor: MINOR_BASE + hold.minor,
+            minor: getMinorBase() + hold.minor,
             phase: hold.phase,
             path: hold.path,
             length: hold.length,
@@ -2633,7 +2870,7 @@ function present(state, now, turn, paused, opts) {
         })),
         tributes: (state.tributes || []).map((cart) => ({
             id: cart.id,
-            minor: MINOR_BASE + cart.minor,
+            minor: getMinorBase() + cart.minor,
             faction: cart.faction,
             phase: cart.phase,
             cargo: cart.cargo,
@@ -2652,11 +2889,23 @@ function present(state, now, turn, paused, opts) {
             hp: state.goblins.raid.hp.slice()
         } : null,
         nextGoblinsAt: state.goblins ? state.goblins.nextAt : null,
+        brutes: state.brutes && state.brutes.raid ? {
+            id: state.brutes.raid.id,
+            to: BrutesFaction.RAID.targetVillage,
+            path: state.brutes.raid.path,
+            length: state.brutes.raid.length,
+            startedAt: state.brutes.raid.startedAt,
+            arriveAt: state.brutes.raid.arriveAt,
+            hp: state.brutes.raid.hp.slice()
+        } : null,
+        nextBrutesAt: state.brutes ? state.brutes.nextAt : null,
+        bruteLair: bruteDenPoint(),
         wilds: state.wilds ? state.wilds.hp.slice() : [],
         gates: (state.gates || freshGates()).map((row) => row.slice()),
         archers: (state.archers || freshArchers()).map((row) => row.slice()),
-        villages: factions.map((place, index) => {
+        villages: getActiveFactions().slice(0, getMajor()).map((place, index) => {
             const owner = state.owners[index];
+            const spot = getPlaces()[index] || { x: 0, z: 0 };
             let alive = 0;
             eachLiving(state, owner, (unitIndex) => {
                 if (state.post[keyOf(owner, unitIndex)] === index) alive += 1;
@@ -2664,9 +2913,11 @@ function present(state, now, turn, paused, opts) {
             return {
                 index,
                 name: place.name,
+                x: spot.x,
+                z: spot.z,
                 owner,
-                ownerName: factions[owner].name,
-                color: factions[owner].color,
+                ownerName: nameOf(owner),
+                color: factionMeta(owner).color,
                 alive,
                 attacked: state.attacks.some((attack) => attack.to === index),
                 marching: state.attacks.some((attack) => attack.from === index),
@@ -2732,19 +2983,19 @@ function present(state, now, turn, paused, opts) {
         hero: Hero.normalize(state.hero),
         quests: Region1Quests.present(state),
         shop: Region1Shop.present(),
-        stance: factions.concat(minors).map((faction, index) => relation(state, PLAYER_FACTION, index)),
+        stance: getActiveFactions().concat(campaignScope.isIslandCampaign() ? [] : minors).map((faction, index) => relation(state, getPlayerFaction(), index)),
         grudges: (state.grudges || []).slice(),
         trails: state.trails || [],
-        minors: minors.map((minor, index) => {
+        minors: (campaignScope.isIslandCampaign() ? [] : minors).map((minor, index) => {
             const own = state.minors[index];
             const owner = hamletOwner(state, index);
             return {
-                index: MINOR_BASE + index,
+                index: getMinorBase() + index,
                 name: minor.name,
                 color: minor.color,
                 owner,
                 ownerName: nameOf(owner),
-                ownerColor: owner < MINOR_BASE ? factions[owner].color : minor.color,
+                ownerColor: owner < getMinorBase() ? getActiveFactions()[owner].color : minor.color,
                 protector: own.protector,
                 protectorName: own.protector >= 0 ? nameOf(own.protector) : "",
                 food: own.food || 0,
@@ -2758,17 +3009,17 @@ function present(state, now, turn, paused, opts) {
                 })),
                 pop: hamletPeople(index, state),
                 room: hamletPop(index, state),
-                workers: (state.minors[index].workers || 0) + (state.farms || []).filter((item) => item.village === MINOR_BASE + index && item.health > 0).reduce((sum, item) => sum + farmCrew(item), 0),
+                workers: (state.minors[index].workers || 0) + (state.farms || []).filter((item) => item.village === getMinorBase() + index && item.health > 0).reduce((sum, item) => sum + farmCrew(item), 0),
                 trainingWorker: !!state.minors[index].trainAt,
                 houses: hamletHouses(index, state),
-                farmers: (state.farms || []).filter((item) => item.village === MINOR_BASE + index && item.health > 0).reduce((sum, item) => sum + farmCrew(item), 0),
+                farmers: (state.farms || []).filter((item) => item.village === getMinorBase() + index && item.health > 0).reduce((sum, item) => sum + farmCrew(item), 0),
                 cutting: !!own.cutting,
                 wants: hamletWants(state, index),
-                building: (state.siteJobs || []).filter((job) => job.payer === MINOR_BASE + index).map((job) => job.kind)
-                    .concat((state.farmJobs || []).filter((job) => job.payer === MINOR_BASE + index).map(() => "farm"))
+                building: (state.siteJobs || []).filter((job) => job.payer === getMinorBase() + index).map((job) => job.kind)
+                    .concat((state.farmJobs || []).filter((job) => job.payer === getMinorBase() + index).map(() => "farm"))
             };
         }),
-        factions: factions.map((faction, index) => {
+        factions: getActiveFactions().slice(0, getMajor()).map((faction, index) => {
             let alive = 0;
             eachLiving(state, index, () => { alive += 1; });
             const held = ownedBy(state, index);
@@ -2797,7 +3048,9 @@ function present(state, now, turn, paused, opts) {
                     .concat((state.farmJobs || []).filter((job) => job.payer === index).map(() => "farm")),
                 training: (state.training || []).filter((job) => state.owners[job.village] === index).map((job) => job.kind)
             };
-        }),
+        }).concat(campaignScope.isIslandCampaign() ? [] : [bruteFactionSnapshot(state)]),
+        islandLab: campaignScope.isIslandCampaign(),
+        playerFaction: getPlayerFaction(),
         rules: campaignRules()
     };
 }
@@ -2836,6 +3089,14 @@ function campaignRules() {
             max: GOBLIN_MAX,
             target: factions[GOBLIN_VILLAGE].name,
             camp: World.wildSpots(WILD_MAX).centre ? { daily: WILD_DAILY, max: WILD_MAX, after: WILD_AFTER } : null
+        },
+        brutes: {
+            every: BrutesFaction.RAID.everyMs,
+            min: BrutesFaction.RAID.min,
+            max: BrutesFaction.RAID.max,
+            target: factions[BrutesFaction.RAID.targetVillage].name,
+            hp: BrutesFaction.RAID.hp,
+            lair: bruteDenPoint()
         }
     };
 }
@@ -2898,7 +3159,7 @@ function presentHouseGroup(list) {
 }
 
 function hamletLayout(minor, index) {
-    const village = MINOR_BASE + index;
+    const village = getMinorBase() + index;
     const house = hamletHouse(village, minor.x + 8, minor.z, 0, "farmhouse");
     const field = { x: minor.x - 26, z: minor.z - 6, w: 18, d: 14 };
     const door = doorOf(house);
@@ -2943,7 +3204,7 @@ function hamletModelFarm(minor, village, cottages, outhouse) {
 const hamlets = minors.map(hamletLayout);
 
 function hamletHouses(index, state) {
-    const built = state ? (state.houses || []).filter((house) => house.village === MINOR_BASE + index).length : 0;
+    const built = state ? (state.houses || []).filter((house) => house.village === getMinorBase() + index).length : 0;
     return 1 + hamlets[index].cottages.length + built * 5;
 }
 
@@ -2953,7 +3214,7 @@ function hamletPop(index, state) {
 }
 
 function hamletPeople(index, state) {
-    const village = MINOR_BASE + index;
+    const village = getMinorBase() + index;
     const crews = (state.farms || []).filter((farm) => farm.village === village && farm.health > 0).reduce((sum, farm) => sum + farmCrew(farm), 0);
     const minor = state.minors && state.minors[index];
     return crews + ((minor && minor.workers) || 0);
@@ -3067,12 +3328,12 @@ function ensureStarts(state) {
         farms: keepFarms || [null, null, null, null],
         houses: keepHouses || [null, null, null, null]
     };
-    for (let village = 0; village < 4; village++) {
+    for (let village = 0; village < getMajor(); village++) {
         let farm = starts.farms[village];
         if (!farm) {
-            if (village === 2) {
+            if (village === getPlayerFaction() && !campaignScope.isIslandCampaign()) {
                 for (const spot of [[-2407.2, 540.2], [-2420, 520], [-2385, 555], [-2440, 560]]) {
-                    farm = layoutKitFarm({}, 2, spot[0], spot[1], []);
+                    farm = layoutKitFarm({}, getPlayerFaction(), spot[0], spot[1], []);
                     if (farm) break;
                 }
             } else {
@@ -3083,9 +3344,9 @@ function ensureStarts(state) {
         }
         let homes = starts.houses[village];
         if (!homes) {
-            if (village === 2 && farm) {
+            if (village === getPlayerFaction() && farm && !campaignScope.isIslandCampaign()) {
                 for (const spot of [[-2365, 540], [-2365, 505], [-2405, 495], [-2365, 575]]) {
-                    homes = layoutKitHouses({}, 2, spot[0], spot[1], [farm.rect]);
+                    homes = layoutKitHouses({}, getPlayerFaction(), spot[0], spot[1], [farm.rect]);
                     if (homes) break;
                 }
             } else {
@@ -3130,8 +3391,8 @@ function ensureMinors(state) {
     for (let index = state.minors.length; index < minors.length; index++) {
         state.minors.push(fresh[index]);
         const friend = Number.isInteger(minors[index].ally) ? state.owners[minors[index].ally] : -1;
-        if (friend >= 0 && friend < MINOR_BASE && homeVillage(state, friend) >= 0) {
-            setRelation(state, friend, MINOR_BASE + index, "ally");
+        if (friend >= 0 && friend < getMinorBase() && homeVillage(state, friend) >= 0) {
+            setRelation(state, friend, getMinorBase() + index, "ally");
             state.minors[index].protector = friend;
         }
         dirty = true;
@@ -3146,7 +3407,7 @@ function ensureMinors(state) {
             const holder = minor.owner;
             minor.owner = -1;
             minor.protector = holder;
-            setRelation(state, holder, MINOR_BASE + index, "ally");
+            setRelation(state, holder, getMinorBase() + index, "ally");
             dirty = true;
         }
     });
@@ -3165,10 +3426,10 @@ function nearestMajor(state, minorIndex, accept) {
     const spot = minors[minorIndex];
     let best = -1;
     let bestD = Infinity;
-    for (let faction = 0; faction < MINOR_BASE; faction++) {
+    for (let faction = 0; faction < getMinorBase(); faction++) {
         if (!accept(faction)) continue;
         for (const village of ownedBy(state, faction)) {
-            const d = Math.hypot(places[village].x - spot.x, places[village].z - spot.z);
+            const d = Math.hypot(getPlaces()[village].x - spot.x, getPlaces()[village].z - spot.z);
             if (d < bestD) {
                 bestD = d;
                 best = faction;
@@ -3181,7 +3442,7 @@ function nearestMajor(state, minorIndex, accept) {
 function considerMinors(state, now) {
     let dirty = false;
     state.minors.forEach((minor, index) => {
-        const self = MINOR_BASE + index;
+        const self = getMinorBase() + index;
         const name = minors[index].name;
         const p = minor.protector;
         if (p >= 0 && (relation(state, p, self) !== "ally" || homeVillage(state, p) < 0)) {
@@ -3388,7 +3649,7 @@ function stepHolds(state, now) {
         dirty = true;
         if (hold.heldMs >= HOLD_MS) {
             const minor = state.minors[hold.minor];
-            const self = MINOR_BASE + hold.minor;
+            const self = getMinorBase() + hold.minor;
             const old = minor.protector;
             minor.protector = hold.faction;
             minor.declined = (minor.declined || []).filter((f) => f !== hold.faction);
@@ -3408,7 +3669,7 @@ const holdThink = [0, 0, 0, 0];
 function sendHolds(state, now) {
     if (now < (state.marchAfter || 0)) return false;
     let dirty = false;
-    for (let faction = 0; faction < MINOR_BASE; faction++) {
+    for (let faction = 0; faction < getMinorBase(); faction++) {
         if (now < holdThink[faction]) continue;
         holdThink[faction] = now + 60000;
         if (state.holds.some((hold) => hold.faction === faction)) continue;
@@ -3421,7 +3682,7 @@ function sendHolds(state, now) {
         let bestD = Infinity;
         state.minors.forEach((minor, index) => {
             if (!canTake(state, faction, index)) return;
-            const d = Math.hypot(minors[index].x - places[from].x, minors[index].z - places[from].z);
+            const d = Math.hypot(minors[index].x - getPlaces()[from].x, minors[index].z - getPlaces()[from].z);
             if (d < bestD) {
                 bestD = d;
                 best = index;
@@ -3461,7 +3722,7 @@ function payTribute(state, now) {
         minor.tributeDay = today;
         dirty = true;
         const p = minor.protector;
-        if (first || p < 0 || p >= MINOR_BASE) return;
+        if (first || p < 0 || p >= getMinorBase()) return;
         const home = homeVillage(state, p);
         if (home < 0) return;
         const cargo = {};
@@ -3521,14 +3782,14 @@ function moveTribute(state, now) {
 }
 
 function setStance(state, other, kind) {
-    const self = PLAYER_FACTION;
-    if (!Number.isInteger(other) || other < 0 || other >= MINOR_BASE + minors.length || other === self) return;
+    const self = getPlayerFaction();
+    if (!Number.isInteger(other) || other < 0 || other >= getMinorBase() + minors.length || other === self) return;
     if (!["war", "peace", "ally"].includes(kind)) return;
-    if (other < MINOR_BASE && homeVillage(state, other) < 0) return;
-    if (other >= MINOR_BASE && kind === "war" && !canTake(state, self, other - MINOR_BASE)) return;
+    if (other < getMinorBase() && homeVillage(state, other) < 0) return;
+    if (other >= getMinorBase() && kind === "war" && !canTake(state, self, other - getMinorBase())) return;
     setRelation(state, self, other, kind);
-    if (other < MINOR_BASE) return;
-    const minor = state.minors[other - MINOR_BASE];
+    if (other < getMinorBase()) return;
+    const minor = state.minors[other - getMinorBase()];
     if (!minor.declined) minor.declined = [];
     if (kind === "ally") {
         minor.declined = minor.declined.filter((f) => f !== self);
@@ -3571,6 +3832,7 @@ function rectsHit(a, b, pad) {
 
 function outsideWalls(village, rect) {
     const wall = palisadeBox(village);
+    if (!wall || !rect) return false;
     const pad = 8;
     if (rect.minX + rect.w < wall.minX - pad) return true;
     if (rect.minX > wall.maxX + pad) return true;
@@ -3602,7 +3864,7 @@ function standingFarms(state, village) {
 
 function producingFarms(state, faction) {
     let n = 0;
-    for (let village = 0; village < 4; village++) {
+    for (let village = 0; village < getMajor(); village++) {
         if (state.owners[village] !== faction) continue;
         for (const farm of state.farms || []) {
             if (farm.village === village && farm.health > 0) n += 1;
@@ -3620,7 +3882,7 @@ function producingFarms(state, faction) {
 function farmVillage(state, faction) {
     let best = -1;
     let bestN = Infinity;
-    for (let village = 0; village < 4; village++) {
+    for (let village = 0; village < getMajor(); village++) {
         if (state.owners[village] !== faction) continue;
         const n = standingFarms(state, village);
         if (n >= FARM_CAP) continue;
@@ -3642,7 +3904,7 @@ function landOpen(x, z) {
 
 // Where a village or hamlet's buildings gather round.
 function centreOf(village) {
-    return village < MINOR_BASE ? places[village] : minors[village - MINOR_BASE];
+    return village < getMinorBase() ? getPlaces()[village] : minors[village - getMinorBase()];
 }
 
 function buildAnchors(state, village) {
@@ -3659,7 +3921,7 @@ function buildAnchors(state, village) {
     (state.siteJobs || []).forEach(add);
     (state.yards || []).forEach(add);
     (state.mines || []).forEach(add);
-    if (village >= MINOR_BASE) add(hamlets[village - MINOR_BASE].farm);
+    if (village >= getMinorBase()) add(hamlets[village - getMinorBase()].farm);
     return points;
 }
 
@@ -3706,14 +3968,14 @@ function bestSite(spots, layout, score) {
 
 // Hamlets have no palisade; their own houses are kept clear as blocked rects instead.
 function clearOfWalls(village, rect) {
-    return village >= MINOR_BASE || outsideWalls(village, rect);
+    return village >= getMinorBase() || outsideWalls(village, rect);
 }
 
 function takenRects(state) {
     const rects = [];
     for (const building of Town.buildings) rects.push(rectOf(building));
     for (const field of World.fields) rects.push({ minX: field.x, minZ: field.z, w: field.w, d: field.d });
-    for (let village = 0; village < 4; village++) {
+    for (let village = 0; village < getMajor(); village++) {
         const cot = World.cottageLayout(village);
         rects.push({ minX: cot.x, minZ: cot.z, w: cot.w, d: cot.d });
     }
@@ -3946,7 +4208,7 @@ async function startPlayerBuild(kind, x, z, yaw) {
 function layoutKitHouses(state, village, cx, cz, blocked) {
     const place = centreOf(village);
     const dist = Math.hypot(place.x - cx, place.z - cz);
-    if (dist < (village >= MINOR_BASE ? 35 : 60) || dist > BUILD_REACH) return null;
+    if (dist < (village >= getMinorBase() ? 35 : 60) || dist > BUILD_REACH) return null;
     const at = { x: cx, z: cz, theta: quarterTurn(village, cx, cz) };
     const span = 5 * KIT_HOUSE.w + 4 * KIT_HOUSE_GAP;
     const whole = placeRect({ x: 0, z: 0, w: span, d: KIT_HOUSE.d + 1.2 }, at);
@@ -3994,7 +4256,7 @@ function layoutModelSite(state, village, cx, cz, blocked, kind) {
     if (kind !== "mine" || !mineModel) return null;
     const place = centreOf(village);
     const dist = Math.hypot(place.x - cx, place.z - cz);
-    if (dist < (village >= MINOR_BASE ? 35 : 60)) return null;
+    if (dist < (village >= getMinorBase() ? 35 : 60)) return null;
     const at = { x: cx, z: cz, theta: quarterTurn(village, cx, cz) };
     const whole = placeRect({ x: 0, z: 0, w: mineModel.w, d: mineModel.d }, at);
     const rect = { minX: whole.minX, minZ: whole.minZ, w: whole.w, d: whole.d };
@@ -4057,7 +4319,7 @@ function placeRect(r, at) {
 // Kit farm: fenced field enclosure with a tall kit farmhouse beside it (not on the field).
 function layoutKitFarm(state, village, cx, cz, blocked, home) {
     const place = centreOf(village);
-    const hamlet = village >= MINOR_BASE;
+    const hamlet = village >= getMinorBase();
     const dist = Math.hypot(place.x - cx, place.z - cz);
     if (dist < (home ? 0 : hamlet ? 35 : 60) || dist > (home ? 80 : BUILD_REACH)) return null;
     const theta = quarterTurn(village, cx, cz);
@@ -4123,7 +4385,7 @@ function layoutKitFarm(state, village, cx, cz, blocked, home) {
         pad: pad
     };
     if (home) site.haul = [site.exits[1] || site.out, { x: door.out.x, z: door.out.z }];
-    else if (hamlet) site.haul = [{ x: door.out.x, z: door.out.z }, hamlets[village - MINOR_BASE].farm.out];
+    else if (hamlet) site.haul = [{ x: door.out.x, z: door.out.z }, hamlets[village - getMinorBase()].farm.out];
     const path = pathToStore(site);
     if (!path || path.length < 2 || pathWet(path) || pathLength(path) > BUILD_REACH + 100) return null;
     return site;
@@ -4132,7 +4394,7 @@ function layoutKitFarm(state, village, cx, cz, blocked, home) {
 // `home` is a hamlet's own starting farm: it stands right by the hamlet and its farmhouse is the hamlet's store.
 function layoutModelFarm(state, village, cx, cz, blocked, home) {
     const place = centreOf(village);
-    const hamlet = village >= MINOR_BASE;
+    const hamlet = village >= getMinorBase();
     const at = { x: cx, z: cz, theta: quarterTurn(village, cx, cz) };
     const whole = placeRect({ x: 0, z: 0, w: farmModel.w, d: farmModel.d }, at);
     const dist = Math.hypot(place.x - cx, place.z - cz);
@@ -4194,7 +4456,7 @@ function layoutModelFarm(state, village, cx, cz, blocked, home) {
         pad: pad
     };
     if (home) site.haul = [site.exits[1] || site.out, { x: door.out.x, z: door.out.z }];
-    else if (hamlet) site.haul = [{ x: door.out.x, z: door.out.z }, hamlets[village - MINOR_BASE].farm.out];
+    else if (hamlet) site.haul = [{ x: door.out.x, z: door.out.z }, hamlets[village - getMinorBase()].farm.out];
     const path = pathToStore(site);
     if (!path || path.length < 2 || pathWet(path) || pathLength(path) > BUILD_REACH + 100) return null;
     return site;
@@ -4204,7 +4466,7 @@ function layoutFarm(state, village, cx, cz, blocked) {
     // Southwest and minor hamlets: enclosure + tall kit farmhouse. Other towns keep Roblox for comparison.
     if (usesKitFarm(village)) return layoutKitFarm(state, village, cx, cz, blocked);
     if (farmModel) return layoutModelFarm(state, village, cx, cz, blocked);
-    const place = places[village];
+    const place = getPlaces()[village];
     const dx = place.x - cx;
     const dz = place.z - cz;
     const len = Math.hypot(dx, dz) || 1;
@@ -4286,7 +4548,7 @@ function pickFarmSite(state, village) {
 }
 
 function layoutBuilding(state, village, x, z, blocked) {
-    const place = places[village];
+    const place = getPlaces()[village];
     const dist = Math.hypot(place.x - x, place.z - z);
     if (dist < 40 || dist > BUILD_REACH) return null;
     const w = 4.6;
@@ -4343,9 +4605,11 @@ function treesAround(x, z, trees, radius) {
 function haulRisk(state, village, x, z, path) {
     const owner = state.owners[village];
     let risk = 0;
-    for (let i = 0; i < 4; i++) {
+    const places = getPlaces();
+    for (let i = 0; i < places.length; i++) {
         if (state.owners[i] === owner) continue;
         const place = places[i];
+        if (!place || !Number.isFinite(place.x) || !Number.isFinite(place.z)) continue;
         if (Math.hypot(place.x - x, place.z - z) < 170) risk += 220;
         for (let p = 0; p < path.length; p++) {
             if (Math.hypot(place.x - path[p].x, place.z - path[p].z) < 55) {
@@ -4374,7 +4638,7 @@ function layoutYard(state, village, x, z, blocked, trees) {
     const path = villagerPath(village, { x: x, z: z });
     if (!path || path.length < 2 || pathWet(path)) return null;
     const haul = pathLength(path);
-    const place = places[village];
+    const place = getPlaces()[village];
     const yaw = snapYaw(place.x - x, place.z - z);
     const pad = padFor(rect, null);
     if (!pad) return null;
@@ -4417,7 +4681,7 @@ function layoutYard(state, village, x, z, blocked, trees) {
 }
 
 function pickYard(state, village) {
-    const place = places[village];
+    const place = getPlaces()[village];
     const trees = [];
     const lists = [World.trees, World.groves];
     for (let list = 0; list < lists.length; list++) {
@@ -4541,7 +4805,7 @@ function considerSites(state, now) {
         dirty = true;
     }
     state.siteJobs = keep;
-    for (let faction = 0; faction < 4; faction++) {
+    for (let faction = 0; faction < getMajor(); faction++) {
         if (buildingBusy(state, faction)) continue;
         const village = homeVillage(state, faction);
         if (village < 0) continue;
@@ -4615,7 +4879,7 @@ function considerFarms(state, now) {
         dirty = true;
     }
     state.farmJobs = keep;
-    for (let faction = 0; faction < 4; faction++) {
+    for (let faction = 0; faction < getMajor(); faction++) {
         if (buildingBusy(state, faction)) continue;
         if (now < farmThink[faction]) continue;
         if ((state.wood[faction] || 0) < FARM_WOOD || roomTight(state, faction)) {
@@ -4651,8 +4915,8 @@ function considerFarms(state, now) {
 }
 
 function addStore(state, who, key, amount) {
-    if (who >= MINOR_BASE) {
-        const minor = state.minors[who - MINOR_BASE];
+    if (who >= getMinorBase()) {
+        const minor = state.minors[who - getMinorBase()];
         minor[key] = (minor[key] || 0) + amount;
         return;
     }
@@ -4662,7 +4926,7 @@ function addStore(state, who, key, amount) {
 
 // What a hamlet builds next: five houses when it is short of room, a mine if it has none, then farms. Each costs 100 wood.
 function hamletWants(state, index) {
-    const village = MINOR_BASE + index;
+    const village = getMinorBase() + index;
     const here = (item) => item.village === village;
     const training = state.minors[index].trainAt ? 1 : 0;
     const tight = hamletPop(index, state) - hamletPeople(index, state) - training <= FOLK_PER_HOUSE;
@@ -4676,7 +4940,7 @@ function hamletWants(state, index) {
 // Hamlet workers are just a count: each one brings in a load every WORK_MS of play, of whatever the hamlet is shortest of.
 function hamletWork(state, index, now, play) {
     const minor = state.minors[index];
-    const self = MINOR_BASE + index;
+    const self = getMinorBase() + index;
     const people = hamletPeople(index, state);
     let dirty = false;
     if (minor.trainAt && now >= minor.trainAt) {
@@ -4731,14 +4995,14 @@ function hamletRoute(index, slot, ore) {
 function hamletWalkers(state) {
     const list = [];
     (state.minors || []).forEach((minor, index) => {
-        const mine = (state.mines || []).some((item) => item.village === MINOR_BASE + index);
+        const mine = (state.mines || []).some((item) => item.village === getMinorBase() + index);
         for (let slot = 0; slot < (minor.workers || 0); slot++) {
             const ore = mine && slot % 2 === 1;
             const path = hamletRoute(index, slot, ore);
             if (!path) continue;
             list.push({
                 id: "hamlet-" + index + "-" + slot,
-                village: MINOR_BASE + index,
+                village: getMinorBase() + index,
                 slot,
                 ore,
                 owner: hamletOwner(state, index),
@@ -4781,7 +5045,7 @@ function considerHamlets(state, now) {
     if (play == null) return false;
     let dirty = false;
     state.minors.forEach((minor, index) => {
-        const self = MINOR_BASE + index;
+        const self = getMinorBase() + index;
         if (hamletWork(state, index, now, play)) dirty = true;
         const want = hamletWants(state, index);
         const busy = (state.farmJobs || []).some((job) => job.payer === self) || (state.siteJobs || []).some((job) => job.payer === self);
@@ -5006,8 +5270,8 @@ function stepFarms(state, now) {
         if (show && !farm.loose) {
             const owner = farmOwner(state, farm.village);
             const pending = (farm.stock || 0) + (farm.carry || 0);
-            if (pending > 0 && owner >= MINOR_BASE) {
-                const minor = state.minors[owner - MINOR_BASE];
+            if (pending > 0 && owner >= getMinorBase()) {
+                const minor = state.minors[owner - getMinorBase()];
                 minor.food = (minor.food || 0) + pending;
             } else if (pending > 0) state.food[owner] = (state.food[owner] || 0) + pending;
             farm.loose = true;
@@ -5036,8 +5300,8 @@ function stepFarms(state, now) {
                     const owner = farmOwner(state, farm.village);
                     const load = farm.carry || 0;
                     farm.carry = 0;
-                    if (!show && load > 0 && owner >= MINOR_BASE) {
-                        const minor = state.minors[owner - MINOR_BASE];
+                    if (!show && load > 0 && owner >= getMinorBase()) {
+                        const minor = state.minors[owner - getMinorBase()];
                         minor.food = (minor.food || 0) + load;
                         note(state, nameOf(owner) + " brings " + load + " food to the farmhouse.");
                     } else if (!show && load > 0) {
@@ -5057,7 +5321,7 @@ function stepFarms(state, now) {
             if (!show) continue;
         }
         if (farm.phase !== "work" && !(show && (farm.phase === "haul" || farm.phase === "back"))) continue;
-        const hamlet = farm.village >= MINOR_BASE ? farm.village - MINOR_BASE : -1;
+        const hamlet = farm.village >= getMinorBase() ? farm.village - getMinorBase() : -1;
         const cutting = hamlet >= 0 && hamlets[hamlet].farm.id === farm.id && state.minors[hamlet] && state.minors[hamlet].cutting;
         farm.grown = (farm.grown || 0) + rate * step * (cutting ? 0.5 : 1);
         const whole = Math.floor(farm.grown);
@@ -5135,42 +5399,53 @@ function syncWorld(state, now) {
     const clock = paused ? state.pausedAt : now;
     const turn = turnOf(state, clock);
     let dirty = false;
-    if (ensureHamlet(state)) dirty = true;
-    if (ensure(state, turn)) dirty = true;
-    if (stretchMarches(state, now)) dirty = true;
-    if (capArmies(state)) dirty = true;
-    if (ensureEconomy(state, now)) dirty = true;
-    if (ensureLodges(state)) dirty = true;
-    if (ensureMinors(state)) dirty = true;
-    if (ensureStarts(state)) dirty = true;
-    if (migrateKitFarms(state)) dirty = true;
-    if (ensureFarms(state)) dirty = true;
-    if (finishTraining(state, now)) dirty = true;
-    if (orderTraining(state, now)) dirty = true;
-    if (considerAttacks(state, now)) dirty = true;
-    if (considerMinors(state, now)) dirty = true;
-    if (releaseShownLodges(state)) dirty = true;
-    if (creditFish(state, now)) dirty = true;
-    if (moveCarts(state, now)) dirty = true;
-    if (consumeFood(state)) dirty = true;
-    if (creditWood(state, now)) dirty = true;
-    if (stepYard(state, now)) dirty = true;
-    if (creditRepair(state, now)) dirty = true;
-    if (considerRepairs(state, now)) dirty = true;
-    if (considerFarms(state, now)) dirty = true;
-    if (considerSites(state, now)) dirty = true;
-    if (considerHamlets(state, now)) dirty = true;
-    if (ensureFarms(state)) dirty = true;
-    if (stepFarms(state, now)) dirty = true;
-    if (wearTrails(state)) dirty = true;
-    if (besiege(state, now)) dirty = true;
-    if (fight(state, now)) dirty = true;
-    if (goblinRaids(state, now)) dirty = true;
-    if (stepWilds(state, now)) dirty = true;
-    if (ensurePlayerBuilds(state)) dirty = true;
-    if (finishPlayerJobs(state, now)) dirty = true;
-    if (ensureHero(state)) dirty = true;
-    if (Region1Quests.ensureQuests(state)) dirty = true;
+    // One bad step must not stop the clock or reset the save. Restart is only the button.
+    const keep = (label, fn) => {
+        try {
+            if (fn()) dirty = true;
+        } catch (err) {
+            console.error("campaign kept running; skipped " + label);
+            console.error(err);
+        }
+    };
+    keep("hamlet", () => ensureHamlet(state));
+    keep("owners", () => ensureOwners(state));
+    keep("armies", () => ensure(state, turn));
+    keep("marches", () => stretchMarches(state, now));
+    keep("caps", () => capArmies(state));
+    keep("economy", () => ensureEconomy(state, now));
+    keep("lodges", () => ensureLodges(state));
+    keep("minors", () => ensureMinors(state));
+    keep("starts", () => ensureStarts(state));
+    keep("kit farms", () => migrateKitFarms(state));
+    keep("farms", () => ensureFarms(state));
+    keep("training", () => finishTraining(state, now));
+    keep("orders", () => orderTraining(state, now));
+    keep("attacks", () => considerAttacks(state, now));
+    keep("minor talks", () => considerMinors(state, now));
+    keep("lodge release", () => releaseShownLodges(state));
+    keep("fish", () => creditFish(state, now));
+    keep("carts", () => moveCarts(state, now));
+    keep("food", () => consumeFood(state));
+    keep("wood", () => creditWood(state, now));
+    keep("yard", () => stepYard(state, now));
+    keep("repair credit", () => creditRepair(state, now));
+    keep("repairs", () => considerRepairs(state, now));
+    keep("farm plans", () => considerFarms(state, now));
+    keep("sites", () => considerSites(state, now));
+    keep("hamlet plans", () => considerHamlets(state, now));
+    keep("farms again", () => ensureFarms(state));
+    keep("farm steps", () => stepFarms(state, now));
+    keep("trails", () => wearTrails(state));
+    keep("siege", () => besiege(state, now));
+    keep("fight", () => fight(state, now));
+    keep("goblins", () => goblinRaids(state, now));
+    keep("brutes", () => bruteRaids(state, now));
+    keep("wilds", () => stepWilds(state, now));
+    keep("player builds", () => ensurePlayerBuilds(state));
+    keep("player jobs", () => finishPlayerJobs(state, now));
+    keep("hero", () => ensureHero(state));
+    keep("quests", () => Region1Quests.ensureQuests(state));
     return { dirty, turn, paused };
 }
 
@@ -5452,6 +5727,21 @@ async function callAddCampGoblins(add) {
     return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
 }
 
+async function callBruteRaid(count) {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    if (Number.isFinite(state.pausedAt)) {
+        note(state, "Unpause the campaign before calling a brute raid.");
+    } else {
+        startBruteRaid(state, now, count, true);
+        bruteRaids(state, now);
+    }
+    await writeState(state);
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+}
+
 async function hitWild(index) {
     const state = await readState();
     const now = Date.now();
@@ -5467,12 +5757,15 @@ async function setFood(village, amount) {
     const now = Date.now();
     syncWorld(state, now);
     const next = Math.floor(Number(amount));
-    if (village >= 0 && village <= 3 && Number.isFinite(next) && next >= 0 && next <= 99999) {
+    const majors = getMajor();
+    if (village >= 0 && village < majors && Number.isFinite(next) && next >= 0 && next <= 99999) {
         const owner = state.owners[village];
-        if (!Array.isArray(state.food) || state.food.length !== 4) state.food = [0, 0, 0, 0];
+        if (!Array.isArray(state.food) || state.food.length !== majors) {
+            state.food = Array.from({ length: majors }, (_, i) => (state.food && state.food[i]) || 0);
+        }
         state.food[owner] = next;
     }
-    const minor = state.minors && state.minors[village - MINOR_BASE];
+    const minor = state.minors && state.minors[village - getMinorBase()];
     if (minor && minor.owner < 0 && Number.isFinite(next) && next >= 0 && next <= 99999) minor.food = next;
     await writeState(state);
     const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
@@ -5506,7 +5799,7 @@ async function hit(village, index) {
     return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
 }
 
-module.exports = async function handler(req, res) {
+async function campaignHandler(req, res) {
     res.setHeader("Cache-Control", "no-store");
     try {
         if (req.method === "POST") {
@@ -5602,6 +5895,11 @@ module.exports = async function handler(req, res) {
                 res.status(200).json(await callAddCampGoblins(req.body.addCampGoblins));
                 return;
             }
+            if (req.body && req.body.bruteRaid) {
+                const count = Number.isFinite(Number(req.body.count)) ? Number(req.body.count) : null;
+                res.status(200).json(await callBruteRaid(count));
+                return;
+            }
             if (req.body && Number.isInteger(req.body.archer) && Number.isInteger(req.body.tower)) {
                 res.status(200).json(await hitArcher(req.body.archer, req.body.tower));
                 return;
@@ -5632,6 +5930,11 @@ module.exports = async function handler(req, res) {
         console.error(error);
         if (!res.headersSent) res.status(500).json({ error: "Something went wrong." });
     }
+};
+
+module.exports = async function handler(req, res) {
+    const island = campaignScope.detectIslandFromRequest(req);
+    return campaignScope.runIslandScoped(island, req, () => campaignHandler(req, res));
 };
 
 module.exports.campaignState = campaignState;
