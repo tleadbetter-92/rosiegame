@@ -1,0 +1,28 @@
+{
+  "kind": "kitbuild",
+  "name": "mine works",
+  "cx": 13,
+  "cz": 14.5,
+  "materials": [
+    {
+      "mat": "wood",
+      "verts": 17790
+    },
+    {
+      "mat": "plaster",
+      "verts": 420
+    },
+    {
+      "mat": "brick",
+      "verts": 912
+    },
+    {
+      "mat": "furniture",
+      "verts": 27780
+    },
+    {
+      "mat": "propmetal",
+      "verts": 98460
+    }
+  ]
+}

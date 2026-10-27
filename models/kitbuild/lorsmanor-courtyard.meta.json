@@ -1,0 +1,48 @@
+{
+  "kind": "kitbuild",
+  "name": "lorsManor courtyard",
+  "cx": 13.5,
+  "cz": 17,
+  "materials": [
+    {
+      "mat": "wood",
+      "verts": 51834
+    },
+    {
+      "mat": "plaster",
+      "verts": 4722
+    },
+    {
+      "mat": "brick",
+      "verts": 3804
+    },
+    {
+      "mat": "rock",
+      "verts": 65802
+    },
+    {
+      "mat": "mosaicMed",
+      "verts": 264
+    },
+    {
+      "mat": "mosaicMeander",
+      "verts": 468
+    },
+    {
+      "mat": "mosaicPH",
+      "verts": 72
+    },
+    {
+      "mat": "mosaicBW",
+      "verts": 324
+    },
+    {
+      "mat": "furniture",
+      "verts": 19848
+    },
+    {
+      "mat": "propmetal",
+      "verts": 27372
+    }
+  ]
+}

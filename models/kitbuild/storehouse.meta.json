@@ -1,0 +1,36 @@
+{
+  "kind": "kitbuild",
+  "name": "StoreHouse",
+  "cx": 17.5,
+  "cz": 7.5,
+  "materials": [
+    {
+      "mat": "wood",
+      "verts": 35670
+    },
+    {
+      "mat": "plaster",
+      "verts": 600
+    },
+    {
+      "mat": "rock",
+      "verts": 48
+    },
+    {
+      "mat": "propcloth",
+      "verts": 56430
+    },
+    {
+      "mat": "furniture",
+      "verts": 117996
+    },
+    {
+      "mat": "propmetal",
+      "verts": 174534
+    },
+    {
+      "mat": "proppack",
+      "verts": 151218
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "kind": "kitbuild",
+  "name": "Salt works",
+  "cx": 13,
+  "cz": 13,
+  "materials": [
+    {
+      "mat": "wood",
+      "verts": 5688
+    },
+    {
+      "mat": "plaster",
+      "verts": 420
+    },
+    {
+      "mat": "brick",
+      "verts": 912
+    },
+    {
+      "mat": "furniture",
+      "verts": 27780
+    },
+    {
+      "mat": "propmetal",
+      "verts": 98460
+    }
+  ]
+}

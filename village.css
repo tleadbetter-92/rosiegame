@@ -302,6 +302,20 @@ html, body {
     font: 14px "Segoe UI", system-ui, sans-serif;
 }
 #sculpt-bar[hidden] { display: none; }
+#sculpt-open {
+    position: fixed;
+    left: 16px;
+    bottom: calc(18px + env(safe-area-inset-bottom));
+    z-index: 6;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    border-radius: 6px;
+    background: rgba(20, 16, 14, 0.78);
+    color: #f4efe4;
+    padding: 8px 12px;
+    cursor: pointer;
+    font: 14px "Segoe UI", system-ui, sans-serif;
+}
+#sculpt-open[hidden] { display: none; }
 #sculpt-bar p { margin: 0 0 8px; line-height: 1.35; }
 #sculpt-bar div { display: flex; gap: 6px; margin-bottom: 8px; }
 #sculpt-bar button {

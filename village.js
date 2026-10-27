@@ -4103,14 +4103,14 @@ function standDistrictArmy(spot) {
 function settleDistrictTown() {
     if (islandLabOn || !window.CampaignDistricts || typeof EditorBlocks === "undefined") return;
     refreshDistrictNotes();
-    districtHold = CampaignDistricts.holding(cam.x, cam.z, districtHold);
-    const spot = districtHold ? districtPlace(districtHold) : null;
-    const dist = spot ? Math.hypot(cam.x - spot.x, cam.z - spot.z) : Infinity;
+    const near = nearestDistrictSpot(cam.x, cam.z);
+    const spot = near.spot;
     const keep = districtShown && spot && districtShown.id === spot.id ? DISTRICT_KEEP : DISTRICT_SEE;
-    if (!spot || dist > keep) {
+    if (!spot || near.dist > keep) {
         if (districtShown) releaseDistrictTown();
         return;
     }
+    districtHold = spot.id;
     if (!districtShown || districtShown.id !== spot.id) dressDistrictTown(spot);
     if (districtShown && districtShown.id === spot.id) standDistrictArmy(spot);
     if (window.CampaignDistricts && districtShown) {
@@ -4119,6 +4119,22 @@ function settleDistrictTown() {
         CampaignDistricts.shown.kits = kits;
         CampaignDistricts.shown.meshes = districtShown.names.length;
     }
+}
+
+function nearestDistrictSpot(x, z) {
+    const rows = CampaignDistricts.list || [];
+    let spot = null;
+    let dist = Infinity;
+    for (let i = 0; i < rows.length; i++) {
+        const place = districtPlace(rows[i].id);
+        if (!place) continue;
+        const d = Math.hypot(x - place.x, z - place.z);
+        if (d < dist) {
+            spot = place;
+            dist = d;
+        }
+    }
+    return { spot: spot, dist: dist };
 }
 dressFlatHouses();
 placeStudyHouse();
@@ -8424,13 +8440,20 @@ function saveSurveyRise() {
 
 function bindSculptBar() {
     const bar = document.getElementById("sculpt-bar");
+    const opener = document.getElementById("sculpt-open");
     if (!bar) return;
-    bar.hidden = !flying;
+    let shut = false;
+    function showBar() {
+        bar.hidden = !flying || shut;
+        if (opener) opener.hidden = !flying || !shut;
+    }
+    showBar();
     const raise = document.getElementById("sculpt-raise");
     const lower = document.getElementById("sculpt-lower");
     const off = document.getElementById("sculpt-off");
     const size = document.getElementById("sculpt-size");
     const save = document.getElementById("sculpt-save");
+    const close = document.getElementById("sculpt-close");
     function paint() {
         if (raise) raise.classList.toggle("on", sculptMode === "raise");
         if (lower) lower.classList.toggle("on", sculptMode === "lower");
@@ -8441,6 +8464,17 @@ function bindSculptBar() {
     if (off) off.addEventListener("click", () => { sculptMode = null; sculpting = false; paint(); });
     if (size) size.addEventListener("input", () => { sculptRadius = Number(size.value) || 28; });
     if (save) save.addEventListener("click", saveSurveyRise);
+    if (close) close.addEventListener("click", () => {
+        shut = true;
+        sculptMode = null;
+        sculpting = false;
+        showBar();
+        paint();
+    });
+    if (opener) opener.addEventListener("click", () => {
+        shut = false;
+        showBar();
+    });
     paint();
 }
 
@@ -11082,6 +11116,32 @@ function stampHay(list, plot) {
     placeFarmHay(list, spot[0] - 0.8, spot[1] - 0.62, plot.house && plot.house.y);
 }
 
+function paintSettlementMarks(ctx, body, scale) {
+    const marks = [];
+    for (const region of World.regions || []) {
+        const color = region.faction === 0 ? "#c45c3a" : "#6a7a3a";
+        if (region.capital) marks.push({ x: region.capital.x, z: region.capital.z, major: true, color: color });
+        for (const town of region.towns || []) marks.push({ x: town.x, z: town.z, major: false, color: color });
+    }
+    ctx.lineWidth = 2;
+    for (let i = 0; i < marks.length; i++) {
+        const mark = marks[i];
+        const sx = (mark.x - body.x) * scale;
+        const sy = (mark.z - body.z) * scale;
+        ctx.fillStyle = "#f4efe4";
+        ctx.strokeStyle = mark.color;
+        if (mark.major) {
+            ctx.strokeRect(sx - 4, sy - 4, 8, 8);
+            ctx.fillRect(sx - 4, sy - 4, 8, 8);
+        } else {
+            ctx.beginPath();
+            ctx.arc(sx, sy, 3.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+        }
+    }
+}
+
 function paintMinorFarms(ctx, body, scale) {
     const plots = (typeof raisedData !== "undefined" && raisedData && raisedData.plots) || [];
     const byVillage = new Map();
@@ -11131,17 +11191,7 @@ function paintMini() {
     const destW = (miniX1 - miniX0) * scale;
     const destH = (miniZ1 - miniZ0) * scale;
     ctx.drawImage(miniBake, (miniX0 - body.x) * scale, (miniZ0 - body.z) * scale, destW, destH);
-    const towns = ["#c45c3a", "#3d6b8a", "#6a7a3a", "#8a5a7a"];
-    World.places.forEach((place, index) => {
-        const sx = (place.x - body.x) * scale;
-        const sy = (place.z - body.z) * scale;
-        ctx.fillStyle = "#f4efe4";
-        ctx.strokeStyle = towns[index];
-        ctx.lineWidth = 2;
-        ctx.strokeRect(sx - 4, sy - 4, 8, 8);
-        ctx.fillRect(sx - 4, sy - 4, 8, 8);
-    });
-    paintMinorFarms(ctx, body, scale);
+    paintSettlementMarks(ctx, body, scale);
     ctx.restore();
     ctx.beginPath();
     ctx.moveTo(w / 2, h / 2 - 11);

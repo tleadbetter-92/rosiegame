@@ -1,0 +1,40 @@
+{
+  "kind": "kitbuild",
+  "name": "simple house",
+  "cx": 25,
+  "cz": 19,
+  "materials": [
+    {
+      "mat": "wood",
+      "verts": 11592
+    },
+    {
+      "mat": "plaster",
+      "verts": 1209
+    },
+    {
+      "mat": "rock",
+      "verts": 12
+    },
+    {
+      "mat": "furniture",
+      "verts": 19950
+    },
+    {
+      "mat": "propmetal",
+      "verts": 13872
+    },
+    {
+      "mat": "propcloth",
+      "verts": 4278
+    },
+    {
+      "mat": "proppack",
+      "verts": 19650
+    },
+    {
+      "mat": "brick",
+      "verts": 192
+    }
+  ]
+}

@@ -7,7 +7,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Village</title>
-    <link rel="stylesheet" href="village.css">
+    <link rel="stylesheet" href="village.css?v=towns">
 </head>
 <body>
     <canvas id="view"></canvas>
@@ -88,11 +88,13 @@
             <button id="sculpt-off" type="button">Fly</button>
             <button id="sculpt-raise" type="button">Raise</button>
             <button id="sculpt-lower" type="button">Lower</button>
+            <button id="sculpt-close" type="button">Close</button>
         </div>
         <label>Brush <input id="sculpt-size" type="range" min="12" max="80" step="2" value="28"></label>
         <button id="sculpt-save" type="button">Save land</button>
         <p id="sculpt-note"></p>
     </div>
+    <button id="sculpt-open" type="button" hidden>Shape land</button>
     <div id="pad" role="slider" aria-label="Move" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0" hidden>
         <div class="knob"></div>
     </div>
@@ -136,7 +138,7 @@
     <script src="region1.js"></script>
     <script src="npc-voice.js"></script>
     <script src="dialogue.js"></script>
-    <script src="village.js?v=district"></script>
+    <script src="village.js?v=towns"></script>
     <script>
         (function () {
             var q = new URLSearchParams(location.search);

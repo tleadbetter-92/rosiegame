@@ -1,0 +1,36 @@
+{
+  "kind": "kitbuild",
+  "name": "large fenced shop",
+  "cx": 21,
+  "cz": 17,
+  "materials": [
+    {
+      "mat": "wood",
+      "verts": 44709
+    },
+    {
+      "mat": "plaster",
+      "verts": 2262
+    },
+    {
+      "mat": "brick",
+      "verts": 654
+    },
+    {
+      "mat": "rock",
+      "verts": 36
+    },
+    {
+      "mat": "furniture",
+      "verts": 8082
+    },
+    {
+      "mat": "propmetal",
+      "verts": 52026
+    },
+    {
+      "mat": "proppack",
+      "verts": 18144
+    }
+  ]
+}

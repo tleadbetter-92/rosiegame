@@ -1,0 +1,36 @@
+{
+  "kind": "kitbuild",
+  "name": "Blacksmith",
+  "cx": 4,
+  "cz": 1,
+  "materials": [
+    {
+      "mat": "wood",
+      "verts": 36720
+    },
+    {
+      "mat": "plaster",
+      "verts": 1230
+    },
+    {
+      "mat": "brick",
+      "verts": 2778
+    },
+    {
+      "mat": "propmetal",
+      "verts": 52026
+    },
+    {
+      "mat": "furniture",
+      "verts": 38466
+    },
+    {
+      "mat": "proppack",
+      "verts": 12897
+    },
+    {
+      "mat": "propcloth",
+      "verts": 16020
+    }
+  ]
+}
