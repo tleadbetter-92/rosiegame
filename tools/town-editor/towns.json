@@ -1,6 +1,22 @@
 {
   "towns": [
     {
+      "id": "island-town-kings-stone",
+      "name": "Island town kings stone"
+    },
+    {
+      "id": "island-town-salt-town",
+      "name": "Island town salt town"
+    },
+    {
+      "id": "island-town-the-mines",
+      "name": "Island town the mines"
+    },
+    {
+      "id": "island-town-wuden",
+      "name": "Island town wuden"
+    },
+    {
       "id": "river-crossing",
       "name": "river crossing"
     }

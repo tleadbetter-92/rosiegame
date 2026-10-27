@@ -76,6 +76,36 @@
       "pieces": 358
     },
     {
+      "id": "lumber-works",
+      "name": "Lumber works",
+      "file": "lumber-works.json",
+      "cx": 13,
+      "cz": 13.5,
+      "minX": 6,
+      "maxX": 20,
+      "minZ": 10,
+      "maxZ": 17,
+      "maxY": 3,
+      "spanX": 16,
+      "spanZ": 9,
+      "pieces": 89
+    },
+    {
+      "id": "mine-works",
+      "name": "mine works",
+      "file": "mine-works.json",
+      "cx": 13,
+      "cz": 14.5,
+      "minX": 6,
+      "maxX": 20,
+      "minZ": 10,
+      "maxZ": 19,
+      "maxY": 3,
+      "spanX": 16,
+      "spanZ": 11,
+      "pieces": 93
+    },
+    {
       "id": "flat roor garden house",
       "name": "random flat roof house",
       "file": "flat roor garden house.json",
@@ -106,6 +136,21 @@
       "pieces": 295
     },
     {
+      "id": "salt-works",
+      "name": "Salt works",
+      "file": "salt-works.json",
+      "cx": 13,
+      "cz": 13,
+      "minX": 6,
+      "maxX": 20,
+      "minZ": 10,
+      "maxZ": 16,
+      "maxY": 3,
+      "spanX": 16,
+      "spanZ": 8,
+      "pieces": 88
+    },
+    {
       "id": "simple-house",
       "name": "simple house",
       "file": "simple-house.json",
@@ -119,6 +164,21 @@
       "spanX": 8,
       "spanZ": 8,
       "pieces": 83
+    },
+    {
+      "id": "small-house1",
+      "name": "small house1",
+      "file": "small-house1.json",
+      "cx": 29,
+      "cz": 26,
+      "minX": 26,
+      "maxX": 32,
+      "minZ": 21,
+      "maxZ": 31,
+      "maxY": 6,
+      "spanX": 8,
+      "spanZ": 12,
+      "pieces": 106
     },
     {
       "id": "storehouse",

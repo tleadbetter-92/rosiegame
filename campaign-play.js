@@ -62,6 +62,7 @@ function spotsOf(region) {
 }
 
 function campaignDistricts(region) {
+    if (window.CampaignDistricts) return CampaignDistricts.polysFor(region.faction);
     const west = view.x0;
     const east = view.x1;
     const north = view.z0;
@@ -162,11 +163,31 @@ function drawMap() {
             ctx.fill();
         });
         ctx.globalAlpha = 1;
-        pack.towns.forEach((town) => mark(ctx, town.x, town.z, town.name, color, false, town.id === picked));
+        pack.towns.forEach((town) => {
+            const owned = !Number.isInteger(town.holder) || town.holder === region.faction;
+            const townColor = owned ? color : holderColor(town.holder, color);
+            mark(ctx, town.x, town.z, town.name + (owned ? "" : " · occupied"), townColor, false, town.id === picked);
+        });
         if (pack.capital) {
-            mark(ctx, pack.capital.x, pack.capital.z, region.name, color, true, region.id === picked);
-            const army = armySpot(pack.capital);
+            const owned = !Number.isInteger(region.holder) || region.holder === region.faction;
+            const capitalColor = owned ? color : holderColor(region.holder, color);
+            mark(ctx, pack.capital.x, pack.capital.z, region.name + (owned ? "" : " · occupied"), capitalColor, true, region.id === picked);
+            const army = armyPlace(region, regions);
             const count = region.army && Number.isFinite(region.army.soldiers) ? region.army.soldiers : 0;
+            const home = region.army && region.army.garrison;
+            const marching = region.army && (region.army.attack || region.army.verdict || region.army.relief);
+            if (marching && home && Number.isFinite(home.x)) {
+                const from = mapPoint(home.x, home.z);
+                const to = mapPoint(army.x, army.z);
+                ctx.beginPath();
+                ctx.moveTo(from.x, from.y);
+                ctx.lineTo(to.x, to.y);
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = color;
+                ctx.setLineDash([6, 6]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
             markArmy(ctx, army.x, army.z, count, color, picked === "army:" + region.id);
         }
     });
@@ -174,6 +195,24 @@ function drawMap() {
 
 function armySpot(capital) {
     return { x: capital.x + 90, z: capital.z + 80 };
+}
+
+function holderColor(faction, fallback) {
+    const villages = (campaign && campaign.villages) || [];
+    const village = villages.find((item) => item.index === faction);
+    return (village && village.color) || fallback;
+}
+
+function armyPlace(region, regions) {
+    const army = region.army;
+    if (!army || !Number.isFinite(army.x)) return armySpot(region.capital);
+    const crowded = (regions || []).some((other) => {
+        if (!other || other.id === region.id || !other.army || !Number.isFinite(other.army.x)) return false;
+        return Math.hypot(other.army.x - army.x, other.army.z - army.z) < 30;
+    });
+    if (crowded && army.attack) return { x: army.x + 42, z: army.z + 34 };
+    if (crowded) return { x: army.x - 42, z: army.z - 34 };
+    return { x: army.x + 36, z: army.z + 28 };
 }
 
 function markArmy(ctx, x, z, soldiers, color, on) {
@@ -221,10 +260,45 @@ function paintHand(hand) {
     const who = document.getElementById("when-who");
     if (!hand) return;
     day.textContent = "Day " + hand.day + " · " + hand.hour;
-    turn.textContent = "Turn " + hand.turn + " of " + hand.of + " · " + hand.part;
-    who.textContent = hand.name + "'s turn";
-    endButton.style.background = hand.color || "#6a7a3a";
-    endButton.textContent = "End " + hand.name + "'s turn";
+    if (hand.waiting) {
+        turn.textContent = "Twelve hours are passing";
+        who.textContent = "Waiting";
+        endButton.disabled = true;
+        endButton.style.background = "#8a7a62";
+    } else if (hand.reply) {
+        turn.textContent = "Answer the attack";
+        who.textContent = hand.name + " can answer";
+        endButton.disabled = false;
+        endButton.style.background = hand.color || "#6a7a3a";
+        endButton.textContent = "Let it stand";
+    } else {
+        turn.textContent = "Choices, then twelve hours";
+        who.textContent = hand.name + "'s choice";
+        endButton.disabled = false;
+        endButton.style.background = hand.color || "#6a7a3a";
+        endButton.textContent = hand.name + " is done";
+    }
+    paintWait(hand);
+}
+
+let waitTimer = 0;
+function paintWait(hand) {
+    clearInterval(waitTimer);
+    if (!hand || !hand.waiting || !hand.readyAt) return;
+    function tick() {
+        const left = hand.readyAt - Date.now();
+        if (left <= 0) {
+            endButton.textContent = "The next turn is opening";
+            clearInterval(waitTimer);
+            refresh();
+            return;
+        }
+        const minutes = Math.floor(left / 60000);
+        const seconds = Math.floor((left % 60000) / 1000);
+        endButton.textContent = "Next turn in " + minutes + "m " + seconds + "s";
+    }
+    tick();
+    waitTimer = setInterval(tick, 1000);
 }
 
 const STORE_ROWS = [["gold", "Gold"], ["stone", "Stone"], ["food", "Food"], ["salt", "Salt"], ["iron", "Iron"], ["wood", "Wood"], ["copper", "Copper"], ["tin", "Tin"], ["other", "Other"]];
@@ -271,15 +345,50 @@ function buildingSheet(place) {
     return { rows: rows, population: housed * 3 };
 }
 
-function armyOf(id) {
+function handFaction() {
+    return campaign && campaign.hand && Number.isInteger(campaign.hand.faction) ? campaign.hand.faction : -1;
+}
+
+function regionOfArmyPick(id) {
     if (!id || String(id).indexOf("army:") !== 0) return null;
     const regions = (campaign && campaign.regions) || [];
-    const region = regions.find((item) => item.id === id.slice(5));
+    return regions.find((item) => item.id === id.slice(5)) || null;
+}
+
+function ownArmySelected() {
+    const region = regionOfArmyPick(picked);
+    if (!region || region.faction !== handFaction()) return null;
+    return region;
+}
+
+function placeHolder(id) {
+    if (!id || String(id).indexOf("army:") === 0) return -1;
+    const regions = (campaign && campaign.regions) || [];
+    for (let i = 0; i < regions.length; i++) {
+        const region = regions[i];
+        if (region.id === id) return Number.isInteger(region.holder) ? region.holder : region.faction;
+        const towns = region.towns || [];
+        for (let t = 0; t < towns.length; t++) {
+            if (towns[t].id === id) return Number.isInteger(towns[t].holder) ? towns[t].holder : region.faction;
+        }
+    }
+    return -1;
+}
+
+function armyOf(id) {
+    const region = regionOfArmyPick(id);
     if (!region || !region.capital) return null;
+    const attack = region.army && region.army.attack && region.army.attack.name ? region.army.attack : null;
+    const verdict = region.army && region.army.verdict && region.army.verdict.placeName ? region.army.verdict : null;
     return {
         faction: region.factionName || "",
-        where: region.name,
-        soldiers: region.army && Number.isFinite(region.army.soldiers) ? region.army.soldiers : 0
+        where: (region.army && region.army.garrison && region.army.garrison.name) || region.name,
+        soldiers: region.army && Number.isFinite(region.army.soldiers) ? region.army.soldiers : 0,
+        attack: attack,
+        relief: region.army && region.army.relief && region.army.relief.name ? region.army.relief : null,
+        verdict: verdict,
+        defend: region.army && region.army.defend && region.army.defend.name ? region.army.defend : null,
+        yours: region.faction === handFaction()
     };
 }
 
@@ -288,12 +397,14 @@ function settlementOf(id) {
     for (let i = 0; i < regions.length; i++) {
         const region = regions[i];
         if (region.id === id) {
-            return { id: region.id, name: region.name, faction: region.factionName || "", major: true };
+            const occupied = Number.isInteger(region.holder) && region.holder !== region.faction;
+            return { id: region.id, name: region.name, faction: region.factionName || "", holderName: region.holderName || "", occupied: occupied, major: true };
         }
         const towns = region.towns || [];
         for (let t = 0; t < towns.length; t++) {
             if (towns[t].id === id) {
-                return { id: towns[t].id, name: towns[t].name, faction: region.factionName || "", major: false };
+                const occupied = Number.isInteger(towns[t].holder) && towns[t].holder !== region.faction;
+                return { id: towns[t].id, name: towns[t].name, faction: region.factionName || "", holderName: towns[t].holderName || "", occupied: occupied, major: false };
             }
         }
     }
@@ -314,14 +425,22 @@ function paintRegions() {
     const hand = campaign && campaign.hand;
     box.innerHTML = regions.map((region) => {
         const village = villages.find((item) => item.index === region.faction) || {};
-        const towns = (region.towns || []).map((town) => "<li><button type=\"button\" class=\"place" + (town.id === picked ? " picked" : "") + "\" data-place=\"" + town.id + "\">" + town.name + "</button></li>").join("");
+        const aiming = ownArmySelected();
+        const towns = (region.towns || []).map((town) => {
+            const held = Number.isInteger(town.holder) && town.holder !== region.faction;
+            const enemy = !!(aiming && placeHolder(town.id) !== aiming.faction);
+            const label = town.name + (held ? " · occupied" : "");
+            return "<li><button type=\"button\" class=\"place" + (town.id === picked ? " picked" : "") + (enemy ? " aim" : "") + "\" data-place=\"" + town.id + "\">" + label + "</button></li>";
+        }).join("");
         const acting = hand && hand.faction === region.faction ? " acting" : "";
         const faction = region.factionName || village.name || region.name;
+        const capitalHeld = Number.isInteger(region.holder) && region.holder !== region.faction;
+        const capitalEnemy = !!(aiming && placeHolder(region.id) !== aiming.faction);
         return "<article class=\"region-card" + acting + "\" style=\"border-top-color:" + (village.color || "#6a7a3a") + "\">" +
             "<h3>" + faction + "</h3>" +
             "<p class=\"quiet\">Three districts</p>" +
             "<ul>" +
-            "<li><button type=\"button\" class=\"place" + (region.id === picked ? " picked" : "") + "\" data-place=\"" + region.id + "\">" + region.name + "</button></li>" +
+            "<li><button type=\"button\" class=\"place" + (region.id === picked ? " picked" : "") + (capitalEnemy ? " aim" : "") + "\" data-place=\"" + region.id + "\">" + region.name + (capitalHeld ? " · occupied" : "") + "</button></li>" +
             towns +
             "</ul>" +
             "<p><button type=\"button\" class=\"place" + (picked === "army:" + region.id ? " picked" : "") + "\" data-place=\"army:" + region.id + "\">Army · " + ((region.army && region.army.soldiers) || 0) + "</button></p>" +
@@ -334,10 +453,34 @@ function paintSettlement() {
     if (!box) return;
     const army = armyOf(picked);
     if (army) {
+        let order = "Garrisoned in " + army.where + ". The capital trains 10 soldiers a turn.";
+        let buttons = "";
+        if (army.verdict) {
+            const pct = Math.round((army.verdict.chance || 0) * 100);
+            order = army.verdict.fought
+                ? "Won at " + army.verdict.placeName + " (" + pct + "%). Occupy keeps the army there, and that town's goods come to you until it is retaken. Loot and leave takes 100 of every resource, loses " + army.verdict.losses + " soldiers, and returns to garrison."
+                : army.verdict.placeName + " was undefended. Occupy keeps the army there, and that town's goods come to you until it is retaken. Loot and leave takes 100 of every resource and returns to garrison.";
+            buttons = "<button type=\"button\" class=\"choice\" data-order=\"occupy\">Occupy " + army.verdict.placeName + "</button>" +
+                "<button type=\"button\" class=\"choice\" data-order=\"loot\">Loot and leave</button>";
+        } else if (army.yours && army.relief) {
+            order = "Marching to defend " + army.relief.name + ". The battle is decided after 12 hours, when the next turn begins.";
+        } else if (army.yours && army.defend) {
+            order = army.defend.name + " is under attack. Send the army now. The battle is decided after 12 hours, when the next turn begins.";
+            buttons = "<button type=\"button\" class=\"choice\" data-order=\"defend\">Defend " + army.defend.name + "</button>";
+        } else if (army.yours && army.attack) {
+            order = "Besieging " + army.attack.name + ". Their army can answer now. The battle is decided after 12 hours, when the next turn begins.";
+        } else if (army.yours) {
+            order = army.soldiers
+                ? "Garrisoned in " + army.where + ". Click an enemy town or capital to attack it. The capital trains 10 soldiers a turn."
+                : "Garrisoned in " + army.where + ". No soldiers yet. The capital trains 10 a turn.";
+        } else if (army.attack) {
+            order = "Besieging " + army.attack.name + ".";
+        }
         box.innerHTML = "<p class=\"place-kind\">" + army.faction + " · Army</p>" +
             "<h3>" + army.where + "</h3>" +
             "<ul class=\"buildings\"><li><span>Soldiers</span><b>" + army.soldiers + "</b></li></ul>" +
-            "<p class=\"quiet\">The capital trains 10 soldiers a turn. They stay here.</p>";
+            buttons +
+            "<p class=\"quiet\">" + order + "</p>";
         return;
     }
     const place = settlementOf(picked);
@@ -351,11 +494,12 @@ function paintSettlement() {
         const made = row.yieldTurn ? "<em class=\"yield\">" + row.yieldTurn + " " + row.good + "</em>" : "<em class=\"yield\"></em>";
         return "<li><span>" + label + "</span><b>" + row.count + "</b>" + (row.people ? "<em>" + row.people + "</em>" : "<em></em>") + made + "</li>";
     }).join("");
-    box.innerHTML = "<p class=\"place-kind\">" + place.faction + " · " + (place.major ? "Major settlement" : "Town") + "</p>" +
+    box.innerHTML = "<p class=\"place-kind\">" + place.faction + " · " + (place.major ? "Major settlement" : "Town") + (place.occupied ? " · occupied by " + place.holderName : "") + "</p>" +
         "<h3>" + place.name + "</h3>" +
         "<ul class=\"buildings\">" + rows + "</ul>" +
         "<h3 class=\"stats-label\">Stats</h3>" +
-        "<p class=\"population\">Population " + sheet.population + "</p>";
+        "<p class=\"population\">Population " + sheet.population + "</p>" +
+        (place.occupied ? "<p class=\"quiet\">Its goods go to " + place.holderName + " until it is retaken.</p>" : "");
 }
 
 function paintLog() {
@@ -392,7 +536,7 @@ land.addEventListener("click", (event) => {
     regions.forEach((region) => {
         const pack = spotsOf(region);
         if (pack.capital) {
-            const army = armySpot(pack.capital);
+            const army = armyPlace(region, regions);
             const ad = Math.hypot(army.x - x, army.z - z);
             if (ad < bestD) { bestD = ad; best = "army:" + region.id; }
             const d = Math.hypot(pack.capital.x - x, pack.capital.z - z);
@@ -403,19 +547,69 @@ land.addEventListener("click", (event) => {
             if (d < bestD) { bestD = d; best = town.id; }
         });
     });
-    picked = best;
+    choosePlace(best);
+});
+
+async function postOrder(body, keep) {
+    const res = await fetch("/api/campaign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+        let message = "The army stays.";
+        try {
+            const err = await res.json();
+            if (err.error) message = err.error;
+        } catch (err) { /* keep the plain message */ }
+        paintSettlement();
+        const quiet = document.querySelector("#settlement .quiet");
+        if (quiet) quiet.textContent = message;
+        return;
+    }
+    picked = keep;
+    show(await res.json());
+}
+
+async function sendAttack(targetId) {
+    await postOrder({ attack: targetId }, picked);
+}
+
+function choosePlace(next) {
+    const region = ownArmySelected();
+    const holder = placeHolder(next);
+    if (region && region.army && region.army.verdict) {
+        picked = next && String(next).indexOf("army:") === 0 ? next : picked;
+        paintRegions();
+        paintSettlement();
+        drawMap();
+        const quiet = document.querySelector("#settlement .quiet");
+        if (quiet && holder >= 0) quiet.textContent = "Choose whether to occupy or loot.";
+        return;
+    }
+    if (region && holder >= 0 && holder !== region.faction) {
+        sendAttack(next);
+        return;
+    }
+    picked = next;
     paintRegions();
     paintSettlement();
     drawMap();
-});
+}
 
 document.getElementById("regions").addEventListener("click", (event) => {
     const button = event.target.closest("[data-place]");
     if (!button) return;
-    picked = button.getAttribute("data-place");
-    paintRegions();
-    paintSettlement();
-    drawMap();
+    choosePlace(button.getAttribute("data-place"));
+});
+
+document.getElementById("settlement").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-order]");
+    if (!button) return;
+    const order = button.getAttribute("data-order");
+    if (order === "defend") postOrder({ defend: true }, picked);
+    if (order === "occupy" || order === "loot") postOrder({ resolve: order }, picked);
 });
 
 endButton.addEventListener("click", async () => {

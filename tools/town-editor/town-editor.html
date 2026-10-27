@@ -44,7 +44,7 @@
         <p style="font-size:12px;margin:0 0 6px;font-weight:600;">Towns</p>
         <p style="font-size:11px;color:#d9cbb4;margin:0 0 6px;line-height:1.35;">Built-in layouts, plus any town you save by name. Opening one replaces the block on screen.</p>
         <div id="townList"></div>
-        <p>The piece sits under the cursor. Left click sets it down. R turns it. Right-drag looks. WASD moves. Ground paints in a brush — hold left click and drag. <b>Erase</b> removes with the brush; <b>Clear all</b> wipes the block.</p>
+        <p>The piece sits under the cursor. Left click sets it down. R turns it. Right-drag looks. WASD moves. Ground paints in a brush — hold left click and drag. <b>Erase</b> removes with the brush; <b>Undo</b> takes back the last click or stroke; <b>Clear all</b> wipes the block.</p>
         <label for="groundBrush" style="display:block;font-size:12px;color:#d9cbb4;margin:8px 0 4px;">Ground brush (cells)</label>
         <input type="range" id="groundBrush" min="0" max="8" value="2" style="width:100%;">
         <p id="groundBrushLabel" style="font-size:11px;color:#e8c896;margin:0 0 8px;">5 × 5 squares · [ smaller · ] larger</p>
@@ -70,6 +70,7 @@
         <label class="tool"><input type="radio" name="tool" value="grass"> Grass</label>
         <label class="tool"><input type="radio" name="tool" value="fence"> Fence</label>
         <label class="tool"><input type="radio" name="tool" value="wall"> Village wall</label>
+        <label class="tool"><input type="radio" name="tool" value="wallrow"> Village wall ×10</label>
         <label class="tool"><input type="radio" name="tool" value="gate"> Village gate</label>
         <label class="tool"><input type="radio" name="tool" value="lamp"> Street lamp</label>
         <label class="tool"><input type="radio" name="tool" value="plow"> Plowed field</label>
@@ -80,6 +81,7 @@
             <p style="font-size:11px;color:#d9cbb4;margin:0 0 6px;line-height:1.35;">Layout here (ground + kit footprints). Detail houses in <a href="../building-editor/building-editor.html" style="color:#e8c896;">Building editor</a> — village megakit + <b>Furnishing_*</b> props (barrels, beds, stalls). Export → <code style="font-size:10px;">saves/name.json</code> → <code style="font-size:10px;">node tools/building-editor/index-saves.js</code> → <code style="font-size:10px;">node tools/bake-building.js saves/name.json name</code> → refresh kit list below.</p>
             <div id="kitBuildList"></div>
         </div>
+        <button type="button" id="undo">Undo</button>
         <button type="button" id="save">Save in this browser</button>
         <label for="townName" style="display:block;font-size:12px;color:#d9cbb4;margin:8px 0 4px;">Town name</label>
         <input id="townName" type="text" placeholder="Type a town name" autocomplete="off">
@@ -108,6 +110,8 @@
         let painting = false;
         let groundBrushRadius = 2;
         let lastGroundPaintKey = "";
+        const undoStack = [];
+        let strokeSnapshot = null;
 
         function isGroundPaintTool(t) {
             return t === "grass" || t === "cobble" || t === "gravel" || t === "stone" || t === "plow"
@@ -830,6 +834,19 @@
             const c = Math.cos(yaw), s = Math.sin(yaw);
             return [x + px * c - pz * s, z + px * s + pz * c];
         }
+        const WALL_SPAN = 4;
+        function wallRun(x, z, yaw, count) {
+            const c = Math.cos(yaw);
+            const s = Math.sin(yaw);
+            const spots = [];
+            for (let i = 0; i < count; i++) {
+                const wx = x + c * WALL_SPAN * i;
+                const wz = z + s * WALL_SPAN * i;
+                if (wx < -HALF || wx >= HALF || wz < -HALF || wz >= HALF) continue;
+                spots.push({ x: wx, z: wz, yaw: yaw });
+            }
+            return spots;
+        }
         function stamp(list, src, x, z, yaw) {
             for (let i = 0; i < src.length; i += 6) {
                 const p = turn(x, z, yaw, src[i], src[i + 2]);
@@ -1018,6 +1035,8 @@
                     stampGhost(bags.wood, kit.fence, x, z, yaw);
                 } else if (tool === "wall") {
                     stampGhost(bags.wood, kit.wall, x, z, yaw);
+                } else if (tool === "wallrow") {
+                    wallRun(x, z, yaw, 10).forEach((spot) => stampGhost(bags.wood, kit.wall, spot.x, spot.z, spot.yaw));
                 } else if (tool === "gate") {
                     stampGhost(bags.wood, kit.gate, x, z, yaw);
                 } else if (tool === "lamp") {
@@ -1222,6 +1241,72 @@
             if (t < 0) return null;
             return { x: e.x + dir.x * t, z: e.z + dir.z * t };
         }
+        function copyPiece(piece) {
+            return Object.assign({}, piece);
+        }
+        function snapshotBlock() {
+            const ground = {};
+            for (const key of Object.keys(block.ground)) ground[key] = block.ground[key];
+            return {
+                ground: ground,
+                buildings: block.buildings.map(copyPiece),
+                fences: block.fences.map(copyPiece)
+            };
+        }
+        function samePiece(a, b) {
+            const keys = Object.keys(a).concat(Object.keys(b));
+            for (let i = 0; i < keys.length; i++) {
+                if (a[keys[i]] !== b[keys[i]]) return false;
+            }
+            return true;
+        }
+        function sameBlock(saved) {
+            const groundKeys = Object.keys(block.ground);
+            if (groundKeys.length !== Object.keys(saved.ground).length) return false;
+            if (saved.buildings.length !== block.buildings.length || saved.fences.length !== block.fences.length) return false;
+            for (let i = 0; i < groundKeys.length; i++) {
+                if (saved.ground[groundKeys[i]] !== block.ground[groundKeys[i]]) return false;
+            }
+            for (let i = 0; i < saved.buildings.length; i++) {
+                if (!samePiece(saved.buildings[i], block.buildings[i])) return false;
+            }
+            for (let i = 0; i < saved.fences.length; i++) {
+                if (!samePiece(saved.fences[i], block.fences[i])) return false;
+            }
+            return true;
+        }
+        function remember() {
+            if (strokeSnapshot) return;
+            strokeSnapshot = snapshotBlock();
+        }
+        function keepStroke() {
+            if (!strokeSnapshot) return;
+            if (!sameBlock(strokeSnapshot)) {
+                undoStack.push(strokeSnapshot);
+                if (undoStack.length > 40) undoStack.shift();
+            }
+            strokeSnapshot = null;
+        }
+        function pieceCount() {
+            return block.buildings.length + block.fences.length;
+        }
+        function undoLast() {
+            painting = false;
+            lastGroundPaintKey = "";
+            const prev = strokeSnapshot || undoStack.pop();
+            strokeSnapshot = null;
+            const status = document.getElementById("status");
+            if (!prev) {
+                status.textContent = "Nothing to undo.";
+                return;
+            }
+            block.ground = prev.ground;
+            block.buildings = prev.buildings;
+            block.fences = prev.fences;
+            refreshBlock();
+            const n = pieceCount();
+            status.textContent = "Undo · " + n + (n === 1 ? " piece." : " pieces.");
+        }
         function paintAt(p) {
             if (!p) return;
             const x = isKitTool(tool) ? snapCell(p.x) : snap(p.x);
@@ -1261,6 +1346,10 @@
                 block.fences.push({ x: x, z: z, yaw: yaw });
             } else if (tool === "wall" || tool === "gate") {
                 block.buildings.push({ t: tool, x: x, z: z, yaw: yaw });
+            } else if (tool === "wallrow") {
+                wallRun(x, z, yaw, 10).forEach((spot) => {
+                    block.buildings.push({ t: "wall", x: spot.x, z: spot.z, yaw: spot.yaw });
+                });
             }
             lastGroundPaintKey = "";
             refreshBlock();
@@ -1362,6 +1451,7 @@
         canvas.addEventListener("mousedown", (e) => {
             if (e.button === 2) { painting = false; return; }
             painting = true;
+            remember();
             paintAt(hit(e.clientX, e.clientY));
         });
         canvas.addEventListener("mousemove", (e) => {
@@ -1381,6 +1471,7 @@
         window.addEventListener("mouseup", () => {
             painting = false;
             lastGroundPaintKey = "";
+            keepStroke();
         });
         document.getElementById("groundBrush").addEventListener("input", (e) => {
             groundBrushRadius = Number(e.target.value);
@@ -1394,6 +1485,13 @@
             e.preventDefault();
         }, { passive: false });
         window.addEventListener("keydown", (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.code === "KeyZ" && !e.shiftKey) {
+                const tag = e.target && e.target.tagName;
+                if (tag === "INPUT" || tag === "TEXTAREA") return;
+                e.preventDefault();
+                undoLast();
+                return;
+            }
             if (e.code === "BracketLeft") {
                 groundBrushRadius = Math.max(0, groundBrushRadius - 1);
                 document.getElementById("groundBrush").value = String(groundBrushRadius);
@@ -1445,6 +1543,7 @@
             lastGroundPaintKey = "";
             refreshBlock();
         }
+        document.getElementById("undo").addEventListener("click", undoLast);
         document.getElementById("save").addEventListener("click", () => {
             localStorage.setItem(storeKey, JSON.stringify(payload()));
             document.getElementById("status").textContent = "Saved in this browser.";
@@ -1460,8 +1559,10 @@
         document.getElementById("load").addEventListener("click", () => document.getElementById("file").click());
         document.getElementById("clearAll").addEventListener("click", () => {
             if (!confirm("Clear the whole block?\n\nRemoves all ground paint, buildings, and fences. Also clears the copy saved in this browser.")) return;
+            remember();
             localStorage.removeItem(storeKey);
             clearBlock();
+            keepStroke();
             document.getElementById("status").textContent = "Block cleared — empty layout.";
         });
         document.getElementById("file").addEventListener("change", () => {
@@ -1469,7 +1570,9 @@
             if (!file) return;
             const reader = new FileReader();
             reader.onload = () => {
+                remember();
                 applyPayload(JSON.parse(reader.result));
+                keepStroke();
                 document.getElementById("status").textContent = "Loaded " + file.name + ".";
             };
             reader.readAsText(file);
@@ -1507,7 +1610,9 @@
             }
             const busy = block.buildings.length || block.fences.length || Object.keys(block.ground).length;
             if (busy && !confirm("Open " + town.name + "?\n\nThis replaces the block on screen.")) return;
+            remember();
             applyPayload(editorBlockToPayload(src));
+            keepStroke();
             const nameBox = document.getElementById("townName");
             if (nameBox) nameBox.value = town.name;
             document.getElementById("status").textContent = "Opened " + town.name + ".";

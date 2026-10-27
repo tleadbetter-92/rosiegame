@@ -3553,11 +3553,11 @@ function registerHamletTerrainFlats() {
         }
     }
     const hamlets = World.hamlets || [];
-    const islandTown = typeof EditorBlocks !== "undefined" ? EditorBlocks.islandBasicTown : null;
-    const islandSpan = islandTown && islandTown.size ? islandTown.size : 192;
     for (const region of World.regions || []) {
         for (const town of region.towns || []) {
-            const rect = hamletTownBlockRect(town.x, town.z, islandSpan);
+            const layout = regionTownLayout(town);
+            const span = layout && layout.size ? layout.size : 192;
+            const rect = hamletTownBlockRect(town.x, town.z, span);
             levelPads.push({ minX: rect.minX, minZ: rect.minZ, w: rect.w, d: rect.d, y: medianTerrainHeight(rect) });
         }
     }
@@ -3628,6 +3628,7 @@ const hamletDressed = [];
 const HAMLET_DECOR_MESH = ["grass", "dirt", "cobble", "sand", "plow", "yardgravel", "bill", "billFront", "plaster", "roof", "trunk"];
 
 function uploadHamletDecorMeshes() {
+    if (districtStampId) return;
     if (typeof mesh === "undefined") return;
     for (let i = 0; i < HAMLET_DECOR_MESH.length; i++) {
         const name = HAMLET_DECOR_MESH[i];
@@ -3788,13 +3789,27 @@ function dressSphereHamletsNear(x, z, radius) {
 
 const regionTownDressed = {};
 
+function regionTownLayout(town) {
+    if (typeof EditorBlocks === "undefined" || !town) return null;
+    const key = {
+        westfield: "island-town-salt-town",
+        southfield: "island-town-wuden",
+        westwatch: "island-town-the-mines",
+        eastwatch: "island-town-kings-stone"
+    }[town.id];
+    if (key && EditorBlocks[key]) return EditorBlocks[key];
+    return EditorBlocks.islandBasicTown || null;
+}
+
 function dressRegionTowns() {
-    if (typeof EditorBlocks === "undefined" || !EditorBlocks.islandBasicTown) return;
+    if (typeof EditorBlocks === "undefined") return;
     for (const region of World.regions || []) {
         for (const town of region.towns || []) {
             if (regionTownDressed[town.id]) continue;
+            const layout = regionTownLayout(town);
+            if (!layout) continue;
             regionTownDressed[town.id] = true;
-            dressEditorHamletAt(EditorBlocks.islandBasicTown, town.x, town.z, {
+            dressEditorHamletAt(layout, town.x, town.z, {
                 townBlockPad: true,
                 village: region.faction,
                 registerFarmhouse: false
@@ -3845,18 +3860,265 @@ function dressHamletsNear(x, z, radius) {
         if (dx * dx + dz * dz <= r2) dressHamletIndex(i);
     }
     dressSphereHamletsNear(x, z, radius);
-    dressRegionTowns();
-    dressMajorTowns();
 }
 
 let hamletDressMarkX = 1e9;
 let hamletDressMarkZ = 1e9;
 
 function tickHamletDress() {
+    settleDistrictTown();
     if (Math.hypot(cam.x - hamletDressMarkX, cam.z - hamletDressMarkZ) < 48) return;
     hamletDressMarkX = cam.x;
     hamletDressMarkZ = cam.z;
     dressHamletsNear(cam.x, cam.z);
+}
+
+// One campaign district is built at a time, and only while its town is in sight.
+let districtStampId = null;
+let districtToken = 0;
+let districtHold = null;
+let districtShown = null;
+let districtArmyKey = "";
+let districtNotes = {};
+let districtNoteAt = 0;
+const DISTRICT_SEE = 270;
+const DISTRICT_KEEP = 340;
+const DISTRICT_SOLDIERS = 24;
+const DISTRICT_BATCH_KEYS = ["plow", "yardgravel", "grass", "dirt", "cobble", "sand", "trunk", "bill", "billFront", "plaster", "roof"];
+
+function districtPlace(id) {
+    const row = window.CampaignDistricts && CampaignDistricts.byId(id);
+    if (!row || !window.World) return null;
+    for (const region of World.regions || []) {
+        if (region.id === id && region.capital) {
+            return { id: id, name: region.name, faction: region.faction, major: true, x: region.capital.x, z: region.capital.z };
+        }
+        for (const town of region.towns || []) {
+            if (town.id === id) return { id: id, name: town.name, faction: region.faction, major: false, x: town.x, z: town.z };
+        }
+    }
+    return null;
+}
+
+function districtLayout(spot) {
+    if (typeof EditorBlocks === "undefined") return null;
+    if (spot.major) return EditorBlocks.hamletTownBig || null;
+    return regionTownLayout({ id: spot.id });
+}
+
+function refreshDistrictNotes() {
+    const now = Date.now();
+    if (districtNoteAt && now - districtNoteAt < 20000) return;
+    districtNoteAt = now;
+    fetch("/api/campaign?brief=1", { cache: "no-store" })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+            if (!data) return;
+            const next = {};
+            const places = (window.CampaignDistricts && CampaignDistricts.list) || [];
+            for (let i = 0; i < (data.regions || []).length; i++) {
+                const region = data.regions[i];
+                const army = region.army;
+                if (!army || !Number.isFinite(army.x) || !Number.isFinite(army.z)) continue;
+                let best = null;
+                let bestD = 80;
+                for (let p = 0; p < places.length; p++) {
+                    const spot = districtPlace(places[p].id);
+                    if (!spot) continue;
+                    const dist = Math.hypot(army.x - spot.x, army.z - spot.z);
+                    if (dist < bestD) {
+                        best = spot.id;
+                        bestD = dist;
+                    }
+                }
+                if (!best) continue;
+                if (!next[best]) next[best] = [];
+                next[best].push({ faction: region.faction, soldiers: army.soldiers || 0 });
+            }
+            districtNotes = next;
+            districtArmyKey = "";
+        })
+        .catch(() => { districtNoteAt = 0; });
+}
+
+function dropDistrictMeshes(names) {
+    for (let i = 0; i < names.length; i++) {
+        const name = names[i];
+        if (mesh[name] && mesh[name].buffer) gl.deleteBuffer(mesh[name].buffer);
+        delete mesh[name];
+        delete textures[name];
+    }
+}
+
+function dropTagged(list, id) {
+    for (let i = list.length - 1; i >= 0; i--) {
+        if (list[i].district === id) list.splice(i, 1);
+    }
+}
+
+function releaseDistrictTown() {
+    if (!districtShown) return;
+    const id = districtShown.id;
+    districtToken += 1;
+    districtStampId = null;
+    for (let i = kitBuildQueue.length - 1; i >= 0; i--) {
+        if (kitBuildQueue[i].district === id) kitBuildQueue.splice(i, 1);
+    }
+    for (let i = kitPlaced.length - 1; i >= 0; i--) {
+        const building = kitPlaced[i];
+        if (building.district !== id) continue;
+        dropKitRole(building, "shell");
+        dropKitRole(building, "detail");
+        dropKitRole(building, "interior");
+        kitPlaced.splice(i, 1);
+    }
+    flushKitBuildMeshes();
+    dropTagged(solids, id);
+    dropTagged(floors, id);
+    dropTagged(doors, id);
+    dropTagged(kitShells, id);
+    dropTagged(scenery, id);
+    dropTagged(hamletPads, id);
+    for (let i = men.length - 1; i >= 0; i--) {
+        if (men[i].campaignArmy && men[i].campaignPost === id) men.splice(i, 1);
+    }
+    solidGrid = null;
+    floorGrid = null;
+    doorGrid = null;
+    sceneryGrid = null;
+    townBuildGrid = null;
+    dropDistrictMeshes(districtShown.names);
+    districtShown = null;
+    districtArmyKey = "";
+    if (window.CampaignDistricts) CampaignDistricts.shown = { town: null, soldiers: 0 };
+}
+
+function dressDistrictTown(spot) {
+    const layout = districtLayout(spot);
+    if (!layout) return;
+    if (districtShown) releaseDistrictTown();
+    const token = districtToken;
+    const local = {};
+    const saved = {};
+    for (let i = 0; i < DISTRICT_BATCH_KEYS.length; i++) {
+        const key = DISTRICT_BATCH_KEYS[i];
+        saved[key] = batches[key];
+        local[key] = [];
+        batches[key] = local[key];
+    }
+    const sceneryAt = scenery.length;
+    const padsAt = hamletPads.length;
+    districtStampId = spot.id;
+    try {
+        dressEditorHamletAt(layout, spot.x, spot.z, {
+            townBlockPad: true,
+            village: spot.faction,
+            registerFarmhouse: false
+        });
+    } finally {
+        districtStampId = null;
+        for (let i = 0; i < DISTRICT_BATCH_KEYS.length; i++) batches[DISTRICT_BATCH_KEYS[i]] = saved[DISTRICT_BATCH_KEYS[i]];
+    }
+    if (token !== districtToken) return;
+    for (let i = sceneryAt; i < scenery.length; i++) scenery[i].district = spot.id;
+    for (let i = padsAt; i < hamletPads.length; i++) hamletPads[i].district = spot.id;
+    const names = [];
+    const tex = {
+        plow: "plow", yardgravel: "yardgravel", grass: "grass", dirt: "dirt", cobble: "cobble",
+        sand: "sand", trunk: "trunk", bill: "bill", billFront: "billFront", plaster: "plaster", roof: "roof"
+    };
+    for (let i = 0; i < DISTRICT_BATCH_KEYS.length; i++) {
+        const key = DISTRICT_BATCH_KEYS[i];
+        if (!local[key].length) continue;
+        const name = "districtTown" + spot.id + key;
+        uploadMesh(name, local[key]);
+        textures[name] = textures[tex[key]] || textures.plaster;
+        if (mesh[name] && (key === "plow" || key === "yardgravel" || key === "grass" || key === "dirt" || key === "cobble" || key === "sand")) mesh[name].cull = false;
+        names.push(name);
+    }
+    sceneryGrid = null;
+    districtShown = { id: spot.id, names: names };
+    if (window.CampaignDistricts) CampaignDistricts.shown = { town: spot.id, soldiers: 0 };
+}
+
+function standDistrictArmy(spot) {
+    const groups = districtNotes[spot.id] || [];
+    const formed = [];
+    for (let g = 0; g < groups.length; g++) {
+        const count = Math.max(0, Math.min(DISTRICT_SOLDIERS, groups[g].soldiers || 0));
+        if (!count) continue;
+        formed.push({ faction: groups[g].faction, count: count });
+    }
+    const key = formed.map((group) => group.faction + ":" + group.count).join("|");
+    let have = 0;
+    for (let i = 0; i < men.length; i++) {
+        if (men[i].campaignArmy && men[i].campaignPost === spot.id) have += 1;
+    }
+    const want = formed.reduce((sum, group) => sum + group.count, 0);
+    if (key === districtArmyKey && have === want) return;
+    for (let i = men.length - 1; i >= 0; i--) {
+        if (men[i].campaignArmy && men[i].campaignPost === spot.id) men.splice(i, 1);
+    }
+    const cols = 6;
+    const gap = 1.7;
+    for (let g = 0; g < formed.length; g++) {
+        const group = formed[g];
+        const side = formed.length > 1 ? (g === 0 ? -1 : 1) : 0;
+        const rows = Math.ceil(group.count / cols);
+        for (let n = 0; n < group.count; n++) {
+            const col = n % cols;
+            const row = Math.floor(n / cols);
+            const across = Math.min(cols, group.count);
+            const x = spot.x + side * 8 + (col - (across - 1) / 2) * gap;
+            const z = spot.z + (row - (rows - 1) / 2) * gap;
+            men.push({
+                campaignArmy: true,
+                campaignPost: spot.id,
+                faction: group.faction,
+                index: -400 - g * 40 - n,
+                health: 3,
+                post: places.length + 20,
+                mode: "guard",
+                fixed: true,
+                x: x,
+                z: z,
+                homeX: x,
+                homeZ: z,
+                yaw: side >= 0 ? Math.PI : 0,
+                bob: 0,
+                down: 0,
+                swing: -1,
+                hostile: false,
+                attackIn: 1,
+                striking: 0,
+                struck: false,
+                dying: false
+            });
+        }
+    }
+    districtArmyKey = key;
+    if (window.CampaignDistricts) CampaignDistricts.shown = { town: spot.id, soldiers: want };
+}
+
+function settleDistrictTown() {
+    if (islandLabOn || !window.CampaignDistricts || typeof EditorBlocks === "undefined") return;
+    refreshDistrictNotes();
+    districtHold = CampaignDistricts.holding(cam.x, cam.z, districtHold);
+    const spot = districtHold ? districtPlace(districtHold) : null;
+    const dist = spot ? Math.hypot(cam.x - spot.x, cam.z - spot.z) : Infinity;
+    const keep = districtShown && spot && districtShown.id === spot.id ? DISTRICT_KEEP : DISTRICT_SEE;
+    if (!spot || dist > keep) {
+        if (districtShown) releaseDistrictTown();
+        return;
+    }
+    if (!districtShown || districtShown.id !== spot.id) dressDistrictTown(spot);
+    if (districtShown && districtShown.id === spot.id) standDistrictArmy(spot);
+    if (window.CampaignDistricts && districtShown) {
+        let kits = 0;
+        for (let i = 0; i < kitPlaced.length; i++) if (kitPlaced[i].district === districtShown.id) kits += 1;
+        CampaignDistricts.shown.kits = kits;
+        CampaignDistricts.shown.meshes = districtShown.names.length;
+    }
 }
 dressFlatHouses();
 placeStudyHouse();
@@ -4399,6 +4661,7 @@ function registerKitPhysics(id, wx, wz, baseY, meta, physics, building) {
                 id: "kit:" + id + ":" + i,
                 kind: "kit",
                 role: id,
+                district: building && building.district,
                 x: p.x,
                 z: p.z,
                 y: baseY + (entry.y || 0),
@@ -4417,7 +4680,8 @@ function registerKitPhysics(id, wx, wz, baseY, meta, physics, building) {
             w: box.w,
             d: box.d,
             y: baseY,
-            kit: true
+            kit: true,
+            district: building && building.district
         });
         if (building) {
             building.box = { minX: box.x, minZ: box.z, w: box.w, d: box.d, y: baseY, h: shell.h || 6 };
@@ -4434,7 +4698,8 @@ function registerKitPhysics(id, wx, wz, baseY, meta, physics, building) {
             y0: world.y0,
             y1: world.y1,
             raised: true,
-            stair: !!solid.stair
+            stair: !!solid.stair,
+            district: building && building.district
         });
     }
     solidGrid = null;
@@ -4454,7 +4719,8 @@ function registerKitPhysics(id, wx, wz, baseY, meta, physics, building) {
             w: world.w,
             d: world.d,
             y: world.y0,
-            stair: !!deck.stair
+            stair: !!deck.stair,
+            district: building && building.district
         });
     }
     floorGrid = null;
@@ -4489,7 +4755,14 @@ function ensureKitTextures() {
 
 function queueKitBuild(id, wx, wz, yaw) {
     if (!id) return;
-    kitBuildQueue.push({ id: id, wx: wx, wz: wz, yaw: yaw || 0 });
+    kitBuildQueue.push({
+        id: id,
+        wx: wx,
+        wz: wz,
+        yaw: yaw || 0,
+        district: districtStampId,
+        token: districtStampId ? districtToken : null
+    });
 }
 
 // Shell stays in the street. A heavy skin (the tower's metal and rock) loads for the one
@@ -4650,6 +4923,24 @@ function tickKitStream() {
     const high = flying && eye.y > 48;
     const loadR = gfxMode === "low" ? 28 : 50;
     const dropR = gfxMode === "low" ? 42 : 72;
+    const shellReach = (typeof gfx === "function" ? gfx().fogNear : 230) + 40;
+    const shellDrop = (typeof gfx === "function" ? gfx().drawFar : 360) + 20;
+    let shellJobs = 0;
+    let nearestShell = null;
+    let nearestShellD = Infinity;
+    for (let i = 0; i < kitPlaced.length; i++) {
+        const building = kitPlaced[i];
+        if (!building.meta) continue;
+        const anchor = kitAnchor(building);
+        const dist = Math.hypot(eye.x - anchor.x, eye.z - anchor.z);
+        if (building.shellJob) shellJobs += 1;
+        if (building.shellOn && dist > shellDrop && !kitInside(building, eye.x, eye.z, eye.y)) dropKitRole(building, "shell");
+        else if (!building.shellOn && !building.shellJob && dist < shellReach && dist < nearestShellD) {
+            nearestShell = building;
+            nearestShellD = dist;
+        }
+    }
+    if (nearestShell && shellJobs < 2) wantKitRole(nearestShell, "shell");
     let nearest = null;
     let nearestD = Infinity;
     if (!high && !inside) {
@@ -4680,10 +4971,11 @@ function tickKitStream() {
     }
 }
 
-function stampKitBuildOnce(id, wx, wz, yaw) {
+function stampKitBuildOnce(id, wx, wz, yaw, district, token) {
     const baseY = Math.max(0, World.heightAt(wx, wz));
     const building = {
         id: id, wx: wx, wz: wz, yaw: yaw, baseY: baseY,
+        district: district || null,
         meta: null, box: null,
         groups: { shell: [], detail: [], interior: [] },
         live: {},
@@ -4691,15 +4983,16 @@ function stampKitBuildOnce(id, wx, wz, yaw) {
         shellOn: false, detailOn: false, interiorOn: false,
         shellJob: null, detailJob: null, interiorJob: null
     };
-    kitPlaced.push(building);
     return fetch("models/kitbuild/" + id + ".meta.json")
         .then((res) => {
             if (!res.ok) throw new Error("missing bake: " + id);
             return res.json();
         })
         .then((meta) => {
+            if (district && token !== districtToken) return;
             building.meta = meta;
             meta._yaw = yaw;
+            kitPlaced.push(building);
             for (let i = 0; i < meta.materials.length; i++) {
                 const item = meta.materials[i];
                 const role = kitRole(item.mat, item.verts || 0);
@@ -4707,9 +5000,12 @@ function stampKitBuildOnce(id, wx, wz, yaw) {
             }
             const physJob = fetch("models/kitbuild/" + id + ".physics.json")
                 .then((res) => (res.ok ? res.json() : null))
-                .then((physics) => registerKitPhysics(id, wx, wz, baseY, meta, physics, building))
+                .then((physics) => {
+                    if (district && token !== districtToken) return;
+                    registerKitPhysics(id, wx, wz, baseY, meta, physics, building);
+                })
                 .catch(() => null);
-            return Promise.all([physJob, wantKitRole(building, "shell")]);
+            return physJob;
         });
 }
 
@@ -4728,9 +5024,19 @@ function queueSouthwestShowcaseBuilds() {
 
 function runKitBuildQueue() {
     if (!kitBuildQueue.length) return Promise.resolve();
+    const queued = kitBuildQueue.splice(0, kitBuildQueue.length);
+    let cursor = 0;
+    function step() {
+        if (cursor >= queued.length) {
+            flushKitBuildMeshes();
+            return;
+        }
+        const batch = queued.slice(cursor, cursor + 2);
+        cursor += batch.length;
+        return Promise.all(batch.map((q) => stampKitBuildOnce(q.id, q.wx, q.wz, q.yaw, q.district, q.token))).then(step);
+    }
     return ensureKitTextures()
-        .then(() => Promise.all(kitBuildQueue.map((q) => stampKitBuildOnce(q.id, q.wx, q.wz, q.yaw))))
-        .then(flushKitBuildMeshes)
+        .then(step)
         .catch((err) => console.warn("Kit buildings:", err));
 }
 
@@ -8168,7 +8474,7 @@ function postHit(body) {
 }
 
 function wound(man, label, quiet, knockX, knockZ) {
-    if (!man || man.dying || man.health <= 0 || man.jack) return false;
+    if (!man || man.dying || man.health <= 0 || man.jack || man.campaignArmy) return false;
     // Archers' arrows only count against goblins; the campaign settles fights between factions itself.
     if (quiet && !man.goblin && !man.brute) return false;
     if (man.board) {
@@ -9455,6 +9761,14 @@ function stepMan(man, dt) {
         actorsDirty = true;
         return man.down > 1.2;
     }
+    if (man.campaignArmy) {
+        man.walking = false;
+        man.swing = -1;
+        man.hostile = false;
+        man.bob = 0;
+        plant(man);
+        return false;
+    }
     if (man.brute) return stepBrute(man, dt);
     if (man.goblin) return stepGoblin(man, dt);
     if (man.driver) return stepDriver(man, dt);
@@ -9537,7 +9851,7 @@ function separateMen(dt) {
     const near = [];
     for (let i = 0; i < picked.length; i++) {
         const man = picked[i].man;
-        if (man.dying || man.archer || man.decor || man.driver || man.inn || man.commander || man.indoors || man.mode === "march") continue;
+        if (man.dying || man.archer || man.decor || man.driver || man.inn || man.commander || man.indoors || man.mode === "march" || man.campaignArmy) continue;
         near.push(man);
     }
     const step = dt * 2;
@@ -11072,6 +11386,9 @@ function draw() {
     for (let i = 0; i < outdoorDrawList.length; i++) {
         gl.uniform1f(loc.glow, outdoorDrawList[i] === "glow" ? 2 : 0);
         drawMesh(outdoorDrawList[i], 1, dark, proj);
+    }
+    if (districtShown) {
+        for (let i = 0; i < districtShown.names.length; i++) drawMesh(districtShown.names[i], 1, dark, proj, textures[districtShown.names[i]]);
     }
     drawFolk(dark, proj);
     drawGateShowcase(dark, proj);

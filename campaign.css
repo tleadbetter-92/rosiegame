@@ -541,6 +541,20 @@ body.play h1 { font-size: 1.35rem; }
     text-align: left;
 }
 .region-card .place.picked { color: #e2b15a; }
+.region-card .place.aim { color: #f0c36a; text-decoration: underline; }
+#settlement .choice {
+    display: block;
+    width: 100%;
+    margin: 8px 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid #e2b15a;
+    background: #3a3124;
+    color: #f7f4ea;
+    font: 600 0.95rem "Segoe UI", system-ui, sans-serif;
+    cursor: pointer;
+    text-align: left;
+}
 .region-card ul { list-style: none; padding-left: 0; }
 .stores { margin: 8px 0; }
 .stores li {

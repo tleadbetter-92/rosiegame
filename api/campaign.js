@@ -2736,7 +2736,7 @@ function present(state, now, turn, paused, opts) {
         maxHealth: MAX_HP,
         restartedAt: state.restartedAt || 0,
         playMs: Number.isFinite(state.playMs) ? state.playMs : null,
-        hand: campaignHand(state.playMs),
+        hand: roundHand(state, now),
         owners: state.owners.slice(),
         log: state.log.slice(),
         food: state.food.slice(),
@@ -3057,9 +3057,38 @@ function present(state, now, turn, paused, opts) {
         regions: (state.regions || []).map((region) => {
             const stores = state.campaignStores && state.campaignStores[String(region.faction)];
             const army = state.campaignArmies && state.campaignArmies[String(region.faction)];
+            const station = armyStation(state, region.faction);
+            const attack = army && army.attack && army.attack.id ? army.attack : null;
+            const verdict = army && army.verdict && army.verdict.placeId ? army.verdict : null;
+            const handNow = roundHand(state, now);
+            const threat = handNow.faction === region.faction ? threatAgainst(state, region.faction) : null;
+            const defend = threat && !armyAt(state, region.faction, threat.id) ? { id: threat.id, name: threat.name } : null;
+            const garrisonPlace = army && army.garrison ? campaignPlace(state, army.garrison) : null;
             return Object.assign({}, region, {
+                holder: holderOf(state, region.id, region.faction),
+                holderName: campaignFactionName(state, holderOf(state, region.id, region.faction)),
+                towns: (region.towns || []).map((town) => Object.assign({}, town, {
+                    holder: holderOf(state, town.id, region.faction),
+                    holderName: campaignFactionName(state, holderOf(state, town.id, region.faction))
+                })),
                 stores: stores || null,
-                army: { soldiers: army && Number.isFinite(army.soldiers) ? army.soldiers : 0 }
+                army: {
+                    soldiers: army && Number.isFinite(army.soldiers) ? army.soldiers : 0,
+                    x: station ? station.x : (region.capital ? region.capital.x : 0),
+                    z: station ? station.z : (region.capital ? region.capital.z : 0),
+                    garrison: garrisonPlace ? { id: garrisonPlace.id, name: garrisonPlace.name, x: garrisonPlace.x, z: garrisonPlace.z } : null,
+                    attack: attack ? { id: attack.id, name: attack.name, x: attack.x, z: attack.z } : null,
+                    relief: army && army.relief && army.relief.id ? { id: army.relief.id, name: army.relief.name, x: army.relief.x, z: army.relief.z } : null,
+                    verdict: verdict ? {
+                        placeId: verdict.placeId,
+                        placeName: verdict.placeName,
+                        fought: !!verdict.fought,
+                        chance: verdict.chance,
+                        losses: verdict.losses || 0,
+                        enemy: verdict.enemy || 0
+                    } : null,
+                    defend: defend
+                }
             });
         }),
         factions: getActiveFactions().slice(0, getMajor()).map((faction, index) => {
@@ -3538,11 +3567,10 @@ function produceCampaign(state, faction) {
     ensureCampaignStores(state);
     const stores = state.campaignStores[String(faction)];
     if (!stores) return;
-    const regions = (state.regions || []).filter((region) => region.faction === faction);
-    for (let i = 0; i < regions.length; i++) {
-        const region = regions[i];
-        stores.food += 6 * 5 * 50;
+    for (const region of state.regions || []) {
+        if (holderOf(state, region.id, region.faction) === faction) stores.food += 6 * 5 * 50;
         for (const town of region.towns || []) {
+            if (holderOf(state, town.id, region.faction) !== faction) continue;
             stores.food += 2 * 5 * 50;
             const goods = TOWN_YIELD[town.id] || [];
             for (let g = 0; g < goods.length; g++) stores[goods[g]] += 10 * 50;
@@ -3552,11 +3580,15 @@ function produceCampaign(state, faction) {
 
 function ensureCampaignArmies(state) {
     if (!state.campaignArmies || typeof state.campaignArmies !== "object") state.campaignArmies = {};
+    if (!state.campaignHeld || typeof state.campaignHeld !== "object") state.campaignHeld = {};
     let dirty = false;
     for (const region of state.regions || World.regions || []) {
         const key = String(region.faction);
         if (!state.campaignArmies[key] || !Number.isFinite(state.campaignArmies[key].soldiers)) {
-            state.campaignArmies[key] = { soldiers: 0 };
+            state.campaignArmies[key] = { soldiers: 0, garrison: region.id };
+            dirty = true;
+        } else if (!state.campaignArmies[key].garrison && region.id) {
+            state.campaignArmies[key].garrison = region.id;
             dirty = true;
         }
     }
@@ -3568,6 +3600,448 @@ function trainCampaign(state, faction) {
     const army = state.campaignArmies[String(faction)];
     if (!army) return;
     army.soldiers += 10;
+    if (!army.garrison) {
+        const home = capitalPlace(state, faction);
+        if (home) army.garrison = home.id;
+    }
+}
+
+function campaignPlace(state, id) {
+    const wanted = String(id || "");
+    for (const region of state.regions || []) {
+        if (region.id === wanted && region.capital) {
+            return {
+                id: region.id,
+                name: region.name,
+                faction: region.faction,
+                major: true,
+                x: region.capital.x,
+                z: region.capital.z
+            };
+        }
+        for (const town of region.towns || []) {
+            if (town.id === wanted) {
+                return {
+                    id: town.id,
+                    name: town.name,
+                    faction: region.faction,
+                    major: false,
+                    x: town.x,
+                    z: town.z
+                };
+            }
+        }
+    }
+    return null;
+}
+
+function holderOf(state, id, origin) {
+    const held = state.campaignHeld || {};
+    if (Object.prototype.hasOwnProperty.call(held, id) && Number.isInteger(held[id])) return held[id];
+    return origin;
+}
+
+function setHolder(state, id, faction) {
+    if (!state.campaignHeld || typeof state.campaignHeld !== "object") state.campaignHeld = {};
+    const place = campaignPlace(state, id);
+    const origin = place ? place.faction : faction;
+    if (faction === origin) delete state.campaignHeld[id];
+    else state.campaignHeld[id] = faction;
+}
+
+function campaignFactionName(state, faction) {
+    const region = (state.regions || []).find((item) => item.faction === faction);
+    if (region && region.factionName) return region.factionName;
+    const row = getActiveFactions()[faction];
+    return row && row.name ? row.name : "Faction";
+}
+
+function capitalPlace(state, faction) {
+    const region = (state.regions || []).find((item) => item.faction === faction);
+    if (!region || !region.capital) return null;
+    return { id: region.id, name: region.name, faction: region.faction, major: true, x: region.capital.x, z: region.capital.z };
+}
+
+function homeGarrison(state, faction) {
+    const region = (state.regions || []).find((item) => item.faction === faction);
+    if (!region) return null;
+    const ids = [region.id].concat((region.towns || []).map((town) => town.id));
+    for (let i = 0; i < ids.length; i++) {
+        if (holderOf(state, ids[i], region.faction) === faction) return ids[i];
+    }
+    return region.id;
+}
+
+function armyRecord(state, faction) {
+    ensureCampaignArmies(state);
+    return state.campaignArmies[String(faction)] || null;
+}
+
+function armyStation(state, faction) {
+    const army = armyRecord(state, faction);
+    if (!army) return null;
+    if (army.verdict && army.verdict.placeId) return campaignPlace(state, army.verdict.placeId);
+    if (army.relief && army.relief.id) return campaignPlace(state, army.relief.id);
+    if (army.attack && army.attack.id) return campaignPlace(state, army.attack.id);
+    return campaignPlace(state, army.garrison) || capitalPlace(state, faction);
+}
+
+function armyAt(state, faction, placeId) {
+    const army = armyRecord(state, faction);
+    const station = armyStation(state, faction);
+    return !!(army && station && station.id === placeId && army.soldiers > 0);
+}
+
+function leaveGarrison(state, faction) {
+    const army = armyRecord(state, faction);
+    if (!army || !army.garrison) return;
+    const place = campaignPlace(state, army.garrison);
+    if (!place) return;
+    if (holderOf(state, place.id, place.faction) === faction && place.faction !== faction) {
+        setHolder(state, place.id, place.faction);
+        note(state, campaignFactionName(state, faction) + " leaves " + place.name + ".");
+    }
+}
+
+function threatAgainst(state, faction) {
+    for (const region of state.regions || []) {
+        if (region.faction === faction) continue;
+        const army = state.campaignArmies && state.campaignArmies[String(region.faction)];
+        if (!army || !army.attack || !army.attack.id || army.verdict) continue;
+        const place = campaignPlace(state, army.attack.id);
+        if (!place) continue;
+        if (holderOf(state, place.id, place.faction) !== faction) continue;
+        return { id: place.id, name: place.name, from: region.faction };
+    }
+    return null;
+}
+
+function strengthChance(side, other) {
+    if (other <= 0) return 1;
+    if (side <= 0) return 0;
+    const bigger = Math.max(side, other);
+    const smaller = Math.min(side, other);
+    const chanceBigger = Math.min(0.9, 0.5 * bigger / smaller);
+    return side >= other ? chanceBigger : 1 - chanceBigger;
+}
+
+function battleLosses(own, enemy, chance) {
+    if (enemy <= 0 || own <= 1) return 0;
+    return Math.min(own - 1, Math.round(enemy * (1 - chance)));
+}
+
+function destroyArmy(state, faction) {
+    const army = armyRecord(state, faction);
+    if (!army) return;
+    const place = army.garrison ? campaignPlace(state, army.garrison) : null;
+    if (place && holderOf(state, place.id, place.faction) === faction && place.faction !== faction) {
+        setHolder(state, place.id, place.faction);
+    }
+    army.soldiers = 0;
+    army.attack = null;
+    army.verdict = null;
+    const home = homeGarrison(state, faction);
+    if (home) army.garrison = home;
+}
+
+function resolveBattle(state, attacker, defender, place, resisted) {
+    const atk = armyRecord(state, attacker);
+    const def = armyRecord(state, defender);
+    const atkN = atk ? atk.soldiers : 0;
+    const defN = resisted && def ? def.soldiers : 0;
+    const fought = defN > 0;
+    const chance = strengthChance(atkN, defN);
+    const atkWins = !fought || Math.random() < chance;
+    const atkName = campaignFactionName(state, attacker);
+    const defName = campaignFactionName(state, defender);
+    if (!atkWins) {
+        destroyArmy(state, attacker);
+        if (def) {
+            def.attack = null;
+            def.garrison = place.id;
+        }
+        note(state, defName + " holds " + place.name + ". " + atkName + "'s army is destroyed.");
+        return;
+    }
+    if (fought) destroyArmy(state, defender);
+    const losses = fought ? battleLosses(atkN, defN, chance) : 0;
+    atk.attack = null;
+    atk.verdict = {
+        placeId: place.id,
+        placeName: place.name,
+        fromFaction: defender,
+        fought: fought,
+        chance: chance,
+        losses: losses,
+        enemy: defN
+    };
+    if (fought) {
+        note(state, atkName + " beats " + defName + " at " + place.name + " (" + Math.round(chance * 100) + "%). " + defName + "'s army is destroyed.");
+    } else {
+        note(state, place.name + " is undefended. " + atkName + " wins.");
+    }
+}
+
+function ensureCampaignRound(state) {
+    if (state.campaignRound && state.campaignRound.step) return false;
+    if (!Number.isFinite(state.playMs)) state.playMs = Math.round(8 / 24 * Clock.DAY_MS);
+    const hour = Clock.hours(state.playMs);
+    state.campaignRound = { step: hour < 12 ? "a" : "b", readyAt: null };
+    return true;
+}
+
+function actingFaction(state) {
+    ensureCampaignRound(state);
+    const step = state.campaignRound.step;
+    if (step === "a" || step === "reply") return getPlayerFaction();
+    if (step === "b") return 0;
+    return -1;
+}
+
+function roundHand(state, now) {
+    ensureCampaignRound(state);
+    const base = campaignHand(Number.isFinite(state.playMs) ? state.playMs : 0);
+    const step = state.campaignRound.step;
+    const faction = actingFaction(state);
+    const row = faction >= 0 ? (getActiveFactions()[faction] || {}) : { name: "Waiting", color: "#8a7a62" };
+    return Object.assign({}, base, {
+        phase: step,
+        waiting: step === "wait",
+        reply: step === "reply",
+        readyAt: state.campaignRound.readyAt || null,
+        now: now,
+        faction: faction,
+        name: row.name || "Waiting",
+        color: row.color || "#8a7a62",
+        player: faction === getPlayerFaction()
+    });
+}
+
+function startCampaignWait(state, now) {
+    state.campaignRound.step = "wait";
+    state.campaignRound.readyAt = now + Clock.DAY_MS / 2;
+    note(state, "Twelve hours pass. Battles are decided when the next turn begins.");
+}
+
+function needsAttackReply(state) {
+    const army = armyRecord(state, 0);
+    if (!army || !army.attack || !army.attack.id) return false;
+    const place = campaignPlace(state, army.attack.id);
+    if (!place) return false;
+    if (holderOf(state, place.id, place.faction) !== getPlayerFaction()) return false;
+    if (armyAt(state, getPlayerFaction(), place.id)) return false;
+    return true;
+}
+
+function releaseForeignGarrison(state, faction) {
+    const army = armyRecord(state, faction);
+    if (!army || !army.garrison) return;
+    const place = campaignPlace(state, army.garrison);
+    if (!place) return;
+    if (holderOf(state, place.id, place.faction) === faction && place.faction !== faction) {
+        setHolder(state, place.id, place.faction);
+    }
+}
+
+function resolvePendingBattles(state) {
+    const fights = [];
+    for (const region of state.regions || []) {
+        const army = state.campaignArmies && state.campaignArmies[String(region.faction)];
+        if (!army || !army.attack || !army.attack.id || army.verdict) continue;
+        const place = campaignPlace(state, army.attack.id);
+        if (!place) continue;
+        const defender = holderOf(state, place.id, place.faction);
+        const def = armyRecord(state, defender);
+        const resisted = !!(def && def.soldiers > 0 && (armyAt(state, defender, place.id) || (def.relief && def.relief.id === place.id)));
+        const atkN = army.soldiers;
+        const defN = resisted ? def.soldiers : 0;
+        const chance = strengthChance(atkN, defN);
+        fights.push({
+            attacker: region.faction,
+            defender: defender,
+            place: place,
+            resisted: defN > 0,
+            atkN: atkN,
+            defN: defN,
+            chance: chance,
+            atkWins: defN <= 0 || Math.random() < chance
+        });
+    }
+    const lost = {};
+    for (let i = 0; i < fights.length; i++) {
+        if (!fights[i].atkWins) lost[fights[i].attacker] = true;
+        else if (fights[i].resisted) lost[fights[i].defender] = true;
+    }
+    for (const key of Object.keys(lost)) {
+        const faction = Number(key);
+        const army = armyRecord(state, faction);
+        if (army && army.relief && army.garrison !== army.relief.id) releaseForeignGarrison(state, faction);
+        destroyArmy(state, faction);
+    }
+    for (let i = 0; i < fights.length; i++) {
+        const fight = fights[i];
+        const atkName = campaignFactionName(state, fight.attacker);
+        const defName = campaignFactionName(state, fight.defender);
+        if (lost[fight.attacker]) {
+            const def = armyRecord(state, fight.defender);
+            if (def && !lost[fight.defender]) {
+                def.garrison = fight.place.id;
+                def.attack = null;
+            }
+            note(state, defName + " holds " + fight.place.name + ". " + atkName + "'s army is destroyed.");
+            continue;
+        }
+        const atk = armyRecord(state, fight.attacker);
+        if (!atk) continue;
+        if (atk.relief && atk.garrison !== atk.relief.id) releaseForeignGarrison(state, fight.attacker);
+        atk.attack = null;
+        atk.verdict = {
+            placeId: fight.place.id,
+            placeName: fight.place.name,
+            fromFaction: fight.defender,
+            fought: fight.resisted,
+            chance: fight.chance,
+            losses: fight.resisted ? battleLosses(fight.atkN, fight.defN, fight.chance) : 0,
+            enemy: fight.defN
+        };
+        if (fight.resisted) {
+            note(state, atkName + " beats " + defName + " at " + fight.place.name + " (" + Math.round(fight.chance * 100) + "%). " + defName + "'s army is destroyed.");
+        } else {
+            note(state, fight.place.name + " is undefended. " + atkName + " wins.");
+        }
+    }
+    for (const region of state.regions || []) {
+        const army = state.campaignArmies && state.campaignArmies[String(region.faction)];
+        if (!army) continue;
+        army.relief = null;
+    }
+}
+
+function settleCampaignRound(state, now) {
+    const made = ensureCampaignRound(state);
+    const round = state.campaignRound;
+    if (round.step !== "wait" || !Number.isFinite(round.readyAt) || now < round.readyAt) return made;
+    resolvePendingBattles(state);
+    state.playMs = (Number.isFinite(state.playMs) ? state.playMs : 0) + Clock.DAY_MS / 2;
+    round.step = "a";
+    round.readyAt = null;
+    const hand = campaignHand(state.playMs);
+    note(state, "Day " + hand.day + " · " + hand.hour + ". " + campaignFactionName(state, getPlayerFaction()) + " chooses.");
+    return true;
+}
+
+function freshPresent(state, now) {
+    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
+    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+}
+
+async function orderCampaignAttack(targetId) {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    ensureCampaignArmies(state);
+    ensureCampaignRound(state);
+    const faction = actingFaction(state);
+    if (faction < 0) return { error: "The next turn has not started." };
+    if (state.campaignRound.step === "reply") return { error: "Answer the attack, or let it stand." };
+    const place = campaignPlace(state, targetId);
+    const army = armyRecord(state, faction);
+    const name = campaignFactionName(state, faction);
+    if (!army) return { error: "That faction has no army." };
+    if (army.verdict) return { error: "Choose whether to occupy or loot." };
+    if (!army.soldiers) return { error: "The army has no soldiers. The capital trains 10 a turn." };
+    if (!place) return { error: "Choose an enemy town or capital." };
+    if (holderOf(state, place.id, place.faction) === faction) return { error: "That settlement is already yours." };
+    if (army.attack && army.attack.id === place.id) return freshPresent(state, now);
+    leaveGarrison(state, faction);
+    army.relief = null;
+    army.attack = { id: place.id, name: place.name, major: place.major, x: place.x, z: place.z };
+    note(state, name + " marches on " + place.name + ". The battle waits for the next turn.");
+    await writeState(state);
+    return freshPresent(state, now);
+}
+
+async function orderCampaignDefend() {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    ensureCampaignArmies(state);
+    ensureCampaignRound(state);
+    const faction = actingFaction(state);
+    if (faction < 0) return { error: "The next turn has not started." };
+    const army = armyRecord(state, faction);
+    const threat = threatAgainst(state, faction);
+    const name = campaignFactionName(state, faction);
+    if (!army) return { error: "That faction has no army." };
+    if (army.verdict) return { error: "Choose whether to occupy or loot." };
+    if (!threat) return { error: "Nothing to defend." };
+    if (!army.soldiers) return { error: "The army has no soldiers." };
+    if (army.relief && army.relief.id === threat.id) return freshPresent(state, now);
+    if (armyAt(state, faction, threat.id) && !(army.attack && army.attack.id === threat.id)) return { error: "The army is already there." };
+    const place = campaignPlace(state, threat.id);
+    if (army.attack) army.attack = null;
+    army.relief = { id: place.id, name: place.name, x: place.x, z: place.z };
+    note(state, name + " will defend " + place.name + ". The battle is decided when the next turn begins.");
+    await writeState(state);
+    return freshPresent(state, now);
+}
+
+function resolveUndefended(state, faction) {
+    const threat = threatAgainst(state, faction);
+    if (!threat) return;
+    if (armyAt(state, faction, threat.id)) return;
+    const place = campaignPlace(state, threat.id);
+    if (!place) return;
+    resolveBattle(state, threat.from, faction, place, false);
+}
+
+async function orderCampaignResolve(kind) {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    ensureCampaignArmies(state);
+    let winner = null;
+    let army = null;
+    for (const region of state.regions || []) {
+        const candidate = state.campaignArmies[String(region.faction)];
+        if (candidate && candidate.verdict && candidate.verdict.placeId) {
+            winner = region.faction;
+            army = candidate;
+            break;
+        }
+    }
+    if (!army || !army.verdict) return { error: "There is no victory to settle." };
+    const verdict = army.verdict;
+    const place = campaignPlace(state, verdict.placeId);
+    if (!place) return { error: "That settlement is gone." };
+    const name = campaignFactionName(state, winner);
+    if (kind === "occupy") {
+        setHolder(state, place.id, winner);
+        army.garrison = place.id;
+        army.attack = null;
+        army.verdict = null;
+        note(state, name + " occupies " + place.name + ".");
+    } else {
+        const from = state.campaignStores && state.campaignStores[String(verdict.fromFaction)];
+        const to = state.campaignStores && state.campaignStores[String(winner)];
+        if (from && to) {
+            for (let i = 0; i < CAMPAIGN_GOODS.length; i++) {
+                const good = CAMPAIGN_GOODS[i];
+                const take = Math.min(100, Number(from[good]) || 0);
+                from[good] = (Number(from[good]) || 0) - take;
+                to[good] = (Number(to[good]) || 0) + take;
+            }
+        }
+        const losses = verdict.fought ? (verdict.losses || 0) : 0;
+        army.soldiers = Math.max(1, army.soldiers - losses);
+        const home = homeGarrison(state, winner);
+        if (home) army.garrison = home;
+        army.attack = null;
+        army.verdict = null;
+        note(state, name + " loots " + place.name + " for 100 of each resource" + (losses ? " and loses " + losses + " soldiers." : "."));
+    }
+    await writeState(state);
+    return freshPresent(state, now);
 }
 
 function nearestMajor(state, minorIndex, accept) {
@@ -5569,6 +6043,7 @@ function syncWorld(state, now) {
     keep("regions", () => ensureRegions(state));
     keep("stores", () => ensureCampaignStores(state));
     keep("armies", () => ensureCampaignArmies(state));
+    keep("round", () => settleCampaignRound(state, now));
     keep("map owners", () => ensureMapOwners(state));
     keep("starts", () => ensureStarts(state));
     keep("kit farms", () => migrateKitFarms(state));
@@ -5956,23 +6431,40 @@ async function hit(village, index) {
 async function endCampaignTurn() {
     const state = await readState();
     const now = Date.now();
-    if (!Number.isFinite(state.playMs)) state.playMs = Math.round(8 / 24 * Clock.DAY_MS);
-    const leaving = campaignHand(state.playMs);
-    ensureCampaignStores(state);
-    produceCampaign(state, leaving.faction);
-    trainCampaign(state, leaving.faction);
-    state.playMs += Clock.DAY_MS / 2;
     syncWorld(state, now);
-    const entering = campaignHand(state.playMs);
-    note(state, leaving.name + " ends the turn.");
-    note(state, "Day " + entering.day + " · " + entering.part + " · " + entering.name + ".");
-    if (!entering.player && majorOnMap(entering.faction)) {
-        recruit(state, entering.faction);
-        maybeAttack(state, entering.faction, entering.day, now);
+    ensureCampaignStores(state);
+    ensureCampaignArmies(state);
+    ensureCampaignRound(state);
+    if (!Number.isFinite(state.playMs)) state.playMs = Math.round(8 / 24 * Clock.DAY_MS);
+    const round = state.campaignRound;
+    if (round.step === "wait") return { error: "The next turn has not started." };
+    if (round.step === "a") {
+        const faction = getPlayerFaction();
+        produceCampaign(state, faction);
+        trainCampaign(state, faction);
+        note(state, campaignFactionName(state, faction) + " is done.");
+        round.step = "b";
+        if (majorOnMap(0)) {
+            recruit(state, 0);
+            maybeAttack(state, 0, campaignHand(state.playMs).day, now);
+        }
+    } else if (round.step === "b") {
+        produceCampaign(state, 0);
+        trainCampaign(state, 0);
+        note(state, campaignFactionName(state, 0) + " is done.");
+        if (needsAttackReply(state)) {
+            round.step = "reply";
+            note(state, campaignFactionName(state, getPlayerFaction()) + " can answer the attack now.");
+        } else {
+            startCampaignWait(state, now);
+        }
+    } else if (round.step === "reply") {
+        const army = armyRecord(state, getPlayerFaction());
+        if (!army || !army.relief) note(state, campaignFactionName(state, getPlayerFaction()) + " lets the attack stand.");
+        startCampaignWait(state, now);
     }
     await writeState(state);
-    const clock = Number.isFinite(state.pausedAt) ? state.pausedAt : now;
-    return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
+    return freshPresent(state, now);
 }
 
 async function campaignHandler(req, res) {
@@ -5981,6 +6473,33 @@ async function campaignHandler(req, res) {
         if (req.method === "POST") {
             if (req.body && req.body.endTurn) {
                 res.status(200).json(await endCampaignTurn());
+                return;
+            }
+            if (req.body && typeof req.body.attack === "string") {
+                const sent = await orderCampaignAttack(req.body.attack);
+                if (sent && sent.error && !sent.regions) {
+                    res.status(400).json({ error: sent.error });
+                    return;
+                }
+                res.status(200).json(sent);
+                return;
+            }
+            if (req.body && req.body.defend) {
+                const sent = await orderCampaignDefend();
+                if (sent && sent.error && !sent.regions) {
+                    res.status(400).json({ error: sent.error });
+                    return;
+                }
+                res.status(200).json(sent);
+                return;
+            }
+            if (req.body && (req.body.resolve === "occupy" || req.body.resolve === "loot")) {
+                const sent = await orderCampaignResolve(req.body.resolve);
+                if (sent && sent.error && !sent.regions) {
+                    res.status(400).json({ error: sent.error });
+                    return;
+                }
+                res.status(200).json(sent);
                 return;
             }
             if (req.body && Number.isInteger(req.body.setFood) && Number.isFinite(Number(req.body.amount))) {
