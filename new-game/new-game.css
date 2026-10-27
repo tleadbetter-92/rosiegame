@@ -181,6 +181,10 @@ main {
     background: #8a3030;
 }
 
+.restart-btn {
+    background: #3a3428;
+}
+
 .cpu-btn.player.on {
     background: #2e7a45;
 }

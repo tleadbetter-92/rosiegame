@@ -18,9 +18,11 @@
     const towerBtn = document.getElementById("build-tower");
     const cpuBtn = document.getElementById("red-cpu");
     const playerBtn = document.getElementById("player-mode");
+    const restartBtn = document.getElementById("restart-battle");
     const swatch = document.getElementById("swatch");
     const CPU_KEY = "rosiesgame.red-cpu";
     const PLAYER_KEY = "rosiesgame.player-mode";
+    const BATTLE_KEY = "rosiesgame.new-battle";
     let redCpu = localStorage.getItem(CPU_KEY) !== "off";
     let playerMode = localStorage.getItem(PLAYER_KEY) === "on";
     let player = null;
@@ -67,7 +69,7 @@
         iron: { place: "iron mine", haul: "10 iron", key: "iron", work: "iron", drop: "iron mine" }
     };
     const WORK_NAMES = { mine: "Mine", iron: "Iron mine", yard: "Lumberyard", port: "Fishing port" };
-    const BUILDING_HP = 1000;
+    const BUILDING_HP = 10000;
     const WALL_HP = 1000;
     const TOWER_HP = 1000;
     const TOWER_DAMAGE = 10;
@@ -116,11 +118,11 @@
             color: "#3c5ec8",
             dark: "#243880",
             zone: [OX, OX + 6],
-            gold: 50,
-            food: 50,
-            wood: 50,
-            stone: 50,
-            iron: 50,
+            gold: 500,
+            food: 500,
+            wood: 500,
+            stone: 500,
+            iron: 500,
             payday: PAY_MS,
             trainLeft: 0,
             trained: false,
@@ -144,11 +146,11 @@
             color: "#c43c3c",
             dark: "#7a2424",
             zone: [15 + OX, 21 + OX],
-            gold: 50,
-            food: 50,
-            wood: 50,
-            stone: 50,
-            iron: 50,
+            gold: 500,
+            food: 500,
+            wood: 500,
+            stone: 500,
+            iron: 500,
             payday: PAY_MS,
             trainLeft: 0,
             trained: false,
@@ -168,6 +170,8 @@
     ];
 
     let nextId = 1;
+    let battleSeq = 0;
+    let saveLeft = 1000;
     let selected = null;
     let placing = null;
     let placeHint = "";
@@ -175,6 +179,42 @@
     const floaters = [];
     const slashes = [];
     const arrows = [];
+
+    function startingWorker(spot) {
+        return {
+            id: nextId++,
+            role: "worker",
+            damage: WORKER_DAMAGE,
+            c: spot[0],
+            r: spot[1],
+            hp: WORKER_HP,
+            maxHp: WORKER_HP,
+            order: null,
+            step: null,
+            wasInRange: false,
+            attackWait: 0,
+            flash: 0,
+            hurt: 0,
+            dead: false
+        };
+    }
+
+    factions.forEach(function (faction) {
+        let placed = 0;
+        faction.muster.forEach(function (spot) {
+            if (placed >= 5 || occupied(spot[0], spot[1], null)) return;
+            faction.soldiers.push(startingWorker(spot));
+            placed += 1;
+        });
+        while (placed < 5) {
+            const spot = nextMuster(faction);
+            if (!spot) break;
+            faction.soldiers.push(startingWorker(spot));
+            placed += 1;
+        }
+    });
+
+    const START_BATTLE = JSON.parse(JSON.stringify(battleSnapshot()));
 
     function factionById(id) {
         return factions.find(function (f) { return f.id === id; });
@@ -1205,8 +1245,15 @@
         return popCount(faction) < popLimit(faction);
     }
 
+    function workerCount(faction) {
+        return faction.soldiers.filter(function (soldier) {
+            return !soldier.dead && soldier.hp > 0 && soldier.role === "worker";
+        }).length;
+    }
+
     function popPhrase(faction) {
-        return "Population " + popCount(faction) + " / " + popLimit(faction);
+        return "Population " + popCount(faction) + " / " + popLimit(faction)
+            + ", " + workerCount(faction) + " workers";
     }
 
     function canAfford(faction, role) {
@@ -1245,26 +1292,26 @@
         return !!(selected.factionId && !sideCpu(selected.factionId));
     }
 
-    function nearestTowerTarget(faction, tower) {
+    function nearestShotTarget(faction, c, r, w, h) {
         const foe = otherFaction(faction);
         let best = null;
         let dist = TOWER_RANGE + 1;
         foe.soldiers.forEach(function (soldier) {
             if (soldier.dead || soldier.hp <= 0) return;
-            const d = distToBox(tower.c, tower.r, TOWER_W, TOWER_H, soldier.c, soldier.r);
+            const d = distToBox(c, r, w, h, soldier.c, soldier.r);
             if (d <= TOWER_RANGE && d < dist) {
                 dist = d;
                 best = soldier;
             }
         });
         if (player && !player.dead && hostile[faction.id]) {
-            const d = distToBox(tower.c, tower.r, TOWER_W, TOWER_H, player.c, player.r);
+            const d = distToBox(c, r, w, h, player.c, player.r);
             if (d <= TOWER_RANGE && d < dist) best = player;
         }
         return best;
     }
 
-    function shootTower(tower, foe) {
+    function shootFrom(c, r, w, h, foe) {
         foe.hp = Math.max(0, foe.hp - TOWER_DAMAGE);
         foe.hurt = 160;
         if (foe.hp <= 0) {
@@ -1273,8 +1320,8 @@
         }
         const pos = drawPos(foe);
         arrows.push({
-            x1: tower.c * TILE + TOWER_W * TILE / 2,
-            y1: tower.r * TILE + TOWER_H * TILE / 2,
+            x1: c * TILE + w * TILE / 2,
+            y1: r * TILE + h * TILE / 2,
             x2: pos.c * TILE + TILE / 2,
             y2: pos.r * TILE + 28,
             life: 280
@@ -1287,15 +1334,20 @@
         });
     }
 
+    function tickShooter(owner, faction, w, h, dt) {
+        if (owner.dead || owner.hp <= 0) return;
+        owner.shotWait = Math.max(0, (owner.shotWait || 0) - dt);
+        const foe = nearestShotTarget(faction, owner.c, owner.r, w, h);
+        if (!foe || owner.shotWait > 0) return;
+        owner.shotWait = TOWER_HIT_MS;
+        shootFrom(owner.c, owner.r, w, h, foe);
+    }
+
     function tickTowers(dt) {
         factions.forEach(function (faction) {
+            tickShooter(faction.building, faction, HALL_W, HALL_H, dt);
             faction.towers.forEach(function (tower) {
-                if (tower.dead || tower.hp <= 0) return;
-                tower.shotWait = Math.max(0, (tower.shotWait || 0) - dt);
-                const foe = nearestTowerTarget(faction, tower);
-                if (!foe || tower.shotWait > 0) return;
-                tower.shotWait = TOWER_HIT_MS;
-                shootTower(tower, foe);
+                tickShooter(tower, faction, TOWER_W, TOWER_H, dt);
             });
         });
     }
@@ -1466,7 +1518,8 @@
             return;
         }
         nameEl.textContent = "You";
-        countEl.textContent = "Health " + player.hp + " / " + player.maxHp;
+        countEl.textContent = "Health " + player.hp + " / " + player.maxHp
+            + "  ·  Blue " + workerCount(factions[0]) + " workers  ·  Red " + workerCount(factions[1]) + " workers";
         if (player.dead) {
             statusEl.textContent = "You are down. You return in " + secondsPhrase(playerDown) + ".";
             return;
@@ -1661,7 +1714,7 @@
                 statusEl.textContent = "The computer is training " + trainPhrase(faction.trainKind) + ". They step out in " + secondsPhrase(faction.trainLeft) + ". Red is trying to destroy Blue.";
                 return;
             }
-            statusEl.textContent = "The computer is running Red and trying to destroy Blue. Its soldiers cost 10 food, 10 iron, and 10 wood. It trains workers. A lumberyard, iron mine, or fishing port is built beside a resource that is at least 12 squares from the settlement. Closer resources are carried straight back. Switch Red to you to command this settlement.";
+            statusEl.textContent = "The computer is running Red and trying to destroy Blue. Its soldiers cost 10 food, 10 iron, and 10 wood. It trains workers. A lumberyard, iron mine, or fishing port is built beside a resource that is at least 12 squares from the settlement. Closer resources are carried straight back. This settlement shoots 10 damage every 1.5 seconds, out to 4 squares. Switch Red to you to command this settlement.";
             return;
         }
 
@@ -1694,7 +1747,7 @@
             statusEl.textContent = "A worker is ready for 10 food. A soldier still needs 10 gold as well. An archer needs 10 gold and 10 wood. Next pay in " + secondsPhrase(faction.payday) + ".";
             return;
         }
-        statusEl.textContent = "Population starts at 10. Each house adds 5. Soldier: 10 gold and 10 food, 100 health. Worker: 10 food. Archer: 10 gold and 10 wood, 60 health, shoots 10 damage out to 4 squares. House: 10 wood, within 10 squares of the settlement. Mine, iron mine, lumberyard, and fishing port: 10 wood, anywhere. They keep what workers drop until a cart takes 50 to the settlement. Wall and watchtower: 10 wood, one square, anywhere. A watchtower shoots 10 damage every 1.5 seconds, out to 4 squares.";
+        statusEl.textContent = "Each side starts with 5 workers. Population starts at 10. Each house adds 5. Soldier: 10 gold and 10 food, 100 health. Worker: 10 food. Archer: 10 gold and 10 wood, 60 health, shoots 10 damage out to 4 squares. House: 10 wood, within 10 squares of the settlement. Mine, iron mine, lumberyard, and fishing port: 10 wood, anywhere. They keep what workers drop until a cart takes 50 to the settlement. Wall and watchtower: 10 wood, one square, anywhere. This settlement and each watchtower shoot 10 damage every 1.5 seconds, out to 4 squares.";
     }
 
     function makeUnit(faction, role) {
@@ -2039,7 +2092,14 @@
     paintPlayerBtn();
     paintCpu();
     battleView.claimKeys(playerMode);
-    if (playerMode) placePlayer(true);
+    const resumed = loadBattle();
+    if (playerMode && !player) placePlayer(true);
+    if (!resumed) saveBattle();
+
+    restartBtn.addEventListener("click", function () {
+        if (!window.confirm("Restart the battle? Soldiers, buildings, and stock go back to the start. The map stays.")) return;
+        resetBattle();
+    });
 
     function chebyshev(c1, r1, c2, r2) {
         return Math.max(Math.abs(c1 - c2), Math.abs(r1 - r2));
@@ -2984,6 +3044,19 @@
                     HALL_W * TILE - 4,
                     HALL_H * TILE - 4
                 );
+                if (frameDetail !== "far") {
+                    ctx.fillStyle = "rgba(232, 200, 74, 0.16)";
+                    const hall = faction.building;
+                    for (let c = hall.c - TOWER_RANGE; c <= hall.c + HALL_W - 1 + TOWER_RANGE; c++) {
+                        for (let r = hall.r - TOWER_RANGE; r <= hall.r + HALL_H - 1 + TOWER_RANGE; r++) {
+                            if (c < view.c0 || r < view.r0 || c > view.c1 || r > view.r1) continue;
+                            if (c < 0 || r < 0 || c >= COLS || r >= ROWS) continue;
+                            const dist = distToBox(hall.c, hall.r, HALL_W, HALL_H, c, r);
+                            if (dist === 0 || dist > TOWER_RANGE) continue;
+                            ctx.fillRect(c * TILE + 8, r * TILE + 8, TILE - 16, TILE - 16);
+                        }
+                    }
+                }
             }
         }
 
@@ -3122,18 +3195,150 @@
 
     let zoomReady = false;
 
+    function battleSnapshot() {
+        return {
+            seq: battleSeq,
+            nextId: nextId,
+            player: player,
+            playerDown: playerDown,
+            hostile: { blue: !!hostile.blue, red: !!hostile.red },
+            selected: selected,
+            factions: factions.map(function (faction) {
+                return {
+                    id: faction.id,
+                    gold: faction.gold,
+                    food: faction.food,
+                    wood: faction.wood,
+                    stone: faction.stone,
+                    iron: faction.iron,
+                    payday: faction.payday,
+                    trainLeft: faction.trainLeft,
+                    trained: faction.trained,
+                    trainKind: faction.trainKind || null,
+                    building: faction.building,
+                    soldiers: faction.soldiers,
+                    houses: faction.houses,
+                    works: faction.works,
+                    walls: faction.walls,
+                    towers: faction.towers,
+                    windmills: faction.windmills,
+                    carts: faction.carts
+                };
+            })
+        };
+    }
+
+    function applySnapshot(data) {
+        if (!data || !data.factions || data.factions.length !== factions.length) return false;
+        const copy = JSON.parse(JSON.stringify(data));
+        for (let i = 0; i < factions.length; i++) {
+            const saved = copy.factions[i];
+            const live = factions[i];
+            if (!saved || saved.id !== live.id || !saved.building) return false;
+            live.gold = saved.gold;
+            live.food = saved.food;
+            live.wood = saved.wood;
+            live.stone = saved.stone;
+            live.iron = saved.iron;
+            live.payday = saved.payday;
+            live.trainLeft = saved.trainLeft || 0;
+            live.trained = !!saved.trained;
+            live.trainKind = saved.trainKind || null;
+            live.building = saved.building;
+            if (live.building.maxHp > 0 && live.building.maxHp < BUILDING_HP) {
+                const ratio = Math.max(0, Math.min(1, live.building.hp / live.building.maxHp));
+                live.building.maxHp = BUILDING_HP;
+                live.building.hp = Math.round(ratio * BUILDING_HP);
+            }
+            live.soldiers = saved.soldiers || [];
+            live.houses = saved.houses || [];
+            live.works = saved.works || [];
+            live.walls = saved.walls || [];
+            live.towers = saved.towers || [];
+            live.windmills = saved.windmills || [];
+            live.carts = saved.carts || [];
+        }
+        nextId = copy.nextId || 1;
+        player = copy.player || null;
+        playerDown = copy.playerDown || 0;
+        hostile.blue = !!(copy.hostile && copy.hostile.blue);
+        hostile.red = !!(copy.hostile && copy.hostile.red);
+        selected = copy.selected || null;
+        placing = null;
+        placeHint = "";
+        if (copy.seq) battleSeq = copy.seq;
+        return true;
+    }
+
+    function saveBattle() {
+        battleSeq += 1;
+        const data = battleSnapshot();
+        try {
+            localStorage.setItem(BATTLE_KEY, JSON.stringify(data));
+        } catch (err) {
+            return;
+        }
+    }
+
+    function loadBattle() {
+        try {
+            const raw = localStorage.getItem(BATTLE_KEY);
+            if (!raw) return false;
+            return applySnapshot(JSON.parse(raw));
+        } catch (err) {
+            return false;
+        }
+    }
+
+    function resetBattle() {
+        floaters.length = 0;
+        slashes.length = 0;
+        arrows.length = 0;
+        applySnapshot(START_BATTLE);
+        battleSeq = 0;
+        if (playerMode) placePlayer(true);
+        saveBattle();
+        updateHud();
+    }
+
     function frame(now) {
         if (!zoomReady) {
             zoomReady = true;
             battleView.ensure();
         }
+        if (document.hidden) {
+            lastTime = 0;
+            requestAnimationFrame(frame);
+            return;
+        }
         if (!lastTime) lastTime = now;
         const dt = Math.min(100, now - lastTime);
         lastTime = now;
         update(dt);
+        saveLeft -= dt;
+        if (saveLeft <= 0) {
+            saveLeft = 1000;
+            saveBattle();
+        }
         draw(now);
         requestAnimationFrame(frame);
     }
+
+    window.addEventListener("pagehide", saveBattle);
+    document.addEventListener("visibilitychange", function () {
+        if (document.hidden) {
+            saveBattle();
+            return;
+        }
+        lastTime = 0;
+        try {
+            const data = JSON.parse(localStorage.getItem(BATTLE_KEY) || "null");
+            if (data && data.seq && data.seq !== battleSeq) loadBattle();
+        } catch (err) {
+            return;
+        }
+        updateHud();
+    });
 
     updateHud();
     requestAnimationFrame(frame);
