@@ -12,6 +12,7 @@
     const millBtn = document.getElementById("build-mill");
     const mineBtn = document.getElementById("build-mine");
     const ironBtn = document.getElementById("build-iron");
+    const tinBtn = document.getElementById("build-tin");
     const yardBtn = document.getElementById("build-yard");
     const portBtn = document.getElementById("build-port");
     const wallBtn = document.getElementById("build-wall");
@@ -27,14 +28,19 @@
     let playerMode = localStorage.getItem(PLAYER_KEY) === "on";
     let player = null;
     let playerDown = 0;
-    const hostile = { blue: false, red: false };
+    const hostile = { blue: false, red: false, yellow: false, purple: false };
+    const relations = {};
+    let diplomacySig = "";
+    let tradeNote = "";
+    const TRADE_PACK = 10;
+    const NEED_STOCK = 40;
+    const EXTRA_STOCK = 100;
+    const RESOURCE_KEYS = ["gold", "food", "wood", "stone", "iron", "tin"];
     const keys = {};
     const PLAYER_LOOK = { id: "player", name: "You", color: "#3cba4a", dark: "#1e6b32" };
 
     const COLS = BattleMap.COLS;
     const ROWS = BattleMap.ROWS;
-    const OX = BattleMap.SHIFT_C;
-    const OY = BattleMap.SHIFT_R;
     const TILE = 60;
     const INK = "#1a2410";
     let ground = BattleMap.load();
@@ -58,16 +64,17 @@
     const MILL_FOOD = 10;
     const MILL_MS = 60000;
     const POP_START = 10;
-    const SOLDIER_COST = 15;
+    const SOLDIER_COST = 20;
     const WORK_HP = 400;
     const GATHER = {
         water: { place: "water", haul: "10 food", key: "food", work: "port", drop: "fishing port" },
         forest: { place: "forest", haul: "10 wood", key: "wood", work: "yard", drop: "lumberyard" },
         gold: { place: "gold mine", haul: "10 gold", key: "gold", work: "mine", drop: "mine" },
         stone: { place: "stone mine", haul: "10 stone", key: "stone", work: "mine", drop: "mine" },
-        iron: { place: "iron mine", haul: "10 iron", key: "iron", work: "iron", drop: "iron mine" }
+        iron: { place: "iron mine", haul: "10 iron", key: "iron", work: "iron", drop: "iron mine" },
+        tin: { place: "tin mine", haul: "10 tin", key: "tin", work: "tin", drop: "tin mine" }
     };
-    const WORK_NAMES = { mine: "Mine", iron: "Iron mine", yard: "Lumberyard", port: "Fishing port" };
+    const WORK_NAMES = { mine: "Mine", iron: "Iron mine", tin: "Tin mine", yard: "Lumberyard", port: "Fishing port" };
     const BUILDING_HP = 10000;
     const WALL_HP = 1000;
     const TOWER_HP = 1000;
@@ -76,7 +83,8 @@
     const TOWER_HIT_MS = 1500;
     const HIT_MS = 1000;
     const STEP_MS = 280;
-    const TRAIN_COST = 10;
+    const TRAIN_COST = 20;
+    const ARCHER_COST = 10;
     const TRAIN_MS = 5000;
     const GATHER_MS = 10000;
     const HAUL = 10;
@@ -109,63 +117,40 @@
         [1, 1], [1, -1], [-1, 1], [-1, -1]
     ];
 
+    function blankFaction(id, name, color, dark) {
+        return {
+            id: id,
+            name: name,
+            hall: name + " settlement",
+            color: color,
+            dark: dark,
+            placed: false,
+            gold: 500,
+            food: 500,
+            wood: 500,
+            stone: 500,
+            iron: 500,
+            tin: 500,
+            payday: PAY_MS,
+            trainLeft: 0,
+            trained: false,
+            building: { c: 0, r: 0, hp: BUILDING_HP, maxHp: BUILDING_HP, dead: false, hurt: 0 },
+            muster: [],
+            soldiers: [],
+            houses: [],
+            works: [],
+            walls: [],
+            towers: [],
+            windmills: [],
+            carts: []
+        };
+    }
+
     const factions = [
-        {
-            id: "blue",
-            name: "Blue",
-            hall: "Blue settlement",
-            color: "#3c5ec8",
-            dark: "#243880",
-            zone: [OX, OX + 6],
-            gold: 500,
-            food: 500,
-            wood: 500,
-            stone: 500,
-            iron: 500,
-            payday: PAY_MS,
-            trainLeft: 0,
-            trained: false,
-            building: { c: 1 + OX, r: 3 + OY, hp: BUILDING_HP, maxHp: BUILDING_HP, dead: false, hurt: 0 },
-            muster: [
-                [OX, 3 + OY], [OX, 4 + OY], [3 + OX, 2 + OY], [3 + OX, 5 + OY],
-                [4 + OX, 3 + OY], [4 + OX, 4 + OY], [4 + OX, 2 + OY], [4 + OX, 5 + OY]
-            ],
-            soldiers: [],
-            houses: [],
-            works: [],
-            walls: [],
-            towers: [],
-            windmills: [],
-            carts: []
-        },
-        {
-            id: "red",
-            name: "Red",
-            hall: "Red settlement",
-            color: "#c43c3c",
-            dark: "#7a2424",
-            zone: [15 + OX, 21 + OX],
-            gold: 500,
-            food: 500,
-            wood: 500,
-            stone: 500,
-            iron: 500,
-            payday: PAY_MS,
-            trainLeft: 0,
-            trained: false,
-            building: { c: 18 + OX, r: 3 + OY, hp: BUILDING_HP, maxHp: BUILDING_HP, dead: false, hurt: 0 },
-            muster: [
-                [17 + OX, 3 + OY], [17 + OX, 4 + OY], [17 + OX, 2 + OY], [17 + OX, 5 + OY],
-                [16 + OX, 3 + OY], [16 + OX, 4 + OY], [16 + OX, 2 + OY], [16 + OX, 5 + OY]
-            ],
-            soldiers: [],
-            houses: [],
-            works: [],
-            walls: [],
-            towers: [],
-            windmills: [],
-            carts: []
-        }
+        blankFaction("blue", "Blue", "#3c5ec8", "#243880"),
+        blankFaction("red", "Red", "#c43c3c", "#7a2424"),
+        blankFaction("yellow", "Yellow", "#d4a017", "#8a6410"),
+        blankFaction("purple", "Purple", "#7a4ea3", "#4c2d6b")
     ];
 
     let nextId = 1;
@@ -198,25 +183,155 @@
         };
     }
 
-    factions.forEach(function (faction) {
-        let placed = 0;
+    function musterAround(c, r) {
+        const spots = [];
+        function add(tc, tr) {
+            if (tc < 0 || tr < 0 || tc >= COLS || tr >= ROWS) return;
+            spots.push([tc, tr]);
+        }
+        add(c - 1, r);
+        add(c - 1, r + 1);
+        add(c + HALL_W, r);
+        add(c + HALL_W, r + 1);
+        add(c, r - 1);
+        add(c + 1, r - 1);
+        add(c + 2, r - 1);
+        add(c, r + HALL_H);
+        add(c + 1, r + HALL_H);
+        add(c + 2, r + HALL_H);
+        return spots;
+    }
+
+    function seedWorkers(faction) {
+        let count = 0;
         faction.muster.forEach(function (spot) {
-            if (placed >= 5 || occupied(spot[0], spot[1], null)) return;
+            if (count >= 5 || occupied(spot[0], spot[1], null)) return;
             faction.soldiers.push(startingWorker(spot));
-            placed += 1;
+            count += 1;
         });
-        while (placed < 5) {
+        while (count < 5) {
             const spot = nextMuster(faction);
             if (!spot) break;
             faction.soldiers.push(startingWorker(spot));
-            placed += 1;
+            count += 1;
         }
-    });
+    }
+
+    function syncHalls(fresh) {
+        const saved = BattleMap.loadHalls();
+        factions.forEach(function (faction) {
+            const spot = saved[faction.id];
+            const was = faction.placed;
+            if (!spot) {
+                faction.placed = false;
+                return;
+            }
+            faction.placed = true;
+            faction.building.c = spot.c;
+            faction.building.r = spot.r;
+            faction.muster = musterAround(spot.c, spot.r);
+            if (fresh || !was) {
+                faction.building.hp = BUILDING_HP;
+                faction.building.maxHp = BUILDING_HP;
+                faction.building.dead = false;
+                faction.building.hurt = 0;
+                if (fresh) faction.soldiers = [];
+                if (!faction.soldiers.length) seedWorkers(faction);
+            }
+        });
+    }
+
+    syncHalls(false);
 
     const START_BATTLE = JSON.parse(JSON.stringify(battleSnapshot()));
 
     function factionById(id) {
         return factions.find(function (f) { return f.id === id; });
+    }
+
+    function relKey(a, b) {
+        return a < b ? a + ":" + b : b + ":" + a;
+    }
+
+    function relation(a, b) {
+        if (!a || !b || a === b) return "ally";
+        return relations[relKey(a, b)] || "neutral";
+    }
+
+    function setRelation(a, b, state) {
+        if (!a || !b || a === b) return;
+        if (state !== "war" && state !== "neutral" && state !== "ally") return;
+        relations[relKey(a, b)] = state;
+        diplomacySig = "";
+    }
+
+    function canTrade(a, b) {
+        return relation(a, b) !== "war";
+    }
+
+    function declareWar(fromId, toId) {
+        if (!fromId || !toId || fromId === toId) return;
+        if (relation(fromId, toId) === "war") return;
+        setRelation(fromId, toId, "war");
+    }
+
+    function cpuWantsTrade(holder, withId, giveKey, getKey) {
+        if (holder[giveKey] < TRADE_PACK) return false;
+        const ally = relation(holder.id, withId) === "ally";
+        const spare = ally ? 30 : EXTRA_STOCK;
+        if (holder[giveKey] - TRADE_PACK < spare) return false;
+        return holder[getKey] < NEED_STOCK || holder[giveKey] > holder[getKey] + 20;
+    }
+
+    function tryTrade(from, to, sellKey, buyKey) {
+        if (!canTrade(from.id, to.id)) return from.name + " and " + to.name + " are at war.";
+        if (!sellKey || !buyKey || sellKey === buyKey) return "Pick two different resources.";
+        if (from[sellKey] < TRADE_PACK) return from.name + " does not have 10 " + sellKey + " to sell.";
+        if (to[buyKey] < TRADE_PACK) return to.name + " does not have 10 " + buyKey + " to sell.";
+        if (sideCpu(to.id) && !cpuWantsTrade(to, from.id, buyKey, sellKey)) {
+            return to.name + " declines. They sell what they have extra and buy what they are short of.";
+        }
+        from[sellKey] -= TRADE_PACK;
+        to[buyKey] -= TRADE_PACK;
+        from[buyKey] += TRADE_PACK;
+        to[sellKey] += TRADE_PACK;
+        return from.name + " traded 10 " + sellKey + " to " + to.name + " for 10 " + buyKey + ".";
+    }
+
+    function tickFactionTrade(faction, dt) {
+        if (!sideCpu(faction.id) || !faction.placed || faction.building.dead) return;
+        faction.tradeLeft = (faction.tradeLeft || 0) - dt;
+        if (faction.tradeLeft > 0) return;
+        faction.tradeLeft = 8000;
+        let need = null;
+        RESOURCE_KEYS.forEach(function (key) {
+            if (faction[key] < NEED_STOCK && (need == null || faction[key] < faction[need])) need = key;
+        });
+        if (!need) return;
+        let extra = null;
+        RESOURCE_KEYS.forEach(function (key) {
+            if (key === need) return;
+            if (faction[key] >= EXTRA_STOCK && (extra == null || faction[key] > faction[extra])) extra = key;
+        });
+        if (!extra || faction[extra] < TRADE_PACK) return;
+        for (let i = 0; i < factions.length; i++) {
+            const partner = factions[i];
+            if (partner === faction || !partner.placed || partner.building.dead || !sideCpu(partner.id)) continue;
+            if (!canTrade(faction.id, partner.id)) continue;
+            if (partner[need] < TRADE_PACK) continue;
+            if (!cpuWantsTrade(partner, faction.id, need, extra)) continue;
+            faction[extra] -= TRADE_PACK;
+            partner[need] -= TRADE_PACK;
+            faction[need] += TRADE_PACK;
+            partner[extra] += TRADE_PACK;
+            floaters.push({
+                x: (faction.building.c + 1) * TILE,
+                y: faction.building.r * TILE,
+                life: 1200,
+                text: "Traded 10 " + extra
+            });
+            return;
+        }
     }
 
     function findSoldier(id) {
@@ -252,6 +367,7 @@
 
     function isBuildingTile(c, r) {
         return factions.some(function (f) {
+            if (!f.placed) return false;
             if (!f.building.dead && inBox(c, r, f.building.c, f.building.r, HALL_W, HALL_H)) return true;
             return f.houses.some(function (house) {
                 return !house.dead && inBox(c, r, house.c, house.r, HOUSE_W, HOUSE_H);
@@ -269,7 +385,7 @@
 
     function buildingAt(c, r) {
         return factions.find(function (f) {
-            return !f.building.dead && inBox(c, r, f.building.c, f.building.r, HALL_W, HALL_H);
+            return f.placed && !f.building.dead && inBox(c, r, f.building.c, f.building.r, HALL_W, HALL_H);
         });
     }
 
@@ -456,7 +572,8 @@
             && faction.food >= MILL_COST
             && faction.wood >= MILL_COST
             && faction.stone >= MILL_COST
-            && faction.iron >= MILL_COST;
+            && faction.iron >= MILL_COST
+            && faction.tin >= MILL_COST;
     }
 
     function placeMill(faction, c, r) {
@@ -466,6 +583,7 @@
         faction.wood -= MILL_COST;
         faction.stone -= MILL_COST;
         faction.iron -= MILL_COST;
+        faction.tin -= MILL_COST;
         faction.windmills.push({
             id: nextId++,
             c: c,
@@ -505,7 +623,7 @@
             maxHp: WORK_HP,
             hurt: 0,
             dead: false,
-            stock: { food: 0, wood: 0, gold: 0, stone: 0, iron: 0 }
+            stock: { food: 0, wood: 0, gold: 0, stone: 0, iron: 0, tin: 0 }
         });
         floaters.push({
             x: (c + 1) * TILE,
@@ -615,7 +733,9 @@
         if (!order) return null;
         if (order.kind === "gather") {
             if (order.c < 0 || order.r < 0 || order.c >= COLS || order.r >= ROWS) return null;
+            if (order.phase === "back" && order.hauled) return order;
             if (BattleMap.kind(ground, order.c, order.r) !== order.source) return null;
+            if (order.source !== "water" && BattleMap.nodeLeft(ground, order.c, order.r) <= 0) return null;
             return order;
         }
         if (order.kind === "move") {
@@ -623,9 +743,15 @@
             if (isBuildingTile(order.c, order.r)) return null;
             return { kind: "move", c: order.c, r: order.r, tiles: [{ c: order.c, r: order.r }] };
         }
+        function fightOk(targetFaction) {
+            const mine = factionOf(soldier);
+            if (!mine || !targetFaction) return true;
+            return relation(mine.id, targetFaction.id) === "war";
+        }
+
         if (order.kind === "building") {
             const faction = factionById(order.factionId);
-            if (!faction || faction.building.dead || faction.building.hp <= 0) return null;
+            if (!faction || faction.building.dead || faction.building.hp <= 0 || !fightOk(faction)) return null;
             return {
                 kind: "building",
                 faction: faction,
@@ -635,7 +761,7 @@
         }
         if (order.kind === "house") {
             const found = findHouse(order.id);
-            if (!found || found.house.dead || found.house.hp <= 0) return null;
+            if (!found || found.house.dead || found.house.hp <= 0 || !fightOk(found.faction)) return null;
             return {
                 kind: "house",
                 faction: found.faction,
@@ -645,7 +771,7 @@
         }
         if (order.kind === "mill") {
             const found = findMill(order.id);
-            if (!found || found.mill.dead || found.mill.hp <= 0) return null;
+            if (!found || found.mill.dead || found.mill.hp <= 0 || !fightOk(found.faction)) return null;
             return {
                 kind: "mill",
                 faction: found.faction,
@@ -655,7 +781,7 @@
         }
         if (order.kind === "work") {
             const found = findWork(order.id);
-            if (!found || found.work.dead || found.work.hp <= 0) return null;
+            if (!found || found.work.dead || found.work.hp <= 0 || !fightOk(found.faction)) return null;
             return {
                 kind: "work",
                 faction: found.faction,
@@ -670,7 +796,7 @@
         }
         if (order.kind === "wall" || order.kind === "tower") {
             const found = findPiece(order.kind === "wall" ? "walls" : "towers", order.id);
-            if (!found || found.piece.dead || found.piece.hp <= 0) return null;
+            if (!found || found.piece.dead || found.piece.hp <= 0 || !fightOk(found.faction)) return null;
             return {
                 kind: order.kind,
                 faction: found.faction,
@@ -679,7 +805,7 @@
             };
         }
         const found = findSoldier(order.id);
-        if (!found || found.soldier.dead || found.soldier.hp <= 0) return null;
+        if (!found || found.soldier.dead || found.soldier.hp <= 0 || !fightOk(found.faction)) return null;
         return {
             kind: "soldier",
             faction: found.faction,
@@ -918,7 +1044,7 @@
 
     function sendCarts(faction, work) {
         if (!work.stock || faction.building.dead) return;
-        ["food", "wood", "gold", "stone", "iron"].forEach(function (key) {
+        ["food", "wood", "gold", "stone", "iron", "tin"].forEach(function (key) {
             while ((work.stock[key] || 0) >= CART_LOAD) {
                 work.stock[key] -= CART_LOAD;
                 const spot = ringTiles({ c: work.c, r: work.r, span: 2 }).find(function (tile) { return !occupied(tile.c, tile.r, null, null, true); })
@@ -988,7 +1114,8 @@
     function tickGather(soldier, dt) {
         const order = soldier.order;
         const faction = factionOf(soldier);
-        if (!faction || faction.building.dead || BattleMap.kind(ground, order.c, order.r) !== order.source) {
+        const stillThere = BattleMap.kind(ground, order.c, order.r) === order.source;
+        if (!faction || faction.building.dead || (!stillThere && order.phase !== "back")) {
             soldier.order = null;
             return;
         }
@@ -998,7 +1125,25 @@
                 order.phase = "go";
             } else {
                 order.workLeft -= dt;
-                if (order.workLeft <= 0) order.phase = "back";
+                if (order.workLeft <= 0) {
+                    const taken = order.source === "water" ? HAUL : BattleMap.takeNode(ground, order.c, order.r, HAUL);
+                    if (order.source !== "water") ground = BattleMap.load();
+                    if (taken <= 0) {
+                        soldier.order = null;
+                        return;
+                    }
+                    order.hauled = taken;
+                    order.phase = "back";
+                    if (order.source !== "water") {
+                        const left = BattleMap.nodeLeft(ground, order.c, order.r);
+                        floaters.push({
+                            x: order.c * TILE + TILE / 2,
+                            y: order.r * TILE,
+                            life: 900,
+                            text: left > 0 ? left + " left" : "Spent"
+                        });
+                    }
+                }
                 return;
             }
         }
@@ -1006,19 +1151,20 @@
         if (order.phase === "back") {
             const box = dropBox(soldier, faction, order);
             const info = GATHER[order.source];
+            const got = order.hauled || HAUL;
             const onResource = soldier.c === order.c && soldier.r === order.r;
             if (!onResource && besideBox(soldier, box)) {
                 if (box.work) {
-                    box.work.stock[info.key] = (box.work.stock[info.key] || 0) + HAUL;
+                    box.work.stock[info.key] = (box.work.stock[info.key] || 0) + got;
                     sendCarts(faction, box.work);
                 } else {
-                    faction[info.key] += HAUL;
+                    faction[info.key] += got;
                 }
                 floaters.push({
                     x: (box.c + box.span / 2) * TILE,
                     y: box.r * TILE + 30,
                     life: 900,
-                    text: "+" + info.haul
+                    text: "+" + got + " " + info.key
                 });
                 order.phase = "go";
                 order.workLeft = 0;
@@ -1250,6 +1396,14 @@
         }).length;
     }
 
+    function workerLine() {
+        return factions.filter(function (faction) {
+            return faction.placed;
+        }).map(function (faction) {
+            return faction.name + " " + workerCount(faction) + " workers";
+        }).join("  ·  ");
+    }
+
     function popPhrase(faction) {
         const people = livingHouses(faction) > 0
             ? "Population " + popCount(faction)
@@ -1262,12 +1416,13 @@
             && faction.food >= SOLDIER_COST
             && faction.wood >= SOLDIER_COST
             && faction.stone >= SOLDIER_COST
-            && faction.iron >= SOLDIER_COST;
+            && faction.iron >= SOLDIER_COST
+            && faction.tin >= SOLDIER_COST;
     }
 
     function canAfford(faction, role) {
         if (role === "worker") return faction.food >= TRAIN_COST;
-        if (role === "archer") return faction.gold >= TRAIN_COST && faction.wood >= TRAIN_COST;
+        if (role === "archer") return faction.gold >= ARCHER_COST && faction.wood >= ARCHER_COST;
         return canAffordSoldier(faction);
     }
 
@@ -1281,14 +1436,18 @@
             && nextMuster(faction);
     }
 
-    function otherFaction(faction) {
-        return factions[0].id === faction.id ? factions[1] : factions[0];
+    function enemiesOf(faction) {
+        return factions.filter(function (other) {
+            return other !== faction && other.placed && !other.building.dead && relation(faction.id, other.id) === "war";
+        });
     }
 
     function sideCpu(id) {
+        const faction = factionById(id);
+        if (!faction || !faction.placed) return true;
         if (id === "blue") return playerMode;
         if (id === "red") return redCpu;
-        return false;
+        return true;
     }
 
     function manualSelection() {
@@ -1301,16 +1460,17 @@
     }
 
     function nearestShotTarget(faction, c, r, w, h) {
-        const foe = otherFaction(faction);
         let best = null;
         let dist = TOWER_RANGE + 1;
-        foe.soldiers.forEach(function (soldier) {
-            if (soldier.dead || soldier.hp <= 0) return;
-            const d = distToBox(c, r, w, h, soldier.c, soldier.r);
-            if (d <= TOWER_RANGE && d < dist) {
-                dist = d;
-                best = soldier;
-            }
+        enemiesOf(faction).forEach(function (foe) {
+            foe.soldiers.forEach(function (soldier) {
+                if (soldier.dead || soldier.hp <= 0) return;
+                const d = distToBox(c, r, w, h, soldier.c, soldier.r);
+                if (d <= TOWER_RANGE && d < dist) {
+                    dist = d;
+                    best = soldier;
+                }
+            });
         });
         if (player && !player.dead && hostile[faction.id]) {
             const d = distToBox(c, r, w, h, player.c, player.r);
@@ -1353,6 +1513,7 @@
 
     function tickTowers(dt) {
         factions.forEach(function (faction) {
+            if (!faction.placed) return;
             tickShooter(faction.building, faction, HALL_W, HALL_H, dt);
             faction.towers.forEach(function (tower) {
                 tickShooter(tower, faction, TOWER_W, TOWER_H, dt);
@@ -1363,6 +1524,7 @@
     function update(dt) {
         const strikes = [];
         factions.forEach(function (faction) {
+            if (!faction.placed) return;
             if (faction.building.hurt > 0) faction.building.hurt -= dt;
             faction.houses.forEach(function (house) {
                 if (house.hurt > 0) house.hurt -= dt;
@@ -1409,7 +1571,7 @@
         tickCarts(dt);
         tickTowers(dt);
         cleanup();
-        tickRedCpu();
+        tickRedCpu(dt);
         for (let i = floaters.length - 1; i >= 0; i--) {
             floaters[i].life -= dt;
             if (floaters[i].life <= 0) floaters.splice(i, 1);
@@ -1481,12 +1643,12 @@
             : popCount(faction) + "/" + POP_START + " population";
         return people + ", "
             + faction.gold + " gold, " + faction.food + " food, " + faction.wood + " wood, "
-            + faction.stone + " stone, " + faction.iron + " iron";
+            + faction.stone + " stone, " + faction.iron + " iron, " + faction.tin + " tin";
     }
 
     function storedPhrase(work) {
         const bits = [];
-        ["food", "wood", "gold", "stone", "iron"].forEach(function (key) {
+        ["food", "wood", "gold", "stone", "iron", "tin"].forEach(function (key) {
             const n = work.stock && work.stock[key];
             if (n > 0) bits.push(n + " " + key);
         });
@@ -1495,7 +1657,8 @@
 
     function stockBits(faction) {
         return popPhrase(faction) + "  ·  Gold " + faction.gold + "  ·  Food " + faction.food
-            + "  ·  Wood " + faction.wood + "  ·  Stone " + faction.stone + "  ·  Iron " + faction.iron;
+            + "  ·  Wood " + faction.wood + "  ·  Stone " + faction.stone + "  ·  Iron " + faction.iron
+            + "  ·  Tin " + faction.tin;
     }
 
     function paintHouse(faction) {
@@ -1505,6 +1668,7 @@
             [houseBtn, "house", "house"],
             [mineBtn, "mine", "mine"],
             [ironBtn, "iron", "iron mine"],
+            [tinBtn, "tin", "tin mine"],
             [yardBtn, "yard", "lumberyard"],
             [portBtn, "port", "fishing port"],
             [wallBtn, "wall", "wall"],
@@ -1529,15 +1693,15 @@
             return;
         }
         nameEl.textContent = "You";
-        countEl.textContent = "Health " + player.hp + " / " + player.maxHp
-            + "  ·  Blue " + workerCount(factions[0]) + " workers  ·  Red " + workerCount(factions[1]) + " workers";
+        countEl.textContent = "Health " + player.hp + " / " + player.maxHp + "  ·  " + workerLine();
         if (player.dead) {
             statusEl.textContent = "You are down. You return in " + secondsPhrase(playerDown) + ".";
             return;
         }
         const angry = [];
-        if (hostile.blue) angry.push("Blue");
-        if (hostile.red) angry.push("Red");
+        factions.forEach(function (faction) {
+            if (faction.placed && hostile[faction.id]) angry.push(faction.name);
+        });
         const peace = angry.length
             ? angry.join(" and ") + (angry.length === 1 ? " is" : " are") + " fighting you."
             : "You are neutral until you attack a side.";
@@ -1550,6 +1714,89 @@
             statusEl.textContent = "WASD moves. Right-click an enemy to attack. On a phone, press and hold. Blue is a computer. "
                 + (redCpu ? "Red is a computer. " : "You can still command Red. ")
                 + peace;
+        }
+    }
+
+    function relWord(state) {
+        if (state === "war") return "at war";
+        if (state === "ally") return "allies";
+        return "neutral";
+    }
+
+    function paintDiplomacy(faction) {
+        const box = document.getElementById("diplomacy");
+        if (!box) return;
+        if (!faction || !faction.placed) {
+            if (diplomacySig !== "") {
+                diplomacySig = "";
+                box.hidden = true;
+                box.textContent = "";
+            }
+            return;
+        }
+        const others = factions.filter(function (other) { return other.placed && other !== faction; });
+        const sig = faction.id + "|" + tradeNote + "|"
+            + others.map(function (other) { return other.id + relation(faction.id, other.id); }).join(",");
+        if (sig === diplomacySig) return;
+        diplomacySig = sig;
+        box.hidden = others.length === 0;
+        box.textContent = "";
+        others.forEach(function (other) {
+            const row = document.createElement("div");
+            row.className = "deal";
+            const state = relation(faction.id, other.id);
+            const label = document.createElement("span");
+            label.textContent = other.name + " is " + relWord(state);
+            row.appendChild(label);
+            ["war", "neutral", "ally"].forEach(function (next) {
+                    const btn = document.createElement("button");
+                    btn.type = "button";
+                    btn.className = "rel" + (state === next ? " on" : "");
+                    btn.textContent = next === "war" ? "War" : next === "ally" ? "Allies" : "Neutral";
+                    btn.addEventListener("click", function () {
+                        setRelation(faction.id, other.id, next);
+                        tradeNote = other.name + " is now " + relWord(next) + ".";
+                        diplomacySig = "";
+                        saveBattle();
+                        updateHud();
+                    });
+                    row.appendChild(btn);
+                });
+                if (state !== "war") {
+                    const sell = document.createElement("select");
+                    const buy = document.createElement("select");
+                    RESOURCE_KEYS.forEach(function (key) {
+                        const sold = document.createElement("option");
+                        sold.value = key;
+                        sold.textContent = "Sell " + key;
+                        sell.appendChild(sold);
+                        const bought = document.createElement("option");
+                        bought.value = key;
+                        bought.textContent = "Buy " + key;
+                        buy.appendChild(bought);
+                    });
+                    buy.value = "food";
+                    const go = document.createElement("button");
+                    go.type = "button";
+                    go.className = "rel";
+                    go.textContent = "Trade 10";
+                    go.addEventListener("click", function () {
+                        tradeNote = tryTrade(faction, other, sell.value, buy.value);
+                        diplomacySig = "";
+                        saveBattle();
+                        updateHud();
+                    });
+                    row.appendChild(sell);
+                    row.appendChild(buy);
+                    row.appendChild(go);
+                }
+            box.appendChild(row);
+        });
+        if (tradeNote) {
+            const note = document.createElement("p");
+            note.className = "deal-note";
+            note.textContent = tradeNote;
+            box.appendChild(note);
         }
     }
 
@@ -1578,29 +1825,41 @@
 
         const lookingAtYou = !selected || (mine && !mine.faction);
         if (playerMode && lookingAtYou && !manualSelection()) {
+            paintDiplomacy(null);
             showPlayerHud();
             return;
         }
 
         if (!selected) {
+            paintDiplomacy(null);
             nameEl.textContent = "Nothing selected";
-            countEl.textContent = "Blue " + stocks(factions[0]) + "  ·  Red " + stocks(factions[1]);
+            countEl.textContent = factions.filter(function (faction) {
+                return faction.placed;
+            }).map(function (faction) {
+                return faction.name + " " + stocks(faction);
+            }).join("  ·  ");
             const nextPay = factions.reduce(function (best, faction) {
-                if (faction.building.dead) return best;
+                if (!faction.placed || faction.building.dead) return best;
                 if (best === null || faction.payday < best) return faction.payday;
                 return best;
             }, null);
             statusEl.textContent = nextPay === null
-                ? "Both settlements are down, so no gold or food is coming in."
+                ? "Every settlement is down, so no gold or food is coming in."
                 : "Settlements pay 10 gold and 10 food every 10 seconds. Next pay in "
                     + secondsPhrase(nextPay)
                     + ". Walls and watchtowers cost 10 wood. A watchtower shoots 4 squares. "
-                    + (redCpu ? "Red is a computer gathering resources and defending its settlement." : "You are commanding both sides.");
+                    + (redCpu ? "Red, Yellow, and Purple are computers gathering and defending. Place Yellow and Purple in the map editor." : "You are commanding Blue and Red. Yellow and Purple stay on the computer.");
             swatch.style.background = "#3a4034";
             return;
         }
 
-        const faction = factionById(selected.factionId || (mine && mine.faction.id));
+        const faction = factionById(selected.factionId || (mine && mine.faction && mine.faction.id));
+        if (!faction) {
+            paintDiplomacy(null);
+            if (playerMode) showPlayerHud();
+            return;
+        }
+        paintDiplomacy(faction);
         swatch.style.background = faction.color;
 
         if (selected.kind === "soldier") {
@@ -1620,13 +1879,17 @@
                 const held = dropBox(soldier, faction, order).work
                     ? " The load stays there until 50 is ready for a cart to the settlement."
                     : "";
+                const finite = order.source !== "water";
+                const left = finite ? BattleMap.nodeLeft(ground, order.c, order.r) : 0;
+                const pile = finite ? (left > 0 ? " This square has " + left + " left." : " This square is spent.") : "";
+                const load = (order.hauled || HAUL) + " " + info.key;
                 if (order.phase === "work") {
                     say("Gathering at the " + info.place + ". "
-                        + secondsPhrase(order.workLeft) + " left, then they walk to the " + where + " with " + info.haul + "." + held);
+                        + secondsPhrase(order.workLeft) + " left, then they walk to the " + where + " with " + load + "." + held + pile);
                 } else if (order.phase === "back") {
-                    say("Walking to the " + where + " with " + info.haul + "." + held);
+                    say("Walking to the " + where + " with " + load + "." + held + pile);
                 } else {
-                    say("Walking to the " + info.place + ". They stay 10 seconds, drop " + info.haul + " at the " + where + ", then go again." + held);
+                    say("Walking to the " + info.place + ". They stay 10 seconds, drop " + load + " at the " + where + ", then go again." + held + pile);
                 }
                 return;
             }
@@ -1636,7 +1899,7 @@
             }
             if (!target) {
                 if (soldier.role === "worker") {
-                    say("Right-click water, forest, or a gold, stone, or iron mine. On a phone, press and hold. They stay 10 seconds, drop the load at a fishing port, lumberyard, mine, or iron mine when you have one, and go again. Those buildings keep the load until a cart takes 50 to the settlement. This worker hits for 5.");
+                    say("Right-click water, forest, or a gold, stone, iron, or tin mine. On a phone, press and hold. They stay 10 seconds, drop the load at a fishing port, lumberyard, mine, iron mine, or tin mine when you have one, and go again. Those buildings keep the load until a cart takes 50 to the settlement. This worker hits for 5.");
                 } else if (soldier.role === "archer") {
                     say("Right-click an empty square to walk there, or an enemy to shoot. On a phone, press and hold. This archer has 60 health and hits for " + soldier.damage + ", out to 4 squares.");
                 } else {
@@ -1666,7 +1929,7 @@
             const mill = found.mill;
             nameEl.textContent = faction.name + " windmill";
             countEl.textContent = "Health " + mill.hp + " / " + mill.maxHp + "  ·  " + stockBits(faction);
-            statusEl.textContent = "A windmill covers 2 by 2 squares and costs 10 gold, food, wood, stone, and iron. It adds 10 food every minute. Next food in " + secondsPhrase(mill.foodLeft) + ".";
+            statusEl.textContent = "A windmill covers 2 by 2 squares and costs 10 gold, food, wood, stone, iron, and tin. It adds 10 food every minute. Next food in " + secondsPhrase(mill.foodLeft) + ".";
             return;
         }
 
@@ -1678,6 +1941,7 @@
             const hold = " Workers' loads stay here. At 50 of one resource, a horse and cart takes it to the settlement and disappears.";
             if (work.kind === "mine") statusEl.textContent = "Workers drop gold and stone at this mine." + hold;
             else if (work.kind === "iron") statusEl.textContent = "Workers drop iron at this iron mine." + hold;
+            else if (work.kind === "tin") statusEl.textContent = "Workers drop tin at this tin mine." + hold;
             else if (work.kind === "yard") statusEl.textContent = "Workers drop wood at this lumberyard." + hold;
             else statusEl.textContent = "Workers drop food at this fishing port." + hold;
             return;
@@ -1714,18 +1978,18 @@
                         ? "Right-click the top-left square of a free 2 by 3 anywhere on the map. On a phone, press and hold."
                         : "Right-click the top-left square of a free 2 by 2 anywhere on the map. On a phone, press and hold.";
             const price = placing.kind === "mill"
-                ? " It costs 10 of each resource. You have " + faction.gold + " gold, " + faction.food + " food, " + faction.wood + " wood, " + faction.stone + " stone, and " + faction.iron + " iron."
+                ? " It costs 10 of each resource. You have " + faction.gold + " gold, " + faction.food + " food, " + faction.wood + " wood, " + faction.stone + " stone, " + faction.iron + " iron, and " + faction.tin + " tin."
                 : " It costs 10 wood. You have " + faction.wood + " wood.";
             statusEl.textContent = placeHint || (lead + price);
             return;
         }
 
-        if (redCpu && faction.id === "red") {
+        if (sideCpu(faction.id)) {
             if (faction.trainLeft > 0) {
-                statusEl.textContent = "The computer is training " + trainPhrase(faction.trainKind) + ". They step out in " + secondsPhrase(faction.trainLeft) + ". Red is gathering resources and defending its settlement.";
+                statusEl.textContent = "The computer is training " + trainPhrase(faction.trainKind) + ". They step out in " + secondsPhrase(faction.trainLeft) + ". " + faction.name + " is gathering resources and defending its settlement.";
                 return;
             }
-            statusEl.textContent = "The computer is gathering resources and defending this settlement. A soldier costs 15 gold, food, wood, stone, and iron. It trains workers and keeps a small guard at home. A lumberyard, mine, iron mine, or fishing port is built beside a resource that is at least 12 squares from the settlement. Closer resources are carried straight back. This settlement shoots 10 damage every 1.5 seconds, out to 4 squares. Switch Red to you to command this settlement.";
+            statusEl.textContent = "The computer is gathering resources and defending this settlement. It starts neutral with the other factions. It trades when it is not at war, selling what it has extra and buying what it is short of. A soldier costs 20 gold, food, wood, stone, iron, and tin. A worker costs 20 food. Each forest and mine square holds 1000, then it is gone. It builds towers and walls and keeps a large guard at home before it trains more workers. Soldiers stay by the settlement and only fight enemies who come close. A lumberyard, mine, iron mine, tin mine, or fishing port is built beside a resource that is at least 12 squares from the settlement. Closer resources are carried straight back. This settlement shoots only factions it is at war with, 10 damage every 1.5 seconds, out to 4 squares.";
             return;
         }
 
@@ -1751,14 +2015,14 @@
             return;
         }
         if (faction.food < TRAIN_COST) {
-            statusEl.textContent = "A soldier costs 15 of each resource. A worker costs 10 food. An archer costs 10 gold and 10 wood. Next pay in " + secondsPhrase(faction.payday) + ".";
+            statusEl.textContent = "A soldier costs 20 of each resource. A worker costs 20 food. An archer costs 10 gold and 10 wood. Next pay in " + secondsPhrase(faction.payday) + ".";
             return;
         }
         if (faction.gold < TRAIN_COST) {
-            statusEl.textContent = "A worker is ready for 10 food. A soldier needs 15 gold, food, wood, stone, and iron. An archer needs 10 gold and 10 wood. Next pay in " + secondsPhrase(faction.payday) + ".";
+            statusEl.textContent = "A worker is ready for 20 food. A soldier needs 20 gold, food, wood, stone, iron, and tin. An archer needs 10 gold and 10 wood. Next pay in " + secondsPhrase(faction.payday) + ".";
             return;
         }
-        statusEl.textContent = "Each side starts with 5 workers. Population starts at 10. The first house removes the limit, and more houses can be built anywhere. Soldier: 15 of each resource, 100 health. Worker: 10 food. Archer: 10 gold and 10 wood, 60 health, shoots 10 damage out to 4 squares. House: 10 wood, any open 2 by 2. Mine, iron mine, lumberyard, and fishing port: 10 wood, anywhere. They keep what workers drop until a cart takes 50 to the settlement. Wall and watchtower: 10 wood, one square, anywhere. This settlement and each watchtower shoot 10 damage every 1.5 seconds, out to 4 squares.";
+        statusEl.textContent = "Factions start neutral. Choose war, neutral, or allies below. They trade 10 for 10 when they are not at war. Each forest and mine square holds 1000, then it is gone. Each side starts with 5 workers. Population starts at 10. The first house removes the limit, and more houses can be built anywhere. Soldier: 20 of each resource, 100 health. Worker: 20 food. Archer: 10 gold and 10 wood, 60 health, shoots 10 damage out to 4 squares. House: 10 wood, any open 2 by 2. Mine, iron mine, tin mine, lumberyard, and fishing port: 10 wood, anywhere. They keep what workers drop until a cart takes 50 to the settlement. Wall and watchtower: 10 wood, one square, anywhere. This settlement and each watchtower shoot factions they are at war with, 10 damage every 1.5 seconds, out to 4 squares.";
     }
 
     function makeUnit(faction, role) {
@@ -1884,36 +2148,43 @@
             return;
         }
         if (canOrder && hall && hall.id !== mine.faction.id) {
+            declareWar(mine.faction.id, hall.id);
             orderAttack(mine.soldier, { kind: "building", factionId: hall.id });
             updateHud();
             return;
         }
         if (canOrder && house && house.faction.id !== mine.faction.id) {
+            declareWar(mine.faction.id, house.faction.id);
             orderAttack(mine.soldier, { kind: "house", id: house.house.id });
             updateHud();
             return;
         }
         if (canOrder && work && work.faction.id !== mine.faction.id) {
+            declareWar(mine.faction.id, work.faction.id);
             orderAttack(mine.soldier, { kind: "work", id: work.work.id });
             updateHud();
             return;
         }
         if (canOrder && wall && wall.faction.id !== mine.faction.id) {
+            declareWar(mine.faction.id, wall.faction.id);
             orderAttack(mine.soldier, { kind: "wall", id: wall.piece.id });
             updateHud();
             return;
         }
         if (canOrder && tower && tower.faction.id !== mine.faction.id) {
+            declareWar(mine.faction.id, tower.faction.id);
             orderAttack(mine.soldier, { kind: "tower", id: tower.piece.id });
             updateHud();
             return;
         }
         if (canOrder && hit.mill && hit.mill.faction.id !== mine.faction.id) {
+            declareWar(mine.faction.id, hit.mill.faction.id);
             orderAttack(mine.soldier, { kind: "mill", id: hit.mill.mill.id });
             updateHud();
             return;
         }
-        if (canOrder && unit && unit.soldier.id !== mine.soldier.id && unit.faction.id !== mine.faction.id) {
+        if (canOrder && unit && unit.soldier.id !== mine.soldier.id && unit.faction && unit.faction.id !== mine.faction.id) {
+            declareWar(mine.faction.id, unit.faction.id);
             orderAttack(mine.soldier, { kind: "soldier", id: unit.soldier.id });
             updateHud();
             return;
@@ -1986,14 +2257,15 @@
         if (role === "worker") {
             faction.food -= TRAIN_COST;
         } else if (role === "archer") {
-            faction.gold -= TRAIN_COST;
-            faction.wood -= TRAIN_COST;
+            faction.gold -= ARCHER_COST;
+            faction.wood -= ARCHER_COST;
         } else {
             faction.gold -= SOLDIER_COST;
             faction.food -= SOLDIER_COST;
             faction.wood -= SOLDIER_COST;
             faction.stone -= SOLDIER_COST;
             faction.iron -= SOLDIER_COST;
+            faction.tin -= SOLDIER_COST;
         }
         faction.trainLeft = TRAIN_MS;
         faction.trainKind = role;
@@ -2031,6 +2303,7 @@
     houseBtn.addEventListener("click", function () { beginPlace("house"); });
     mineBtn.addEventListener("click", function () { beginPlace("mine"); });
     ironBtn.addEventListener("click", function () { beginPlace("iron"); });
+    tinBtn.addEventListener("click", function () { beginPlace("tin"); });
     yardBtn.addEventListener("click", function () { beginPlace("yard"); });
     portBtn.addEventListener("click", function () { beginPlace("port"); });
     wallBtn.addEventListener("click", function () { beginPlace("wall"); });
@@ -2103,6 +2376,7 @@
     paintCpu();
     battleView.claimKeys(playerMode);
     const resumed = loadBattle();
+    syncHalls(false);
     if (playerMode && !player) placePlayer(true);
     if (!resumed) saveBattle();
 
@@ -2254,12 +2528,16 @@
         { source: "gold", work: "mine" },
         { source: "stone", work: "mine" },
         { source: "iron", work: "iron" },
+        { source: "tin", work: "tin" },
         { source: "water", work: "port" }
     ];
     const CPU_HAUL = 12;
-    const CPU_DEFEND = 12;
-    const CPU_GUARD = 4;
-    const CPU_GUARD_PRESSED = 8;
+    const CPU_DEFEND = 8;
+    const CPU_LEASH = 4;
+    const CPU_GUARD = 8;
+    const CPU_GUARD_PRESSED = 12;
+    const CPU_TOWERS = 4;
+    const CPU_WALLS = 10;
 
     function tilesOf(kind) {
         const list = [];
@@ -2381,11 +2659,11 @@
         const towers = faction.towers.filter(function (tower) {
             return !tower.dead && tower.hp > 0;
         }).length;
-        if (towers < 2 && placeCpuTower(faction)) return true;
+        if (towers < CPU_TOWERS && placeCpuTower(faction)) return true;
         const walls = faction.walls.filter(function (wall) {
             return !wall.dead && wall.hp > 0;
         }).length;
-        return walls < 6 && placeCpuWall(faction);
+        return walls < CPU_WALLS && placeCpuWall(faction);
     }
 
     function wantedWorkers(faction) {
@@ -2397,36 +2675,53 @@
     }
 
     function enemyPressing(faction) {
-        const enemy = otherFaction(faction);
-        const close = enemy.soldiers.some(function (soldier) {
-            return !soldier.dead && soldier.hp > 0 && distToHall(faction, soldier.c, soldier.r) <= CPU_DEFEND;
+        const close = enemiesOf(faction).some(function (enemy) {
+            return enemy.soldiers.some(function (soldier) {
+                return !soldier.dead && soldier.hp > 0 && distToHall(faction, soldier.c, soldier.r) <= CPU_DEFEND;
+            });
         });
         if (close) return true;
         return !!(player && !player.dead && hostile[faction.id] && distToHall(faction, player.c, player.r) <= CPU_DEFEND);
     }
 
+    function livingRole(faction, role) {
+        return faction.soldiers.filter(function (soldier) {
+            return !soldier.dead && soldier.hp > 0 && soldier.role === role;
+        }).length;
+    }
+
     function planEconomy(faction) {
+        const pressed = enemyPressing(faction);
+        if (pressed) {
+            if (livingHouses(faction) < 1 && !popRoom(faction)) {
+                placeCpuHouse(faction);
+                return;
+            }
+            if (placeCpuDefense(faction)) return;
+            if (livingRole(faction, "soldier") < CPU_GUARD_PRESSED) {
+                if (!popRoom(faction)) placeCpuHouse(faction);
+                else spendTrain(faction, "soldier");
+                return;
+            }
+        }
         for (let i = 0; i < CPU_JOBS.length; i++) {
             if (placeCpuWork(faction, CPU_JOBS[i])) return;
-        }
-        const workers = faction.soldiers.filter(function (soldier) {
-            return !soldier.dead && soldier.hp > 0 && soldier.role === "worker";
-        }).length;
-        if (workers < wantedWorkers(faction)) {
-            if (!popRoom(faction)) placeCpuHouse(faction);
-            else spendTrain(faction, "worker");
-            return;
         }
         if (livingHouses(faction) < 1) {
             placeCpuHouse(faction);
             return;
         }
         if (placeCpuDefense(faction)) return;
-        const soldiers = faction.soldiers.filter(function (soldier) {
-            return !soldier.dead && soldier.hp > 0 && soldier.role === "soldier";
-        }).length;
-        const guard = enemyPressing(faction) ? CPU_GUARD_PRESSED : CPU_GUARD;
-        if (soldiers < guard) spendTrain(faction, "soldier");
+        const guard = pressed ? CPU_GUARD_PRESSED : CPU_GUARD;
+        if (livingRole(faction, "soldier") < guard) {
+            if (!popRoom(faction)) placeCpuHouse(faction);
+            else spendTrain(faction, "soldier");
+            return;
+        }
+        if (livingRole(faction, "worker") < wantedWorkers(faction)) {
+            if (!popRoom(faction)) placeCpuHouse(faction);
+            else spendTrain(faction, "worker");
+        }
     }
 
     function assignWorkers(faction) {
@@ -2522,14 +2817,15 @@
     }
 
     function tickSideCpu(self) {
-        const enemy = otherFaction(self);
-        if (!self || self.building.dead) return;
+        if (!self || !self.placed || self.building.dead) return;
         planEconomy(self);
         assignWorkers(self);
         const foes = [];
-        enemy.soldiers.forEach(function (soldier) {
-            if (soldier.dead || soldier.hp <= 0) return;
-            if (distToHall(self, soldier.c, soldier.r) <= CPU_DEFEND) foes.push(soldier);
+        enemiesOf(self).forEach(function (enemy) {
+            enemy.soldiers.forEach(function (soldier) {
+                if (soldier.dead || soldier.hp <= 0) return;
+                if (distToHall(self, soldier.c, soldier.r) <= CPU_DEFEND) foes.push(soldier);
+            });
         });
         if (player && !player.dead && hostile[self.id] && distToHall(self, player.c, player.r) <= CPU_DEFEND) foes.push(player);
         self.soldiers.forEach(function (soldier) {
@@ -2546,22 +2842,12 @@
                     foeDist = dist;
                 }
             });
-            if (!foe) {
-                enemy.soldiers.forEach(function (other) {
-                    if (other.dead || other.hp <= 0) return;
-                    const dist = chebyshev(soldier.c, soldier.r, other.c, other.r);
-                    if (dist <= 2 && dist < foeDist) {
-                        foe = other;
-                        foeDist = dist;
-                    }
-                });
-            }
-            if (foe) {
+            if (foe && distToHall(self, soldier.c, soldier.r) <= CPU_DEFEND) {
                 if (soldier.order && soldier.order.kind === "soldier" && soldier.order.id === foe.id) return;
                 orderAttack(soldier, { kind: "soldier", id: foe.id });
                 return;
             }
-            if (distToHall(self, soldier.c, soldier.r) <= 6) return;
+            if (distToHall(self, soldier.c, soldier.r) <= CPU_LEASH) return;
             const spot = guardSpot(self, soldier);
             if (!spot) return;
             if (soldier.order && soldier.order.kind === "move" && soldier.order.c === spot[0] && soldier.order.r === spot[1]) return;
@@ -2569,9 +2855,12 @@
         });
     }
 
-    function tickRedCpu() {
-        if (sideCpu("red")) tickSideCpu(factionById("red"));
-        if (sideCpu("blue")) tickSideCpu(factionById("blue"));
+    function tickRedCpu(dt) {
+        factions.forEach(function (faction) {
+            if (!faction.placed || !sideCpu(faction.id)) return;
+            tickFactionTrade(faction, dt);
+            tickSideCpu(faction);
+        });
     }
 
     window.addEventListener("keydown", function (event) {
@@ -2720,7 +3009,7 @@
 
         ctx.font = "700 13px Segoe UI, system-ui, sans-serif";
         ctx.textAlign = "center";
-        const purse = faction.gold + " gold   " + faction.food + " food   " + faction.wood + " wood   " + faction.stone + " stone   " + faction.iron + " iron";
+        const purse = faction.gold + " gold   " + faction.food + " food   " + faction.wood + " wood   " + faction.stone + " stone   " + faction.iron + " iron   " + faction.tin + " tin";
         const purseWidth = ctx.measureText(purse).width;
         ctx.fillStyle = "rgba(244, 240, 216, 0.9)";
         ctx.fillRect(x + w / 2 - purseWidth / 2 - 5, y - 52, purseWidth + 10, 16);
@@ -2840,6 +3129,14 @@
             ctx.fillStyle = "#2a2422";
             ctx.fillRect(x + 46, y + 72, 28, 36);
             ctx.fillStyle = "#c45a32";
+            ctx.fillRect(x + 28, y + 64, 8, 6);
+            ctx.fillRect(x + 78, y + 66, 8, 6);
+        } else if (work.kind === "tin") {
+            ctx.fillStyle = "#8ea4ae";
+            ctx.fillRect(x + 18, y + 50, w - 36, 58);
+            ctx.fillStyle = "#5c6e76";
+            ctx.fillRect(x + 46, y + 72, 28, 36);
+            ctx.fillStyle = "#d7e6ee";
             ctx.fillRect(x + 28, y + 64, 8, 6);
             ctx.fillRect(x + 78, y + 66, 8, 6);
         } else {
@@ -3055,6 +3352,7 @@
         }
 
         factions.forEach(function (faction) {
+            if (!faction.placed) return;
             drawHall(faction);
             faction.houses.forEach(function (house) {
                 drawHouse(faction, house);
@@ -3073,6 +3371,7 @@
             });
         });
         factions.forEach(function (faction) {
+            if (!faction.placed) return;
             faction.soldiers.forEach(function (soldier) {
                 drawSoldier(faction, soldier, time);
             });
@@ -3296,16 +3595,24 @@
             nextId: nextId,
             player: player,
             playerDown: playerDown,
-            hostile: { blue: !!hostile.blue, red: !!hostile.red },
+            hostile: {
+                blue: !!hostile.blue,
+                red: !!hostile.red,
+                yellow: !!hostile.yellow,
+                purple: !!hostile.purple
+            },
             selected: selected,
+            relations: JSON.parse(JSON.stringify(relations)),
             factions: factions.map(function (faction) {
                 return {
                     id: faction.id,
+                    placed: !!faction.placed,
                     gold: faction.gold,
                     food: faction.food,
                     wood: faction.wood,
                     stone: faction.stone,
                     iron: faction.iron,
+                    tin: faction.tin,
                     payday: faction.payday,
                     trainLeft: faction.trainLeft,
                     trained: faction.trained,
@@ -3324,17 +3631,20 @@
     }
 
     function applySnapshot(data) {
-        if (!data || !data.factions || data.factions.length !== factions.length) return false;
+        if (!data || !data.factions) return false;
         const copy = JSON.parse(JSON.stringify(data));
+        let matched = 0;
         for (let i = 0; i < factions.length; i++) {
-            const saved = copy.factions[i];
             const live = factions[i];
-            if (!saved || saved.id !== live.id || !saved.building) return false;
+            const saved = copy.factions.find(function (item) { return item.id === live.id; });
+            if (!saved || !saved.building) continue;
+            matched += 1;
             live.gold = saved.gold;
             live.food = saved.food;
             live.wood = saved.wood;
             live.stone = saved.stone;
             live.iron = saved.iron;
+            live.tin = saved.tin == null ? 500 : saved.tin;
             live.payday = saved.payday;
             live.trainLeft = saved.trainLeft || 0;
             live.trained = !!saved.trained;
@@ -3352,12 +3662,25 @@
             live.towers = saved.towers || [];
             live.windmills = saved.windmills || [];
             live.carts = saved.carts || [];
+            if (saved.placed === false) live.placed = false;
         }
+        if (!matched) return false;
         nextId = copy.nextId || 1;
         player = copy.player || null;
         playerDown = copy.playerDown || 0;
         hostile.blue = !!(copy.hostile && copy.hostile.blue);
         hostile.red = !!(copy.hostile && copy.hostile.red);
+        hostile.yellow = !!(copy.hostile && copy.hostile.yellow);
+        hostile.purple = !!(copy.hostile && copy.hostile.purple);
+        Object.keys(relations).forEach(function (key) { delete relations[key]; });
+        if (copy.relations) {
+            Object.keys(copy.relations).forEach(function (key) {
+                const state = copy.relations[key];
+                if (state === "war" || state === "neutral" || state === "ally") relations[key] = state;
+            });
+        }
+        diplomacySig = "";
+        tradeNote = "";
         selected = copy.selected || null;
         placing = null;
         placeHint = "";
@@ -3390,6 +3713,7 @@
         slashes.length = 0;
         arrows.length = 0;
         applySnapshot(START_BATTLE);
+        syncHalls(true);
         battleSeq = 0;
         if (playerMode) placePlayer(true);
         saveBattle();
@@ -3409,6 +3733,7 @@
         if (!lastTime) lastTime = now;
         const dt = Math.min(100, now - lastTime);
         lastTime = now;
+        syncHalls(false);
         update(dt);
         saveLeft -= dt;
         if (saveLeft <= 0) {

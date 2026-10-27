@@ -213,6 +213,7 @@ main {
 }
 
 .brush,
+.size,
 #clear {
     padding: 10px 14px;
     border-radius: 8px;
@@ -223,11 +224,13 @@ main {
     cursor: pointer;
 }
 
-.brush.on {
+.brush.on,
+.size.on {
     background: #306850;
 }
 
 .brush:hover,
+.size:hover,
 #clear:hover {
     background: #3d8064;
 }
@@ -292,6 +295,44 @@ main {
     font-size: 0.95rem;
 }
 
+.diplomacy {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 16px 14px;
+    background: #1c2a18;
+    color: #d5e0b4;
+}
+
+.diplomacy[hidden] {
+    display: none;
+}
+
+.deal {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.deal select,
+.deal .rel {
+    font: inherit;
+    color: #1c1916;
+    background: #e7efcf;
+    border: 0;
+    border-radius: 4px;
+    padding: 4px 8px;
+}
+
+.deal .rel.on {
+    background: #d4a017;
+}
+
+.deal-note {
+    margin: 0;
+}
+
 @media (max-width: 720px) {
     body {
         height: 100dvh;
@@ -331,6 +372,7 @@ main {
     .train-btn,
     .cpu-btn,
     .brush,
+    .size,
     #clear {
         min-height: 44px;
         flex: 0 0 auto;

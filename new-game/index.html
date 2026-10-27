@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>New game</title>
-    <link rel="stylesheet" href="new-game.css?v=keep">
+    <link rel="stylesheet" href="new-game.css?v=trade">
 </head>
 <body>
     <header class="bar">
@@ -12,7 +12,7 @@
             <a href="../index.html">Roulette home</a>
             <a href="editor.html">Map editor</a>
         </div>
-        <p class="eyebrow">Two settlements</p>
+        <p class="eyebrow">Settlements</p>
     </header>
 
     <main>
@@ -27,7 +27,7 @@
                     <span id="swatch" class="swatch"></span>
                     <div>
                         <p id="sel-name" class="sel-name">No building selected</p>
-                        <p id="sel-count" class="sel-count">Click the blue or red settlement</p>
+                        <p id="sel-count" class="sel-count">Click a settlement</p>
                     </div>
                 </div>
                 <div class="train-buttons">
@@ -40,6 +40,7 @@
                     <button id="build-house" class="train-btn" type="button" disabled>Make house</button>
                     <button id="build-mine" class="train-btn" type="button" disabled>Make mine</button>
                     <button id="build-iron" class="train-btn" type="button" disabled>Make iron mine</button>
+                    <button id="build-tin" class="train-btn" type="button" disabled>Make tin mine</button>
                     <button id="build-yard" class="train-btn" type="button" disabled>Make lumberyard</button>
                     <button id="build-port" class="train-btn" type="button" disabled>Make fishing port</button>
                     <button id="build-wall" class="train-btn" type="button" disabled>Make wall</button>
@@ -47,7 +48,8 @@
                     <button id="build-mill" class="train-btn" type="button" disabled>Make windmill</button>
                 </div>
             </div>
-            <p id="status" class="status">Each settlement pays 10 gold and 10 food every 10 seconds. A soldier costs 15 of each resource. A worker costs 10 food.</p>
+            <p id="status" class="status">Each settlement pays 10 gold and 10 food every 10 seconds. A soldier costs 20 of each resource. A worker costs 20 food.</p>
+            <div id="diplomacy" class="diplomacy" hidden></div>
             <div id="pad" class="pad">
                 <button type="button" data-key="w" aria-label="Move up">▲</button>
                 <button type="button" data-key="a" aria-label="Move left">◀</button>
@@ -57,9 +59,9 @@
         </section>
     </main>
 
-    <script src="map-store.js?v=fit"></script>
+    <script src="map-store.js?v=trade"></script>
     <script src="view.js?v=lod"></script>
     <script src="art.js?v=fit"></script>
-    <script src="new-game.js?v=cost"></script>
+    <script src="new-game.js?v=guard"></script>
 </body>
 </html>

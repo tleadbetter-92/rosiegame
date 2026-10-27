@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Map editor</title>
-    <link rel="stylesheet" href="new-game.css?v=phone">
+    <link rel="stylesheet" href="new-game.css?v=brush">
 </head>
 <body>
     <header class="bar">
@@ -29,19 +29,28 @@
                     <button type="button" class="brush" data-kind="gold">Gold mine</button>
                     <button type="button" class="brush" data-kind="stone">Stone mine</button>
                     <button type="button" class="brush" data-kind="iron">Iron mine</button>
+                    <button type="button" class="brush" data-kind="tin">Tin mine</button>
                     <button type="button" class="brush" data-kind="mountain">Mountain</button>
                     <button type="button" class="brush" data-kind="road">Road</button>
                     <button type="button" class="brush" data-kind="grass">Grass</button>
+                    <button type="button" class="brush" data-kind="hall:yellow">Yellow town</button>
+                    <button type="button" class="brush" data-kind="hall:purple">Purple town</button>
+                    <button type="button" class="brush" data-kind="hall:blue">Move blue</button>
+                    <button type="button" class="brush" data-kind="hall:red">Move red</button>
                     <button type="button" id="clear">Clear paint</button>
+                    <button type="button" class="size on" data-size="1">1 square</button>
+                    <button type="button" class="size" data-size="3">3 squares</button>
+                    <button type="button" class="size" data-size="5">5 squares</button>
+                    <button type="button" class="size" data-size="9">9 squares</button>
                 </div>
             </div>
-            <p id="status" class="status">Click and drag. Arrow keys or WASD move the view. Water, forest, mines, and mountains block soldiers. Roads stay open. Settlement squares stay as they are.</p>
+            <p id="status" class="status">Click and drag to paint. Yellow town and Purple town place a new settlement. Move blue and Move red shift the ones already there.</p>
         </section>
     </main>
 
-    <script src="map-store.js?v=fit"></script>
+    <script src="map-store.js?v=trade"></script>
     <script src="view.js?v=lod"></script>
     <script src="art.js?v=fit"></script>
-    <script src="editor.js?v=fit"></script>
+    <script src="editor.js?v=trade"></script>
 </body>
 </html>

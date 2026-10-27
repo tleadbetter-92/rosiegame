@@ -6,8 +6,12 @@
     const TILE = 60;
     const KEY = "rosiesgame.new-battle-map";
     const SHIFT_FLAG = "rosiesgame.new-battle-map-shift";
+    const HALL_KEY = "rosiesgame.new-battle-halls";
+    const HALL_IDS = ["blue", "red", "yellow", "purple"];
     let cachedRaw = null;
     let cachedTiles = null;
+    let cachedHallRaw = null;
+    let cachedHalls = null;
 
     function remember(raw, tiles) {
         cachedRaw = raw;
@@ -39,6 +43,86 @@
         }
     }
 
+    const NODE_KEY = "rosiesgame.new-battle-nodes";
+    const NODE_AMOUNT = 1000;
+    let cachedNodeRaw = null;
+    let cachedNodes = null;
+
+    function loadNodes() {
+        let raw = "";
+        try {
+            raw = localStorage.getItem(NODE_KEY) || "";
+        } catch (err) {
+            raw = "";
+        }
+        if (cachedNodes && raw === cachedNodeRaw) return cachedNodes;
+        let nodes = {};
+        if (raw) {
+            try {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === "object") nodes = parsed;
+            } catch (err) {
+                nodes = {};
+            }
+        }
+        cachedNodeRaw = raw;
+        cachedNodes = nodes;
+        return nodes;
+    }
+
+    function saveNodes(nodes) {
+        const raw = JSON.stringify(nodes);
+        try {
+            localStorage.setItem(NODE_KEY, raw);
+        } catch (err) {
+            return;
+        }
+        cachedNodeRaw = raw;
+        cachedNodes = nodes;
+    }
+
+    function nodeKind(tiles, c, r) {
+        const tile = kind(tiles, c, r);
+        if (tile === "forest" || tile === "gold" || tile === "stone" || tile === "iron" || tile === "tin") return tile;
+        return "";
+    }
+
+    function nodeLeft(tiles, c, r) {
+        const tile = nodeKind(tiles, c, r);
+        if (!tile) return 0;
+        const row = loadNodes()[c + "," + r];
+        if (!row || row.kind !== tile) return NODE_AMOUNT;
+        return row.left;
+    }
+
+    function clearNode(c, r) {
+        const nodes = loadNodes();
+        const key = c + "," + r;
+        if (!nodes[key]) return;
+        delete nodes[key];
+        saveNodes(nodes);
+    }
+
+    function takeNode(tiles, c, r, amount) {
+        const tile = nodeKind(tiles, c, r);
+        if (!tile || amount <= 0) return 0;
+        const nodes = loadNodes();
+        const key = c + "," + r;
+        const row = nodes[key];
+        let left = (!row || row.kind !== tile) ? NODE_AMOUNT : row.left;
+        const taken = Math.min(amount, left);
+        left -= taken;
+        if (left <= 0) {
+            delete nodes[key];
+            delete tiles[key];
+            save(tiles);
+        } else {
+            nodes[key] = { kind: tile, left: left };
+        }
+        saveNodes(nodes);
+        return taken;
+    }
+
     function save(tiles) {
         const raw = JSON.stringify(tiles);
         localStorage.setItem(KEY, raw);
@@ -47,13 +131,66 @@
 
     function kind(tiles, c, r) {
         const value = tiles[c + "," + r];
-        if (value === "water" || value === "forest" || value === "gold" || value === "stone" || value === "iron" || value === "mountain" || value === "road") return value;
+        if (value === "water" || value === "forest" || value === "gold" || value === "stone" || value === "iron" || value === "tin" || value === "mountain" || value === "road") return value;
         return "grass";
     }
 
     function blocked(tiles, c, r) {
         const tile = kind(tiles, c, r);
         return tile !== "grass" && tile !== "road";
+    }
+
+    function defaultHalls() {
+        return {
+            blue: { c: 1 + SHIFT_C, r: 3 + SHIFT_R },
+            red: { c: 18 + SHIFT_C, r: 3 + SHIFT_R }
+        };
+    }
+
+    function loadHalls() {
+        let raw = "";
+        try {
+            raw = localStorage.getItem(HALL_KEY) || "";
+        } catch (err) {
+            raw = "";
+        }
+        if (cachedHalls && raw === cachedHallRaw) return cachedHalls;
+        const halls = defaultHalls();
+        if (raw) {
+            try {
+                const data = JSON.parse(raw);
+                HALL_IDS.forEach(function (id) {
+                    const spot = data && data[id];
+                    if (!spot || !isFinite(spot.c) || !isFinite(spot.r)) return;
+                    halls[id] = { c: spot.c, r: spot.r };
+                });
+            } catch (err) {
+                raw = "";
+            }
+        }
+        cachedHallRaw = raw;
+        cachedHalls = halls;
+        return halls;
+    }
+
+    function saveHalls(spots) {
+        const data = {};
+        HALL_IDS.forEach(function (id) {
+            const spot = spots && spots[id];
+            if (!spot || !isFinite(spot.c) || !isFinite(spot.r)) return;
+            data[id] = { c: spot.c, r: spot.r };
+        });
+        if (!data.blue) data.blue = defaultHalls().blue;
+        if (!data.red) data.red = defaultHalls().red;
+        const raw = JSON.stringify(data);
+        cachedHallRaw = raw;
+        cachedHalls = null;
+        try {
+            localStorage.setItem(HALL_KEY, raw);
+        } catch (err) {
+            return loadHalls();
+        }
+        return loadHalls();
     }
 
     function grassColor(c, r) {
@@ -233,7 +370,8 @@
             road: "#c6a15a",
             gold: "#e6c14a",
             stone: "#8d939a",
-            iron: "#c45a32"
+            iron: "#c45a32",
+            tin: "#9bb7c4"
         };
         Object.keys(tiles).forEach(function (key) {
             const parts = key.split(",");
@@ -257,6 +395,7 @@
             } else if (tiles[key] === "gold") drawRock(ctx, c, r, "#6a5a40", "#e6c14a");
             else if (tiles[key] === "stone") drawRock(ctx, c, r, "#8d939a", "#d5dde4");
             else if (tiles[key] === "iron") drawRock(ctx, c, r, "#4e4542", "#c45a32");
+            else if (tiles[key] === "tin") drawRock(ctx, c, r, "#6f8f9a", "#d7e6ee");
             else if (tiles[key] === "mountain") drawMountain(ctx, c, r);
             else if (tiles[key] === "road") {
                 if (far || !global.BattleArt || !global.BattleArt.drawRoad(ctx, c, r, roadMask(tiles, c, r))) drawRoad(ctx, c, r);
@@ -274,6 +413,11 @@
         save: save,
         kind: kind,
         blocked: blocked,
-        drawGround: drawGround
+        drawGround: drawGround,
+        loadHalls: loadHalls,
+        saveHalls: saveHalls,
+        nodeLeft: nodeLeft,
+        clearNode: clearNode,
+        takeNode: takeNode
     };
 })(window);
