@@ -57,9 +57,8 @@
     const MILL_COST = 10;
     const MILL_FOOD = 10;
     const MILL_MS = 60000;
-    const HOUSE_RANGE = 10;
     const POP_START = 10;
-    const POP_PER_HOUSE = 5;
+    const SOLDIER_COST = 15;
     const WORK_HP = 400;
     const GATHER = {
         water: { place: "water", haul: "10 food", key: "food", work: "port", drop: "fishing port" },
@@ -359,19 +358,15 @@
     }
 
     function canPlaceHouse(faction, c, r) {
-        if (!canPlaceBox(faction, c, r, HOUSE_W, HOUSE_H)) return false;
-        for (let dc = 0; dc < HOUSE_W; dc++) {
-            for (let dr = 0; dr < HOUSE_H; dr++) {
-                const dist = distToHall(faction, c + dc, r + dr);
-                if (dist === 0 || dist > HOUSE_RANGE) return false;
-            }
-        }
-        return true;
+        return canPlaceBox(faction, c, r, HOUSE_W, HOUSE_H);
     }
 
     function placeHouse(faction, c, r) {
         if (faction.wood < HOUSE_COST || !canPlaceHouse(faction, c, r)) return false;
         faction.wood -= HOUSE_COST;
+        const opensPop = !faction.houses.some(function (house) {
+            return !house.dead && house.hp > 0;
+        });
         faction.houses.push({
             id: nextId++,
             c: c,
@@ -385,7 +380,7 @@
             x: (c + HOUSE_W / 2) * TILE,
             y: r * TILE + 24,
             life: 900,
-            text: "+5 population"
+            text: opensPop ? "No population limit" : "House"
         });
         return true;
     }
@@ -1234,11 +1229,15 @@
         }).length;
     }
 
-    function popLimit(faction) {
-        const houses = faction.houses.filter(function (house) {
+    function livingHouses(faction) {
+        return faction.houses.filter(function (house) {
             return !house.dead && house.hp > 0;
         }).length;
-        return POP_START + houses * POP_PER_HOUSE;
+    }
+
+    function popLimit(faction) {
+        if (livingHouses(faction) > 0) return Infinity;
+        return POP_START;
     }
 
     function popRoom(faction) {
@@ -1252,15 +1251,24 @@
     }
 
     function popPhrase(faction) {
-        return "Population " + popCount(faction) + " / " + popLimit(faction)
-            + ", " + workerCount(faction) + " workers";
+        const people = livingHouses(faction) > 0
+            ? "Population " + popCount(faction)
+            : "Population " + popCount(faction) + " / " + POP_START;
+        return people + ", " + workerCount(faction) + " workers";
+    }
+
+    function canAffordSoldier(faction) {
+        return faction.gold >= SOLDIER_COST
+            && faction.food >= SOLDIER_COST
+            && faction.wood >= SOLDIER_COST
+            && faction.stone >= SOLDIER_COST
+            && faction.iron >= SOLDIER_COST;
     }
 
     function canAfford(faction, role) {
         if (role === "worker") return faction.food >= TRAIN_COST;
         if (role === "archer") return faction.gold >= TRAIN_COST && faction.wood >= TRAIN_COST;
-        if (sideCpu(faction.id)) return faction.food >= TRAIN_COST && faction.iron >= TRAIN_COST && faction.wood >= TRAIN_COST;
-        return faction.gold >= TRAIN_COST && faction.food >= TRAIN_COST;
+        return canAffordSoldier(faction);
     }
 
     function canStartTrain(faction, role) {
@@ -1468,7 +1476,10 @@
     }
 
     function stocks(faction) {
-        return popCount(faction) + "/" + popLimit(faction) + " population, "
+        const people = livingHouses(faction) > 0
+            ? popCount(faction) + " population"
+            : popCount(faction) + "/" + POP_START + " population";
+        return people + ", "
             + faction.gold + " gold, " + faction.food + " food, " + faction.wood + " wood, "
             + faction.stone + " stone, " + faction.iron + " iron";
     }
@@ -1584,7 +1595,7 @@
                 : "Settlements pay 10 gold and 10 food every 10 seconds. Next pay in "
                     + secondsPhrase(nextPay)
                     + ". Walls and watchtowers cost 10 wood. A watchtower shoots 4 squares. "
-                    + (redCpu ? "Red is a computer trying to destroy Blue." : "You are commanding both sides.");
+                    + (redCpu ? "Red is a computer gathering resources and defending its settlement." : "You are commanding both sides.");
             swatch.style.background = "#3a4034";
             return;
         }
@@ -1646,7 +1657,7 @@
             const house = found.house;
             nameEl.textContent = faction.name + " house";
             countEl.textContent = "Health " + house.hp + " / " + house.maxHp + "  ·  " + stockBits(faction);
-            statusEl.textContent = "A house covers 2 by 2 squares, costs 10 wood, and has to sit within 10 squares of the settlement. Each house adds 5 to the population limit, which starts at 10.";
+            statusEl.textContent = "A house covers 2 by 2 squares, costs 10 wood, and can be built on any open ground. Population starts at 10. The first house removes the population limit, and you can keep building houses.";
             return;
         }
 
@@ -1696,7 +1707,7 @@
 
         if (placing && placing.factionId === faction.id) {
             const lead = placing.kind === "house"
-                ? "Right-click the top-left square of a free 2 by 2 within 10 of this settlement. On a phone, press and hold."
+                ? "Right-click the top-left square of a free 2 by 2 anywhere on the map. On a phone, press and hold."
                 : placing.kind === "wall"
                     ? "Right-click an open square anywhere on the map. On a phone, press and hold."
                     : placing.kind === "tower"
@@ -1711,10 +1722,10 @@
 
         if (redCpu && faction.id === "red") {
             if (faction.trainLeft > 0) {
-                statusEl.textContent = "The computer is training " + trainPhrase(faction.trainKind) + ". They step out in " + secondsPhrase(faction.trainLeft) + ". Red is trying to destroy Blue.";
+                statusEl.textContent = "The computer is training " + trainPhrase(faction.trainKind) + ". They step out in " + secondsPhrase(faction.trainLeft) + ". Red is gathering resources and defending its settlement.";
                 return;
             }
-            statusEl.textContent = "The computer is running Red and trying to destroy Blue. Its soldiers cost 10 food, 10 iron, and 10 wood. It trains workers. A lumberyard, iron mine, or fishing port is built beside a resource that is at least 12 squares from the settlement. Closer resources are carried straight back. This settlement shoots 10 damage every 1.5 seconds, out to 4 squares. Switch Red to you to command this settlement.";
+            statusEl.textContent = "The computer is gathering resources and defending this settlement. A soldier costs 15 gold, food, wood, stone, and iron. It trains workers and keeps a small guard at home. A lumberyard, mine, iron mine, or fishing port is built beside a resource that is at least 12 squares from the settlement. Closer resources are carried straight back. This settlement shoots 10 damage every 1.5 seconds, out to 4 squares. Switch Red to you to command this settlement.";
             return;
         }
 
@@ -1723,7 +1734,7 @@
             return;
         }
         if (faction.trained && !popRoom(faction)) {
-            statusEl.textContent = popPhrase(faction) + ". This person is waiting for room. A house adds 5 to the limit.";
+            statusEl.textContent = popPhrase(faction) + ". This person is waiting for room. Build a house and the population limit comes off.";
             return;
         }
         if (faction.trained) {
@@ -1736,18 +1747,18 @@
             return;
         }
         if (!popRoom(faction)) {
-            statusEl.textContent = popPhrase(faction) + ". Build a house to raise the limit by 5.";
+            statusEl.textContent = popPhrase(faction) + ". Build a house and the population limit comes off.";
             return;
         }
         if (faction.food < TRAIN_COST) {
-            statusEl.textContent = "A soldier costs 10 gold and 10 food. A worker costs 10 food. An archer costs 10 gold and 10 wood. Next pay in " + secondsPhrase(faction.payday) + ".";
+            statusEl.textContent = "A soldier costs 15 of each resource. A worker costs 10 food. An archer costs 10 gold and 10 wood. Next pay in " + secondsPhrase(faction.payday) + ".";
             return;
         }
         if (faction.gold < TRAIN_COST) {
-            statusEl.textContent = "A worker is ready for 10 food. A soldier still needs 10 gold as well. An archer needs 10 gold and 10 wood. Next pay in " + secondsPhrase(faction.payday) + ".";
+            statusEl.textContent = "A worker is ready for 10 food. A soldier needs 15 gold, food, wood, stone, and iron. An archer needs 10 gold and 10 wood. Next pay in " + secondsPhrase(faction.payday) + ".";
             return;
         }
-        statusEl.textContent = "Each side starts with 5 workers. Population starts at 10. Each house adds 5. Soldier: 10 gold and 10 food, 100 health. Worker: 10 food. Archer: 10 gold and 10 wood, 60 health, shoots 10 damage out to 4 squares. House: 10 wood, within 10 squares of the settlement. Mine, iron mine, lumberyard, and fishing port: 10 wood, anywhere. They keep what workers drop until a cart takes 50 to the settlement. Wall and watchtower: 10 wood, one square, anywhere. This settlement and each watchtower shoot 10 damage every 1.5 seconds, out to 4 squares.";
+        statusEl.textContent = "Each side starts with 5 workers. Population starts at 10. The first house removes the limit, and more houses can be built anywhere. Soldier: 15 of each resource, 100 health. Worker: 10 food. Archer: 10 gold and 10 wood, 60 health, shoots 10 damage out to 4 squares. House: 10 wood, any open 2 by 2. Mine, iron mine, lumberyard, and fishing port: 10 wood, anywhere. They keep what workers drop until a cart takes 50 to the settlement. Wall and watchtower: 10 wood, one square, anywhere. This settlement and each watchtower shoot 10 damage every 1.5 seconds, out to 4 squares.";
     }
 
     function makeUnit(faction, role) {
@@ -1921,7 +1932,7 @@
                 return;
             }
             placeHint = placing.kind === "house"
-                ? "Those four squares need to be open and within 10 of the settlement."
+                ? "Those four squares need to be open."
                 : placing.kind === "wall"
                     ? "That square is not open."
                     : placing.kind === "tower"
@@ -1977,13 +1988,12 @@
         } else if (role === "archer") {
             faction.gold -= TRAIN_COST;
             faction.wood -= TRAIN_COST;
-        } else if (sideCpu(faction.id)) {
-            faction.food -= TRAIN_COST;
-            faction.iron -= TRAIN_COST;
-            faction.wood -= TRAIN_COST;
         } else {
-            faction.gold -= TRAIN_COST;
-            faction.food -= TRAIN_COST;
+            faction.gold -= SOLDIER_COST;
+            faction.food -= SOLDIER_COST;
+            faction.wood -= SOLDIER_COST;
+            faction.stone -= SOLDIER_COST;
+            faction.iron -= SOLDIER_COST;
         }
         faction.trainLeft = TRAIN_MS;
         faction.trainKind = role;
@@ -2241,10 +2251,15 @@
 
     const CPU_JOBS = [
         { source: "forest", work: "yard" },
+        { source: "gold", work: "mine" },
+        { source: "stone", work: "mine" },
         { source: "iron", work: "iron" },
         { source: "water", work: "port" }
     ];
     const CPU_HAUL = 12;
+    const CPU_DEFEND = 12;
+    const CPU_GUARD = 4;
+    const CPU_GUARD_PRESSED = 8;
 
     function tilesOf(kind) {
         const list = [];
@@ -2315,13 +2330,13 @@
     function placeCpuHouse(faction) {
         if (faction.wood < HOUSE_COST) return false;
         const hall = faction.building;
-        for (let dist = 2; dist <= HOUSE_RANGE; dist++) {
+        for (let dist = 2; dist <= 24; dist++) {
             for (let dc = -dist; dc <= dist + 1; dc++) {
                 for (let dr = -dist; dr <= dist + 1; dr++) {
                     const c = hall.c + dc;
                     const r = hall.r + dr;
                     if (distToHall(faction, c, r) !== dist) continue;
-                    if (musterTile(faction, c, r)) continue;
+                    if (coversMuster(faction, c, r)) continue;
                     if (placeHouse(faction, c, r)) return true;
                 }
             }
@@ -2329,19 +2344,68 @@
         return false;
     }
 
+    function placeCpuTower(faction) {
+        const hall = faction.building;
+        for (let dist = 3; dist <= 8; dist++) {
+            for (let dc = -dist; dc <= dist; dc++) {
+                for (let dr = -dist; dr <= dist; dr++) {
+                    const c = hall.c + dc;
+                    const r = hall.r + dr;
+                    if (distToHall(faction, c, r) !== dist) continue;
+                    if (coversMuster(faction, c, r)) continue;
+                    if (placeBlock(faction, "tower", c, r)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    function placeCpuWall(faction) {
+        const hall = faction.building;
+        for (let dist = 4; dist <= 6; dist++) {
+            for (let dc = -dist; dc <= dist + HALL_W; dc++) {
+                for (let dr = -dist; dr <= dist + HALL_H; dr++) {
+                    const c = hall.c + dc;
+                    const r = hall.r + dr;
+                    if (distToHall(faction, c, r) !== dist) continue;
+                    if (musterTile(faction, c, r)) continue;
+                    if (placeBlock(faction, "wall", c, r)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    function placeCpuDefense(faction) {
+        if (faction.wood < HOUSE_COST) return false;
+        const towers = faction.towers.filter(function (tower) {
+            return !tower.dead && tower.hp > 0;
+        }).length;
+        if (towers < 2 && placeCpuTower(faction)) return true;
+        const walls = faction.walls.filter(function (wall) {
+            return !wall.dead && wall.hp > 0;
+        }).length;
+        return walls < 6 && placeCpuWall(faction);
+    }
+
     function wantedWorkers(faction) {
         let count = 0;
         CPU_JOBS.forEach(function (job) {
-            if (tilesOf(job.source).length) count += 1;
+            if (tilesOf(job.source).length) count += 2;
         });
-        return count;
+        return Math.max(5, count);
+    }
+
+    function enemyPressing(faction) {
+        const enemy = otherFaction(faction);
+        const close = enemy.soldiers.some(function (soldier) {
+            return !soldier.dead && soldier.hp > 0 && distToHall(faction, soldier.c, soldier.r) <= CPU_DEFEND;
+        });
+        if (close) return true;
+        return !!(player && !player.dead && hostile[faction.id] && distToHall(faction, player.c, player.r) <= CPU_DEFEND);
     }
 
     function planEconomy(faction) {
-        if (!popRoom(faction)) {
-            placeCpuHouse(faction);
-            return;
-        }
         for (let i = 0; i < CPU_JOBS.length; i++) {
             if (placeCpuWork(faction, CPU_JOBS[i])) return;
         }
@@ -2349,10 +2413,20 @@
             return !soldier.dead && soldier.hp > 0 && soldier.role === "worker";
         }).length;
         if (workers < wantedWorkers(faction)) {
-            spendTrain(faction, "worker");
+            if (!popRoom(faction)) placeCpuHouse(faction);
+            else spendTrain(faction, "worker");
             return;
         }
-        spendTrain(faction, "soldier");
+        if (livingHouses(faction) < 1) {
+            placeCpuHouse(faction);
+            return;
+        }
+        if (placeCpuDefense(faction)) return;
+        const soldiers = faction.soldiers.filter(function (soldier) {
+            return !soldier.dead && soldier.hp > 0 && soldier.role === "soldier";
+        }).length;
+        const guard = enemyPressing(faction) ? CPU_GUARD_PRESSED : CPU_GUARD;
+        if (soldiers < guard) spendTrain(faction, "soldier");
     }
 
     function assignWorkers(faction) {
@@ -2420,20 +2494,51 @@
         });
     }
 
+    function guardSpot(faction, soldier) {
+        let best = null;
+        let bestDist = Infinity;
+        faction.muster.forEach(function (spot) {
+            if (occupied(spot[0], spot[1], soldier)) return;
+            const dist = chebyshev(soldier.c, soldier.r, spot[0], spot[1]);
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = spot;
+            }
+        });
+        if (best) return best;
+        const hall = faction.building;
+        for (let dist = 2; dist <= 5; dist++) {
+            for (let dc = -dist; dc <= dist + HALL_W; dc++) {
+                for (let dr = -dist; dr <= dist + HALL_H; dr++) {
+                    const c = hall.c + dc;
+                    const r = hall.r + dr;
+                    if (distToHall(faction, c, r) !== dist) continue;
+                    if (occupied(c, r, soldier)) continue;
+                    return [c, r];
+                }
+            }
+        }
+        return null;
+    }
+
     function tickSideCpu(self) {
         const enemy = otherFaction(self);
         if (!self || self.building.dead) return;
         planEconomy(self);
         assignWorkers(self);
-        const foes = enemy.soldiers.filter(function (soldier) { return !soldier.dead && soldier.hp > 0; });
-        if (player && !player.dead && hostile[self.id]) foes.push(player);
+        const foes = [];
+        enemy.soldiers.forEach(function (soldier) {
+            if (soldier.dead || soldier.hp <= 0) return;
+            if (distToHall(self, soldier.c, soldier.r) <= CPU_DEFEND) foes.push(soldier);
+        });
+        if (player && !player.dead && hostile[self.id] && distToHall(self, player.c, player.r) <= CPU_DEFEND) foes.push(player);
         self.soldiers.forEach(function (soldier) {
             if (soldier.dead || soldier.hp <= 0 || soldier.role === "worker") return;
             const current = resolveOrder(soldier);
-            if (current && (current.kind === "soldier" || current.kind === "building" || current.kind === "wall" || current.kind === "tower") && engaged(soldier, current)) return;
+            if (current && current.kind === "soldier" && engaged(soldier, current)) return;
 
             let foe = null;
-            let foeDist = 7;
+            let foeDist = CPU_DEFEND + 1;
             foes.forEach(function (other) {
                 const dist = chebyshev(soldier.c, soldier.r, other.c, other.r);
                 if (dist < foeDist) {
@@ -2441,36 +2546,26 @@
                     foeDist = dist;
                 }
             });
+            if (!foe) {
+                enemy.soldiers.forEach(function (other) {
+                    if (other.dead || other.hp <= 0) return;
+                    const dist = chebyshev(soldier.c, soldier.r, other.c, other.r);
+                    if (dist <= 2 && dist < foeDist) {
+                        foe = other;
+                        foeDist = dist;
+                    }
+                });
+            }
             if (foe) {
                 if (soldier.order && soldier.order.kind === "soldier" && soldier.order.id === foe.id) return;
                 orderAttack(soldier, { kind: "soldier", id: foe.id });
                 return;
             }
-            const closeTower = nearestPiece(enemy.towers, soldier, 6);
-            if (closeTower) {
-                if (soldier.order && soldier.order.kind === "tower" && soldier.order.id === closeTower.id) return;
-                orderAttack(soldier, { kind: "tower", id: closeTower.id });
-                return;
-            }
-            if (!enemy.building.dead && enemy.building.hp > 0) {
-                const barracksOrder = { kind: "building", factionId: enemy.id };
-                if (reaches(soldier, barracksOrder)) {
-                    if (soldier.order && soldier.order.kind === "building" && soldier.order.factionId === enemy.id) return;
-                    orderAttack(soldier, barracksOrder);
-                    return;
-                }
-            }
-            const wall = nearestPiece(enemy.walls, soldier);
-            if (wall) {
-                if (soldier.order && soldier.order.kind === "wall" && soldier.order.id === wall.id) return;
-                orderAttack(soldier, { kind: "wall", id: wall.id });
-                return;
-            }
-            const tower = nearestPiece(enemy.towers, soldier);
-            if (tower) {
-                if (soldier.order && soldier.order.kind === "tower" && soldier.order.id === tower.id) return;
-                orderAttack(soldier, { kind: "tower", id: tower.id });
-            }
+            if (distToHall(self, soldier.c, soldier.r) <= 6) return;
+            const spot = guardSpot(self, soldier);
+            if (!spot) return;
+            if (soldier.order && soldier.order.kind === "move" && soldier.order.c === spot[0] && soldier.order.r === spot[1]) return;
+            orderMove(soldier, spot[0], spot[1]);
         });
     }
 
