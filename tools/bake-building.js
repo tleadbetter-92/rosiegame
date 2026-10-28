@@ -224,31 +224,65 @@ function wallBox(p) {
     };
 }
 
+const stairBoundCache = {};
+function stairBounds(name) {
+    if (stairBoundCache[name]) return stairBoundCache[name];
+    const { gltf } = loadGltf(gltfSourceName(name));
+    const acc = gltf.accessors.find((item) => item.type === "VEC3" && item.min && item.max);
+    const box = {
+        minX: acc.min[0],
+        maxX: acc.max[0],
+        minY: Math.min(0, acc.min[1]),
+        maxY: acc.max[1],
+        minZ: acc.min[2],
+        maxZ: acc.max[2]
+    };
+    stairBoundCache[name] = box;
+    return box;
+}
+
+function turnedRect(px, pz, yaw, x, z, w, d) {
+    const corners = [[x, z], [x + w, z], [x, z + d], [x + w, z + d]];
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (let i = 0; i < corners.length; i++) {
+        const p = turn(corners[i][0], 0, corners[i][1], yaw);
+        const wx = px + p[0];
+        const wz = pz + p[2];
+        if (wx < minX) minX = wx;
+        if (wx > maxX) maxX = wx;
+        if (wz < minZ) minZ = wz;
+        if (wz > maxZ) maxZ = wz;
+    }
+    return { x: minX, z: minZ, w: Math.max(0.25, maxX - minX), d: Math.max(0.25, maxZ - minZ) };
+}
+
+// The stair mesh starts at the pivot and climbs toward local -Z, for its real length and height.
 function stairBoxes(p) {
+    const box = stairBounds(p.id);
     const yaw = p.yaw || 0;
-    const alongX = wallAlongX(yaw);
-    const len = 1.9;
-    const wide = 1.35;
-    const w = alongX ? len : wide;
-    const d = alongX ? wide : len;
-    const x = p.x - w / 2;
-    const z = p.z - d / 2;
-    const y0 = p.y || 0;
-    const steps = 5;
-    const run = (alongX ? w : d) / steps;
+    const yBase = p.y || 0;
+    const rise = Math.max(0.25, box.maxY - box.minY);
+    const length = Math.max(0.45, box.maxZ - box.minZ);
+    const steps = Math.max(2, Math.round(rise / 0.32));
+    const run = length / steps;
     const floors = [];
     for (let i = 0; i < steps; i++) {
-        const py = y0 + ((i + 1) / steps) * STOREY;
+        const zFar = box.maxZ - i * run;
+        const zNear = box.maxZ - (i + 1) * run;
+        const py = yBase + ((i + 1) / steps) * rise;
+        const rect = turnedRect(p.x, p.z, yaw, box.minX, zNear - 0.05, box.maxX - box.minX, zFar - zNear + 0.1);
         floors.push({
-            x: x + (alongX ? i * run : 0),
-            z: z + (alongX ? 0 : i * run),
-            w: alongX ? run : w,
-            d: alongX ? d : run,
-            y: py - 0.08,
+            x: rect.x,
+            z: rect.z,
+            w: rect.w,
+            d: rect.d,
+            y: +(py - 0.04).toFixed(3),
             stair: true
         });
     }
-    floors.push({ x, z, w, d, y: y0 + STOREY, stair: false });
     return { solids: [], floors };
 }
 

@@ -119,7 +119,7 @@ const TOWN_VIEW = 320;
 // Hard RTS unit budget: only this many nearest people are simmed/drawn in 3D.
 const UNIT_CAP = 16;
 let focusTown = { id: "p" + homeVillage, x: places[homeVillage].ox, z: places[homeVillage].oz };
-const player = { hp: 40, max: 40, guard: 0, dead: 0, shake: 0 };
+const player = { hp: 40, max: 40, guard: 0, dead: 0, shake: 0, immortal: true };
 let hero = Hero.create();
 let heroReady = false;
 let heroSaveTimer = 0;
@@ -1775,6 +1775,25 @@ function spawnOneBrute(spot, slot) {
     });
 }
 
+function spawnDuelBrute() {
+    if (homeVillage !== 2 || !places[2]) return;
+    if (men.some((man) => man.duel)) return;
+    const town = places[2];
+    let spot = { x: town.x + 6, z: town.z - 22 };
+    for (let i = 0; i < 8; i++) {
+        const x = town.x + Math.cos(i) * 16;
+        const z = town.z - 18 + Math.sin(i) * 6;
+        if (!blocked(x, z, BRUTE_FACTION, 0)) {
+            spot = { x: x, z: z };
+            break;
+        }
+    }
+    spawnOneBrute(spot, 90);
+    const man = men[men.length - 1];
+    man.duel = true;
+    man.fixed = true;
+}
+
 function spawnSouthwestBrutes() {
     if (homeVillage !== 2 || !World.bruteLair) return;
     if (!brutesLairActive()) {
@@ -2374,6 +2393,8 @@ function distantTree(trunk, leaf, x, z, y, pine) {
 }
 
 function dressSouthMeadow() {
+    // Old farm fences, pens, and meadow clutter are gone. The six town-editor settlements stay.
+    return;
     const yAt = (x, z) => Math.max(0, World.heightAt(x, z));
     const post = (x, z) => {
         const y = yAt(x, z);
@@ -2589,6 +2610,8 @@ function raiseCliffs() {
 }
 
 function dressFarms() {
+    // Old barns, pens, yards, and the designed farm are gone. The six town-editor settlements stay.
+    return;
     const yAt = (x, z) => Math.max(0, World.heightAt(x, z));
     const post = (x, z) => {
         const y = yAt(x, z);
@@ -3240,107 +3263,7 @@ function placeStudyHouse() {
         World.heightAt(x0, z0), World.heightAt(x1, z0),
         World.heightAt(x1, z1), World.heightAt(x0, z1)
     );
-    // Tall street house: the gable faces east, stone below, timber and windows above.
-    {
-        const x1 = -2492;
-        const x0 = x1 - 7;
-        const z0 = 496;
-        const z1 = 504;
-        const y0 = yAt(x0, z0, x1, z1);
-        const stone = y0 + 2.7;
-        const wall = y0 + 6.1;
-        const peak = y0 + 9.3;
-        const midZ = (z0 + z1) * 0.5;
-        const o = 0.4;
-        const east = (yLo, yHi, list, shade) => pushQuad(list,
-            [x1, yLo, z0, 1, 0, shade], [x1, yHi, z0, 1, 1, shade],
-            [x1, yHi, z1, 0, 1, shade], [x1, yLo, z1, 0, 0, shade]
-        );
-        const west = (yLo, yHi, list, shade) => pushQuad(list,
-            [x0, yLo, z1, 1, 0, shade], [x0, yHi, z1, 1, 1, shade],
-            [x0, yHi, z0, 0, 1, shade], [x0, yLo, z0, 0, 0, shade]
-        );
-        east(y0, stone, batches.dfBack, 0.9);
-        east(stone, wall, batches.dfFront, 1);
-        west(y0, stone, batches.dfBack, 0.75);
-        west(stone, wall, batches.dfFront, 0.82);
-        pushQuad(batches.dfBack,
-            [x0, y0, z0, 1, 0, 0.8], [x0, stone, z0, 1, 0.45, 0.8],
-            [x1, stone, z0, 0, 0.45, 0.8], [x1, y0, z0, 0, 0, 0.8]
-        );
-        pushQuad(batches.dfSide,
-            [x0, stone, z0, 1, 0, 0.8], [x0, wall, z0, 1, 1, 0.8],
-            [x1, wall, z0, 0, 1, 0.8], [x1, stone, z0, 0, 0, 0.8]
-        );
-        pushQuad(batches.dfBack,
-            [x1, y0, z1, 1, 0, 0.92], [x1, stone, z1, 1, 0.45, 0.92],
-            [x0, stone, z1, 0, 0.45, 0.92], [x0, y0, z1, 0, 0, 0.92]
-        );
-        pushQuad(batches.dfSide,
-            [x1, stone, z1, 1, 0, 0.92], [x1, wall, z1, 1, 1, 0.92],
-            [x0, wall, z1, 0, 1, 0.92], [x0, stone, z1, 0, 0, 0.92]
-        );
-        pushTri(batches.dfFront,
-            [x1, wall, z0, 1, 0, 1], [x1, peak, midZ, 0.5, 1, 1], [x1, wall, z1, 0, 0, 1]
-        );
-        pushTri(batches.dfFront,
-            [x0, wall, z1, 1, 0, 0.82], [x0, peak, midZ, 0.5, 1, 0.82], [x0, wall, z0, 0, 0, 0.82]
-        );
-        pushQuad(batches.dfRoof,
-            [x0 - o, wall, z0 - o, 0, 0, 0.95], [x0 - o, peak, midZ, 0, 1, 1],
-            [x1 + o, peak, midZ, 3, 1, 1], [x1 + o, wall, z0 - o, 3, 0, 0.95]
-        );
-        pushQuad(batches.dfRoof,
-            [x1 + o, wall, z1 + o, 0, 0, 0.78], [x1 + o, peak, midZ, 0, 1, 0.9],
-            [x0 - o, peak, midZ, 3, 1, 0.9], [x0 - o, wall, z1 + o, 3, 0, 0.78]
-        );
-    }
-    // Timber hall: ridge runs the long way, gables on the short ends, steep thatch.
-    {
-        const x1 = -2492;
-        const x0 = x1 - 8;
-        const z0 = 516;
-        const z1 = 534;
-        const y0 = yAt(x0, z0, x1, z1);
-        const wall = y0 + 3.2;
-        const peak = y0 + 7.4;
-        const midX = (x0 + x1) * 0.5;
-        const o = 0.55;
-        pushQuad(batches.dfLong,
-            [x1, y0, z0, 0, 0, 1], [x1, wall, z0, 0, 1, 1],
-            [x1, wall, z1, 3, 1, 1], [x1, y0, z1, 3, 0, 1]
-        );
-        pushQuad(batches.dfLong,
-            [x0, y0, z1, 0, 0, 0.8], [x0, wall, z1, 0, 1, 0.8],
-            [x0, wall, z0, 3, 1, 0.8], [x0, y0, z0, 3, 0, 0.8]
-        );
-        pushQuad(batches.dfLong,
-            [x0, y0, z0, 0, 0, 0.86], [x0, wall, z0, 0, 1, 0.86],
-            [x1, wall, z0, 1, 1, 0.86], [x1, y0, z0, 1, 0, 0.86]
-        );
-        pushQuad(batches.dfLong,
-            [x1, y0, z1, 0, 0, 0.9], [x1, wall, z1, 0, 1, 0.9],
-            [x0, wall, z1, 1, 1, 0.9], [x0, y0, z1, 1, 0, 0.9]
-        );
-        pushTri(batches.dfLong,
-            [x0, wall, z0, 0, 0.7, 0.86], [midX, peak, z0, 0.5, 1, 0.92], [x1, wall, z0, 1, 0.7, 0.86]
-        );
-        pushTri(batches.dfLong,
-            [x1, wall, z1, 0, 0.7, 0.9], [midX, peak, z1, 0.5, 1, 0.96], [x0, wall, z1, 1, 0.7, 0.9]
-        );
-        pushQuad(batches.dfThatch,
-            [x0 - o, wall, z0 - o, 0, 0, 0.95], [x0 - o, wall, z1 + o, 4, 0, 0.95],
-            [midX, peak, z1 + o, 4, 1, 1], [midX, peak, z0 - o, 0, 1, 1]
-        );
-        pushQuad(batches.dfThatch,
-            [x1 + o, wall, z0 - o, 0, 0, 0.78], [midX, peak, z0 - o, 0, 1, 0.9],
-            [midX, peak, z1 + o, 4, 1, 0.9], [x1 + o, wall, z1 + o, 4, 0, 0.78]
-        );
-    }
-    // Variants from the modelling sheet, south of the tall house, gables facing east.
-    studyGable(batches.dfPlaster, batches.dfRoof, -2497, -2492, 478, 484, yAt(-2497, 478, -2492, 484), 2.5, 4.6);
-    studyShop(-2498, -2492, 456, 474, yAt(-2498, 456, -2492, 474), 3.3);
-    studyGable(batches.dfLong, batches.dfRoof, -2499, -2492, 432, 444, yAt(-2499, 432, -2492, 444), 3.6, 6.6);
+    // The lumber mill west of the southwest village stays. The old houses beside it do not.
     placeStudyYard(yAt);
 }
 
@@ -3491,6 +3414,7 @@ function dressFlatHouses() {
     textures.billFront = flatWallTexture(false, true);
     textures.billBrick = flatWallTexture(true, false);
     textures.billBrickFront = flatWallTexture(true, true);
+    return;
     const kinds = { house: 1, tall: 1, shop: 1, brick: 1, long: 1, grand: 1 };
     for (const b of Town.buildings) {
         if (b.village == null || b.village < 0 || b.village > 3 || b.raised || !kinds[b.mesh]) continue;
@@ -3561,12 +3485,12 @@ function registerHamletTerrainFlats() {
             levelPads.push({ minX: rect.minX, minZ: rect.minZ, w: rect.w, d: rect.d, y: medianTerrainHeight(rect) });
         }
     }
-    const largeHamlet = typeof EditorBlocks !== "undefined" ? EditorBlocks.hamletTownBig : null;
-    if (largeHamlet) {
-        const span = largeHamlet.size || 192;
+    if (typeof EditorBlocks !== "undefined" && EditorBlocks.hamletTownBig) {
         for (let i = 0; i < (World.places || []).length; i++) {
             const place = World.places[i];
             if (!place || place.onMap === false) continue;
+            const layout = majorLayout(i);
+            const span = layout && layout.size ? layout.size : 192;
             const rect = hamletTownBlockRect(place.x, place.z, span);
             levelPads.push({ minX: rect.minX, minZ: rect.minZ, w: rect.w, d: rect.d, y: medianTerrainHeight(rect) });
         }
@@ -3625,7 +3549,7 @@ function hamletEditorLayout(index) {
 
 const HAMLET_DRESS_RADIUS = 300;
 const hamletDressed = [];
-const HAMLET_DECOR_MESH = ["grass", "dirt", "cobble", "sand", "plow", "yardgravel", "bill", "billFront", "plaster", "roof", "trunk"];
+const HAMLET_DECOR_MESH = ["grass", "dirt", "cobble", "sand", "plow", "yardgravel", "bill", "billFront", "plaster", "roof", "trunk", "glow"];
 
 function uploadHamletDecorMeshes() {
     if (districtStampId) return;
@@ -3658,7 +3582,14 @@ function dressEditorHamletAt(layout, ox, oz, options) {
             kitQueued = true;
             continue;
         }
-        if (piece.t === "lamp") continue;
+        if (piece.t === "lamp") {
+            stampTownLamp(piece, ox, oz);
+            continue;
+        }
+        if (piece.t === "archer") {
+            stampTownArcher(piece, ox, oz, village);
+            continue;
+        }
         if (piece.t === "wall" || piece.t === "gate") {
             stampTownPalisade(piece, ox, oz);
             continue;
@@ -3696,6 +3627,7 @@ function dressEditorHamletAt(layout, ox, oz, options) {
 }
 
 function dressHamletIndex(index) {
+    return;
     if (hamletDressed[index]) return;
     hamletDressed[index] = true;
     const hamlets = World.hamlets || [];
@@ -3763,6 +3695,7 @@ function initIslandLabSettlements() {
 
 function dressSphereHamletsNear(x, z, radius) {
     if (islandLabOn) initIslandLabSettlements();
+    return;
     if (typeof HamletSpherePlacements === "undefined" || !HamletSpherePlacements.length) return;
     if (typeof EditorBlocks === "undefined") return;
     const r = radius != null ? radius : HAMLET_DRESS_RADIUS;
@@ -3820,12 +3753,20 @@ function dressRegionTowns() {
 
 const majorTownDressed = {};
 
+function majorLayout(village) {
+    if (typeof EditorBlocks === "undefined") return null;
+    if (village === 2 && EditorBlocks["river-crossing"]) return EditorBlocks["river-crossing"];
+    return EditorBlocks.hamletTownBig || null;
+}
+
 function dressMajorTowns() {
-    if (typeof EditorBlocks === "undefined" || !EditorBlocks.hamletTownBig) return;
+    if (typeof EditorBlocks === "undefined") return;
     for (let village = 0; village < places.length; village++) {
         if (!placeOnMap(village) || majorTownDressed[village]) continue;
+        const layout = majorLayout(village);
+        if (!layout) continue;
         majorTownDressed[village] = true;
-        dressEditorHamletAt(EditorBlocks.hamletTownBig, places[village].x, places[village].z, {
+        dressEditorHamletAt(layout, places[village].x, places[village].z, {
             townBlockPad: true,
             village: village,
             registerFarmhouse: false
@@ -3833,21 +3774,134 @@ function dressMajorTowns() {
     }
 }
 
+let platformArcherN = 0;
+
+function stampTownArcher(piece, ox, oz, village) {
+    const x = piece.x + ox;
+    const z = piece.z + oz;
+    const yaw = piece.yaw || 0;
+    const c = Math.cos(yaw);
+    const s = Math.sin(yaw);
+    const y0 = Math.max(0, World.heightAt(x, z));
+    const xf = (px, py, pz) => [x + px * c - pz * s, y0 + py, z + px * s + pz * c];
+    const post = (px, pz) => addBox(batches.trunk, px, 0.12, pz, 0.16, 2.32, 0.16, xf);
+    addBox(batches.cobble, -1.15, 0, -1.15, 2.3, 0.12, 2.3, xf);
+    post(-1.02, -1.02);
+    post(0.86, -1.02);
+    post(-1.02, 0.86);
+    post(0.86, 0.86);
+    addBox(batches.trunk, -1.1, 2.4, -1.1, 2.2, 0.12, 2.2, xf);
+    addBox(batches.trunk, -1.1, 2.55, -1.1, 2.2, 0.08, 0.08, xf);
+    addBox(batches.trunk, -1.1, 3.15, -1.1, 2.2, 0.08, 0.08, xf);
+    addBox(batches.trunk, -1.1, 2.55, -1.02, 0.08, 0.7, 0.08, xf);
+    addBox(batches.trunk, 1.02, 2.55, -1.02, 0.08, 0.7, 0.08, xf);
+    addBox(batches.trunk, -1.1, 2.55, -1.1, 0.08, 0.7, 2.05, xf);
+    addBox(batches.trunk, 1.02, 2.55, -1.1, 0.08, 0.7, 2.05, xf);
+    addBox(batches.trunk, -0.28, 0.12, 1.05, 0.08, 2.28, 0.08, xf);
+    addBox(batches.trunk, 0.2, 0.12, 1.05, 0.08, 2.28, 0.08, xf);
+    for (let i = 0; i < 5; i++) addBox(batches.trunk, -0.28, 0.45 + i * 0.4, 1.05, 0.56, 0.06, 0.08, xf);
+    const deck = y0 + 2.52;
+    floors.push({ x: x - 1.15, z: z - 1.15, w: 2.3, d: 2.3, y: deck, district: districtStampId || null, platform: true });
+    for (let i = 0; i < 4; i++) {
+        const px = i % 2 ? 0.86 : -1.02;
+        const pz = i < 2 ? -1.02 : 0.86;
+        const wx = x + px * c - pz * s;
+        const wz = z + px * s + pz * c;
+        scenery.push({ x: wx, z: wz, w: 0.16, d: 0.16, top: deck, district: districtStampId || null });
+    }
+    for (let i = 0; i < men.length; i++) {
+        const man = men[i];
+        if (man.platform && Math.hypot(man.x - x, man.z - z) < 1.2) return;
+    }
+    const face = yaw + Math.PI;
+    platformArcherN += 1;
+    men.push({
+        archer: true,
+        platform: true,
+        fixed: true,
+        district: districtStampId || null,
+        faction: village,
+        post: village,
+        village: village,
+        side: -1,
+        index: 500 + platformArcherN,
+        health: 3,
+        x: x,
+        z: z,
+        stand: deck,
+        homeYaw: face,
+        yaw: face,
+        bob: 0,
+        down: 0,
+        attackIn: 0.4,
+        dying: false,
+        hostile: false,
+        striking: 0,
+        struck: false,
+        swing: -1,
+        mode: "guard"
+    });
+    actorsDirty = true;
+}
+
+function stampTownLamp(piece, ox, oz) {
+    const x = piece.x + ox;
+    const z = piece.z + oz;
+    const y = Math.max(0, World.heightAt(x, z));
+    addBox(batches.cobble, x - 0.55, y + 0.02, z - 0.55, 1.1, 0.12, 1.1);
+    addBox(batches.trunk, x - 0.1, y + 0.42, z - 0.1, 0.2, 2.55, 0.2);
+    addBox(batches.trunk, x - 0.32, y + 2.9, z - 0.22, 0.64, 0.1, 0.44);
+    addBox(batches.glow, x - 0.22, y + 3.0, z - 0.22, 0.44, 0.5, 0.44);
+    addBox(batches.trunk, x - 0.26, y + 3.5, z - 0.26, 0.52, 0.12, 0.52);
+    scenery.push({ x: x - 0.14, z: z - 0.14, w: 0.28, d: 0.28, top: y + 2.9 });
+}
+
 function stampTownPalisade(piece, ox, oz) {
     const yaw = piece.yaw || 0;
     const c = Math.cos(yaw);
     const s = Math.sin(yaw);
-    const x0 = piece.x + ox;
-    const z0 = piece.z + oz;
+    const x = piece.x + ox;
+    const z = piece.z + oz;
+    const y0 = Math.max(0, World.heightAt(x, z));
+    const xf = (px, py, pz) => [x + px * c - pz * s, y0 + py, z + px * s + pz * c];
     const gate = piece.t === "gate";
     for (let i = 0; i <= 8; i++) {
         const along = i * 0.48;
         if (gate && along > 0.55 && along < 3.35) continue;
-        addBox(batches.trunk, x0 + c * along, 0, z0 + s * along, 0.16, 2.15, 0.16);
+        addBox(batches.trunk, along, 0, -0.08, 0.16, 2.15, 0.16, xf);
     }
-    if (!gate) return;
-    addBox(batches.trunk, x0 + c * 1.2, 0, z0 + s * 1.2, 0.12, 1.9, 1.05);
-    addBox(batches.trunk, x0 + c * 2.6, 0, z0 + s * 2.6, 0.12, 1.9, 1.05);
+    const rail = (y, x0, x1) => addBox(batches.trunk, x0, y, -0.08, Math.max(0.08, x1 - x0), 0.1, 0.08, xf);
+    if (gate) {
+        rail(0.72, 0.1, 0.55);
+        rail(1.4, 0.1, 0.55);
+        rail(0.72, 3.35, 3.9);
+        rail(1.4, 3.35, 3.9);
+        rail(2.05, 0.55, 3.4);
+        addBox(batches.trunk, 0.7, 0, -0.06, 1.15, 1.9, 0.08, xf);
+        addBox(batches.trunk, 2.15, 0, -0.06, 1.15, 1.9, 0.08, xf);
+    } else {
+        rail(0.72, 0.1, 3.9);
+        rail(1.4, 0.1, 3.9);
+    }
+    const blockSpan = (a, b) => {
+        const corners = [[a, -0.2], [b, -0.2], [a, 0.2], [b, 0.2]];
+        let minX = Infinity;
+        let minZ = Infinity;
+        let maxX = -Infinity;
+        let maxZ = -Infinity;
+        for (let i = 0; i < corners.length; i++) {
+            const w = xf(corners[i][0], 0, corners[i][1]);
+            if (w[0] < minX) minX = w[0];
+            if (w[2] < minZ) minZ = w[2];
+            if (w[0] > maxX) maxX = w[0];
+            if (w[2] > maxZ) maxZ = w[2];
+        }
+        scenery.push({ x: minX, z: minZ, w: Math.max(0.2, maxX - minX), d: Math.max(0.2, maxZ - minZ), top: y0 + 2.15 });
+    };
+    if (gate) {
+        blockSpan(0, 0.7);
+        blockSpan(3.3, 4);
+    } else blockSpan(0, 4);
 }
 
 function dressHamletsNear(x, z, radius) {
@@ -3884,7 +3938,7 @@ let districtNoteAt = 0;
 const DISTRICT_SEE = 270;
 const DISTRICT_KEEP = 340;
 const DISTRICT_SOLDIERS = 24;
-const DISTRICT_BATCH_KEYS = ["plow", "yardgravel", "grass", "dirt", "cobble", "sand", "trunk", "bill", "billFront", "plaster", "roof"];
+const DISTRICT_BATCH_KEYS = ["plow", "yardgravel", "grass", "dirt", "cobble", "sand", "trunk", "bill", "billFront", "plaster", "roof", "glow"];
 
 function districtPlace(id) {
     const row = window.CampaignDistricts && CampaignDistricts.byId(id);
@@ -3902,7 +3956,7 @@ function districtPlace(id) {
 
 function districtLayout(spot) {
     if (typeof EditorBlocks === "undefined") return null;
-    if (spot.major) return EditorBlocks.hamletTownBig || null;
+    if (spot.major) return spot.id === "southwest" ? majorLayout(2) : (EditorBlocks.hamletTownBig || null);
     return regionTownLayout({ id: spot.id });
 }
 
@@ -3981,6 +4035,7 @@ function releaseDistrictTown() {
     dropTagged(hamletPads, id);
     for (let i = men.length - 1; i >= 0; i--) {
         if (men[i].campaignArmy && men[i].campaignPost === id) men.splice(i, 1);
+        else if (men[i].platform && men[i].district === id) men.splice(i, 1);
     }
     solidGrid = null;
     floorGrid = null;
@@ -4008,6 +4063,7 @@ function dressDistrictTown(spot) {
     }
     const sceneryAt = scenery.length;
     const padsAt = hamletPads.length;
+    const floorsAt = floors.length;
     districtStampId = spot.id;
     try {
         dressEditorHamletAt(layout, spot.x, spot.z, {
@@ -4022,10 +4078,11 @@ function dressDistrictTown(spot) {
     if (token !== districtToken) return;
     for (let i = sceneryAt; i < scenery.length; i++) scenery[i].district = spot.id;
     for (let i = padsAt; i < hamletPads.length; i++) hamletPads[i].district = spot.id;
+    for (let i = floorsAt; i < floors.length; i++) floors[i].district = spot.id;
     const names = [];
     const tex = {
         plow: "plow", yardgravel: "yardgravel", grass: "grass", dirt: "dirt", cobble: "cobble",
-        sand: "sand", trunk: "trunk", bill: "bill", billFront: "billFront", plaster: "plaster", roof: "roof"
+        sand: "sand", trunk: "trunk", bill: "bill", billFront: "billFront", plaster: "plaster", roof: "roof", glow: "glow"
     };
     for (let i = 0; i < DISTRICT_BATCH_KEYS.length; i++) {
         const key = DISTRICT_BATCH_KEYS[i];
@@ -4494,6 +4551,18 @@ function buildFolk() {
 function drawFolk(dark, proj) {
     if (inside) return;
     const near = nearestMen(24, gfx().personDraw);
+    const seenFolk = new Set();
+    for (let i = 0; i < near.length; i++) seenFolk.add(near[i].man);
+    const watch = 150 * 150;
+    for (let i = 0; i < men.length; i++) {
+        const man = men[i];
+        if (seenFolk.has(man) || man.hidden || man.dying) continue;
+        if (!man.raid && !man.duel && !(man.post === 2 && man.fixed && !man.archer && !man.inn && !man.decor)) continue;
+        const dx = man.x - cam.x;
+        const dz = man.z - cam.z;
+        if (dx * dx + dz * dz > watch) continue;
+        near.push({ man: man, d2: dx * dx + dz * dz });
+    }
     if (kaykitMeshesReady()) {
         gl.enable(gl.CULL_FACE);
         gl.enableVertexAttribArray(loc.pos);
@@ -5014,7 +5083,7 @@ function stampKitBuildOnce(id, wx, wz, yaw, district, token) {
                 const role = kitRole(item.mat, item.verts || 0);
                 if (role) building.groups[role].push(item);
             }
-            const physJob = fetch("models/kitbuild/" + id + ".physics.json")
+            const physJob = fetch("models/kitbuild/" + id + ".physics.json?v=stairs")
                 .then((res) => (res.ok ? res.json() : null))
                 .then((physics) => {
                     if (district && token !== districtToken) return;
@@ -5036,6 +5105,27 @@ function flushKitBuildMeshes() {
 }
 
 function queueSouthwestShowcaseBuilds() {
+}
+
+const meshFetchWait = [];
+let meshFetchActive = 0;
+
+function scheduleMeshFetch(start) {
+    return new Promise((resolve, reject) => {
+        const run = () => {
+            meshFetchActive += 1;
+            Promise.resolve()
+                .then(start)
+                .then(resolve, reject)
+                .finally(() => {
+                    meshFetchActive -= 1;
+                    const next = meshFetchWait.shift();
+                    if (next) next();
+                });
+        };
+        if (meshFetchActive < 2) run();
+        else meshFetchWait.push(run);
+    });
 }
 
 function runKitBuildQueue() {
@@ -5061,7 +5151,7 @@ function loadKaykit() {
         const key = meshKey || name;
         const picture = new Image();
         picture.src = "models/kaykit/" + name + ".png";
-        return Promise.all([
+        return scheduleMeshFetch(() => Promise.all([
             fetch("models/kaykit/" + name + ".bin").then((res) => res.arrayBuffer()),
             new Promise((resolve, reject) => {
                 picture.onload = () => resolve(picture);
@@ -5079,7 +5169,7 @@ function loadKaykit() {
             const pack = { buffer, frames, count, tex };
             folkMesh[key] = pack;
             return pack;
-        }).catch(() => null);
+        }).catch(() => null));
     };
     const loadCraftPixFolk = (stem, meshKey, aliases) => {
         take(stem + "-0", meshKey).then((part) => {
@@ -5896,7 +5986,7 @@ function personMatrix(man) {
     const c = Math.cos(yaw) * k;
     const s = Math.sin(yaw) * k;
     const slash = man.meshAttack || man.meshDeath ? 0 : (man.swing > 0 ? Math.sin(man.swing * Math.PI) : 0);
-    const lunge = slash * 0.22;
+    const lunge = slash * (man.lungeReach || 0.22);
     const y = (man.stand || 0) + (man.floatY || 0) + man.bob - (man.meshDeath ? 0 : Math.min(man.down, 1.05) * k);
     const px = man.x + Math.sin(man.yaw) * lunge;
     const pz = man.z - Math.cos(man.yaw) * lunge;
@@ -6340,16 +6430,169 @@ const PET_FOLLOWER_SPECS = () => [
 ];
 
 function spawnSwPetFollowers() {
-    if (homeVillage !== 2) {
-        layoutSwNorthGateShowcase();
+    petFollowers.length = 0;
+    layoutSwNorthGateShowcase();
+}
+
+// Animals stay around the lumber mill. They walk around walls and fences, and they do not attack.
+const ARENA_FARM = { x: -2518, z: 558 };
+const arenaBeasts = [];
+const arenaMeshes = {};
+const ARENA_ANIMALS = [
+    { id: "bear", url: "models/creatures/bear-0", targetH: 1.55 },
+    { id: "wolf", url: "models/creatures/wolf-0", targetH: 0.85 },
+    { id: "warg", url: "models/creatures/warg-0", targetH: 1.1 },
+    { id: "fox", url: "models/creatures/fox-full-0", targetH: 0.48 },
+    { id: "deer", url: "models/creatures/deer-0", targetH: 1.15 },
+    { id: "rat", url: "models/creatures/rat-0", targetH: 0.4 },
+    { id: "snake", url: "models/creatures/snake-0", targetH: 0.35, at: 0.35 },
+    { id: "eagle", url: "models/creatures/eagle-0", targetH: 0.48, floatY: 0.8 },
+    { id: "spider", url: "models/creatures/spider-0", targetH: 0.7 },
+    { id: "wasp", url: "models/creatures/wasp-0", targetH: 0.42, floatY: 1.4 },
+    { id: "centipede", url: "models/creatures/centipede-0", targetH: 0.32 },
+    { id: "ooze", url: "models/creatures/ooze-0", targetH: 0.75 },
+    { id: "rhino", url: "models/creatures/rhino-0", targetH: 1.45 },
+    { id: "mammoth", url: "models/creatures/mammoth-0", targetH: 2.15 }
+];
+
+function arenaHome(slot) {
+    const ang = slot * (Math.PI * 2 / ARENA_ANIMALS.length);
+    return {
+        x: ARENA_FARM.x + Math.cos(ang) * 16,
+        z: ARENA_FARM.z + Math.sin(ang) * 16
+    };
+}
+
+function placeArenaBeast(spec, slot) {
+    const mesh = arenaMeshes[spec.id];
+    if (!mesh) return;
+    const home = arenaHome(slot);
+    const beast = {
+        arena: true,
+        beastId: spec.id,
+        slot: slot,
+        health: 8,
+        dying: false,
+        down: 0,
+        horse: true,
+        bodyScale: bellyScaleFor(spec, mesh),
+        x: home.x,
+        z: home.z,
+        yaw: angTowardPlayer(home.x, home.z),
+        stand: 0,
+        bob: 0,
+        swing: -1,
+        walking: false,
+        animPhase: slot * 0.4,
+        pace: 0.5,
+        floatY: spec.floatY || 0,
+        targetH: spec.targetH || 1,
+        lungeReach: Math.max(0.4, (spec.targetH || 1) * 0.5),
+        flinch: 0,
+        slowLegs: spec.id === "rat" || spec.id === "spider" || spec.id === "snake"
+    };
+    beast.stand = beastGround(beast, beast.x, beast.z) + beast.floatY;
+    arenaBeasts.push(beast);
+}
+
+function angTowardPlayer(x, z) {
+    return Math.atan2(-(cam.x - x), -(cam.z - z));
+}
+
+function initArenaAnimals() {
+    if (homeVillage !== 2) return;
+    ARENA_ANIMALS.forEach((spec, slot) => {
+        loadBeastMesh(spec.url, (pack) => {
+            pack.walk = [1, Math.min(8, pack.frames - 1)];
+            arenaMeshes[spec.id] = pack;
+            if (!arenaBeasts.some((beast) => beast.beastId === spec.id)) placeArenaBeast(spec, slot);
+        });
+    });
+}
+
+function hitArenaBeast(beast) {
+    if (!beast || beast.dying || beast.health <= 0) return false;
+    beast.health -= playerStrikeDamage();
+    beast.flinch = 0.32;
+    beast.swing = -1;
+    const awayX = beast.x - cam.x;
+    const awayZ = beast.z - cam.z;
+    const away = Math.hypot(awayX, awayZ) || 1;
+    const shove = Math.min(0.85, (beast.targetH || 1) * 0.35);
+    const nx = beast.x + (awayX / away) * shove;
+    const nz = beast.z + (awayZ / away) * shove;
+    if (!blocked(nx, nz, null, beast.stand || 0)) {
+        beast.x = nx;
+        beast.z = nz;
+    }
+    if (beast.health <= 0) {
+        beast.dying = true;
+        beast.down = 0;
+        beast.swing = -1;
+        showStrike("Slain");
+    } else {
+        showStrike("Hit");
+    }
+    return true;
+}
+
+function pickBeastWander(beast) {
+    const feet = beast.stand || 0;
+    for (let n = 0; n < 8; n++) {
+        const ang = Math.random() * Math.PI * 2;
+        const dist = 3 + Math.random() * 12;
+        const x = ARENA_FARM.x + Math.cos(ang) * dist;
+        const z = ARENA_FARM.z + Math.sin(ang) * dist;
+        if (blocked(x, z, null, feet)) continue;
+        beast.wander = { x: x, z: z };
+        beast.wanderLeft = 3 + Math.random() * 5;
         return;
     }
-    const have = new Set(petFollowers.map((p) => p.mesh));
-    for (const spec of PET_FOLLOWER_SPECS()) {
-        if (!spec.mesh || have.has(spec.id)) continue;
-        addPetFollower(spec);
+    beast.wander = { x: ARENA_FARM.x, z: ARENA_FARM.z };
+    beast.wanderLeft = 2;
+}
+
+function stepArenaBeasts(dt) {
+    if (homeVillage !== 2 || inside || flying) return;
+    for (let i = arenaBeasts.length - 1; i >= 0; i--) {
+        const beast = arenaBeasts[i];
+        if (beast.dying) {
+            beast.down += dt * 1.4;
+            beast.walking = false;
+            beast.stand = beastGround(beast, beast.x, beast.z) + beast.floatY - Math.min(beast.down, 1);
+            if (beast.down > 2.4) {
+                const spec = ARENA_ANIMALS[beast.slot];
+                arenaBeasts.splice(i, 1);
+                if (spec) placeArenaBeast(spec, beast.slot);
+            }
+            continue;
+        }
+        if (beast.flinch > 0) beast.flinch -= dt;
+        beast.swing = -1;
+        if (beast.flinch > 0) {
+            beast.walking = false;
+        } else {
+            if (!beast.wander || beast.wanderLeft <= 0 || Math.hypot(beast.wander.x - beast.x, beast.wander.z - beast.z) < 1.3) pickBeastWander(beast);
+            beast.wanderLeft -= dt;
+            const ground = beastGround(beast, beast.x, beast.z);
+            beast.stand = ground;
+            const moved = steerToward(beast, beast.wander.x, beast.wander.z, dt, beast.floatY ? 2.1 : 1.5, 1.1);
+            beast.walking = moved;
+            if (moved) beast.animPhase += Math.min(dt * 2.4, dt * 3.2);
+            if (!moved) beast.wanderLeft = Math.min(beast.wanderLeft, 0.4);
+        }
+        beast.stand = beastGround(beast, beast.x, beast.z) + beast.floatY;
     }
-    layoutSwNorthGateShowcase();
+}
+
+function drawArenaBeasts() {
+    if (homeVillage !== 2) return;
+    for (let i = 0; i < arenaBeasts.length; i++) {
+        const beast = arenaBeasts[i];
+        const mesh = arenaMeshes[beast.beastId];
+        if (!mesh) continue;
+        drawBeast(mesh, beast, () => petAnimFrame(mesh, beast));
+    }
 }
 
 function petMesh(pet) {
@@ -6412,6 +6655,7 @@ function buildBeasts() {
         spawnSwPetFollowers();
     });
     initSwGateShowcaseMeshes();
+    initArenaAnimals();
 }
 
 function petAnimFrame(mesh, pet) {
@@ -6463,27 +6707,29 @@ function beastSpanYFromBin(buf) {
 }
 
 function loadBeastMesh(url, onReady) {
-    const picture = new Image();
-    picture.src = url + ".png";
-    Promise.all([
-        fetch(url + ".bin").then((res) => (res.ok ? res.arrayBuffer() : null)),
-        new Promise((resolve, reject) => {
-            picture.onload = () => resolve(picture);
-            picture.onerror = reject;
-        })
-    ]).then(([buf, img]) => {
-        if (!buf) return;
-        const view = new DataView(buf);
-        const frames = view.getUint32(0, true);
-        const count = view.getUint32(4, true);
-        const spanY = beastSpanYFromBin(buf);
-        const buffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buf, 8), gl.STATIC_DRAW);
-        const tex = gl.createTexture();
-        uploadModelTexture(tex, img, false);
-        onReady({ buffer, frames, count, tex, spanY, walk: [1, Math.min(8, frames - 1)] });
-    }).catch(() => {});
+    scheduleMeshFetch(() => {
+        const picture = new Image();
+        picture.src = url + ".png";
+        return Promise.all([
+            fetch(url + ".bin?v=legs").then((res) => (res.ok ? res.arrayBuffer() : null)),
+            new Promise((resolve, reject) => {
+                picture.onload = () => resolve(picture);
+                picture.onerror = reject;
+            })
+        ]).then(([buf, img]) => {
+            if (!buf) return;
+            const view = new DataView(buf);
+            const frames = view.getUint32(0, true);
+            const count = view.getUint32(4, true);
+            const spanY = beastSpanYFromBin(buf);
+            const buffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buf, 8), gl.STATIC_DRAW);
+            const tex = gl.createTexture();
+            uploadModelTexture(tex, img, false);
+            onReady({ buffer, frames, count, tex, spanY, walk: [1, Math.min(8, frames - 1)] });
+        }).catch(() => {});
+    });
 }
 
 function drawBeast(mesh, beast, frameFn) {
@@ -8276,6 +8522,7 @@ function flashHurt() {
 }
 
 function hurtPlayer(amount) {
+    if (player.immortal) return;
     if (inside || player.dead || player.guard > 0) return;
     player.hp = Math.max(0, player.hp - amount);
     hero.hp = player.hp;
@@ -8509,6 +8756,10 @@ function postHit(body) {
 
 function wound(man, label, quiet, knockX, knockZ) {
     if (!man || man.dying || man.health <= 0 || man.jack || man.campaignArmy) return false;
+    if (man.raid) {
+        raidStrike(man, quiet ? 1 : playerStrikeDamage());
+        return true;
+    }
     // Archers' arrows only count against goblins; the campaign settles fights between factions itself.
     if (quiet && !man.goblin && !man.brute) return false;
     if (man.board) {
@@ -8661,6 +8912,24 @@ function connectSwing() {
             bestT = t;
         }
     }
+    if (!best) {
+        for (let i = 0; i < arenaBeasts.length; i++) {
+            const beast = arenaBeasts[i];
+            if (beast.dying || beast.health <= 0) continue;
+            const chest = (beast.stand || 0) + 0.7;
+            const dx = beast.x - ox;
+            const dy = chest - cam.y;
+            const dz = beast.z - oz;
+            const t = dx * fx + dy * fy + dz * fz;
+            if (t < 0.4 || t > profile.reach) continue;
+            const wide = Math.hypot(dx - fx * t, dz - fz * t);
+            const high = Math.abs(dy - fy * t);
+            if (wide < profile.radius + 0.45 && high < 1.8 && t < bestT) {
+                hitArenaBeast(beast);
+                return;
+            }
+        }
+    }
     const gate = campaign && gateInReach(ox, oz, fx, fy, fz, profile.reach);
     if (gate && gate.t < bestT) {
         if (strikeGate(gate)) notePractice("sword");
@@ -8714,18 +8983,55 @@ function nearestFoe(man) {
     return best;
 }
 
-function moveToward(man, x, z, dt, speed) {
+function steerToward(man, x, z, dt, speed, stopDist) {
     const dx = x - man.x;
     const dz = z - man.z;
     const dist = Math.hypot(dx, dz) || 0.0001;
-    man.yaw = Math.atan2(-dx, -dz);
-    if (dist < 1.2) return false;
-    const step = Math.min(speed * dt, dist - 1.05);
-    const nx = man.x + (dx / dist) * step;
-    const nz = man.z + (dz / dist) * step;
-    if (!blocked(nx, man.z, man.faction)) man.x = nx;
-    if (!blocked(man.x, nz, man.faction)) man.z = nz;
-    return true;
+    if (dist < (stopDist == null ? 0.45 : stopDist)) {
+        man.yaw = Math.atan2(-dx, -dz);
+        return false;
+    }
+    const step = Math.min(speed * dt, Math.max(0.08, dist - 0.15));
+    const ux = dx / dist;
+    const uz = dz / dist;
+    const feet = man.stand || 0;
+    const prefer = man.steer || 0;
+    const angles = prefer ? [0, prefer, 0.55, -0.55, 1.1, -1.1, 1.65, -1.65, 2.3, -2.3] : [0, 0.55, -0.55, 1.1, -1.1, 1.65, -1.65, 2.3, -2.3];
+    let best = null;
+    let bestScore = Infinity;
+    for (let i = 0; i < angles.length; i++) {
+        const ang = angles[i];
+        const c = Math.cos(ang);
+        const s = Math.sin(ang);
+        const dirx = ux * c - uz * s;
+        const dirz = ux * s + uz * c;
+        const nx = man.x + dirx * step;
+        const nz = man.z + dirz * step;
+        if (blocked(nx, nz, man.faction, feet)) continue;
+        const remain = Math.hypot(x - nx, z - nz);
+        const sameSide = prefer && ang && Math.sign(ang) === Math.sign(prefer) ? -0.25 : 0;
+        const score = remain + Math.abs(ang) * 0.12 + sameSide;
+        if (score < bestScore) {
+            bestScore = score;
+            best = { nx: nx, nz: nz, ang: ang, dirx: dirx, dirz: dirz };
+        }
+    }
+    if (!best) {
+        man.steer = prefer ? -prefer : 0.9;
+        man.yaw = Math.atan2(-dx, -dz);
+        return false;
+    }
+    const ox = man.x;
+    const oz = man.z;
+    man.x = best.nx;
+    man.z = best.nz;
+    man.steer = best.ang || prefer;
+    man.yaw = Math.atan2(-best.dirx, -best.dirz);
+    return Math.hypot(man.x - ox, man.z - oz) > 0.004;
+}
+
+function moveToward(man, x, z, dt, speed) {
+    return steerToward(man, x, z, dt, speed, 1.2);
 }
 
 function building(village, kind) {
@@ -9296,6 +9602,17 @@ function stepArrows(dt) {
             hit = true;
             break;
         }
+        if (!hit && arrow.fromPlayer) {
+            for (let b = 0; b < arenaBeasts.length; b++) {
+                const beast = arenaBeasts[b];
+                if (beast.dying || beast.health <= 0) continue;
+                const chest = (beast.stand || 0) + 0.55;
+                if (!sweptNear(x0, y0, z0, arrow.x, arrow.y, arrow.z, beast.x, chest, beast.z, 0.7, 0.9)) continue;
+                hitArenaBeast(beast);
+                hit = true;
+                break;
+            }
+        }
         if (!hit && arrow.fromPlayer && campaign) {
             const lodge = cartUnder(arrow.x, arrow.z, arrow.faction);
             if (lodge) {
@@ -9503,19 +9820,7 @@ function stepHamletPace(man, dt) {
 }
 
 function patrolToward(man, x, z, dt, speed) {
-    const dx = x - man.x;
-    const dz = z - man.z;
-    const dist = Math.hypot(dx, dz) || 0.0001;
-    man.yaw = Math.atan2(-dx, -dz);
-    if (dist < 0.45) return false;
-    const step = Math.min(speed * dt, dist);
-    const nx = man.x + dx / dist * step;
-    const nz = man.z + dz / dist * step;
-    const ox = man.x;
-    const oz = man.z;
-    if (!blocked(nx, man.z, man.faction)) man.x = nx;
-    if (!blocked(man.x, nz, man.faction)) man.z = nz;
-    return Math.hypot(man.x - ox, man.z - oz) > 0.004;
+    return steerToward(man, x, z, dt, speed, 0.45);
 }
 
 function stepPatrol(man, dt) {
@@ -9592,6 +9897,34 @@ function bruteWildTarget(man) {
 function stepBrute(man, dt) {
     const unit = BrutesFaction.UNIT;
     man.mode = "guard";
+    if (man.duel) {
+        man.planted = false;
+        if (player.dead || inside || flying) {
+            man.walking = false;
+            man.swing = -1;
+            plant(man);
+            return false;
+        }
+        const dist = Math.hypot(cam.x - man.x, cam.z - man.z);
+        const moving = moveToward(man, cam.x, cam.z, dt, unit.speedChase);
+        if (dist < 1.85) {
+            const cycle = (performance.now() / 1000) % 0.9;
+            man.swing = cycle < 0.38 ? cycle / 0.38 : -1;
+            man.attackIn = (man.attackIn || 0) - dt;
+            if (man.attackIn <= 0) {
+                man.attackIn = unit.attackIntervalMin;
+                if (player.immortal) {
+                    flashHurt();
+                    showStrike("Brute");
+                } else hurtPlayer(unit.melee);
+            }
+        } else man.swing = -1;
+        man.walking = Boolean(moving);
+        man.bob = moving ? Math.sin(performance.now() * 0.016) * 0.05 : 0;
+        actorsDirty = true;
+        plant(man);
+        return false;
+    }
     const wake = unit.playerWakeRadius || 420;
     if (Math.hypot(cam.x - man.x, cam.z - man.z) > wake) {
         if (!man.planted) {
@@ -9787,6 +10120,258 @@ function stepRevenge(man, dt) {
     return Boolean(moving);
 }
 
+const RAID_TOWN = 2;
+const RAID_COUNT = 10;
+const RAID_GAP = 2.25;
+let raidTick = 0;
+let raidMark = -1;
+let raidClose = false;
+let raidAimMark = -1;
+
+function raidStrike(man, amount) {
+    if (!man || man.dying || man.health <= 0) return;
+    man.health -= amount || 1;
+    if (man.health <= 0) {
+        man.dying = true;
+        man.down = 0;
+        man.swing = -1;
+        man.walking = false;
+    }
+    actorsDirty = true;
+}
+
+function townGuard(man) {
+    return !!(man && man.post === RAID_TOWN && !man.raid && !man.dying && man.health > 0 && !man.inn && !man.decor && !man.fisher && !man.farmer && !man.jack && !man.archer && !man.brute && !man.goblin && (man.fixed || man.commander));
+}
+
+function livingRaid() {
+    const list = [];
+    for (let i = 0; i < men.length; i++) {
+        const man = men[i];
+        if (man.raid && !man.dying && man.health > 0) list.push(man);
+    }
+    return list;
+}
+
+function raidEngaged() {
+    if (raidMark === raidTick) return raidClose;
+    raidMark = raidTick;
+    const town = places[RAID_TOWN];
+    raidClose = false;
+    if (!town) return false;
+    const raid = livingRaid();
+    for (let i = 0; i < raid.length; i++) {
+        if (Math.hypot(raid[i].x - town.x, raid[i].z - town.z) < 34) {
+            raidClose = true;
+            break;
+        }
+    }
+    return raidClose;
+}
+
+function raidFace(fromX, fromZ, toX, toZ) {
+    return Math.atan2(-(toX - fromX), -(toZ - fromZ));
+}
+
+function raidOffset(index, face) {
+    const col = index % 5;
+    const row = (index / 5) | 0;
+    const lx = (col - 2) * RAID_GAP;
+    const lz = (row - 0.5) * RAID_GAP;
+    const c = Math.cos(face);
+    const s = Math.sin(face);
+    return { x: lx * c - lz * s, z: lx * s + lz * c };
+}
+
+function nearestFighter(man, list) {
+    let best = null;
+    let bestD = Infinity;
+    for (let i = 0; i < list.length; i++) {
+        const other = list[i];
+        const d = Math.hypot(other.x - man.x, other.z - man.z);
+        if (d < bestD) {
+            best = other;
+            bestD = d;
+        }
+    }
+    return best ? { man: best, d: bestD } : null;
+}
+
+function aimFighters() {
+    if (raidAimMark === raidTick) return;
+    raidAimMark = raidTick;
+    const raid = livingRaid();
+    const guards = [];
+    for (let i = 0; i < men.length; i++) if (townGuard(men[i])) guards.push(men[i]);
+    for (let i = 0; i < raid.length; i++) {
+        const pick = nearestFighter(raid[i], guards);
+        raid[i].focus = pick ? pick.man : null;
+    }
+    for (let i = 0; i < guards.length; i++) {
+        const pick = nearestFighter(guards[i], raid);
+        guards[i].focus = pick ? pick.man : null;
+    }
+}
+
+function ringPoint(man, foe, mates) {
+    const group = [];
+    for (let i = 0; i < mates.length; i++) {
+        if (mates[i].focus === foe) group.push(mates[i]);
+    }
+    if (group.indexOf(man) < 0) group.push(man);
+    const n = group.length;
+    const at = Math.max(0, group.indexOf(man));
+    const ang = (at / n) * Math.PI * 2 + (foe.slot || 0) * 0.35;
+    const reach = n <= 2 ? 1.8 : 1.5 + n * 0.18;
+    return { x: foe.x + Math.cos(ang) * reach, z: foe.z + Math.sin(ang) * reach };
+}
+
+function chargeToward(man, x, z, dt, speed) {
+    return steerToward(man, x, z, dt, speed, 0.45);
+}
+
+function swingAt(man, foe, dt) {
+    if (!foe || foe.d > 2.2) {
+        man.swing = -1;
+        return;
+    }
+    const cycle = (performance.now() / 1000 + man.index * 0.31) % 0.85;
+    man.swing = cycle < 0.4 ? cycle / 0.4 : -1;
+    man.attackIn = (man.attackIn || 0) - dt;
+    if (man.attackIn <= 0) {
+        man.attackIn = 1.15 + (man.index % 4) * 0.08;
+        raidStrike(foe.man, 1);
+    }
+}
+
+function stepRaid(man, dt) {
+    const town = places[RAID_TOWN];
+    if (!town) return;
+    const mates = livingRaid();
+    let cx = 0;
+    let cz = 0;
+    for (let i = 0; i < mates.length; i++) {
+        cx += mates[i].x;
+        cz += mates[i].z;
+    }
+    const count = mates.length || 1;
+    cx /= count;
+    cz /= count;
+    const face = raidFace(cx, cz, town.x, town.z);
+    let moving = false;
+    if (!raidEngaged()) {
+        man.focus = null;
+        const off = raidOffset(man.slot || 0, face);
+        const gx = town.x - Math.sin(face) * 18 + off.x;
+        const gz = town.z + Math.cos(face) * 18 + off.z;
+        moving = chargeToward(man, gx, gz, dt, 4.6);
+        man.swing = -1;
+    } else {
+        aimFighters();
+        const foe = man.focus;
+        if (foe && foe.health > 0 && !foe.dying) {
+            const spot = ringPoint(man, foe, mates);
+            moving = chargeToward(man, spot.x, spot.z, dt, 3.5);
+            man.yaw = raidFace(man.x, man.z, foe.x, foe.z);
+            swingAt(man, { man: foe, d: Math.hypot(foe.x - man.x, foe.z - man.z) }, dt);
+        } else {
+            man.swing = -1;
+        }
+    }
+    man.walking = moving;
+    man.bob = moving ? Math.sin(performance.now() * 0.014 + man.index) * 0.05 : 0;
+    man.floorY = null;
+    plant(man);
+}
+
+function stepTownFight(man, dt) {
+    aimFighters();
+    const guards = [];
+    for (let i = 0; i < men.length; i++) if (townGuard(men[i])) guards.push(men[i]);
+    const foe = man.focus;
+    let moving = false;
+    if (foe && foe.health > 0 && !foe.dying) {
+        const spot = ringPoint(man, foe, guards);
+        moving = chargeToward(man, spot.x, spot.z, dt, 3.6);
+        man.yaw = raidFace(man.x, man.z, foe.x, foe.z);
+        swingAt(man, { man: foe, d: Math.hypot(foe.x - man.x, foe.z - man.z) }, dt);
+    } else {
+        man.swing = -1;
+    }
+    man.walking = moving;
+    man.bob = moving ? Math.sin(performance.now() * 0.014 + man.index) * 0.05 : 0;
+    man.mode = "battle";
+    man.floorY = null;
+    plant(man);
+}
+
+function separateColumns() {
+    const list = [];
+    const fighting = raidEngaged();
+    for (let i = 0; i < men.length; i++) {
+        const man = men[i];
+        if (man.dying || man.health <= 0) continue;
+        if (man.raid || (fighting && townGuard(man))) list.push(man);
+    }
+    const min = 1.45;
+    for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+            const a = list[i];
+            const b = list[j];
+            const ox = a.x - b.x;
+            const oz = a.z - b.z;
+            const dist = Math.hypot(ox, oz);
+            if (dist >= min || dist < 0.001) continue;
+            const push = (min - dist) * 0.5;
+            const px = (ox / dist) * push;
+            const pz = (oz / dist) * push;
+            if (!blocked(a.x + px, a.z, null)) a.x += px;
+            if (!blocked(a.x, a.z + pz, null)) a.z += pz;
+            if (!blocked(b.x - px, b.z, null)) b.x -= px;
+            if (!blocked(b.x, b.z - pz, null)) b.z -= pz;
+        }
+    }
+}
+
+function spawnRaidArmy() {
+    if (!places[RAID_TOWN]) return;
+    for (let i = 0; i < men.length; i++) if (men[i].raid) return;
+    const town = places[RAID_TOWN];
+    const sx = town.x;
+    const sz = town.z - 100;
+    const face = raidFace(sx, sz, town.x, town.z);
+    for (let i = 0; i < men.length; i++) {
+        if (townGuard(men[i])) men[i].health = Math.max(men[i].health, 8);
+    }
+    for (let i = 0; i < RAID_COUNT; i++) {
+        const off = raidOffset(i, face);
+        men.push({
+            raid: true,
+            fixed: true,
+            faction: 7,
+            index: 400 + i,
+            slot: i,
+            health: 8,
+            post: -1,
+            mode: "raid",
+            x: sx + off.x,
+            z: sz + off.z,
+            homeX: sx + off.x,
+            homeZ: sz + off.z,
+            yaw: face,
+            bob: 0,
+            down: 0,
+            swing: -1,
+            hostile: false,
+            attackIn: 0.55 + (i % 5) * 0.07,
+            striking: 0,
+            struck: false,
+            dying: false,
+            walking: false
+        });
+    }
+}
+
 function stepMan(man, dt) {
     if (man.dying) {
         man.down += dt * 1.5;
@@ -9801,6 +10386,14 @@ function stepMan(man, dt) {
         man.hostile = false;
         man.bob = 0;
         plant(man);
+        return false;
+    }
+    if (man.raid) {
+        stepRaid(man, dt);
+        return false;
+    }
+    if (townGuard(man) && raidEngaged()) {
+        stepTownFight(man, dt);
         return false;
     }
     if (man.brute) return stepBrute(man, dt);
@@ -9912,6 +10505,7 @@ function separateMen(dt) {
 let farTurn = 0;
 
 function updateFight(dt) {
+    raidTick += 1;
     if (player.guard > 0) player.guard -= dt;
     if (player.shake > 0) player.shake = Math.max(0, player.shake - dt);
     if (player.dead > 0) {
@@ -9950,7 +10544,7 @@ function updateFight(dt) {
             if (activeSet.has(man)) stepWork(man, dt);
             continue;
         }
-        if (!activeSet.has(man) && !man.hostile && !man.returning) {
+        if (!activeSet.has(man) && !man.hostile && !man.returning && !man.raid && !(townGuard(man) && raidEngaged())) {
             man.walking = false;
             continue;
         }
@@ -9965,6 +10559,7 @@ function updateFight(dt) {
     }
     stepArrows(dt);
     separateMen(dt);
+    separateColumns();
     // Remesh people at most ~5/sec — sprites in AoE did not rebuild every frame.
     if (actorsDirty && performance.now() - actorsRebuildAt > 200) rebuildMesh();
 }
@@ -11438,7 +12033,12 @@ function draw() {
         drawMesh(outdoorDrawList[i], 1, dark, proj);
     }
     if (districtShown) {
-        for (let i = 0; i < districtShown.names.length; i++) drawMesh(districtShown.names[i], 1, dark, proj, textures[districtShown.names[i]]);
+        for (let i = 0; i < districtShown.names.length; i++) {
+            const name = districtShown.names[i];
+            gl.uniform1f(loc.glow, name.endsWith("glow") ? 2 : 0);
+            drawMesh(name, 1, dark, proj, textures[name]);
+        }
+        gl.uniform1f(loc.glow, 0);
     }
     drawFolk(dark, proj);
     drawGateShowcase(dark, proj);
@@ -11490,6 +12090,7 @@ function draw() {
     gl.uniformMatrix4fv(loc.model, false, identity);
     drawHorse();
     drawPetFollowers();
+    drawArenaBeasts();
     if (studyMesh && studyTex) {
         gl.enable(gl.CULL_FACE);
         gl.bindTexture(gl.TEXTURE_2D, studyTex);
@@ -13067,6 +13668,7 @@ function frame(now) {
     movePlayer(dt);
     stepHorse(dt);
     stepPetFollowers(dt);
+    stepArenaBeasts(dt);
     stepGateShowcase(dt);
     swingDoors(dt);
     updateFocusTown();
@@ -13477,6 +14079,7 @@ if (gl) {
     bindSculptBar();
     prepareTowers();
     spawnGarrison();
+    spawnRaidArmy();
     buildFolk();
     if (!islandLabOn) {
         spawnKeepers();
@@ -13484,6 +14087,7 @@ if (gl) {
         spawnGodwin();
         spawnCommander();
         spawnSouthwestBrutes();
+        spawnDuelBrute();
     }
     initIslandLabSettlements();
     registerHamletTerrainFlats();

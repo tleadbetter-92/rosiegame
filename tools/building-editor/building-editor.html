@@ -364,6 +364,15 @@
 
         function normalizePiece(p) {
             const yaw = canonicalYaw(p.yaw);
+            if (p.id && p.id.startsWith("Door_")) {
+                return {
+                    id: p.id,
+                    x: Math.round(p.x * 1000) / 1000,
+                    z: Math.round(p.z * 1000) / 1000,
+                    y: p.y || 0,
+                    yaw
+                };
+            }
             if (isCornerPiece(p.id) || isOverhangCornerPiece(p.id)) {
                 return {
                     id: p.id,
@@ -441,8 +450,48 @@
         function doorLeafForFrame(frameId) {
             if (!frameId || !frameId.startsWith("DoorFrame_")) return null;
             if (frameId.includes("Round")) return "Door_1_Round";
-            if (frameId.includes("Flat")) return "Door_1_Flat";
-            return null;
+            return "Door_1_Flat";
+        }
+
+        function attachDoorLeaves(list) {
+            const used = new Set();
+            for (let f = 0; f < list.length; f++) {
+                const frame = list[f];
+                const leafId = autoDoorLeafFor(frame.id);
+                if (!leafId) continue;
+                const pos = worldPlace(frame.x, frame.z, leafId, frame.yaw || 0);
+                let best = -1;
+                let bestD = 1.6;
+                for (let i = 0; i < list.length; i++) {
+                    if (used.has(i) || i === f) continue;
+                    const piece = list[i];
+                    if (!piece.id || !piece.id.startsWith("Door_")) continue;
+                    if (Math.abs((piece.y || 0) - (frame.y || 0)) > 0.5) continue;
+                    const dist = Math.hypot(piece.x - frame.x, piece.z - frame.z);
+                    if (dist < bestD) {
+                        bestD = dist;
+                        best = i;
+                    }
+                }
+                if (best >= 0) {
+                    used.add(best);
+                    list[best].id = leafId;
+                    list[best].x = pos.x;
+                    list[best].z = pos.z;
+                    list[best].y = frame.y || 0;
+                    list[best].yaw = frame.yaw || 0;
+                } else {
+                    list.push({
+                        id: leafId,
+                        x: pos.x,
+                        z: pos.z,
+                        y: frame.y || 0,
+                        yaw: frame.yaw || 0
+                    });
+                    used.add(list.length - 1);
+                }
+            }
+            return list;
         }
 
         function autoDoorLeafFor(pieceId) {
@@ -854,8 +903,9 @@
                 y: p.y,
                 yaw
             }));
+            const frameLeaf = doorLeafForFrame(wallId);
             const autoDoor = document.getElementById("autoDoorLeaf");
-            const leafId = autoDoor && autoDoor.checked ? autoDoorLeafFor(wallId) : null;
+            const leafId = frameLeaf || (autoDoor && autoDoor.checked ? autoDoorLeafFor(wallId) : null);
             if (leafId) {
                 const ax = p.sx != null ? p.sx : p.x;
                 const az = p.sz != null ? p.sz : p.z;
@@ -896,7 +946,7 @@
                 kit: manifest.kind,
                 grid: CELL,
                 name: document.getElementById("buildingName").value.trim() || "my-building",
-                pieces: placed.map((p) => normalizePiece(p))
+                pieces: attachDoorLeaves(placed.map((p) => normalizePiece(p)))
             };
         }
 
@@ -906,6 +956,7 @@
             for (const p of data.pieces) {
                 placed.push(normalizePiece(p));
             }
+            attachDoorLeaves(placed);
             if (data.name) document.getElementById("buildingName").value = data.name;
             await rebuildScene("Loaded " + placed.length + " pieces (tile-centre grid)");
         }

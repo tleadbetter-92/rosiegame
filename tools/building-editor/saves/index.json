@@ -1,6 +1,21 @@
 {
   "buildings": [
     {
+      "id": "barracks",
+      "name": "bARRACKS",
+      "file": "barracks.json",
+      "cx": 2.5,
+      "cz": 21,
+      "minX": -12,
+      "maxX": 17,
+      "minZ": 12,
+      "maxZ": 30,
+      "maxY": 1.5,
+      "spanX": 31,
+      "spanZ": 20,
+      "pieces": 247
+    },
+    {
       "id": "blacksmith",
       "name": "Blacksmith",
       "file": "blacksmith.json",
@@ -14,6 +29,21 @@
       "spanX": 24,
       "spanZ": 18,
       "pieces": 263
+    },
+    {
+      "id": "farmhouse",
+      "name": "farmhouse",
+      "file": "farmhouse.json",
+      "cx": 9,
+      "cz": -12.75,
+      "minX": 5,
+      "maxX": 13,
+      "minZ": -18.5,
+      "maxZ": -7,
+      "maxY": 4,
+      "spanX": 10,
+      "spanZ": 13.5,
+      "pieces": 105
     },
     {
       "id": "flat-roof-house-with-fence",
@@ -208,7 +238,7 @@
       "maxY": 9.149999999999999,
       "spanX": 16,
       "spanZ": 16,
-      "pieces": 157
+      "pieces": 164
     }
   ]
 }
