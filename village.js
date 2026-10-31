@@ -4218,13 +4218,7 @@ const regionTownDressed = {};
 
 function regionTownLayout(town) {
     if (typeof EditorBlocks === "undefined" || !town) return null;
-    const key = {
-        westfield: "island-town-salt-town",
-        southfield: "island-town-wuden",
-        westwatch: "island-town-the-mines",
-        eastwatch: "island-town-kings-stone"
-    }[town.id];
-    if (key && EditorBlocks[key]) return EditorBlocks[key];
+    if (EditorBlocks["small-town-new"]) return EditorBlocks["small-town-new"];
     return EditorBlocks.islandBasicTown || null;
 }
 
@@ -5044,7 +5038,6 @@ function buildFolk() {
         [cardW / 2, 0, 0, 1, 0, 1]
     );
     uploadMesh("folkCard", card);
-    loadFolkViews();
     loadKaykit();
     if (!islandLabOn) queueSouthwestShowcaseBuilds();
     runKitBuildQueue();
@@ -5072,7 +5065,8 @@ function drawFolk(dark, proj) {
         if (dx * dx + dz * dz > watch) continue;
         near.push({ man: man, d2: dx * dx + dz * dz });
     }
-    if (kaykitMeshesReady()) {
+    if (!kaykitMeshesReady()) return;
+    {
         gl.enable(gl.CULL_FACE);
         gl.enableVertexAttribArray(loc.pos);
         gl.enableVertexAttribArray(loc.uv);
@@ -5110,59 +5104,7 @@ function drawFolk(dark, proj) {
             if (man.trial) gl.enable(gl.CULL_FACE);
         }
         gl.uniformMatrix4fv(loc.model, false, identity);
-        return;
     }
-    if (folkReady && mesh.folkCard) {
-        gl.disable(gl.CULL_FACE);
-        gl.enableVertexAttribArray(loc.pos);
-        gl.enableVertexAttribArray(loc.uv);
-        gl.enableVertexAttribArray(loc.shade);
-        gl.bindBuffer(gl.ARRAY_BUFFER, mesh.folkCard.buffer);
-        gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 24, 0);
-        gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, 24, 12);
-        gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, 24, 20);
-        gl.uniform1f(loc.dark, dark);
-        gl.uniform1f(loc.glow, 0);
-        gl.uniform1f(loc.band, 1);
-        gl.uniform1f(loc.flow, 0);
-        gl.uniform1f(loc.cut, 1);
-        gl.uniformMatrix4fv(loc.proj, false, proj);
-        for (let i = 0; i < near.length; i++) {
-            const man = near[i].man;
-            if (man.hidden || man.trial || man.skin || man.dying || (man.health != null && man.health <= 0)) continue;
-            plant(man);
-            const pose = folkPose(man);
-            folkModel.set(folkCardMatrix(man, pose.flip));
-            gl.uniformMatrix4fv(loc.model, false, folkModel);
-            gl.bindTexture(gl.TEXTURE_2D, folkViews[pose.index]);
-            gl.drawArrays(gl.TRIANGLES, 0, mesh.folkCard.count);
-        }
-        gl.uniform1f(loc.cut, 0);
-        gl.enable(gl.CULL_FACE);
-        gl.uniformMatrix4fv(loc.model, false, identity);
-        return;
-    }
-    if (!mesh.folk || !mesh.folk.count || !textures.folk) return;
-    gl.enable(gl.CULL_FACE);
-    gl.bindBuffer(gl.ARRAY_BUFFER, mesh.folk.buffer);
-    gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 24, 0);
-    gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, 24, 12);
-    gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, 24, 20);
-    gl.bindTexture(gl.TEXTURE_2D, textures.folk);
-    gl.uniform1f(loc.dark, dark);
-    gl.uniform1f(loc.glow, 0);
-    gl.uniform1f(loc.band, 1);
-    gl.uniform1f(loc.flow, 0);
-    gl.uniformMatrix4fv(loc.proj, false, proj);
-    for (let i = 0; i < near.length; i++) {
-        const man = near[i].man;
-        if (man.hidden || man.trial || man.skin || man.dying || (man.health != null && man.health <= 0)) continue;
-        plant(man);
-        folkModel.set(personMatrix(man));
-        gl.uniformMatrix4fv(loc.model, false, folkModel);
-        gl.drawArrays(gl.TRIANGLES, 0, mesh.folk.count);
-    }
-    gl.uniformMatrix4fv(loc.model, false, identity);
 }
 
 const folkMesh = { knight: null, rogue: null };
@@ -5669,11 +5611,18 @@ function tickKitStream() {
 
 let farmHandSerial = 0;
 
+function crewFaction(building) {
+    const spot = building.district && districtPlace(building.district);
+    if (spot && spot.faction != null) return spot.faction;
+    return building.district === "southhold" ? 0 : 2;
+}
+
 function spawnKitFarmHands(building, wx, wz, cx, cz, yaw) {
     const id = (building.district || "town") + ":" + wx.toFixed(1) + ":" + wz.toFixed(1);
     if (men.some((man) => man.farmHand && man.farmId === id)) return;
     const point = (x, z) => kitWorldPoint(x, z, wx, wz, cx, cz, yaw);
     const lanes = [5.5, 8, 10.5, 12.5];
+    const faction = crewFaction(building);
     for (let hand = 0; hand < lanes.length; hand++) {
         const lane = lanes[hand];
         const doorX = 7.2 + hand * 1.5;
@@ -5691,7 +5640,7 @@ function spawnKitFarmHands(building, wx, wz, cx, cz, yaw) {
             district: building.district || null,
             fisher: false,
             skin: "dwarf",
-            faction: building.district === "southhold" ? 0 : 2,
+            faction: faction,
             index: -800 - ((farmHandSerial += 1) % 4000),
             health: 3,
             post: -1,
@@ -5702,6 +5651,48 @@ function spawnKitFarmHands(building, wx, wz, cx, cz, yaw) {
             spots: spots,
             x: home.x,
             z: home.z,
+            yaw: 0,
+            bob: 0,
+            down: 0,
+            swing: -1,
+            walking: false,
+            hostile: false,
+            attackIn: 0,
+            striking: 0,
+            struck: false,
+            dying: false
+        });
+    }
+}
+
+function spawnKitSaltHands(building, wx, wz, cx, cz, yaw) {
+    const id = (building.district || "town") + ":salt:" + wx.toFixed(1) + ":" + wz.toFixed(1);
+    if (men.some((man) => man.farmHand && man.farmId === id)) return;
+    const point = (x, z) => kitWorldPoint(x, z, wx, wz, cx, cz, yaw);
+    const crates = [[4, 35.6], [3.6, 34.2], [20.5, 35.6], [22, 34.6]];
+    const faction = crewFaction(building);
+    for (let hand = 0; hand < crates.length; hand++) {
+        const door = Object.assign(point(11.6 + hand * 1.1, 17.8), { home: true });
+        const crate = Object.assign(point(crates[hand][0], crates[hand][1]), { work: true });
+        men.push({
+            farmer: true,
+            farmHand: true,
+            farmId: id,
+            district: building.district || null,
+            fisher: false,
+            skin: "dwarf",
+            faction: faction,
+            index: -800 - ((farmHandSerial += 1) % 4000),
+            health: 3,
+            post: -1,
+            mode: "farm",
+            phase: "work",
+            hand: 0,
+            workFor: 30,
+            spot: 0,
+            spots: [door, crate],
+            x: door.x,
+            z: door.z,
             yaw: 0,
             bob: 0,
             down: 0,
@@ -5749,6 +5740,7 @@ function stampKitBuildOnce(id, wx, wz, yaw, district, token) {
                     if (district && token !== districtToken) return;
                     registerKitPhysics(id, wx, wz, baseY, meta, physics, building);
                     if (id === "farm") spawnKitFarmHands(building, wx, wz, meta.cx, meta.cz, yaw);
+                    if (id === "salt-works-ex") spawnKitSaltHands(building, wx, wz, meta.cx, meta.cz, yaw);
                 })
                 .catch(() => null);
             return physJob;
@@ -5832,33 +5824,7 @@ function loadKaykit() {
             return pack;
         }).catch(() => null));
     };
-    const loadCraftPixFolk = (stem, meshKey, aliases) => {
-        take(stem + "-0", meshKey).then((part) => {
-            if (!part) return;
-            const pack = { frames: part.frames, parts: [part], walk: [1, 8] };
-            folkMesh[meshKey] = pack;
-            for (const alias of aliases || []) folkMesh[alias] = pack;
-            layoutSwNorthGateShowcase();
-        });
-    };
-    loadCraftPixFolk("folk-peasant-f", "folkPeasantF");
     loadSkinWarrior();
-    take("rogue");
-    Promise.all([take("ch10-0"), take("ch10-1")]).then((parts) => {
-        if (!parts[0] || !parts[1]) return;
-        const goblin = { frames: parts[0].frames, parts, walkOnly: true };
-        folkMesh.knight = goblin;
-        folkMesh.goblinWalk = goblin;
-    });
-    take("knight", "kaykitKnight").then((part) => {
-        if (!part) return;
-        folkMesh.kaykitKnight = { frames: part.frames, parts: [part] };
-    });
-    Promise.all([take("peasant-0"), take("peasant-1")]).then((parts) => {
-        if (!parts[0] || !parts[1]) return;
-        folkMesh.quaterniusPeasant = { frames: parts[0].frames, parts };
-        layoutSwNorthGateShowcase();
-    });
     take("prop-0").then((part) => {
         if (!part) return;
         const pack = { frames: part.frames, parts: [part], walk: [1, 8], attack: [9, 14], death: [15, 20] };
@@ -5866,90 +5832,20 @@ function loadKaykit() {
         folkMesh.bruteShowcase = pack;
         layoutSwNorthGateShowcase();
     });
-    Promise.all([0, 1, 2, 3, 4, 5].map((index) => take("archer-" + index))).then((parts) => {
-        if (parts.some((part) => !part)) return;
-        folkMesh.archer = { frames: parts[0].frames, parts, walk: [1, 8], shoot: [9, 14] };
-        const officer = {
-            frames: parts[0].frames,
-            parts: [parts[0], parts[2], parts[3], parts[4]],
-            walk: [1, 8]
-        };
-        folkMesh.archerUnarmed = officer;
-        folkMesh.commanderOfficer = officer;
+    Promise.all([take("ch10-0"), take("ch10-1")]).then((parts) => {
+        if (!parts[0] || !parts[1]) return;
+        const zombie = { frames: parts[0].frames, parts, walkOnly: true };
+        folkMesh.knight = zombie;
+        folkMesh.goblinWalk = zombie;
     });
-    take("generic-human-0").then((part) => {
-        if (!part) return;
-        const pack = {
-            frames: part.frames,
-            parts: [part],
-            walk: [1, 8],
-            jog: [9, 16],
-            chop: [17, 22],
-            fish: [23, 28]
-        };
-        folkMesh.genericHuman = pack;
-        folkMesh.civilianWorker = pack;
-        if (!folkMesh.peasant) folkMesh.peasant = pack;
-    });
-    take("mixamo-peasant-0").then((part) => {
-        if (!part) return;
-        const pack = { frames: part.frames, parts: [part], walk: [1, 8] };
-        folkMesh.mixamoPeasant = pack;
-    });
-    take("mixamo-godwin-0").then((part) => {
-        if (!part) return;
-        const idleOnly = part.frames <= 9;
-        const pack = idleOnly
-            ? { frames: part.frames, parts: [part] }
-            : { frames: part.frames, parts: [part], walk: [1, 8] };
-        folkMesh.godwin = pack;
-        folkMesh.innkeeper = pack;
-    });
-    take("mixamo-monster-0").then((part) => {
-        if (!part) return;
-        const pack = { frames: part.frames, parts: [part], walk: [1, 8], attack: [9, 14] };
-        folkMesh.mixamoMonster = pack;
-        layoutSwNorthGateShowcase();
-    });
-    take("outfit-female-peasant-0").then((part) => {
-        if (!part) return;
-        const pack = { frames: part.frames, parts: [part] };
-        if (part.frames > 1) pack.walk = [1, Math.min(8, part.frames - 1)];
-        folkMesh.femalePeasant = pack;
-        layoutSwNorthGateShowcase();
-    });
-    const loadClipParts = (stem, meshKey) => {
-        Promise.all([0, 1, 2, 3, 4, 5, 6, 7].map((index) => take(stem + "-" + index))).then((parts) => {
-            const ok = parts.filter((part) => part);
-            if (!ok.length) return;
-            folkMesh[meshKey] = { frames: ok[0].frames, parts: ok };
-            layoutSwNorthGateShowcase();
-        });
-    };
-    loadClipParts("medieval-king", "medievalKing");
-    loadClipParts("medieval-innkeeper", "medievalInnkeeper");
-    loadClipParts("medieval-commander", "medievalCommanderClip");
-    loadClipParts("outfit-innkeeper", "outfitInnkeeper");
-}
-
-function peasantGirlPack() {
-    return folkMesh.mixamoPeasant || folkMesh.femalePeasant || folkMesh.folkPeasantF || null;
 }
 
 function folkPack(man) {
-    if (man.trial && folkMesh.heroicWarrior) return folkMesh.heroicWarrior;
-    if (man.folkShow && folkMesh[man.folkShow]) return folkMesh[man.folkShow];
-    if (man.inn && man.post === 2) return folkMesh.godwin || folkMesh.innkeeper || folkMesh.mixamoPeasant || folkMesh.rogue;
-    if (man.commander) return folkMesh.commanderOfficer || folkMesh.archerUnarmed || folkMesh.archer || folkMesh.paladin || folkMesh.rogue;
-    if (man.peasant) return peasantGirlPack() || folkMesh.peasant || folkMesh.rogue;
-    if (man.shopkeeper) return folkMesh.archerUnarmed || folkMesh.archer || folkMesh.rogue;
-    if (man.fisher || man.farmer || man.jack || man.board || man.driver || man.decor) {
-        return peasantGirlPack() || folkMesh.rogue;
-    }
-    if (man.brute) return folkMesh.paladin || folkMesh.knight;
-    if (man.goblin) return folkMesh.knight;
-    if (man.archer) return folkMesh.archer || folkMesh.paladin;
-    return folkMesh.paladin || folkMesh.knight || folkMesh.rogue;
+    if (!man || man.skin || man.trial) return null;
+    if (man.goblin) return folkMesh.knight || null;
+    if (man.brute) return folkMesh.paladin || null;
+    if (man.fisher || man.farmer || man.jack || man.board || man.driver || man.decor || man.inn || man.shopkeeper || man.peasant) return null;
+    return folkMesh.paladin || null;
 }
 
 function folkAnim(man, pack) {
@@ -6706,11 +6602,7 @@ const SHOWCASE_PATROL_HALF = 3.5;
 // Player eye ~1.62 m; belly ~1.05 m — beasts use targetH / at when scale omitted (see bellyScaleFor).
 const PLAYER_BELLY_H = 1.05;
 const DOG_SIZE_H = 0.52;
-// Mixamo monster + Kaykit brute + peasant + beasts — peaceful patrol outside SW north gate.
 const SW_GATE_SHOWCASE = [
-    { kind: "folk", folkShow: "mixamoMonster" },
-    { kind: "folk", folkShow: "bruteShowcase", showcaseBrute: true },
-    { kind: "folk", folkShow: "folkPeasantF" },
     { kind: "beast", id: "bear", scale: 1.95 },
     { kind: "beast", id: "rat", targetH: DOG_SIZE_H, at: 0.55 }
 ];
@@ -7650,7 +7542,7 @@ function nearestMen(cap, range) {
 }
 
 function kaykitMeshesReady() {
-    return !!(folkMesh.rogue || folkMesh.innkeeper || folkMesh.commanderOfficer || folkMesh.paladin || folkMesh.archer);
+    return !!(folkMesh.paladin || folkMesh.knight);
 }
 
 let actorsRebuildAt = 0;
@@ -9918,14 +9810,15 @@ function stepFarmer(man, dt) {
     const beforeX = man.x;
     const beforeZ = man.z;
     const moving = moveToward(man, goalX, goal.z, dt, 2.2);
-    if (!moving && goal.home) {
+    if (!moving && (goal.home || goal.work)) {
         man.jobWait = (man.jobWait || 0) + dt;
         man.walking = false;
         man.swing = -1;
         man.mode = "farm";
         plant(man);
         actorsDirty = true;
-        if (man.jobWait < 2.4) return false;
+        const hold = goal.work ? (man.workFor || 30) : 2.4;
+        if (man.jobWait < hold) return false;
         man.jobWait = 0;
         man.spot = (man.spot + 1) % spots.length;
         return false;
@@ -11238,7 +11131,8 @@ function crewRole(man) {
 }
 
 function wearCrew(man, dt) {
-    if (!crewRole(man)) return;
+    const worker = crewRole(man) || man.decor || man.inn || man.peasant || man.shopkeeper;
+    if (!worker || man.trial || man.brute || man.goblin) return;
     man.skin = "dwarf";
     man.bob = 0;
     man.anim = man.walking ? "walk" : "idle";
