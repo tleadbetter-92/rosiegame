@@ -1,0 +1,16 @@
+{
+  "kind": "kitbuild",
+  "name": "Square table",
+  "cx": 0,
+  "cz": 0,
+  "materials": [
+    {
+      "mat": "tvWood003",
+      "verts": 468
+    },
+    {
+      "mat": "tvMetal0132",
+      "verts": 144
+    }
+  ]
+}

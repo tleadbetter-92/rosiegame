@@ -88,6 +88,8 @@ function ensureVillageSpawnClear() {
     if (typeof Dialogue !== "undefined" && Dialogue.isOpen()) Dialogue.close();
 }
 let resumeWalkSpot = false;
+const LUMBER_MEET = { x: -2518, z: 600, yaw: 0 };
+const LUMBER_MEET_MARK = "lumber-dwarf-1";
 const cam = { x: VILLAGE_SPAWN_FALLBACK.x, y: 1.62, z: VILLAGE_SPAWN_FALLBACK.z, yaw: VILLAGE_SPAWN_FALLBACK.yaw, pitch: 0 };
 const HAMLET_TOWN_BLOCK_INDEX = 0;
 let hamletLevelPadsForWorker = [];
@@ -98,6 +100,14 @@ if (!flying) {
         if (spot && Number.isFinite(spot.x) && Number.isFinite(spot.z) && !isLegacySpawn(spot.x, spot.z)) {
             setCamAt(spot.x, spot.z, Number.isFinite(spot.yaw) ? spot.yaw : 0);
             resumeWalkSpot = true;
+        }
+    } catch (err) { /* start in the village */ }
+    try {
+        if (localStorage.getItem("village-meet") !== LUMBER_MEET_MARK) {
+            setCamAt(LUMBER_MEET.x, LUMBER_MEET.z, LUMBER_MEET.yaw);
+            resumeWalkSpot = true;
+            localStorage.setItem("village-meet", LUMBER_MEET_MARK);
+            localStorage.setItem("village-spot", JSON.stringify({ x: LUMBER_MEET.x, z: LUMBER_MEET.z, yaw: LUMBER_MEET.yaw }));
         }
     } catch (err) { /* start in the village */ }
 }
@@ -1794,6 +1804,65 @@ function spawnDuelBrute() {
     man.fixed = true;
 }
 
+function spawnTrialWarrior() {
+    if (homeVillage !== 2) return;
+    if (men.some((man) => man.trial)) return;
+    men.push({
+        trial: true,
+        skin: "warrior",
+        name: "Warrior",
+        folkShow: "heroicWarrior",
+        fisher: false,
+        faction: 8,
+        post: -1,
+        index: -40,
+        health: 36,
+        x: -2518,
+        z: 584,
+        homeX: -2518,
+        homeZ: 584,
+        yaw: 0,
+        bob: 0,
+        down: 0,
+        swing: -1,
+        walking: false,
+        hostile: true,
+        attackIn: 0.6,
+        dying: false,
+        mode: "guard"
+    });
+}
+
+function spawnTrialDwarf() {
+    if (homeVillage !== 2) return;
+    if (men.some((man) => man.dwarf)) return;
+    men.push({
+        trial: true,
+        dwarf: true,
+        skin: "dwarf",
+        name: "Dwarf",
+        folkShow: "dwarf",
+        fisher: false,
+        faction: 8,
+        post: -1,
+        index: -41,
+        health: 28,
+        x: -2511,
+        z: 584,
+        homeX: -2511,
+        homeZ: 584,
+        yaw: 0,
+        bob: 0,
+        down: 0,
+        swing: -1,
+        walking: false,
+        hostile: true,
+        attackIn: 0.6,
+        dying: false,
+        mode: "guard"
+    });
+}
+
 function spawnSouthwestBrutes() {
     if (homeVillage !== 2 || !World.bruteLair) return;
     if (!brutesLairActive()) {
@@ -1917,6 +1986,7 @@ attribute vec3 aPos;
 attribute vec2 aUv;
 attribute float aShade;
 attribute float aAlpha;
+attribute vec3 aRgb;
 uniform mat4 uProj;
 uniform mat4 uView;
 uniform mat4 uModel;
@@ -1925,6 +1995,7 @@ varying float vShade;
 varying float vDepth;
 varying vec2 vWorld;
 varying float vAlpha;
+varying vec3 vRgb;
 void main() {
     vec4 world = uModel * vec4(aPos, 1.0);
     vWorld = world.xz;
@@ -1933,6 +2004,7 @@ void main() {
     vUv = aUv;
     vShade = aShade;
     vAlpha = aAlpha;
+    vRgb = aRgb;
     gl_Position = uProj * view;
 }
 `));
@@ -1947,6 +2019,7 @@ varying float vShade;
 varying float vDepth;
 varying vec2 vWorld;
 varying float vAlpha;
+varying vec3 vRgb;
 uniform sampler2D uTex;
 uniform float uDark;
 uniform float uGlow;
@@ -1968,7 +2041,7 @@ void main() {
     if (uBand > 0.5 && uBand < 0.8 && dist < 70.0) discard;
     if (uBand > 0.5 && dist > uDrawFar) discard;
     vec4 tex = texture2D(uTex, uv);
-    vec3 color = tex.rgb * vShade * uTint;
+    vec3 color = tex.rgb * vRgb * vShade * uTint;
     if (uFlow > 0.5) color *= vec3(0.78, 0.9, 0.86);
     float fog = clamp((dist - uFogNear) / uFogSpan, 0.0, 1.0);
     // Sky-colored haze (not dusty beige) so open country stays green until it dissolves into the sky.
@@ -2095,6 +2168,7 @@ const loc = {
     uv: gl.getAttribLocation(program, "aUv"),
     shade: gl.getAttribLocation(program, "aShade"),
     alpha: gl.getAttribLocation(program, "aAlpha"),
+    rgb: gl.getAttribLocation(program, "aRgb"),
     dark: gl.getUniformLocation(program, "uDark"),
     glow: gl.getUniformLocation(program, "uGlow"),
     eye: gl.getUniformLocation(program, "uEye"),
@@ -2109,6 +2183,426 @@ const loc = {
     cut: gl.getUniformLocation(program, "uCut")
 };
 const identity = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+if (loc.rgb >= 0) {
+    gl.disableVertexAttribArray(loc.rgb);
+    gl.vertexAttrib3f(loc.rgb, 1, 1, 1);
+}
+
+const SKIN_BONES = 52;
+const skinBoneBuf = new Float32Array(SKIN_BONES * 16);
+let skinMode = "off";
+let skinProgram = null;
+let skinLoc = null;
+const skinCast = {};
+
+function compileChecked(type, source) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.warn(gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader);
+        return null;
+    }
+    return shader;
+}
+
+function initSkinProgram() {
+    const maxVec = gl.getParameter(gl.MAX_VERTEX_UNIFORM_VECTORS);
+    if (maxVec < SKIN_BONES * 4 + 24) {
+        skinMode = "cpu";
+        return;
+    }
+    const vertex = compileChecked(gl.VERTEX_SHADER, `
+attribute vec3 aPos;
+attribute vec3 aNrm;
+attribute vec2 aUv;
+attribute vec4 aJoint;
+attribute vec4 aWeight;
+uniform mat4 uProj;
+uniform mat4 uView;
+uniform mat4 uModel;
+uniform mat4 uBones[52];
+varying vec2 vUv;
+varying float vShade;
+varying vec2 vWorld;
+void main() {
+    mat4 skin = uBones[int(aJoint.x)] * aWeight.x;
+    skin += uBones[int(aJoint.y)] * aWeight.y;
+    skin += uBones[int(aJoint.z)] * aWeight.z;
+    skin += uBones[int(aJoint.w)] * aWeight.w;
+    vec3 nrm = mat3(skin) * aNrm;
+    float len = length(nrm);
+    nrm = len > 0.0 ? nrm / len : vec3(0.0, 1.0, 0.0);
+    vShade = 0.62 + 0.38 * max(0.0, nrm.x * 0.25 + nrm.y * 0.86 + nrm.z * 0.44);
+    vec4 world = uModel * (skin * vec4(aPos, 1.0));
+    vWorld = world.xz;
+    vUv = aUv;
+    gl_Position = uProj * uView * world;
+}
+`);
+    const fragment = compileChecked(gl.FRAGMENT_SHADER, `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec2 vUv;
+varying float vShade;
+varying vec2 vWorld;
+uniform sampler2D uTex;
+uniform float uDark;
+uniform vec2 uEye;
+uniform float uFogNear;
+uniform float uFogSpan;
+void main() {
+    vec3 color = texture2D(uTex, vUv).rgb * vShade;
+    color *= mix(1.0, 0.2, uDark);
+    float dist = distance(vWorld, uEye);
+    float fog = clamp((dist - uFogNear) / uFogSpan, 0.0, 1.0);
+    vec3 fogCol = mix(vec3(0.58, 0.72, 0.88), vec3(0.07, 0.08, 0.13), uDark);
+    gl_FragColor = vec4(mix(color, fogCol, fog), 1.0);
+}
+`);
+    if (!vertex || !fragment) {
+        skinMode = "cpu";
+        return;
+    }
+    skinProgram = gl.createProgram();
+    gl.attachShader(skinProgram, vertex);
+    gl.attachShader(skinProgram, fragment);
+    gl.bindAttribLocation(skinProgram, 0, "aPos");
+    gl.bindAttribLocation(skinProgram, 1, "aNrm");
+    gl.bindAttribLocation(skinProgram, 2, "aUv");
+    gl.bindAttribLocation(skinProgram, 3, "aJoint");
+    gl.bindAttribLocation(skinProgram, 4, "aWeight");
+    gl.linkProgram(skinProgram);
+    if (!gl.getProgramParameter(skinProgram, gl.LINK_STATUS)) {
+        console.warn(gl.getProgramInfoLog(skinProgram));
+        skinMode = "cpu";
+        return;
+    }
+    skinLoc = {
+        proj: gl.getUniformLocation(skinProgram, "uProj"),
+        view: gl.getUniformLocation(skinProgram, "uView"),
+        model: gl.getUniformLocation(skinProgram, "uModel"),
+        bones: gl.getUniformLocation(skinProgram, "uBones[0]"),
+        tex: gl.getUniformLocation(skinProgram, "uTex"),
+        dark: gl.getUniformLocation(skinProgram, "uDark"),
+        eye: gl.getUniformLocation(skinProgram, "uEye"),
+        fogNear: gl.getUniformLocation(skinProgram, "uFogNear"),
+        fogSpan: gl.getUniformLocation(skinProgram, "uFogSpan"),
+        pos: gl.getAttribLocation(skinProgram, "aPos"),
+        nrm: gl.getAttribLocation(skinProgram, "aNrm"),
+        uv: gl.getAttribLocation(skinProgram, "aUv"),
+        joint: gl.getAttribLocation(skinProgram, "aJoint"),
+        weight: gl.getAttribLocation(skinProgram, "aWeight")
+    };
+    skinMode = "gpu";
+}
+
+initSkinProgram();
+
+function skinPose(man, pack) {
+    const clip = pack.clips[man.anim] || pack.clips.idle;
+    if (!clip) return;
+    const bones = pack.boneCount;
+    let time = man.animTime || 0;
+    if (man.anim === "punch") time = Math.max(0, Math.min(clip.duration - 0.0001, time));
+    else time = ((time % clip.duration) + clip.duration) % clip.duration;
+    const span = clip.frameCount;
+    let frame = (time / clip.duration) * span;
+    let i0 = Math.floor(frame);
+    if (i0 >= span) i0 = span - 1;
+    const i1 = man.anim === "punch" ? Math.min(span - 1, i0 + 1) : (i0 + 1) % span;
+    const blend = Math.min(1, Math.max(0, frame - Math.floor(frame)));
+    const a0 = i0 * bones * 16;
+    const a1 = i1 * bones * 16;
+    const mats = clip.mats;
+    const n = bones * 16;
+    for (let i = 0; i < n; i++) skinBoneBuf[i] = mats[a0 + i] + (mats[a1 + i] - mats[a0 + i]) * blend;
+    for (let i = n; i < skinBoneBuf.length; i++) skinBoneBuf[i] = 0;
+}
+
+function drawSkinnedFolk(dark, proj) {
+    const list = [];
+    const watch = 150 * 150;
+    for (let i = 0; i < men.length; i++) {
+        const man = men[i];
+        if (!man.skin || man.hidden || man.dying) continue;
+        const pack = skinCast[man.skin];
+        if (!pack || !pack.ready) continue;
+        if (!man.trial) {
+            const dx = man.x - cam.x;
+            const dz = man.z - cam.z;
+            if (dx * dx + dz * dz > watch) continue;
+        }
+        list.push(man);
+    }
+    if (!list.length) return;
+    const grips = [];
+    const gpu = skinMode === "gpu" && skinProgram;
+    if (gpu) {
+        const eye = activeCam();
+        const quality = gfx();
+        gl.useProgram(skinProgram);
+        gl.uniformMatrix4fv(skinLoc.proj, false, proj);
+        gl.uniformMatrix4fv(skinLoc.view, false, lookAt());
+        gl.uniform1f(skinLoc.dark, dark);
+        gl.uniform2f(skinLoc.eye, eye.x, eye.z);
+        gl.uniform1f(skinLoc.fogNear, quality.fogNear);
+        gl.uniform1f(skinLoc.fogSpan, quality.fogSpan);
+        gl.uniform1i(skinLoc.tex, 0);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.enableVertexAttribArray(skinLoc.pos);
+        gl.enableVertexAttribArray(skinLoc.nrm);
+        gl.enableVertexAttribArray(skinLoc.uv);
+        gl.enableVertexAttribArray(skinLoc.joint);
+        gl.enableVertexAttribArray(skinLoc.weight);
+        gl.enable(gl.CULL_FACE);
+    }
+    for (let i = 0; i < list.length; i++) {
+        const man = list[i];
+        const pack = skinCast[man.skin];
+        plant(man);
+        skinPose(man, pack);
+        if (handSword && handSword.ready && pack.grip && man.skin !== "dwarf") {
+            const o = pack.grip.hand * 16;
+            const skin = new Float32Array(16);
+            for (let k = 0; k < 16; k++) skin[k] = skinBoneBuf[o + k];
+            grips.push({ man: man, skin: skin, inv: pack.grip.inv });
+        }
+        if (gpu) {
+            gl.bindTexture(gl.TEXTURE_2D, pack.tex);
+            gl.bindBuffer(gl.ARRAY_BUFFER, pack.vertBuffer);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, pack.indexBuffer);
+            gl.vertexAttribPointer(skinLoc.pos, 3, gl.FLOAT, false, 64, 0);
+            gl.vertexAttribPointer(skinLoc.nrm, 3, gl.FLOAT, false, 64, 12);
+            gl.vertexAttribPointer(skinLoc.uv, 2, gl.FLOAT, false, 64, 24);
+            gl.vertexAttribPointer(skinLoc.joint, 4, gl.FLOAT, false, 64, 32);
+            gl.vertexAttribPointer(skinLoc.weight, 4, gl.FLOAT, false, 64, 48);
+            gl.uniformMatrix4fv(skinLoc.bones, false, skinBoneBuf);
+            gl.uniformMatrix4fv(skinLoc.model, false, personMatrix(man));
+            gl.drawElements(gl.TRIANGLES, pack.indexCount, gl.UNSIGNED_SHORT, 0);
+            continue;
+        }
+        const src = pack.vert;
+        const posed = pack.posed;
+        const count = pack.vertexCount;
+        for (let v = 0; v < count; v++) {
+            const s = v * 16;
+            const x = src[s];
+            const y = src[s + 1];
+            const z = src[s + 2];
+            const nx0 = src[s + 3];
+            const ny0 = src[s + 4];
+            const nz0 = src[s + 5];
+            let px = 0, py = 0, pz = 0, nx = 0, ny = 0, nz = 0;
+            for (let k = 0; k < 4; k++) {
+                const w = src[s + 12 + k];
+                if (w <= 0) continue;
+                const o = (src[s + 8 + k] | 0) * 16;
+                px += w * (skinBoneBuf[o] * x + skinBoneBuf[o + 4] * y + skinBoneBuf[o + 8] * z + skinBoneBuf[o + 12]);
+                py += w * (skinBoneBuf[o + 1] * x + skinBoneBuf[o + 5] * y + skinBoneBuf[o + 9] * z + skinBoneBuf[o + 13]);
+                pz += w * (skinBoneBuf[o + 2] * x + skinBoneBuf[o + 6] * y + skinBoneBuf[o + 10] * z + skinBoneBuf[o + 14]);
+                nx += w * (skinBoneBuf[o] * nx0 + skinBoneBuf[o + 4] * ny0 + skinBoneBuf[o + 8] * nz0);
+                ny += w * (skinBoneBuf[o + 1] * nx0 + skinBoneBuf[o + 5] * ny0 + skinBoneBuf[o + 9] * nz0);
+                nz += w * (skinBoneBuf[o + 2] * nx0 + skinBoneBuf[o + 6] * ny0 + skinBoneBuf[o + 10] * nz0);
+            }
+            const len = Math.hypot(nx, ny, nz) || 1;
+            const d = v * 6;
+            posed[d] = px;
+            posed[d + 1] = py;
+            posed[d + 2] = pz;
+            posed[d + 3] = src[s + 6];
+            posed[d + 4] = src[s + 7];
+            posed[d + 5] = 0.62 + 0.38 * Math.max(0, (nx * 0.25 + ny * 0.86 + nz * 0.44) / len);
+        }
+        gl.bindBuffer(gl.ARRAY_BUFFER, pack.posBuffer);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, posed);
+        gl.enableVertexAttribArray(loc.pos);
+        gl.enableVertexAttribArray(loc.uv);
+        gl.enableVertexAttribArray(loc.shade);
+        gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 24, 0);
+        gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, 24, 12);
+        gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, 24, 20);
+        gl.bindTexture(gl.TEXTURE_2D, pack.tex);
+        gl.uniform1f(loc.dark, dark);
+        gl.uniform1f(loc.glow, 0);
+        gl.uniform1f(loc.band, 1);
+        gl.uniform1f(loc.flow, 0);
+        gl.uniform1f(loc.cut, 0);
+        gl.uniformMatrix4fv(loc.proj, false, proj);
+        gl.uniformMatrix4fv(loc.model, false, personMatrix(man));
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, pack.indexBuffer);
+        gl.enable(gl.CULL_FACE);
+        gl.drawElements(gl.TRIANGLES, pack.indexCount, gl.UNSIGNED_SHORT, 0);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+        gl.uniformMatrix4fv(loc.model, false, identity);
+    }
+    if (gpu) {
+        gl.disableVertexAttribArray(skinLoc.nrm);
+        gl.disableVertexAttribArray(skinLoc.joint);
+        gl.disableVertexAttribArray(skinLoc.weight);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+        gl.useProgram(program);
+    }
+    drawHandSwords(grips, dark, proj);
+}
+
+function matMul(a, b, out) {
+    const c = out || new Float32Array(16);
+    for (let col = 0; col < 4; col++) {
+        for (let row = 0; row < 4; row++) {
+            c[col * 4 + row] = a[row] * b[col * 4] + a[4 + row] * b[col * 4 + 1] + a[8 + row] * b[col * 4 + 2] + a[12 + row] * b[col * 4 + 3];
+        }
+    }
+    return c;
+}
+
+const swordGrip = new Float32Array([
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    0, -0.02, 0.04, 1
+]);
+let handSword = null;
+
+function loadHandSword() {
+    const picture = new Image();
+    picture.onload = () => {
+        const tex = gl.createTexture();
+        uploadModelTexture(tex, picture, false);
+        if (!handSword) handSword = {};
+        handSword.tex = tex;
+        if (handSword.buffer) handSword.ready = true;
+    };
+    picture.src = "models/sword.png?v=grip1";
+    fetch("models/sword.json?v=grip1").then((res) => res.json()).then((data) => {
+        const floats = new Float32Array(data);
+        const buffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, floats, gl.STATIC_DRAW);
+        if (!handSword) handSword = {};
+        handSword.buffer = buffer;
+        handSword.count = floats.length / 6;
+        if (handSword.tex) handSword.ready = true;
+    }).catch(() => null);
+}
+
+function drawHandSwords(list, dark, proj) {
+    if (!list.length || !handSword || !handSword.ready) return;
+    gl.useProgram(program);
+    gl.enableVertexAttribArray(loc.pos);
+    gl.enableVertexAttribArray(loc.uv);
+    gl.enableVertexAttribArray(loc.shade);
+    gl.vertexAttrib1f(loc.alpha, 1);
+    gl.bindBuffer(gl.ARRAY_BUFFER, handSword.buffer);
+    gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 24, 0);
+    gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, 24, 12);
+    gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, 24, 20);
+    gl.bindTexture(gl.TEXTURE_2D, handSword.tex);
+    gl.uniform1f(loc.dark, dark);
+    gl.uniform1f(loc.glow, 0);
+    gl.uniform1f(loc.band, 1);
+    gl.uniform1f(loc.flow, 0);
+    gl.uniform1f(loc.cut, 0);
+    gl.uniformMatrix4fv(loc.proj, false, proj);
+    gl.enable(gl.CULL_FACE);
+    const hand = new Float32Array(16);
+    const held = new Float32Array(16);
+    const model = new Float32Array(16);
+    for (let i = 0; i < list.length; i++) {
+        const item = list[i];
+        matMul(item.skin, item.inv, hand);
+        matMul(hand, swordGrip, held);
+        matMul(personMatrix(item.man), held, model);
+        gl.uniformMatrix4fv(loc.model, false, model);
+        gl.drawArrays(gl.TRIANGLES, 0, handSword.count);
+    }
+    gl.uniformMatrix4fv(loc.model, false, identity);
+}
+
+function loadSkinActor(key, binUrl, jpgUrl, gripUrl) {
+    const picture = new Image();
+    let texReady = false;
+    let meshReady = false;
+    const finish = () => {
+        const actor = skinCast[key];
+        if (!texReady || !meshReady || !actor) return;
+        actor.ready = true;
+    };
+    picture.onload = () => {
+        const tex = gl.createTexture();
+        uploadModelTexture(tex, picture, false);
+        if (!skinCast[key]) skinCast[key] = {};
+        skinCast[key].tex = tex;
+        texReady = true;
+        finish();
+    };
+    picture.src = jpgUrl;
+    if (gripUrl) {
+        fetch(gripUrl).then((res) => res.json()).then((grip) => {
+            if (!skinCast[key]) skinCast[key] = {};
+            skinCast[key].grip = grip;
+        }).catch(() => null);
+    }
+    fetch(binUrl).then((res) => res.arrayBuffer()).then((buf) => {
+        const view = new DataView(buf);
+        const magic = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
+        if (magic !== "SKN1") return;
+        const vertexCount = view.getUint32(4, true);
+        const indexCount = view.getUint32(8, true);
+        const boneCount = view.getUint32(12, true);
+        const clipCount = view.getUint32(16, true);
+        if (boneCount > SKIN_BONES || boneCount < 1) return;
+        let o = 20;
+        const vert = new Float32Array(buf, o, vertexCount * 16);
+        o += vertexCount * 64;
+        const indexBytes = indexCount * 2 + (indexCount % 2 ? 2 : 0);
+        const indices = new Uint16Array(buf, o, indexCount);
+        o += indexBytes;
+        const clips = {};
+        for (let c = 0; c < clipCount; c++) {
+            const head = o;
+            const nameLen = view.getUint8(head);
+            let name = "";
+            for (let i = 0; i < nameLen; i++) name += String.fromCharCode(view.getUint8(head + 1 + i));
+            const frameCount = view.getUint32(head + 1 + nameLen, true);
+            const duration = view.getFloat32(head + 5 + nameLen, true);
+            o = (head + 1 + nameLen + 8 + 3) & ~3;
+            const mats = new Float32Array(buf, o, frameCount * boneCount * 16);
+            o += frameCount * boneCount * 64;
+            clips[name] = { frameCount, duration, mats };
+        }
+        const vertBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, vertBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, vert, gl.STATIC_DRAW);
+        const indexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+        const posed = new Float32Array(vertexCount * 6);
+        const posBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, posed.byteLength, gl.DYNAMIC_DRAW);
+        const prev = skinCast[key];
+        skinCast[key] = {
+            vert, indices, vertexCount, indexCount, boneCount, clips,
+            vertBuffer, indexBuffer, posed, posBuffer,
+            tex: prev && prev.tex,
+            grip: prev && prev.grip
+        };
+        meshReady = true;
+        finish();
+    }).catch(() => null);
+}
+
+function loadSkinWarrior() {
+    loadHandSword();
+    loadSkinActor("warrior", "models/kaykit/heroic-warrior.skin.bin?v=skin2", "models/kaykit/heroic-warrior.skin.jpg?v=skin2", "models/kaykit/heroic-warrior.grip.json?v=grip1");
+    loadSkinActor("dwarf", "models/kaykit/dwarf.skin.bin?v=skin1", "models/kaykit/dwarf.skin.jpg?v=skin1", "models/kaykit/dwarf.grip.json?v=grip1");
+}
 const peopleModels = {};
 const peopleHands = {};
 let peopleReady = false;
@@ -3755,7 +4249,8 @@ const majorTownDressed = {};
 
 function majorLayout(village) {
     if (typeof EditorBlocks === "undefined") return null;
-    if (village === 2 && EditorBlocks["river-crossing"]) return EditorBlocks["river-crossing"];
+    const place = places[village];
+    if (place && place.onMap !== false && EditorBlocks["starter-town"]) return EditorBlocks["starter-town"];
     return EditorBlocks.hamletTownBig || null;
 }
 
@@ -3956,7 +4451,7 @@ function districtPlace(id) {
 
 function districtLayout(spot) {
     if (typeof EditorBlocks === "undefined") return null;
-    if (spot.major) return spot.id === "southwest" ? majorLayout(2) : (EditorBlocks.hamletTownBig || null);
+    if (spot.major) return EditorBlocks["starter-town"] || EditorBlocks.hamletTownBig || null;
     return regionTownLayout({ id: spot.id });
 }
 
@@ -3987,7 +4482,11 @@ function refreshDistrictNotes() {
                 }
                 if (!best) continue;
                 if (!next[best]) next[best] = [];
-                next[best].push({ faction: region.faction, soldiers: army.soldiers || 0 });
+                next[best].push({
+                    faction: region.faction,
+                    soldiers: army.soldiers || 0,
+                    veterans: army.veterans || 0
+                });
             }
             districtNotes = next;
             districtArmyKey = "";
@@ -4036,6 +4535,7 @@ function releaseDistrictTown() {
     for (let i = men.length - 1; i >= 0; i--) {
         if (men[i].campaignArmy && men[i].campaignPost === id) men.splice(i, 1);
         else if (men[i].platform && men[i].district === id) men.splice(i, 1);
+        else if (men[i].farmHand && men[i].district === id) men.splice(i, 1);
     }
     solidGrid = null;
     floorGrid = null;
@@ -4102,11 +4602,16 @@ function standDistrictArmy(spot) {
     const groups = districtNotes[spot.id] || [];
     const formed = [];
     for (let g = 0; g < groups.length; g++) {
-        const count = Math.max(0, Math.min(DISTRICT_SOLDIERS, groups[g].soldiers || 0));
+        const heads = (groups[g].soldiers || 0) + (groups[g].veterans || 0);
+        const count = Math.max(0, Math.min(DISTRICT_SOLDIERS, heads));
         if (!count) continue;
-        formed.push({ faction: groups[g].faction, count: count });
+        formed.push({
+            faction: groups[g].faction,
+            count: count,
+            veterans: Math.min(groups[g].veterans || 0, count)
+        });
     }
-    const key = formed.map((group) => group.faction + ":" + group.count).join("|");
+    const key = formed.map((group) => group.faction + ":" + group.count + ":" + group.veterans).join("|");
     let have = 0;
     for (let i = 0; i < men.length; i++) {
         if (men[i].campaignArmy && men[i].campaignPost === spot.id) have += 1;
@@ -4128,12 +4633,15 @@ function standDistrictArmy(spot) {
             const across = Math.min(cols, group.count);
             const x = spot.x + side * 8 + (col - (across - 1) / 2) * gap;
             const z = spot.z + (row - (rows - 1) / 2) * gap;
+            const veteran = n < group.veterans;
             men.push({
                 campaignArmy: true,
                 campaignPost: spot.id,
+                veteran: veteran,
+                skin: veteran ? "warrior" : "",
                 faction: group.faction,
                 index: -400 - g * 40 - n,
-                health: 3,
+                health: veteran ? 12 : 3,
                 post: places.length + 20,
                 mode: "guard",
                 fixed: true,
@@ -4550,6 +5058,7 @@ function buildFolk() {
 
 function drawFolk(dark, proj) {
     if (inside) return;
+    drawSkinnedFolk(dark, proj);
     const near = nearestMen(24, gfx().personDraw);
     const seenFolk = new Set();
     for (let i = 0; i < near.length; i++) seenFolk.add(near[i].man);
@@ -4557,7 +5066,7 @@ function drawFolk(dark, proj) {
     for (let i = 0; i < men.length; i++) {
         const man = men[i];
         if (seenFolk.has(man) || man.hidden || man.dying) continue;
-        if (!man.raid && !man.duel && !(man.post === 2 && man.fixed && !man.archer && !man.inn && !man.decor)) continue;
+        if (!man.raid && !man.duel && !man.trial && !(man.post === 2 && man.fixed && !man.archer && !man.inn && !man.decor)) continue;
         const dx = man.x - cam.x;
         const dz = man.z - cam.z;
         if (dx * dx + dz * dz > watch) continue;
@@ -4576,7 +5085,7 @@ function drawFolk(dark, proj) {
         gl.uniformMatrix4fv(loc.proj, false, proj);
         for (let i = 0; i < near.length; i++) {
             const man = near[i].man;
-            if (man.hidden) continue;
+            if (man.hidden || man.trial || man.skin) continue;
             const pack = folkPack(man);
             if (!pack) continue;
             const dead = man.dying || (man.health != null && man.health <= 0);
@@ -4587,6 +5096,7 @@ function drawFolk(dark, proj) {
             const frame = folkAnim(man, pack);
             folkModel.set(personMatrix(man));
             gl.uniformMatrix4fv(loc.model, false, folkModel);
+            if (man.trial) gl.disable(gl.CULL_FACE);
             const parts = pack.parts || [pack];
             for (let p = 0; p < parts.length; p++) {
                 const part = parts[p];
@@ -4597,6 +5107,7 @@ function drawFolk(dark, proj) {
                 gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, 24, frame * part.count * 24 + 20);
                 gl.drawArrays(gl.TRIANGLES, 0, part.count);
             }
+            if (man.trial) gl.enable(gl.CULL_FACE);
         }
         gl.uniformMatrix4fv(loc.model, false, identity);
         return;
@@ -4618,7 +5129,7 @@ function drawFolk(dark, proj) {
         gl.uniformMatrix4fv(loc.proj, false, proj);
         for (let i = 0; i < near.length; i++) {
             const man = near[i].man;
-            if (man.hidden || man.dying || (man.health != null && man.health <= 0)) continue;
+            if (man.hidden || man.trial || man.skin || man.dying || (man.health != null && man.health <= 0)) continue;
             plant(man);
             const pose = folkPose(man);
             folkModel.set(folkCardMatrix(man, pose.flip));
@@ -4645,7 +5156,7 @@ function drawFolk(dark, proj) {
     gl.uniformMatrix4fv(loc.proj, false, proj);
     for (let i = 0; i < near.length; i++) {
         const man = near[i].man;
-        if (man.hidden || man.dying || (man.health != null && man.health <= 0)) continue;
+        if (man.hidden || man.trial || man.skin || man.dying || (man.health != null && man.health <= 0)) continue;
         plant(man);
         folkModel.set(personMatrix(man));
         gl.uniformMatrix4fv(loc.model, false, folkModel);
@@ -4656,12 +5167,12 @@ function drawFolk(dark, proj) {
 
 const folkMesh = { knight: null, rogue: null };
 
-function loadMegakitFileTexture(key, url) {
+function loadMegakitFileTexture(key, url, nearest) {
     return new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = () => {
             textures[key] = gl.createTexture();
-            uploadModelTexture(textures[key], img, false);
+            uploadModelTexture(textures[key], img, false, nearest);
             resolve(key);
         };
         img.onerror = () => {
@@ -4815,12 +5326,20 @@ const KIT_TEX_FOR = {
     plaster: "kitPlaster", brick: "kitBrick", wood: "kitWood", tiles: "kitWood", rock: "kitBrick", metal: "kitWood",
     furniture: "kitFurniture", propmetal: "kitPropmetal", propcloth: "kitPropcloth", proppack: "kitProppack",
     mosaicTerra: "kitMosaicTerra", mosaicBW: "kitMosaicBW", mosaicMed: "kitMosaicMed", mosaicMeander: "kitMosaicMeander",
-    mosaicPH: "kitMosaicPH"
+    mosaicPH: "kitMosaicPH",
+    retroCobble: "kitRetroCobble", retroCobbleAlt: "kitRetroCobbleAlt", retroCobblePaint: "kitRetroCobblePaint",
+    retroPlanks: "kitRetroPlanks", retroRoof: "kitRetroRoof", retroBarrel: "kitRetroBarrel",
+    retroDetails: "kitRetroDetails", retroFence: "kitRetroFence", retroTree: "kitRetroTree", retroWater: "kitRetroWater",
+    villagePalette: "kitVillagePalette"
 };
+
+function tavernTexKey(stem) {
+    return "tv" + String(stem).replace(/[^A-Za-z0-9]/g, "");
+}
 
 function ensureKitTextures() {
     if (!kitTexturesReady) {
-        kitTexturesReady = Promise.all([
+        const core = Promise.all([
             loadMegakitFileTexture("kitPlaster", "models/plaster.png"),
             loadMegakitFileTexture("kitBrick", "models/brick.png"),
             loadMegakitFileTexture("kitWood", "models/wood.png"),
@@ -4832,8 +5351,31 @@ function ensureKitTextures() {
             loadMegakitFileTexture("kitMosaicBW", "models/mosaicBW.png"),
             loadMegakitFileTexture("kitMosaicMed", "models/mosaicMed.png"),
             loadMegakitFileTexture("kitMosaicMeander", "models/mosaicMeander.png"),
-            loadMegakitFileTexture("kitMosaicPH", "models/mosaicPH.jpg")
+            loadMegakitFileTexture("kitMosaicPH", "models/mosaicPH.jpg"),
+            loadMegakitFileTexture("kitRetroCobble", "models/retro-medieval/glb/Textures/cobblestone.png", true),
+            loadMegakitFileTexture("kitRetroCobbleAlt", "models/retro-medieval/glb/Textures/cobblestoneAlternative.png", true),
+            loadMegakitFileTexture("kitRetroCobblePaint", "models/retro-medieval/glb/Textures/cobblestonePainted.png", true),
+            loadMegakitFileTexture("kitRetroPlanks", "models/retro-medieval/glb/Textures/planks.png", true),
+            loadMegakitFileTexture("kitRetroRoof", "models/retro-medieval/glb/Textures/roof.png", true),
+            loadMegakitFileTexture("kitRetroBarrel", "models/retro-medieval/glb/Textures/barrel.png", true),
+            loadMegakitFileTexture("kitRetroDetails", "models/retro-medieval/glb/Textures/details.png", true),
+            loadMegakitFileTexture("kitRetroFence", "models/retro-medieval/glb/Textures/fence.png", true),
+            loadMegakitFileTexture("kitRetroTree", "models/retro-medieval/glb/Textures/tree.png", true),
+            loadMegakitFileTexture("kitRetroWater", "models/retro-medieval/glb/Textures/water.png", true),
+            loadMegakitFileTexture("kitVillagePalette", "tools/building-editor/Village_Builder/Textures/mdvl_palette.png", true)
         ]).catch(() => null);
+        const tavern = fetch("tools/building-editor/tavern-textures.json")
+            .then((res) => (res.ok ? res.json() : {}))
+            .then((map) => Promise.all(Object.keys(map).map((stem) => {
+                const key = tavernTexKey(stem);
+                KIT_TEX_FOR[key] = key;
+                KIT_SHELL_MATS[key] = 1;
+                const meshName = kitMeshName(key);
+                if (outdoorDrawList.indexOf(meshName) < 0) outdoorDrawList.push(meshName);
+                return loadMegakitFileTexture(key, map[stem], false).catch(() => null);
+            })))
+            .catch(() => null);
+        kitTexturesReady = Promise.all([core, tavern]);
     }
     return kitTexturesReady;
 }
@@ -4852,7 +5394,11 @@ function queueKitBuild(id, wx, wz, yaw) {
 
 // Shell stays in the street. A heavy skin (the tower's metal and rock) loads for the one
 // building you are walking up to. Furniture and props load only while you are inside that house.
-const KIT_SHELL_MATS = { plaster: 1, brick: 1, wood: 1, tiles: 1, rock: 1, metal: 1 };
+const KIT_SHELL_MATS = {
+    plaster: 1, brick: 1, wood: 1, tiles: 1, rock: 1, metal: 1,
+    retroCobble: 1, retroCobbleAlt: 1, retroCobblePaint: 1, retroPlanks: 1, retroRoof: 1,
+    retroBarrel: 1, retroDetails: 1, retroFence: 1, retroTree: 1, retroWater: 1, villagePalette: 1
+};
 const KIT_INTERIOR_MATS = {
     furniture: 1, propmetal: 1, propcloth: 1, proppack: 1,
     mosaicTerra: 1, mosaicBW: 1, mosaicMed: 1, mosaicMeander: 1, mosaicPH: 1
@@ -4890,11 +5436,35 @@ function kitInside(building, x, z, y) {
     return true;
 }
 
+function loadKitTint(id, mat) {
+    const slot = kitBinCache[id] || (kitBinCache[id] = { bins: {}, jobs: {}, tints: {}, tintJobs: {} });
+    if (!slot.tints) slot.tints = {};
+    if (!slot.tintJobs) slot.tintJobs = {};
+    if (slot.tints[mat]) return Promise.resolve(slot.tints[mat]);
+    if (slot.tintJobs[mat]) return slot.tintJobs[mat];
+    slot.tintJobs[mat] = fetch("models/kitbuild/" + id + "-" + mat + ".rgb.bin?v=colour2")
+        .then((res) => {
+            if (!res.ok) throw new Error("missing colour: " + id + " " + mat);
+            return res.arrayBuffer();
+        })
+        .then((buf) => {
+            const data = new Uint8Array(buf);
+            slot.tints[mat] = data;
+            delete slot.tintJobs[mat];
+            return data;
+        })
+        .catch((err) => {
+            delete slot.tintJobs[mat];
+            throw err;
+        });
+    return slot.tintJobs[mat];
+}
+
 function loadKitRaw(id, mat) {
     const slot = kitBinCache[id] || (kitBinCache[id] = { bins: {}, jobs: {} });
     if (slot.bins[mat]) return Promise.resolve(slot.bins[mat]);
     if (slot.jobs[mat]) return slot.jobs[mat];
-    slot.jobs[mat] = fetch("models/kitbuild/" + id + "-" + mat + ".bin")
+    slot.jobs[mat] = fetch("models/kitbuild/" + id + "-" + mat + ".bin?v=colour1")
         .then((res) => {
             if (!res.ok) throw new Error("missing bake: " + id + " " + mat);
             return res.arrayBuffer();
@@ -4912,14 +5482,34 @@ function loadKitRaw(id, mat) {
     return slot.jobs[mat];
 }
 
+function uploadKitTint(name, rgb) {
+    if (!mesh[name]) return;
+    if (!rgb || !rgb.length) {
+        mesh[name].tint = null;
+        return;
+    }
+    if (!mesh[name].tint) mesh[name].tint = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, mesh[name].tint);
+    gl.bufferData(gl.ARRAY_BUFFER, rgb, gl.DYNAMIC_DRAW);
+}
+
 function publishKitMat(mat) {
     let count = 0;
     const parts = [];
+    const colors = [];
+    let anyTint = false;
     for (let i = 0; i < kitPlaced.length; i++) {
         const data = kitPlaced[i].live[mat];
         if (!data || !data.length) continue;
         parts.push(data);
         count += data.length;
+        const tint = kitPlaced[i].tints && kitPlaced[i].tints[mat];
+        if (tint && tint.length) {
+            colors.push(tint);
+            anyTint = true;
+        } else {
+            colors.push(null);
+        }
     }
     const merged = new Float32Array(count);
     let offset = 0;
@@ -4930,16 +5520,37 @@ function publishKitMat(mat) {
     const name = kitMeshName(mat);
     uploadMesh(name, merged);
     if (mesh[name]) mesh[name].cull = false;
+    if (anyTint && mesh[name]) {
+        const rgb = new Uint8Array((count / 6) * 4);
+        let at = 0;
+        for (let i = 0; i < parts.length; i++) {
+            const n = parts[i].length / 6;
+            const src = colors[i];
+            if (src) rgb.set(src.subarray(0, n * 4), at);
+            else rgb.fill(255, at, at + n * 4);
+            at += n * 4;
+        }
+        uploadKitTint(name, rgb);
+    } else if (mesh[name]) {
+        mesh[name].tint = null;
+    }
     const texKey = KIT_TEX_FOR[mat] || "kitPlaster";
     textures[name] = textures[texKey] || textures.plaster;
 }
 
 function applyKitMats(building, mats) {
-    return Promise.all(mats.map((item) => loadKitRaw(building.id, item.mat).then((raw) => {
-        building.live[item.mat] = transformKitVerts(
-            raw, building.wx, building.wz, building.baseY, building.meta.cx, building.meta.cz, building.yaw
-        );
-    }))).then(() => {
+    return Promise.all(mats.map((item) => {
+        const posJob = loadKitRaw(building.id, item.mat);
+        const tintJob = item.tint ? loadKitTint(building.id, item.mat) : Promise.resolve(null);
+        return Promise.all([posJob, tintJob]).then(([raw, tint]) => {
+            building.live[item.mat] = transformKitVerts(
+                raw, building.wx, building.wz, building.baseY, building.meta.cx, building.meta.cz, building.yaw
+            );
+            if (!building.tints) building.tints = {};
+            if (tint) building.tints[item.mat] = tint;
+            else delete building.tints[item.mat];
+        });
+    })).then(() => {
         const seen = {};
         for (let i = 0; i < mats.length; i++) {
             if (seen[mats[i].mat]) continue;
@@ -5056,6 +5667,55 @@ function tickKitStream() {
     }
 }
 
+let farmHandSerial = 0;
+
+function spawnKitFarmHands(building, wx, wz, cx, cz, yaw) {
+    const id = (building.district || "town") + ":" + wx.toFixed(1) + ":" + wz.toFixed(1);
+    if (men.some((man) => man.farmHand && man.farmId === id)) return;
+    const point = (x, z) => kitWorldPoint(x, z, wx, wz, cx, cz, yaw);
+    const lanes = [5.5, 8, 10.5, 12.5];
+    for (let hand = 0; hand < lanes.length; hand++) {
+        const lane = lanes[hand];
+        const doorX = 7.2 + hand * 1.5;
+        const spots = [
+            Object.assign(point(doorX, -6.2), { home: true }),
+            point(lane, 2),
+            point(lane, 12),
+            point(lane, 7)
+        ];
+        const home = spots[0];
+        men.push({
+            farmer: true,
+            farmHand: true,
+            farmId: id,
+            district: building.district || null,
+            fisher: false,
+            skin: "dwarf",
+            faction: building.district === "southhold" ? 0 : 2,
+            index: -800 - ((farmHandSerial += 1) % 4000),
+            health: 3,
+            post: -1,
+            mode: "farm",
+            phase: "work",
+            hand: 0,
+            spot: 0,
+            spots: spots,
+            x: home.x,
+            z: home.z,
+            yaw: 0,
+            bob: 0,
+            down: 0,
+            swing: -1,
+            walking: false,
+            hostile: false,
+            attackIn: 0,
+            striking: 0,
+            struck: false,
+            dying: false
+        });
+    }
+}
+
 function stampKitBuildOnce(id, wx, wz, yaw, district, token) {
     const baseY = Math.max(0, World.heightAt(wx, wz));
     const building = {
@@ -5083,11 +5743,12 @@ function stampKitBuildOnce(id, wx, wz, yaw, district, token) {
                 const role = kitRole(item.mat, item.verts || 0);
                 if (role) building.groups[role].push(item);
             }
-            const physJob = fetch("models/kitbuild/" + id + ".physics.json?v=stairs")
+            const physJob = fetch("models/kitbuild/" + id + ".physics.json?v=colour1")
                 .then((res) => (res.ok ? res.json() : null))
                 .then((physics) => {
                     if (district && token !== districtToken) return;
                     registerKitPhysics(id, wx, wz, baseY, meta, physics, building);
+                    if (id === "farm") spawnKitFarmHands(building, wx, wz, meta.cx, meta.cz, yaw);
                 })
                 .catch(() => null);
             return physJob;
@@ -5150,9 +5811,9 @@ function loadKaykit() {
     const take = (name, meshKey) => {
         const key = meshKey || name;
         const picture = new Image();
-        picture.src = "models/kaykit/" + name + ".png";
+        picture.src = "models/kaykit/" + name + ".png?v=warrior6";
         return scheduleMeshFetch(() => Promise.all([
-            fetch("models/kaykit/" + name + ".bin").then((res) => res.arrayBuffer()),
+            fetch("models/kaykit/" + name + ".bin?v=warrior6").then((res) => res.arrayBuffer()),
             new Promise((resolve, reject) => {
                 picture.onload = () => resolve(picture);
                 picture.onerror = reject;
@@ -5181,6 +5842,7 @@ function loadKaykit() {
         });
     };
     loadCraftPixFolk("folk-peasant-f", "folkPeasantF");
+    loadSkinWarrior();
     take("rogue");
     Promise.all([take("ch10-0"), take("ch10-1")]).then((parts) => {
         if (!parts[0] || !parts[1]) return;
@@ -5275,6 +5937,7 @@ function peasantGirlPack() {
 }
 
 function folkPack(man) {
+    if (man.trial && folkMesh.heroicWarrior) return folkMesh.heroicWarrior;
     if (man.folkShow && folkMesh[man.folkShow]) return folkMesh[man.folkShow];
     if (man.inn && man.post === 2) return folkMesh.godwin || folkMesh.innkeeper || folkMesh.mixamoPeasant || folkMesh.rogue;
     if (man.commander) return folkMesh.commanderOfficer || folkMesh.archerUnarmed || folkMesh.archer || folkMesh.paladin || folkMesh.rogue;
@@ -5365,15 +6028,17 @@ function texturePowerOfTwo(w, h) {
     return (w & (w - 1)) === 0 && (h & (h - 1)) === 0;
 }
 
-function uploadModelTexture(tex, img, flipY) {
+function uploadModelTexture(tex, img, flipY, nearest) {
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, !!flipY);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    if (texturePowerOfTwo(img.width, img.height)) {
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, nearest ? gl.NEAREST : gl.LINEAR);
+    if (nearest) {
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    } else if (texturePowerOfTwo(img.width, img.height)) {
         gl.generateMipmap(gl.TEXTURE_2D);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     } else {
@@ -5395,6 +6060,14 @@ function drawMesh(name, band, dark, proj, texture) {
     gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
     gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
     gl.vertexAttribPointer(loc.shade, 1, gl.FLOAT, false, stride, 20);
+    if (mesh[name].tint && loc.rgb >= 0) {
+        gl.enableVertexAttribArray(loc.rgb);
+        gl.bindBuffer(gl.ARRAY_BUFFER, mesh[name].tint);
+        gl.vertexAttribPointer(loc.rgb, 3, gl.UNSIGNED_BYTE, true, 4, 0);
+    } else if (loc.rgb >= 0) {
+        gl.disableVertexAttribArray(loc.rgb);
+        gl.vertexAttrib3f(loc.rgb, 1, 1, 1);
+    }
     gl.bindTexture(gl.TEXTURE_2D, tex);
     if (dark != null) gl.uniform1f(loc.dark, dark);
     if (proj) gl.uniformMatrix4fv(loc.proj, false, proj);
@@ -5406,6 +6079,10 @@ function drawMesh(name, band, dark, proj, texture) {
     }
     gl.drawArrays(gl.TRIANGLES, 0, mesh[name].count);
     gl.disable(gl.POLYGON_OFFSET_FILL);
+    if (loc.rgb >= 0) {
+        gl.disableVertexAttribArray(loc.rgb);
+        gl.vertexAttrib3f(loc.rgb, 1, 1, 1);
+    }
 }
 
 // Ground maths runs off the page thread. The page only swaps the finished buffers in.
@@ -5972,6 +6649,7 @@ function folkCardMatrix(man, flip) {
 }
 
 function personScale(man) {
+    if (man.trial || man.skin) return 1;
     if (man.horse) return man.bodyScale != null ? man.bodyScale : 1;
     if (man.goblin) return 0.74;
     if (man.showcaseBrute || man.brute) return 1.14;
@@ -5987,7 +6665,7 @@ function personMatrix(man) {
     const s = Math.sin(yaw) * k;
     const slash = man.meshAttack || man.meshDeath ? 0 : (man.swing > 0 ? Math.sin(man.swing * Math.PI) : 0);
     const lunge = slash * (man.lungeReach || 0.22);
-    const y = (man.stand || 0) + (man.floatY || 0) + man.bob - (man.meshDeath ? 0 : Math.min(man.down, 1.05) * k);
+    const y = (man.stand || 0) + (man.floatY || 0) + man.bob - ((man.trial || man.meshDeath) ? 0 : Math.min(man.down, 1.05) * k);
     const px = man.x + Math.sin(man.yaw) * lunge;
     const pz = man.z - Math.cos(man.yaw) * lunge;
     const out = takeMat4();
@@ -9240,6 +9918,18 @@ function stepFarmer(man, dt) {
     const beforeX = man.x;
     const beforeZ = man.z;
     const moving = moveToward(man, goalX, goal.z, dt, 2.2);
+    if (!moving && goal.home) {
+        man.jobWait = (man.jobWait || 0) + dt;
+        man.walking = false;
+        man.swing = -1;
+        man.mode = "farm";
+        plant(man);
+        actorsDirty = true;
+        if (man.jobWait < 2.4) return false;
+        man.jobWait = 0;
+        man.spot = (man.spot + 1) % spots.length;
+        return false;
+    }
     if (!moving) man.spot = (man.spot + 1) % spots.length;
     else if (Math.hypot(man.x - beforeX, man.z - beforeZ) < 0.002) {
         man.stuck = (man.stuck || 0) + dt;
@@ -10161,12 +10851,122 @@ function raidEngaged() {
     if (!town) return false;
     const raid = livingRaid();
     for (let i = 0; i < raid.length; i++) {
-        if (Math.hypot(raid[i].x - town.x, raid[i].z - town.z) < 34) {
+        if (Math.hypot(raid[i].x - town.x, raid[i].z - town.z) <= 100) {
             raidClose = true;
             break;
         }
     }
     return raidClose;
+}
+
+let raidGateList = null;
+let raidGatePick = null;
+let raidSlotMark = -1;
+
+function raidTownGates() {
+    if (raidGateList) return raidGateList;
+    raidGateList = [];
+    const town = places[RAID_TOWN];
+    const layout = majorLayout(RAID_TOWN);
+    if (!town || !layout) return raidGateList;
+    const buildings = layout.buildings || [];
+    for (let i = 0; i < buildings.length; i++) {
+        const piece = buildings[i];
+        if (piece.t !== "gate") continue;
+        const yaw = piece.yaw || 0;
+        const c = Math.cos(yaw);
+        const s = Math.sin(yaw);
+        const x = town.x + piece.x + 1.95 * c;
+        const z = town.z + piece.z + 1.95 * s;
+        const dx = x - town.x;
+        const dz = z - town.z;
+        const len = Math.hypot(dx, dz) || 1;
+        raidGateList.push({ x: x, z: z, outX: dx / len, outZ: dz / len, health: 50 });
+    }
+    return raidGateList;
+}
+
+function raidTargetGate() {
+    if (raidGatePick) return raidGatePick;
+    const gates = raidTownGates();
+    const town = places[RAID_TOWN];
+    if (!gates.length || !town) return null;
+    const raid = livingRaid();
+    let fx = town.x;
+    let fz = town.z;
+    if (raid.length) {
+        fx = 0;
+        fz = 0;
+        for (let i = 0; i < raid.length; i++) {
+            fx += raid[i].x;
+            fz += raid[i].z;
+        }
+        fx /= raid.length;
+        fz /= raid.length;
+    }
+    const ax = fx - town.x;
+    const az = fz - town.z;
+    let best = gates[0];
+    let bestDot = -Infinity;
+    for (let i = 0; i < gates.length; i++) {
+        const gate = gates[i];
+        const dot = (gate.x - town.x) * ax + (gate.z - town.z) * az;
+        if (dot > bestDot) {
+            bestDot = dot;
+            best = gate;
+        }
+    }
+    raidGatePick = best;
+    return raidGatePick;
+}
+
+function raidLineSlots() {
+    if (raidSlotMark === raidTick) return;
+    raidSlotMark = raidTick;
+    const gate = raidTargetGate();
+    const raid = livingRaid().sort((a, b) => (a.slot || 0) - (b.slot || 0));
+    if (!gate) return;
+    const front = Math.min(3, raid.length);
+    const alongX = -gate.outZ;
+    const alongZ = gate.outX;
+    for (let i = 0; i < raid.length; i++) {
+        if (i < front) {
+            const side = (i - (front - 1) / 2) * 1.5;
+            raid[i].gateSlot = {
+                x: gate.x + gate.outX * 1.8 + alongX * side,
+                z: gate.z + gate.outZ * 1.8 + alongZ * side,
+                strike: true
+            };
+        } else {
+            const back = i - front + 1;
+            raid[i].gateSlot = {
+                x: gate.x + gate.outX * (1.8 + back * 1.7),
+                z: gate.z + gate.outZ * (1.8 + back * 1.7),
+                strike: false
+            };
+        }
+    }
+}
+
+function hitRaidGate(man, gate, dt) {
+    const slot = man.gateSlot;
+    if (!slot || !slot.strike || gate.health <= 0) {
+        man.swing = -1;
+        return;
+    }
+    if (Math.hypot(gate.x - man.x, gate.z - man.z) > 3.2) {
+        man.swing = -1;
+        return;
+    }
+    man.yaw = raidFace(man.x, man.z, gate.x, gate.z);
+    const cycle = (performance.now() / 1000 + man.index * 0.31) % 0.85;
+    man.swing = cycle < 0.4 ? cycle / 0.4 : -1;
+    man.attackIn = (man.attackIn || 0) - dt;
+    if (man.attackIn > 0) return;
+    man.attackIn = 1.2;
+    gate.health = Math.max(0, gate.health - 1);
+    showStrike(gate.health > 0 ? "Gate " + gate.health : "Gate down");
+    actorsDirty = true;
 }
 
 function raidFace(fromX, fromZ, toX, toZ) {
@@ -10203,7 +11003,12 @@ function aimFighters() {
     const raid = livingRaid();
     const guards = [];
     for (let i = 0; i < men.length; i++) if (townGuard(men[i])) guards.push(men[i]);
+    const gateUp = raidTargetGate();
     for (let i = 0; i < raid.length; i++) {
+        if (gateUp && gateUp.health > 0) {
+            raid[i].focus = null;
+            continue;
+        }
         const pick = nearestFighter(raid[i], guards);
         raid[i].focus = pick ? pick.man : null;
     }
@@ -10248,24 +11053,20 @@ function stepRaid(man, dt) {
     const town = places[RAID_TOWN];
     if (!town) return;
     const mates = livingRaid();
-    let cx = 0;
-    let cz = 0;
-    for (let i = 0; i < mates.length; i++) {
-        cx += mates[i].x;
-        cz += mates[i].z;
-    }
-    const count = mates.length || 1;
-    cx /= count;
-    cz /= count;
-    const face = raidFace(cx, cz, town.x, town.z);
+    const gate = raidTargetGate();
+    raidLineSlots();
     let moving = false;
-    if (!raidEngaged()) {
+    if (gate && gate.health > 0) {
         man.focus = null;
-        const off = raidOffset(man.slot || 0, face);
-        const gx = town.x - Math.sin(face) * 18 + off.x;
-        const gz = town.z + Math.cos(face) * 18 + off.z;
-        moving = chargeToward(man, gx, gz, dt, 4.6);
-        man.swing = -1;
+        const slot = man.gateSlot;
+        if (slot) {
+            moving = chargeToward(man, slot.x, slot.z, dt, slot.strike ? 3.6 : 4.6);
+            if (slot.strike) hitRaidGate(man, gate, dt);
+            else {
+                man.swing = -1;
+                man.yaw = raidFace(man.x, man.z, gate.x, gate.z);
+            }
+        } else man.swing = -1;
     } else {
         aimFighters();
         const foe = man.focus;
@@ -10275,6 +11076,10 @@ function stepRaid(man, dt) {
             man.yaw = raidFace(man.x, man.z, foe.x, foe.z);
             swingAt(man, { man: foe, d: Math.hypot(foe.x - man.x, foe.z - man.z) }, dt);
         } else {
+            const through = gate
+                ? { x: gate.x - gate.outX * 8, z: gate.z - gate.outZ * 8 }
+                : { x: town.x, z: town.z };
+            moving = chargeToward(man, through.x, through.z, dt, 3.4);
             man.swing = -1;
         }
     }
@@ -10372,12 +11177,86 @@ function spawnRaidArmy() {
     }
 }
 
+function stepTrialWarrior(man, dt) {
+    if (player.dead || inside || flying) {
+        man.walking = false;
+        man.punchLeft = 0;
+        man.swing = -1;
+        plant(man);
+        return false;
+    }
+    const dx = cam.x - man.x;
+    const dz = cam.z - man.z;
+    const dist = Math.hypot(dx, dz);
+    const pack = skinCast[man.skin || "warrior"];
+    const punchDur = pack && pack.clips && pack.clips.punch ? pack.clips.punch.duration : 1.6;
+    if (man.punchLeft > 0) {
+        man.punchLeft -= dt;
+        man.walking = false;
+        const played = punchDur - Math.max(man.punchLeft, 0);
+        if (!man.punched && played > punchDur * 0.35) {
+            man.punched = true;
+            if (player.immortal) {
+                flashHurt();
+                showStrike(man.name || "Warrior");
+            } else hurtPlayer(8);
+        }
+        man.anim = "punch";
+        man.animTime = played;
+    } else if (dist < 3.6) {
+        man.attackWait = (man.attackWait || 0) - dt;
+        man.walking = false;
+        if (man.attackWait <= 0) {
+            man.punchLeft = punchDur;
+            man.punched = false;
+            man.attackWait = 0.45;
+            man.anim = "punch";
+            man.animTime = 0;
+        } else {
+            man.anim = "idle";
+            man.animTime = (man.animTime || 0) + dt;
+        }
+    } else if (dist < 10) {
+        man.walking = moveToward(man, cam.x, cam.z, dt, 2.2);
+        man.anim = man.walking ? "walk" : "idle";
+        man.animTime = (man.animTime || 0) + dt;
+    } else {
+        man.walking = false;
+        man.anim = "idle";
+        man.animTime = (man.animTime || 0) + dt;
+    }
+    man.yaw = Math.atan2(-dx, -dz);
+    man.bob = 0;
+    man.swing = -1;
+    actorsDirty = true;
+    plant(man);
+    return false;
+}
+
+function crewRole(man) {
+    return !!(man && !man.trial && !man.shopkeeper && (man.fisher || man.farmer || man.jack || man.driver || man.board));
+}
+
+function wearCrew(man, dt) {
+    if (!crewRole(man)) return;
+    man.skin = "dwarf";
+    man.bob = 0;
+    man.anim = man.walking ? "walk" : "idle";
+    man.animTime = (man.animTime || 0) + dt;
+}
+
 function stepMan(man, dt) {
     if (man.dying) {
         man.down += dt * 1.5;
         man.bob = 0;
         man.walking = false;
         actorsDirty = true;
+        if (man.trial) {
+            man.anim = "idle";
+            man.animTime = (man.animTime || 0) + dt;
+            man.punchLeft = 0;
+            return false;
+        }
         return man.down > 1.2;
     }
     if (man.campaignArmy) {
@@ -10385,6 +11264,11 @@ function stepMan(man, dt) {
         man.swing = -1;
         man.hostile = false;
         man.bob = 0;
+        if (man.veteran) {
+            man.skin = "warrior";
+            man.anim = "idle";
+            man.animTime = (man.animTime || 0) + dt;
+        }
         plant(man);
         return false;
     }
@@ -10397,6 +11281,7 @@ function stepMan(man, dt) {
         return false;
     }
     if (man.brute) return stepBrute(man, dt);
+    if (man.trial) return stepTrialWarrior(man, dt);
     if (man.goblin) return stepGoblin(man, dt);
     if (man.driver) return stepDriver(man, dt);
     if (man.archer) return stepArcher(man, dt);
@@ -10540,18 +11425,25 @@ function updateFight(dt) {
         }
         if (man.board) {
             const chasing = man.hostile || man.returning || (activeSet.has(man) && angry(man.faction));
-            if (chasing && stepRevenge(man, dt)) continue;
+            if (chasing && stepRevenge(man, dt)) {
+                wearCrew(man, dt);
+                continue;
+            }
             if (activeSet.has(man)) stepWork(man, dt);
+            wearCrew(man, dt);
             continue;
         }
-        if (!activeSet.has(man) && !man.hostile && !man.returning && !man.raid && !(townGuard(man) && raidEngaged())) {
+        if (!activeSet.has(man) && !man.farmHand && !man.hostile && !man.returning && !man.raid && !(townGuard(man) && raidEngaged())) {
             man.walking = false;
+            wearCrew(man, dt);
             continue;
         }
         if (stepMan(man, dt)) {
             men.splice(i, 1);
             actorsDirty = true;
+            continue;
         }
+        wearCrew(man, dt);
     }
     if (struckFactions.size) {
         const open = Array.from(struckFactions);
@@ -14088,6 +14980,8 @@ if (gl) {
         spawnCommander();
         spawnSouthwestBrutes();
         spawnDuelBrute();
+        spawnTrialWarrior();
+        spawnTrialDwarf();
     }
     initIslandLabSettlements();
     registerHamletTerrainFlats();

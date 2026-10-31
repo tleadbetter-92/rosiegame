@@ -1,0 +1,45 @@
+{
+  "kind": "food-market",
+  "grid": 0.5,
+  "categoryDirs": {
+    "Props food": "/tools/building-editor/Food_Market/glTF/",
+    "Props drink": "/tools/building-editor/Food_Market/glTF/",
+    "Props market": "/tools/building-editor/Food_Market/glTF/",
+    "Props table": "/tools/building-editor/Food_Market/glTF/",
+    "Props money": "/tools/building-editor/Food_Market/glTF/"
+  },
+  "categories": {
+    "Props food": [
+      "mdvl_food_apple_01",
+      "mdvl_food_cabbage_01",
+      "mdvl_food_carrot_01",
+      "mdvl_food_cheese_wheel_01",
+      "mdvl_food_fish_01",
+      "mdvl_food_grapes_01",
+      "mdvl_food_ham_01",
+      "mdvl_food_loaf_01",
+      "mdvl_food_onion_01",
+      "mdvl_food_roll_01"
+    ],
+    "Props drink": [
+      "mdvl_food_ale_mug_01",
+      "mdvl_food_cask_01"
+    ],
+    "Props market": [
+      "mdvl_food_grain_sack_01",
+      "mdvl_food_herb_bundle_01",
+      "mdvl_food_produce_crate_01",
+      "mdvl_food_scales_01",
+      "mdvl_food_potion_01"
+    ],
+    "Props table": [
+      "mdvl_food_bowl_01",
+      "mdvl_food_cutlery_01",
+      "mdvl_food_plate_01"
+    ],
+    "Props money": [
+      "mdvl_food_coin_01",
+      "mdvl_food_coin_stack_01"
+    ]
+  }
+}

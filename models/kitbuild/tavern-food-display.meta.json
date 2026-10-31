@@ -1,0 +1,16 @@
+{
+  "kind": "kitbuild",
+  "name": "Food stall",
+  "cx": 0,
+  "cz": 0,
+  "materials": [
+    {
+      "mat": "tvWood006",
+      "verts": 648
+    },
+    {
+      "mat": "tvWood003",
+      "verts": 672
+    }
+  ]
+}

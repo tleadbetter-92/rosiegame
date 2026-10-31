@@ -1,0 +1,46 @@
+{
+  "kind": "kitbuild",
+  "name": "farm",
+  "cx": 9.25,
+  "cz": -0.75,
+  "materials": [
+    {
+      "mat": "wood",
+      "verts": 23238
+    },
+    {
+      "mat": "plaster",
+      "verts": 594
+    },
+    {
+      "mat": "brick",
+      "verts": 678
+    },
+    {
+      "mat": "furniture",
+      "verts": 29982,
+      "tint": true
+    },
+    {
+      "mat": "propmetal",
+      "verts": 50064
+    },
+    {
+      "mat": "propcloth",
+      "verts": 9408
+    },
+    {
+      "mat": "proppack",
+      "verts": 28632,
+      "tint": true
+    },
+    {
+      "mat": "rock",
+      "verts": 36786
+    },
+    {
+      "mat": "tiles",
+      "verts": 10188
+    }
+  ]
+}

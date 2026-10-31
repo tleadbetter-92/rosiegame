@@ -1,0 +1,12 @@
+{
+  "kind": "kitbuild",
+  "name": "Large table",
+  "cx": 0,
+  "cz": 0,
+  "materials": [
+    {
+      "mat": "tvWood003",
+      "verts": 684
+    }
+  ]
+}

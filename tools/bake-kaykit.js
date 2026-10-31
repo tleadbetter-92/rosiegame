@@ -572,6 +572,218 @@ function bakeMixamo(file, stem) {
     });
 }
 
+function animDuration(json, bin, name) {
+    const anim = json.animations.find((item) => item.name === name);
+    let duration = 0.0001;
+    for (const sampler of anim.samplers) {
+        const times = accessor(json, bin, sampler.input);
+        duration = Math.max(duration, times[times.length - 1]);
+    }
+    return duration;
+}
+
+function poseAt(json, bin, name, time, root, pin) {
+    const pose = sampleAnim(json, bin, name, time);
+    if (pin && root != null) {
+        const tracks = pose.get(root) || {};
+        const base = tracks.translation || json.nodes[root].translation || [0, 0, 0];
+        tracks.translation = [pin[0], base[1], pin[2]];
+        pose.set(root, tracks);
+    }
+    return pose;
+}
+
+function jointMatrices(json, bin, pose) {
+    const { globals } = globalsOf(json, pose);
+    const skin = json.skins[0];
+    const ibm = accessor(json, bin, skin.inverseBindMatrices);
+    const mats = new Float32Array(skin.joints.length * 16);
+    for (let i = 0; i < skin.joints.length; i++) {
+        const m = mul(globals[skin.joints[i]], ibm.subarray(i * 16, i * 16 + 16));
+        mats.set(m, i * 16);
+    }
+    return mats;
+}
+
+function skinPoint(x, y, z, joints, weights, vi, mats) {
+    let px = 0, py = 0, pz = 0;
+    for (let k = 0; k < 4; k++) {
+        const w = weights[vi * 4 + k];
+        if (w <= 0) continue;
+        const o = (joints[vi * 4 + k] | 0) * 16;
+        px += w * (mats[o] * x + mats[o + 4] * y + mats[o + 8] * z + mats[o + 12]);
+        py += w * (mats[o + 1] * x + mats[o + 5] * y + mats[o + 9] * z + mats[o + 13]);
+        pz += w * (mats[o + 2] * x + mats[o + 6] * y + mats[o + 10] * z + mats[o + 14]);
+    }
+    return [px, py, pz];
+}
+
+function applyFit(mats, scale, ox, oy, oz) {
+    const out = new Float32Array(mats.length);
+    for (let i = 0; i < mats.length; i += 16) {
+        out[i] = mats[i] * scale;
+        out[i + 1] = mats[i + 1] * scale;
+        out[i + 2] = mats[i + 2] * scale;
+        out[i + 4] = mats[i + 4] * scale;
+        out[i + 5] = mats[i + 5] * scale;
+        out[i + 6] = mats[i + 6] * scale;
+        out[i + 8] = mats[i + 8] * scale;
+        out[i + 9] = mats[i + 9] * scale;
+        out[i + 10] = mats[i + 10] * scale;
+        out[i + 12] = scale * (mats[i + 12] - ox);
+        out[i + 13] = scale * (mats[i + 13] - oy);
+        out[i + 14] = scale * (mats[i + 14] - oz);
+        out[i + 15] = 1;
+    }
+    return out;
+}
+
+// One mesh plus bone poses. The village bends the skeleton on the GPU instead of storing a copy of the body per frame.
+function bakeSkin(file, outBin, outImage, options) {
+    const { json, bin } = loadGlb(file);
+    const mesh = json.meshes[0];
+    const prim = mesh.primitives[0];
+    const pos = accessor(json, bin, prim.attributes.POSITION);
+    const nrm = accessor(json, bin, prim.attributes.NORMAL);
+    const uv = accessor(json, bin, prim.attributes.TEXCOORD_0);
+    const joints = accessor(json, bin, prim.attributes.JOINTS_0);
+    const weights = accessor(json, bin, prim.attributes.WEIGHTS_0);
+    const indices = accessor(json, bin, prim.indices);
+    const vertexCount = pos.length / 3;
+    for (let v = 0; v < vertexCount; v++) {
+        let sum = 0;
+        for (let k = 0; k < 4; k++) sum += weights[v * 4 + k];
+        if (sum <= 0) {
+            weights[v * 4] = 1;
+            continue;
+        }
+        for (let k = 0; k < 4; k++) weights[v * 4 + k] /= sum;
+    }
+    const root = json.skins[0].joints[0];
+    const wanted = (options && options.clips) || [
+        { name: "idle", fps: 12 },
+        { name: "walk", fps: 20 },
+        { name: "punch", fps: 20 }
+    ];
+    const clips = wanted.filter((clip) => json.animations.some((anim) => anim.name === clip.name));
+    if (!clips.length) throw new Error("no matching animations in " + file);
+    const rest = poseAt(json, bin, clips[0].name, 0, root, null);
+    const restTrack = rest.get(root) || {};
+    const restT = restTrack.translation || json.nodes[root].translation || [0, 0, 0];
+    const pin = [restT[0], restT[1], restT[2]];
+    const baked = [];
+    for (const clip of clips) {
+        const duration = animDuration(json, bin, clip.name);
+        const frameCount = Math.max(8, Math.round(duration * clip.fps));
+        const frames = [];
+        let travel = 0;
+        let first = null;
+        for (let i = 0; i < frameCount; i++) {
+            const time = (i / frameCount) * duration;
+            const pose = poseAt(json, bin, clip.name, time, root, pin);
+            const mats = jointMatrices(json, bin, pose);
+            let cx = 0, cz = 0, n = 0;
+            for (let v = 0; v < vertexCount; v += 8) {
+                const p = skinPoint(pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2], joints, weights, v, mats);
+                cx += p[0];
+                cz += p[2];
+                n += 1;
+            }
+            cx /= n;
+            cz /= n;
+            if (!first) first = { x: cx, z: cz };
+            travel = Math.max(travel, Math.hypot(cx - first.x, cz - first.z));
+            for (let b = 0; b < mats.length; b += 16) {
+                mats[b + 12] -= cx - first.x;
+                mats[b + 14] -= cz - first.z;
+            }
+            frames.push(mats);
+        }
+        baked.push({ name: clip.out || clip.name, duration, frameCount, frames, travel });
+        console.log((clip.out || clip.name) + " <- " + clip.name, "frames", frameCount, "duration", +duration.toFixed(2), "body travel m", +travel.toFixed(3));
+    }
+    const idle0 = baked[0].frames[0];
+    let minY = Infinity, maxY = -Infinity, minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (let v = 0; v < vertexCount; v++) {
+        const p = skinPoint(pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2], joints, weights, v, idle0);
+        minY = Math.min(minY, p[1]);
+        maxY = Math.max(maxY, p[1]);
+        minX = Math.min(minX, p[0]);
+        maxX = Math.max(maxX, p[0]);
+        minZ = Math.min(minZ, p[2]);
+        maxZ = Math.max(maxZ, p[2]);
+    }
+    const target = (options && options.height) || 1.8;
+    const scale = target / (maxY - minY || 1);
+    let cx = 0, cz = 0, n = 0;
+    for (let v = 0; v < vertexCount; v += 4) {
+        const p = skinPoint(pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2], joints, weights, v, idle0);
+        cx += p[0];
+        cz += p[2];
+        n += 1;
+    }
+    cx /= n;
+    cz /= n;
+    console.log("idle height", +(maxY - minY).toFixed(3), "scale", +scale.toFixed(3), "bounds", [minX, minY, minZ].map((v) => +v.toFixed(2)), [maxX, maxY, maxZ].map((v) => +v.toFixed(2)));
+    const boneCount = json.skins[0].joints.length;
+    const vert = Buffer.alloc(vertexCount * 64);
+    const vertF = new Float32Array(vert.buffer, vert.byteOffset, vertexCount * 16);
+    for (let v = 0; v < vertexCount; v++) {
+        const o = v * 16;
+        vertF[o] = pos[v * 3];
+        vertF[o + 1] = pos[v * 3 + 1];
+        vertF[o + 2] = pos[v * 3 + 2];
+        vertF[o + 3] = nrm[v * 3];
+        vertF[o + 4] = nrm[v * 3 + 1];
+        vertF[o + 5] = nrm[v * 3 + 2];
+        vertF[o + 6] = uv[v * 2];
+        vertF[o + 7] = uv[v * 2 + 1];
+        vertF[o + 8] = joints[v * 4];
+        vertF[o + 9] = joints[v * 4 + 1];
+        vertF[o + 10] = joints[v * 4 + 2];
+        vertF[o + 11] = joints[v * 4 + 3];
+        vertF[o + 12] = weights[v * 4];
+        vertF[o + 13] = weights[v * 4 + 1];
+        vertF[o + 14] = weights[v * 4 + 2];
+        vertF[o + 15] = weights[v * 4 + 3];
+    }
+    const indexBuf = Buffer.alloc(indices.length * 2 + (indices.length % 2 ? 2 : 0));
+    for (let i = 0; i < indices.length; i++) indexBuf.writeUInt16LE(indices[i], i * 2);
+    const header = Buffer.alloc(20);
+    header.write("SKN1", 0, 4, "ascii");
+    header.writeUInt32LE(vertexCount, 4);
+    header.writeUInt32LE(indices.length, 8);
+    header.writeUInt32LE(boneCount, 12);
+    header.writeUInt32LE(baked.length, 16);
+    const clipBufs = [];
+    for (const clip of baked) {
+        const name = Buffer.from(clip.name, "utf8");
+        const rawHead = 1 + name.length + 8;
+        const head = Buffer.alloc((rawHead + 3) & ~3);
+        head.writeUInt8(name.length, 0);
+        name.copy(head, 1);
+        head.writeUInt32LE(clip.frameCount, 1 + name.length);
+        head.writeFloatLE(clip.duration, 5 + name.length);
+        const body = Buffer.alloc(clip.frameCount * boneCount * 64);
+        for (let f = 0; f < clip.frameCount; f++) {
+            const fitted = applyFit(clip.frames[f], scale, cx, minY, cz);
+            Buffer.from(fitted.buffer, fitted.byteOffset, fitted.byteLength).copy(body, f * boneCount * 64);
+        }
+        clipBufs.push(head, body);
+    }
+    fs.writeFileSync(outBin, Buffer.concat([header, vert, indexBuf].concat(clipBufs)));
+    let image = json.images.find((item) => item.name === "retopo_albedo") || json.images[0];
+    const material = json.materials && json.materials[0];
+    const colorTex = material && material.pbrMetallicRoughness && material.pbrMetallicRoughness.baseColorTexture;
+    if (colorTex && json.textures[colorTex.index] && json.images[json.textures[colorTex.index].source]) {
+        image = json.images[json.textures[colorTex.index].source];
+    }
+    const view = json.bufferViews[image.bufferView];
+    const start = view.byteOffset || 0;
+    fs.writeFileSync(outImage, bin.slice(start, start + view.byteLength));
+    console.log("wrote", outBin, fs.statSync(outBin).size, "image", image.mimeType, fs.statSync(outImage).size);
+}
+
 if (process.argv[2] === "mixamo") {
     bakeMixamo(path.join("models", "kaykit", "ch10.glb"), "ch10");
 } else if (process.argv[2] === "paladin") {
@@ -811,6 +1023,49 @@ if (process.argv[2] === "mixamo") {
     const move = sampleNamed(json, bin, names.includes("Side_winding") ? "Side_winding" : "Idle", 8);
     const sampled = idle.concat(move);
     writeClip(sampled, json, bin, "snake", 0, true, path.join("models", "creatures"));
+} else if (process.argv[2] === "dwarf-few") {
+    bakeSkin(
+        process.argv[3],
+        path.join("models", "kaykit", "dwarf.skin.bin"),
+        path.join("models", "kaykit", "dwarf.skin.jpg"),
+        {
+            height: 1.32,
+            clips: [
+                { name: "Fighting_Idle", out: "idle", fps: 12 },
+                { name: "Walk", out: "walk", fps: 20 },
+                { name: "Sword_Attack_RM", out: "punch", fps: 20 }
+            ]
+        }
+    );
+} else if (process.argv[2] === "warrior-few") {
+    bakeSkin(
+        process.argv[3],
+        path.join("models", "kaykit", "heroic-warrior.skin.bin"),
+        path.join("models", "kaykit", "heroic-warrior.skin.jpg"),
+        {
+            clips: [
+                { name: "Fighting_Idle", out: "idle", fps: 12 },
+                { name: "Walk", out: "walk", fps: 20 },
+                { name: "Sword_Attack_RM", out: "punch", fps: 20 }
+            ]
+        }
+    );
+} else if (process.argv[2] === "heroic-skin") {
+    bakeSkin(
+        path.join("tools", "CharacterPacks", "heroic-warrior", "heroic-warrior.glb"),
+        path.join("models", "kaykit", "heroic-warrior.skin.bin"),
+        path.join("models", "kaykit", "heroic-warrior.skin.jpg")
+    );
+} else if (process.argv[2] === "heroic-warrior") {
+    const file = path.join("tools", "CharacterPacks", "heroic-warrior", "heroic-warrior.glb");
+    const { json, bin } = loadGlb(file);
+    const names = (json.animations || []).map((a) => a.name);
+    console.log("animations", names.join(", "));
+    const idle = sampleNamed(json, bin, "idle", 1);
+    const walk = sampleNamed(json, bin, "walk", 8);
+    const punch = sampleNamed(json, bin, "punch", 6);
+    const sampled = idle.concat(walk, punch, idle);
+    writeClip(sampled, json, bin, "heroic-warrior", 0, true);
 } else if (process.argv[2] === "horse2") {
     const file = path.join("models", "horse.glb");
     const { json, bin } = loadGlb(file);

@@ -1,0 +1,631 @@
+{
+  "kind": "building",
+  "kit": "village-megakit",
+  "grid": 2,
+  "name": "Lumber works",
+  "pieces": [
+    {
+      "id": "Floor_WoodLight",
+      "x": 7,
+      "z": 11,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 7,
+      "z": 13,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 7,
+      "z": 15,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 9,
+      "z": 11,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 9,
+      "z": 13,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 9,
+      "z": 15,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 11,
+      "z": 11,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 11,
+      "z": 13,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 11,
+      "z": 15,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 13,
+      "z": 11,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 13,
+      "z": 13,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 13,
+      "z": 15,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 15,
+      "z": 11,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 15,
+      "z": 13,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 15,
+      "z": 15,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 17,
+      "z": 11,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 17,
+      "z": 13,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 17,
+      "z": 15,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 19,
+      "z": 11,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 19,
+      "z": 13,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_WoodLight",
+      "x": 19,
+      "z": 15,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 7,
+      "z": 10,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 7,
+      "z": 16,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 9,
+      "z": 10,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 11,
+      "z": 10,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 11,
+      "z": 16,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 13,
+      "z": 10,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 15,
+      "z": 10,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 15,
+      "z": 16,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 17,
+      "z": 10,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 19,
+      "z": 10,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 19,
+      "z": 16,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 6,
+      "z": 11,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 20,
+      "z": 11,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 6,
+      "z": 13,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 6,
+      "z": 15,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_UnevenBrick_Straight",
+      "x": 20,
+      "z": 15,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "FarmCrate_Empty",
+      "x": 6.5,
+      "z": 10.5,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "FarmCrate_Empty",
+      "x": 7.5,
+      "z": 10.5,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "FarmCrate_Empty",
+      "x": 8.5,
+      "z": 10.5,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Crate_Metal",
+      "x": 9,
+      "z": 11,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Crate_Metal",
+      "x": 16,
+      "z": 11,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Crate_Metal",
+      "x": 17,
+      "z": 11,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Crate_Metal",
+      "x": 18,
+      "z": 11,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Crate_Metal",
+      "x": 17,
+      "z": 11,
+      "y": 1,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Crate_Metal",
+      "x": 18,
+      "z": 11,
+      "y": 1,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Crate_Metal",
+      "x": 8,
+      "z": 15,
+      "y": 1,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Crate_Metal",
+      "x": 8,
+      "z": 14,
+      "y": 1,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Cage_Small",
+      "x": 8,
+      "z": 13,
+      "y": 1,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Cabinet",
+      "x": 19,
+      "z": 15,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Barrel",
+      "x": 15.5,
+      "z": 15.5,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Barrel",
+      "x": 14.5,
+      "z": 15.5,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Barrel",
+      "x": 15,
+      "z": 15,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Barrel",
+      "x": 16,
+      "z": 15,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Barrel",
+      "x": 8,
+      "z": 15.5,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Barrel",
+      "x": 7.5,
+      "z": 15,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Barrel",
+      "x": 8,
+      "z": 14.5,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Barrel",
+      "x": 7.5,
+      "z": 14,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Barrel",
+      "x": 6.5,
+      "z": 12,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Wall_UnevenBrick_Door_Flat",
+      "x": 13,
+      "z": 16,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Door_1_Flat",
+      "x": 13,
+      "z": 15,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_UnevenBrick_Door_Flat",
+      "x": 20,
+      "z": 13,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Door_1_Flat",
+      "x": 19,
+      "z": 13,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Wall_UnevenBrick_Window_Thin_Round",
+      "x": 9,
+      "z": 16,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Wall_UnevenBrick_Window_Thin_Round",
+      "x": 17,
+      "z": 16,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Window_Thin_Flat1",
+      "x": 9,
+      "z": 16,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Window_Thin_Flat1",
+      "x": 17,
+      "z": 16,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 19,
+      "z": 11,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 19,
+      "z": 13,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 19,
+      "z": 15,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 17,
+      "z": 13,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 17,
+      "z": 15,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 15,
+      "z": 15,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 15,
+      "z": 13,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 13,
+      "z": 13,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 13,
+      "z": 15,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 11,
+      "z": 13,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 9,
+      "z": 13,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 9,
+      "z": 15,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 11,
+      "z": 15,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 11,
+      "z": 11,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 13,
+      "z": 11,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 15,
+      "z": 11,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 17,
+      "z": 11,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 7,
+      "z": 11,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 9,
+      "z": 11,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 7,
+      "z": 13,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Floor_Brick",
+      "x": 7,
+      "z": 15,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "Prop_Wagon",
+      "x": 9,
+      "z": 17,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    }
+  ]
+}

@@ -1,0 +1,143 @@
+{
+  "kind": "retro-medieval",
+  "grid": 1,
+  "categoryDirs": {
+    "Retro prop": "/models/retro-medieval/glb/",
+    "Retro battlement": "/models/retro-medieval/glb/",
+    "Retro structure": "/models/retro-medieval/glb/",
+    "Retro dock": "/models/retro-medieval/glb/",
+    "Retro fence": "/models/retro-medieval/glb/",
+    "Retro floor": "/models/retro-medieval/glb/",
+    "Retro roof": "/models/retro-medieval/glb/",
+    "Retro stairs": "/models/retro-medieval/glb/",
+    "Retro tower": "/models/retro-medieval/glb/",
+    "Retro wall": "/models/retro-medieval/glb/"
+  },
+  "categories": {
+    "Retro prop": [
+      "barrels",
+      "bricks",
+      "detail-barrel",
+      "detail-crate",
+      "detail-crate-ropes",
+      "detail-crate-small",
+      "ladder",
+      "pulley",
+      "pulley-crate",
+      "tree-large",
+      "tree-shrub",
+      "water"
+    ],
+    "Retro battlement": [
+      "battlement",
+      "battlement-corner-inner",
+      "battlement-corner-outer",
+      "battlement-half"
+    ],
+    "Retro structure": [
+      "column",
+      "column-damaged",
+      "column-paint",
+      "column-paint-damaged",
+      "column-wood",
+      "structure",
+      "structure-cross",
+      "structure-pole",
+      "structure-poles",
+      "structure-wall",
+      "structure-wall-cross"
+    ],
+    "Retro dock": [
+      "dock-corner",
+      "dock-side"
+    ],
+    "Retro fence": [
+      "fence",
+      "fence-top",
+      "fence-wood",
+      "overhang",
+      "overhang-fence",
+      "overhang-round",
+      "overhang-round-railing"
+    ],
+    "Retro floor": [
+      "floor",
+      "floor-flat",
+      "floor-stairs",
+      "floor-stairs-corner-inner",
+      "floor-stairs-corner-outer",
+      "floor-steps",
+      "floor-steps-corner-inner",
+      "floor-steps-corner-outer",
+      "wood-floor",
+      "wood-floor-half",
+      "wood-floor-quarter",
+      "wood-floor-railing"
+    ],
+    "Retro roof": [
+      "roof",
+      "roof-corner",
+      "roof-edge",
+      "roof-high-side",
+      "roof-high-side-corner",
+      "roof-high-side-corner-inner",
+      "roof-side",
+      "roof-side-corner",
+      "roof-side-corner-inner"
+    ],
+    "Retro stairs": [
+      "stairs-corner",
+      "stairs-stone",
+      "stairs-wood"
+    ],
+    "Retro tower": [
+      "tower",
+      "tower-base",
+      "tower-edge",
+      "tower-paint",
+      "tower-paint-base",
+      "tower-top"
+    ],
+    "Retro wall": [
+      "wall",
+      "wall-detail",
+      "wall-door",
+      "wall-flat-gate",
+      "wall-fortified",
+      "wall-fortified-door",
+      "wall-fortified-gate",
+      "wall-fortified-gate-half",
+      "wall-fortified-half",
+      "wall-fortified-paint",
+      "wall-fortified-paint-door",
+      "wall-fortified-paint-gate",
+      "wall-fortified-paint-half",
+      "wall-fortified-paint-window",
+      "wall-fortified-window",
+      "wall-gate",
+      "wall-gate-half",
+      "wall-half",
+      "wall-low",
+      "wall-paint",
+      "wall-paint-detail",
+      "wall-paint-door",
+      "wall-paint-flat",
+      "wall-paint-gate",
+      "wall-paint-half",
+      "wall-paint-window",
+      "wall-pane",
+      "wall-pane-door",
+      "wall-pane-paint",
+      "wall-pane-paint-door",
+      "wall-pane-paint-window",
+      "wall-pane-painted-wood",
+      "wall-pane-painted-wood-door",
+      "wall-pane-painted-wood-window",
+      "wall-pane-window",
+      "wall-pane-wood",
+      "wall-pane-wood-door",
+      "wall-pane-wood-window",
+      "wall-window"
+    ]
+  }
+}

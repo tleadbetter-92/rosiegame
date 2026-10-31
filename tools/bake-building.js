@@ -3,6 +3,12 @@ const path = require("path");
 
 const srcVillage = path.join(__dirname, "..", "models", "village-megakit", "glTF");
 const srcFantasy = path.join(__dirname, "..", "models", "fantasy-props", "glTF");
+const srcRetro = path.join(__dirname, "..", "models", "retro-medieval", "glb");
+const srcVillageBuilder = path.join(__dirname, "building-editor", "Village_Builder", "glTF");
+const srcInteriors = path.join(__dirname, "building-editor", "Interiors_Furniture", "glTF");
+const srcFood = path.join(__dirname, "building-editor", "Food_Market", "glTF");
+const srcTavern = path.join(__dirname, "building-editor", "Tavern", "glTF");
+const tavernTex = JSON.parse(fs.readFileSync(path.join(__dirname, "building-editor", "tavern-textures.json"), "utf8"));
 const outDir = path.join(__dirname, "..", "models", "kitbuild");
 const buildingPath = process.argv[2] || path.join(__dirname, "testbuild.json");
 const outName = process.argv[3] || "testbuild";
@@ -24,24 +30,90 @@ const names = {
     "T_Trim_Furniture_BaseColor.png": "furniture",
     "T_Trim_Metal_BaseColor.png": "propmetal",
     "T_Trim_Cloth_BaseColor.png": "propcloth",
-    "T_Trim_Props_BaseColor.png": "proppack"
+    "T_Trim_Props_BaseColor.png": "proppack",
+    "cobblestone.png": "retroCobble",
+    "cobblestoneAlternative.png": "retroCobbleAlt",
+    "cobblestonePainted.png": "retroCobblePaint",
+    "planks.png": "retroPlanks",
+    "roof.png": "retroRoof",
+    "barrel.png": "retroBarrel",
+    "details.png": "retroDetails",
+    "fence.png": "retroFence",
+    "tree.png": "retroTree",
+    "water.png": "retroWater"
 };
+
+function parseGlb(buf) {
+    const jsonLen = buf.readUInt32LE(12);
+    const gltf = JSON.parse(buf.slice(20, 20 + jsonLen).toString("utf8"));
+    const binStart = 20 + jsonLen;
+    const binLen = buf.readUInt32LE(binStart);
+    return { gltf, bin: buf.slice(binStart + 8, binStart + 8 + binLen) };
+}
 
 function gltfSrcDir(name) {
     const v = path.join(srcVillage, name + ".gltf");
     if (fs.existsSync(v)) return srcVillage;
     const f = path.join(srcFantasy, name + ".gltf");
     if (fs.existsSync(f)) return srcFantasy;
+    const r = path.join(srcRetro, name + ".glb");
+    if (fs.existsSync(r)) return srcRetro;
+    const b = path.join(srcVillageBuilder, name + ".glb");
+    if (fs.existsSync(b)) return srcVillageBuilder;
+    const interior = path.join(srcInteriors, name + ".glb");
+    if (fs.existsSync(interior)) return srcInteriors;
+    const food = path.join(srcFood, name + ".glb");
+    if (fs.existsSync(food)) return srcFood;
+    const tavern = path.join(srcTavern, name + ".glb");
+    if (fs.existsSync(tavern)) return srcTavern;
     return null;
 }
 
 function loadGltf(name) {
     const dir = gltfSrcDir(name);
     if (!dir) throw new Error("Missing glTF: " + name);
+    if (dir === srcRetro || dir === srcVillageBuilder || dir === srcInteriors || dir === srcFood || dir === srcTavern) return parseGlb(fs.readFileSync(path.join(dir, name + ".glb")));
     const gltfPath = path.join(dir, name + ".gltf");
     const gltf = JSON.parse(fs.readFileSync(gltfPath, "utf8"));
     const bin = fs.readFileSync(path.join(dir, gltf.buffers[0].uri));
     return { gltf, bin, dir };
+}
+
+function readVertexColors(gltf, bin, prim) {
+    if (prim.attributes.COLOR_0 == null) return null;
+    const acc = gltf.accessors[prim.attributes.COLOR_0];
+    if (!acc) return null;
+    const view = gltf.bufferViews[acc.bufferView];
+    const start = (view.byteOffset || 0) + (acc.byteOffset || 0);
+    const comps = acc.type === "VEC4" ? 4 : acc.type === "VEC3" ? 3 : 0;
+    if (!comps) return null;
+    const bytes = acc.componentType === 5126 ? 4 : acc.componentType === 5121 ? 1 : 2;
+    const stride = view.byteStride || comps * bytes;
+    const scale = acc.normalized ? (acc.componentType === 5123 ? 65535 : acc.componentType === 5121 ? 255 : 1) : 1;
+    const out = [];
+    for (let i = 0; i < acc.count; i++) {
+        const offset = start + i * stride;
+        let r = 1;
+        let g = 1;
+        let b = 1;
+        if (acc.componentType === 5126) {
+            r = bin.readFloatLE(offset);
+            g = bin.readFloatLE(offset + 4);
+            b = bin.readFloatLE(offset + 8);
+        } else if (acc.componentType === 5123) {
+            r = bin.readUInt16LE(offset) / scale;
+            g = bin.readUInt16LE(offset + 2) / scale;
+            b = bin.readUInt16LE(offset + 4) / scale;
+        } else if (acc.componentType === 5121) {
+            r = bin.readUInt8(offset) / scale;
+            g = bin.readUInt8(offset + 1) / scale;
+            b = bin.readUInt8(offset + 2) / scale;
+        } else {
+            return null;
+        }
+        out.push([r, g, b]);
+    }
+    return out;
 }
 
 function readAccessor(gltf, bin, index) {
@@ -52,11 +124,14 @@ function readAccessor(gltf, bin, index) {
     const width = acc.type === "VEC3" ? 3 : acc.type === "VEC2" ? 2 : 1;
     const out = [];
     for (let i = 0; i < acc.count; i++) {
-        const offset = start + (stride ? i * stride : i * width * (acc.componentType === 5126 ? 4 : 2));
+        const bytes = acc.componentType === 5126 ? 4 : acc.componentType === 5121 ? 1 : 2;
+        const offset = start + (stride ? i * stride : i * width * bytes);
         if (acc.componentType === 5126) {
             const value = [];
             for (let k = 0; k < width; k++) value.push(bin.readFloatLE(offset + k * 4));
             out.push(value);
+        } else if (acc.componentType === 5121) {
+            out.push(bin.readUInt8(offset));
         } else if (acc.componentType === 5123) {
             out.push(bin.readUInt16LE(offset));
         } else if (acc.componentType === 5125) {
@@ -68,12 +143,24 @@ function readAccessor(gltf, bin, index) {
     return out;
 }
 
-function baseColor(gltf, materialIndex) {
+function tavernKey(label) {
+    const stem = String(label || "").split("/").pop().replace(/\.(jpg|jpeg|png)$/i, "");
+    if (!tavernTex[stem]) return null;
+    return "tv" + stem.replace(/[^A-Za-z0-9]/g, "");
+}
+
+function baseColor(gltf, materialIndex, forceKey) {
+    if (forceKey) return forceKey;
     const material = gltf.materials[materialIndex];
-    const texture = material.pbrMetallicRoughness && material.pbrMetallicRoughness.baseColorTexture;
+    const texture = material && material.pbrMetallicRoughness && material.pbrMetallicRoughness.baseColorTexture;
     if (!texture) return "wood";
-    const uri = gltf.images[gltf.textures[texture.index].source].uri;
-    return names[uri] || "wood";
+    const image = gltf.images[gltf.textures[texture.index].source];
+    const packed = tavernKey(image && (image.name || image.uri));
+    if (packed) return packed;
+    const uri = image && image.uri;
+    if (!uri) return "wood";
+    const base = uri.split("/").pop();
+    return names[base] || names[uri] || "wood";
 }
 
 function turn(x, y, z, yaw) {
@@ -103,14 +190,17 @@ function piece(name) {
     const srcName = gltfSourceName(name);
     const mirror = isOverhangCorner2(name);
     const { gltf, bin } = loadGltf(srcName);
+    const srcDir = gltfSrcDir(srcName);
+    const palette = srcDir === srcVillageBuilder || srcDir === srcInteriors || srcDir === srcFood ? "villagePalette" : null;
     const groups = {};
     for (const mesh of gltf.meshes) {
         for (const prim of mesh.primitives) {
-            const key = baseColor(gltf, prim.material);
+            const key = baseColor(gltf, prim.material, palette);
             const pos = readAccessor(gltf, bin, prim.attributes.POSITION);
             const nrm = readAccessor(gltf, bin, prim.attributes.NORMAL);
             const uv = readAccessor(gltf, bin, prim.attributes.TEXCOORD_0);
             const idx = readAccessor(gltf, bin, prim.indices);
+            const colors = readVertexColors(gltf, bin, prim);
             if (!groups[key]) groups[key] = [];
             const list = groups[key];
             for (let i = 0; i < idx.length; i += 3) {
@@ -119,7 +209,12 @@ function piece(name) {
                     const v = tri[t];
                     const p = mirror ? mirrorXZ(pos[v]) : pos[v];
                     const n = mirror ? mirrorXZ(nrm[v]) : nrm[v];
-                    list.push([p, n, uv[v]]);
+                    let uu = uv[v][0];
+                    let vv = uv[v][1];
+                    // The sack picture sits just under the pale cloth this bag was pointed at.
+                    if (srcName === "Bag" && key === "propcloth") vv -= 0.25;
+                    const color = colors ? colors[v] : [1, 1, 1];
+                    list.push([p, n, [uu, vv], color]);
                 }
             }
         }
@@ -128,11 +223,13 @@ function piece(name) {
     return groups;
 }
 
-function addPiece(groups, name, x, y, z, yaw) {
+function addPiece(groups, tints, name, x, y, z, yaw) {
     const parts = piece(name);
     for (const key of Object.keys(parts)) {
         if (!groups[key]) groups[key] = [];
+        if (!tints[key]) tints[key] = [];
         const list = groups[key];
+        const rgb = tints[key];
         const src = parts[key];
         for (let i = 0; i < src.length; i++) {
             const p = turn(src[i][0][0], src[i][0][1], src[i][0][2], yaw);
@@ -140,6 +237,7 @@ function addPiece(groups, name, x, y, z, yaw) {
             const u = src[i][2][0];
             const v = 1 - src[i][2][1];
             const s = shade(n);
+            const color = src[i][3] || [1, 1, 1];
             list.push(
                 +(p[0] + x).toFixed(4),
                 +(p[1] + y).toFixed(4),
@@ -148,12 +246,14 @@ function addPiece(groups, name, x, y, z, yaw) {
                 +v.toFixed(4),
                 +s.toFixed(4)
             );
+            rgb.push(+color[0].toFixed(4), +color[1].toFixed(4), +color[2].toFixed(4));
         }
     }
 }
 
 const building = JSON.parse(fs.readFileSync(buildingPath, "utf8"));
 const groups = {};
+const tints = {};
 let minX = Infinity;
 let maxX = -Infinity;
 let minZ = Infinity;
@@ -164,7 +264,7 @@ for (const p of building.pieces) {
     minZ = Math.min(minZ, p.z);
     maxZ = Math.max(maxZ, p.z);
     if (p.id.startsWith("Door_")) continue;
-    addPiece(groups, p.id, p.x, p.y || 0, p.z, p.yaw || 0);
+    addPiece(groups, tints, p.id, p.x, p.y || 0, p.z, p.yaw || 0);
 }
 
 const cx = (minX + maxX) / 2;
@@ -176,7 +276,28 @@ for (const [mat, list] of Object.entries(groups)) {
     if (!list.length) continue;
     const buf = Buffer.from(new Float32Array(list).buffer);
     fs.writeFileSync(path.join(outDir, outName + "-" + mat + ".bin"), buf);
-    meta.materials.push({ mat, verts: list.length / 6 });
+    const rgb = tints[mat] || [];
+    let tinted = false;
+    for (let i = 0; i < rgb.length; i += 3) {
+        if (rgb[i] < 0.97 || rgb[i + 1] < 0.97 || rgb[i + 2] < 0.97) {
+            tinted = true;
+            break;
+        }
+    }
+    const entry = { mat, verts: list.length / 6 };
+    if (tinted) {
+        const bytes = Buffer.alloc((rgb.length / 3) * 4);
+        for (let i = 0, v = 0; i < rgb.length; i += 3, v += 4) {
+            bytes[v] = Math.max(0, Math.min(255, Math.round(rgb[i] * 255)));
+            bytes[v + 1] = Math.max(0, Math.min(255, Math.round(rgb[i + 1] * 255)));
+            bytes[v + 2] = Math.max(0, Math.min(255, Math.round(rgb[i + 2] * 255)));
+            bytes[v + 3] = 255;
+        }
+        fs.writeFileSync(path.join(outDir, outName + "-" + mat + ".rgb.bin"), bytes);
+        entry.tint = true;
+        console.log(outName + "-" + mat + ".rgb.bin", rgb.length / 3, "colours");
+    }
+    meta.materials.push(entry);
     console.log(outName + "-" + mat + ".bin", list.length / 6, "verts");
 }
 fs.writeFileSync(path.join(outDir, outName + ".meta.json"), JSON.stringify(meta, null, 2));
@@ -286,6 +407,61 @@ function stairBoxes(p) {
     return { solids: [], floors };
 }
 
+function retroSolid(id) {
+    return /^(wall|battlement|column|tower|structure|fence)(-|$)/.test(id) && !/door|gate/.test(id);
+}
+
+function villageSolid(id) {
+    return (id.startsWith("mdvl_village_wall_") || id.startsWith("mdvl_village_inwall_")) && id.indexOf("door") === -1;
+}
+
+function retroFloor(id) {
+    return /^(floor|wood-floor)(-|$)/.test(id);
+}
+
+function tavernBlock(id) {
+    return /^wall01/.test(id) || /^column0/.test(id) || /^crate/.test(id) || /^keg/.test(id);
+}
+
+function meshBounds(name) {
+    const { gltf } = loadGltf(name);
+    let best = null;
+    let bestSpan = -1;
+    for (const acc of gltf.accessors || []) {
+        if (!acc || acc.type !== "VEC3" || !acc.min || !acc.max) continue;
+        const span = (acc.max[0] - acc.min[0]) + (acc.max[1] - acc.min[1]) + (acc.max[2] - acc.min[2]);
+        if (span > bestSpan) {
+            bestSpan = span;
+            best = acc;
+        }
+    }
+    if (!best) return null;
+    return {
+        minX: best.min[0],
+        maxX: best.max[0],
+        minY: best.min[1],
+        maxY: best.max[1],
+        minZ: best.min[2],
+        maxZ: best.max[2]
+    };
+}
+
+function retroBounds(name) {
+    const { gltf } = loadGltf(name);
+    const acc = (gltf.accessors || []).find((item) =>
+        item && item.type === "VEC3" && item.min && item.max && item.min[1] >= -0.02 && item.max[1] < 3 && item.max[1] > item.min[1]
+    );
+    if (!acc) return null;
+    return {
+        minX: acc.min[0],
+        maxX: acc.max[0],
+        minY: acc.min[1],
+        maxY: acc.max[1],
+        minZ: acc.min[2],
+        maxZ: acc.max[2]
+    };
+}
+
 function physicsFromPieces(pieces) {
     let minX = Infinity;
     let maxX = -Infinity;
@@ -303,7 +479,34 @@ function physicsFromPieces(pieces) {
         minZ = Math.min(minZ, p.z);
         maxZ = Math.max(maxZ, p.z);
         maxY = Math.max(maxY, (p.y || 0) + STOREY);
-        if (id.startsWith("Wall_")) {
+        if (retroSolid(id) || villageSolid(id)) {
+            const box = retroBounds(id);
+            if (box) {
+                const rect = turnedRect(p.x, p.z, p.yaw || 0, box.minX, box.minZ, box.maxX - box.minX, box.maxZ - box.minZ);
+                solids.push({
+                    x: rect.x,
+                    z: rect.z,
+                    w: rect.w,
+                    d: rect.d,
+                    y0: (p.y || 0) + box.minY,
+                    y1: (p.y || 0) + box.maxY,
+                    stair: false
+                });
+            }
+        } else if (retroFloor(id)) {
+            const box = retroBounds(id);
+            if (box) {
+                const rect = turnedRect(p.x, p.z, p.yaw || 0, box.minX, box.minZ, box.maxX - box.minX, box.maxZ - box.minZ);
+                floors.push({
+                    x: rect.x,
+                    z: rect.z,
+                    w: rect.w,
+                    d: rect.d,
+                    y: (p.y || 0) + box.maxY,
+                    stair: false
+                });
+            }
+        } else if (id.startsWith("Wall_")) {
             if (id.includes("_Door_")) {
                 doorAnchors.push(p);
                 continue;
@@ -325,6 +528,33 @@ function physicsFromPieces(pieces) {
                 y: (p.y || 0) + 0.06,
                 stair: false
             });
+        } else if (tavernBlock(id)) {
+            const box = meshBounds(id);
+            if (box) {
+                const rect = turnedRect(p.x, p.z, p.yaw || 0, box.minX, box.minZ, box.maxX - box.minX, box.maxZ - box.minZ);
+                solids.push({
+                    x: rect.x,
+                    z: rect.z,
+                    w: rect.w,
+                    d: rect.d,
+                    y0: (p.y || 0) + box.minY,
+                    y1: (p.y || 0) + box.maxY,
+                    stair: false
+                });
+            }
+        } else if (id === "tavern-floor") {
+            const box = meshBounds(id);
+            if (box) {
+                const rect = turnedRect(p.x, p.z, p.yaw || 0, box.minX, box.minZ, box.maxX - box.minX, box.maxZ - box.minZ);
+                floors.push({
+                    x: rect.x,
+                    z: rect.z,
+                    w: rect.w,
+                    d: rect.d,
+                    y: (p.y || 0) + box.maxY,
+                    stair: false
+                });
+            }
         }
     }
 
@@ -350,14 +580,16 @@ function physicsFromPieces(pieces) {
             wide: 0.56
         };
     });
-    floors.push({
-        x: shell.minX + 0.45,
-        z: shell.minZ + 0.45,
-        w: Math.max(1.2, shell.w - 0.9),
-        d: Math.max(1.2, shell.d - 0.9),
-        y: 0.06,
-        stair: false
-    });
+    if (!String(outName).startsWith("tavern-")) {
+        floors.push({
+            x: shell.minX + 0.45,
+            z: shell.minZ + 0.45,
+            w: Math.max(1.2, shell.w - 0.9),
+            d: Math.max(1.2, shell.d - 0.9),
+            y: 0.06,
+            stair: false
+        });
+    }
     return { cx, cz, shell, solids, floors, doors };
 }
 

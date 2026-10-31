@@ -482,7 +482,7 @@
     },
     {
       "id": "Door_1_Flat",
-      "x": 13,
+      "x": 13.49,
       "z": 3,
       "y": 0,
       "yaw": 1.5707963267948966
@@ -496,97 +496,6 @@
     },
     {
       "id": "Prop_MetalFence_Ornament",
-      "x": 13,
-      "z": 9,
-      "y": 0,
-      "yaw": 0
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 11,
-      "z": 9,
-      "y": 0,
-      "yaw": 0
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 9,
-      "z": 9,
-      "y": 0,
-      "yaw": 0
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 13,
-      "z": -3,
-      "y": 0,
-      "yaw": 0
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 11,
-      "z": -3,
-      "y": 0,
-      "yaw": 0
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 9,
-      "z": -3,
-      "y": 0,
-      "yaw": 0
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 15,
-      "z": -3,
-      "y": 0,
-      "yaw": 0
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 15,
-      "z": 9,
-      "y": 0,
-      "yaw": 0
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 17,
-      "z": 7,
-      "y": 0,
-      "yaw": 1.5707963267948966
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 17,
-      "z": 5,
-      "y": 0,
-      "yaw": 1.5707963267948966
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 17,
-      "z": 1,
-      "y": 0,
-      "yaw": 1.5707963267948966
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 17,
-      "z": -1,
-      "y": 0,
-      "yaw": 1.5707963267948966
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 7,
-      "z": 7,
-      "y": 0,
-      "yaw": 1.5707963267948966
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
       "x": 7,
       "z": -1,
       "y": 0,
@@ -603,69 +512,6 @@
       "id": "Prop_MetalFence_Ornament",
       "x": 7,
       "z": 3,
-      "y": 0,
-      "yaw": 1.5707963267948966
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 7,
-      "z": 5,
-      "y": 0,
-      "yaw": 1.5707963267948966
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 7,
-      "z": 9,
-      "y": 0,
-      "yaw": 1.5707963267948966
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 7,
-      "z": 9,
-      "y": 0,
-      "yaw": 3.141592653589793
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 7,
-      "z": -3,
-      "y": 0,
-      "yaw": 3.141592653589793
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 7,
-      "z": -3,
-      "y": 0,
-      "yaw": 4.71238898038469
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 17,
-      "z": 9,
-      "y": 0,
-      "yaw": 4.71238898038469
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 17,
-      "z": 9,
-      "y": 0,
-      "yaw": 0
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 17,
-      "z": -3,
-      "y": 0,
-      "yaw": 0
-    },
-    {
-      "id": "Prop_MetalFence_Ornament",
-      "x": 17,
-      "z": -3,
       "y": 0,
       "yaw": 1.5707963267948966
     },
@@ -693,13 +539,6 @@
     {
       "id": "Floor_RedBrick",
       "x": 17,
-      "z": 9,
-      "y": 0,
-      "yaw": 0
-    },
-    {
-      "id": "Floor_RedBrick",
-      "x": 17,
       "z": 7,
       "y": 0,
       "yaw": 0
@@ -734,13 +573,6 @@
     },
     {
       "id": "Floor_RedBrick",
-      "x": 17,
-      "z": -3,
-      "y": 0,
-      "yaw": 0
-    },
-    {
-      "id": "Floor_RedBrick",
       "x": 15,
       "z": -1,
       "y": 0,
@@ -764,13 +596,6 @@
       "id": "Floor_RedBrick",
       "x": 15,
       "z": 5,
-      "y": 0,
-      "yaw": 0
-    },
-    {
-      "id": "Floor_RedBrick",
-      "x": 15,
-      "z": 7,
       "y": 0,
       "yaw": 0
     },
@@ -825,22 +650,8 @@
     },
     {
       "id": "Floor_RedBrick",
-      "x": 11,
-      "z": 9,
-      "y": 0,
-      "yaw": 0
-    },
-    {
-      "id": "Floor_RedBrick",
       "x": 13,
       "z": 9,
-      "y": 0,
-      "yaw": 0
-    },
-    {
-      "id": "Floor_RedBrick",
-      "x": 11,
-      "z": 7,
       "y": 0,
       "yaw": 0
     },
@@ -988,20 +799,6 @@
       "id": "Floor_UnevenBrick",
       "x": 17,
       "z": -1,
-      "y": 0,
-      "yaw": 0
-    },
-    {
-      "id": "Floor_UnevenBrick",
-      "x": 17,
-      "z": -3,
-      "y": 0,
-      "yaw": 0
-    },
-    {
-      "id": "Floor_UnevenBrick",
-      "x": 17,
-      "z": -3,
       "y": 0,
       "yaw": 0
     },
@@ -1151,6 +948,34 @@
       "z": 1,
       "y": 9,
       "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Window_Thin_Round1",
+      "x": 14,
+      "z": 3,
+      "y": 3,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Window_Thin_Round1",
+      "x": 14,
+      "z": 3,
+      "y": 6,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "DoorFrame_Flat_Brick",
+      "x": 14,
+      "z": 3,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Door_1_Flat",
+      "x": 14.51,
+      "z": 3,
+      "y": 0,
+      "yaw": 4.71238898038469
     }
   ]
 }

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Campaign</title>
-    <link rel="stylesheet" href="campaign.css">
+    <link rel="stylesheet" href="campaign.css?v=dash">
 </head>
 <body class="play">
     <header>
@@ -28,12 +28,12 @@
             <canvas id="land" width="960" height="720" aria-label="Faction A and Faction B"></canvas>
         </figure>
         <aside class="play-side">
-            <p class="lead-play">Faction A chooses, then Faction B, straight away. An attack can be answered at once. The battle is decided after 12 hours, when the next turn begins. The map is two regions, and each region is three districts.</p>
-            <h2>Regions</h2>
+            <section class="turn-card" id="turn-help"></section>
+            <h2>Lands</h2>
             <div id="regions"></div>
-            <h2>Settlement</h2>
-            <div id="settlement"><p class="quiet">Click a town or a capital.</p></div>
-            <h2>Latest</h2>
+            <h2>Looking at</h2>
+            <div id="settlement"><p class="quiet">Click a town, a capital, or an army.</p></div>
+            <h2>What just happened</h2>
             <ul id="log"></ul>
         </aside>
     </main>
@@ -41,6 +41,6 @@
     <script src="world-edit.js"></script>
     <script src="world.js"></script>
     <script src="campaign-districts.js?v=1"></script>
-    <script src="campaign-play.js?v=district"></script>
+    <script src="campaign-play.js?v=dash"></script>
 </body>
 </html>

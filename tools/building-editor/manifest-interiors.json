@@ -1,0 +1,51 @@
+{
+  "kind": "interiors",
+  "grid": 0.5,
+  "categoryDirs": {
+    "Interior furniture": "/tools/building-editor/Interiors_Furniture/glTF/",
+    "Interior storage": "/tools/building-editor/Interiors_Furniture/glTF/",
+    "Interior worktools": "/tools/building-editor/Interiors_Furniture/glTF/",
+    "Interior kitchen": "/tools/building-editor/Interiors_Furniture/glTF/",
+    "Interior light": "/tools/building-editor/Interiors_Furniture/glTF/",
+    "Interior decor": "/tools/building-editor/Interiors_Furniture/glTF/"
+  },
+  "categories": {
+    "Interior furniture": [
+      "mdvl_interiors_bed_01",
+      "mdvl_interiors_bench_01",
+      "mdvl_interiors_chair_01",
+      "mdvl_interiors_pew_01",
+      "mdvl_interiors_table_01",
+      "mdvl_interiors_cushion_01",
+      "mdvl_interiors_curtain_01",
+      "mdvl_interiors_rug_01"
+    ],
+    "Interior storage": [
+      "mdvl_interiors_chest_01",
+      "mdvl_interiors_chest_lid_01",
+      "mdvl_interiors_shelf_01"
+    ],
+    "Interior worktools": [
+      "mdvl_interiors_anvil_01",
+      "mdvl_interiors_workbench_01",
+      "mdvl_interiors_altar_01"
+    ],
+    "Interior kitchen": [
+      "mdvl_interiors_cauldron_01",
+      "mdvl_interiors_pot_01",
+      "mdvl_interiors_potcrane_01",
+      "mdvl_interiors_woodpile_01"
+    ],
+    "Interior light": [
+      "mdvl_interiors_candle_01",
+      "mdvl_interiors_flame_01",
+      "mdvl_interiors_flame_02",
+      "mdvl_interiors_lantern_01",
+      "mdvl_interiors_walltorch_01"
+    ],
+    "Interior decor": [
+      "mdvl_interiors_painting_01",
+      "mdvl_interiors_pottedplant_01"
+    ]
+  }
+}

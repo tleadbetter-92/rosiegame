@@ -516,6 +516,33 @@ body.play h1 { font-size: 1.35rem; }
     color: #e2b15a;
 }
 
+.turn-card {
+    margin: 0 0 4px;
+    padding: 12px;
+    border: 1px solid #6a5a3a;
+    border-radius: 8px;
+    background: #322c24;
+    color: #f4efe4;
+    font-size: 0.92rem;
+    line-height: 1.45;
+}
+
+.turn-card strong { color: #e2b15a; }
+
+.card-label {
+    margin: 10px 0 2px;
+    color: #e2b15a;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+#settlement .choice:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
 .region-card {
     margin: 0 0 10px;
     padding: 12px;

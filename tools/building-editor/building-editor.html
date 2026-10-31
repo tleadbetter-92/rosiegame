@@ -27,7 +27,7 @@
         }
         .mode.on, .editMode.on { background: #6b4423; border-color: #e8c896; }
         button.editMode {
-            display: inline-block; width: calc(50% - 4px); margin: 2px 0;
+            display: inline-block; width: calc(33.33% - 4px); margin: 2px 0;
             vertical-align: top; font-size: 12px; padding: 6px 4px;
         }
         button.primary { background: #3d5a3a; border-color: #8fbc8f; text-align: center; }
@@ -67,7 +67,7 @@
                 <li><b>Floor</b> — <code>Floor_Mosaic_PolyHaven</code> = real CC0 photo mosaic (Poly Haven). Procedural: <code>Floor_Mosaic_Terra</code>, <code>BlackWhite</code>, <code>Medallion</code>, <code>Meander</code>. Same 2&nbsp;m tile; <b>R</b> to rotate.</li>
                 <li><b>OverhangCorner / OverhangCorner2</b> — same L-floor; <b>2</b> is the <b>opposite</b> corner (mirrored lip). Use <b>1</b> on one outer corner of a deck, <b>2</b> on the diagonally opposite outer corner; use <b>R</b> on each cell so lips face open air.</li>
                 <li><b>Prop</b> — crates, wagon, chimneys, vines, fences, border trim; search <b>prop</b> or <b>floor</b> above.</li>
-                <li><b>Furnish (1&nbsp;m)</b> mode — big furniture on 1&nbsp;m grid; small items (mugs, books, candles) on <b>0.5&nbsp;m</b>. <b>Arrow keys</b> nudge the last placed furnish piece (0.25&nbsp;m; Shift 0.5; Ctrl 0.1).</li>
+                <li><b>Building / Interior / Props</b> — walls and houses, then furniture and rooms, then food, market, and yard pieces. Building pieces step by half a metre, so they still land on a full metre. <b>Arrow keys</b> nudge the last interior or prop (0.25&nbsp;m; Shift 0.5; Ctrl 0.1).</li>
                 <li><b>Lantern_Wall</b> / <b>Torch_Metal</b> — wall edge + 1&nbsp;m along the wall; <b>R</b> to align with the wall run.</li>
                 <li>Medieval <b>street lamps</b> are not in the village kit — use the town editor lamp or CC0 under <code>models/town-props/</code>.</li>
             </ul>
@@ -93,10 +93,11 @@
             </ol>
         </details>
         <p id="floorLevelLabel" class="hint" style="margin-top:4px;color:#e8c896;">Floor level: 1 (y = 0)</p>
-        <label>Build mode</label>
-        <button type="button" class="editMode on" data-edit="structure">Structure (2&nbsp;m)</button>
-        <button type="button" class="editMode" data-edit="furnish">Furnish (1&nbsp;m)</button>
-        <p id="editModeHint" class="hint" style="font-size:11px;margin:4px 0 8px;">Walls, floors, roofs, wagon-scale <code>Prop_*</code>.</p>
+        <label>List</label>
+        <button type="button" class="editMode on" data-edit="building">Building</button>
+        <button type="button" class="editMode" data-edit="interior">Interior</button>
+        <button type="button" class="editMode" data-edit="props">Props</button>
+        <p id="editModeHint" class="hint" style="font-size:11px;margin:4px 0 8px;">Walls, floors, roofs, and whole houses.</p>
         <p class="hint" style="font-size:10px;margin:0 0 8px;color:#b8a890;">After a code update: reload this tab (<b>Ctrl+F5</b> on Windows = full refresh so the editor picks up changes).</p>
         <label for="buildingName">Building name</label>
         <input type="text" id="buildingName" value="my-building" maxlength="64">
@@ -181,20 +182,43 @@
         let floorLevel = 0;
         let liftY = 0;
         let selectedPiece = "";
-        /** structure = 2&nbsp;m megakit; furnish = Furnishing_* only, 1&nbsp;m snap. */
-        let editMode = "structure";
+        let editMode = "building";
         let hover = null;
         let roomAim = null;
         const placed = [];
         const loader = new GLTFLoader();
         const templateCache = new Map();
+        const textureByUrl = new Map();
+
+        function shareColorMap(material) {
+            if (!material) return;
+            for (const key of ["normalMap", "roughnessMap", "metalnessMap", "aoMap", "emissiveMap"]) {
+                const extra = material[key];
+                if (!extra) continue;
+                material[key] = null;
+                extra.dispose();
+            }
+            material.roughness = 1;
+            material.metalness = 0;
+            const tex = material.map;
+            if (!tex || !tex.image) return;
+            const url = tex.image.currentSrc || tex.image.src || "";
+            if (!url) return;
+            const shared = textureByUrl.get(url);
+            if (shared && shared !== tex) {
+                material.map = shared;
+                tex.dispose();
+            } else {
+                textureByUrl.set(url, tex);
+            }
+        }
 
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87a8c4);
         scene.fog = new THREE.Fog(0x87a8c4, 80, 220);
 
         const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-        renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+        renderer.setPixelRatio(1);
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
@@ -259,6 +283,11 @@
         /** Grid line between tiles (… −4, −2, 0, 2, 4 …) — megakit wall roots sit on outer edges. */
         function snapGridLine(v) {
             return Math.round(v / CELL) * CELL;
+        }
+
+        /** Half a metre. Full metres (0, 1, 2…) are on this grid too. */
+        function snapHalf(v) {
+            return Math.round(v * 2) / 2;
         }
 
         function furnishStep(pieceId) {
@@ -373,24 +402,11 @@
                     yaw
                 };
             }
-            if (isCornerPiece(p.id) || isOverhangCornerPiece(p.id)) {
-                return {
-                    id: p.id,
-                    x: canonicalGridLine(p.x),
-                    z: canonicalGridLine(p.z),
-                    y: p.y || 0,
-                    yaw
-                };
-            }
-            if (isWallMountedPiece(p.id)) {
-                const xz = canonicalWallEdgeXZ(p, yaw, true);
-                return { id: p.id, x: xz.x, z: xz.z, y: p.y || 0, yaw };
-            }
-            if (isWallAnchoredPiece(p.id) || isOverhangWallPiece(p.id)) {
-                const xz = canonicalWallEdgeXZ(p, yaw, false);
-                return { id: p.id, x: xz.x, z: xz.z, y: p.y || 0, yaw };
-            }
             if (isFurnishingPiece(p.id)) {
+                if (isWallMountedPiece(p.id)) {
+                    const xz = canonicalWallEdgeXZ(p, yaw, true);
+                    return { id: p.id, x: xz.x, z: xz.z, y: p.y || 0, yaw };
+                }
                 return {
                     id: p.id,
                     x: canonicalFurnish(p.x, p.id),
@@ -401,32 +417,23 @@
             }
             return {
                 id: p.id,
-                x: canonicalCellCenter(p.x),
-                z: canonicalCellCenter(p.z),
+                x: snapHalf(p.x),
+                z: snapHalf(p.z),
                 y: p.y || 0,
                 yaw
             };
         }
 
-        /** Floors: tile centre. Walls: centre along run, grid line on thickness. Corners: grid-line intersection. */
+        /** Building pieces step by half a metre, so 1 m and 2 m marks are still valid. Kit furniture keeps its own step. */
         function snapForPiece(pieceId, x, z, pieceYaw) {
-            if (isCornerPiece(pieceId) || isOverhangCornerPiece(pieceId)) {
-                return { x: snapGridLine(x), z: snapGridLine(z) };
-            }
-            if (isOverhangWallPiece(pieceId)) {
-                return snapWallEdgeXZ(pieceId, x, z, pieceYaw);
-            }
-            if (isWallMountedPiece(pieceId)) {
-                if (wallRunsAlongX(pieceYaw)) return { x: snapFurnish(x, pieceId), z: snapGridLine(z) };
-                return { x: snapGridLine(x), z: snapFurnish(z, pieceId) };
-            }
-            if (isWallAnchoredPiece(pieceId)) {
-                return snapWallEdgeXZ(pieceId, x, z, pieceYaw);
-            }
             if (isFurnishingPiece(pieceId)) {
+                if (isWallMountedPiece(pieceId)) {
+                    if (wallRunsAlongX(pieceYaw)) return { x: snapFurnish(x, pieceId), z: snapGridLine(z) };
+                    return { x: snapGridLine(x), z: snapFurnish(z, pieceId) };
+                }
                 return { x: snapFurnish(x, pieceId), z: snapFurnish(z, pieceId) };
             }
-            return { x: snapCell(x), z: snapCell(z) };
+            return { x: snapHalf(x), z: snapHalf(z) };
         }
 
         /** Optional overrides in piece-pivots.json — prefer empty; kit roots are authored for tile centres. */
@@ -593,20 +600,24 @@
             furnishGrid.position.y = y + 0.035;
             furnishFineGrid.position.y = y + 0.036;
             const showStorey = y > 0.01;
-            const fine = editMode === "furnish" || isFurnishingPiece(selectedPiece);
-            const finer = fine && furnishStep(selectedPiece) === 0.5;
-            floorGrid.visible = showStorey && !fine;
-            furnishGrid.visible = fine && !finer;
-            furnishFineGrid.visible = finer;
+            const halfStep = editMode === "building" || editMode === "interior" || editMode === "props"
+                || isInteriorPiece(selectedPiece) || isFoodPiece(selectedPiece)
+                || (isFurnishingPiece(selectedPiece) && furnishStep(selectedPiece) === 0.5);
+            const oneMetre = !halfStep && isFurnishingPiece(selectedPiece);
+            floorGrid.visible = showStorey && !halfStep && !oneMetre;
+            furnishGrid.visible = oneMetre;
+            furnishFineGrid.visible = halfStep;
         }
 
         function updateEditModeHint() {
             const el = document.getElementById("editModeHint");
             if (!el) return;
-            if (editMode === "furnish") {
-                el.textContent = "1 m grid (0.5 m for small props). Arrow keys nudge last piece. Same building save as structure.";
+            if (editMode === "interior") {
+                el.textContent = "Furniture, storage, worktools, kitchen, and rooms. Half-metre steps. Arrow keys nudge the last piece.";
+            } else if (editMode === "props") {
+                el.textContent = "Food, market, yard, and loose props. Half-metre steps. Arrow keys nudge the last piece.";
             } else {
-                el.textContent = "Walls, floors, roofs, wagon-scale Prop_*.";
+                el.textContent = "Walls, floors, roofs, and whole houses. Half-metre steps, so a piece can sit on a full metre or halfway between.";
             }
         }
 
@@ -674,22 +685,10 @@
             controls.update();
         }
 
-        function disposeObject3D(obj) {
-            obj.traverse((o) => {
-                if (o.geometry) o.geometry.dispose();
-                if (o.material) {
-                    const mats = Array.isArray(o.material) ? o.material : [o.material];
-                    for (const m of mats) m.dispose();
-                }
-            });
-        }
-
         function clearRootGroup() {
-            while (rootGroup.children.length) {
-                const child = rootGroup.children[0];
-                rootGroup.remove(child);
-                disposeObject3D(child);
-            }
+            // Instances share geometry with the cached piece. Disposing them
+            // blanks every later copy of that wall, which is what whitened the big buildings.
+            while (rootGroup.children.length) rootGroup.remove(rootGroup.children[0]);
         }
 
         let rebuildGen = 0;
@@ -703,7 +702,7 @@
             return isOverhangCorner2(pieceId) ? pieceId.replace(/2$/, "") : pieceId;
         }
 
-        const EDITOR_BUILD = 15;
+        const EDITOR_BUILD = 16;
 
         function pieceDirFor(name) {
             if (!manifest) return "/models/village-megakit/glTF/";
@@ -718,8 +717,29 @@
             return manifest.piecesDir || "/models/village-megakit/glTF/";
         }
 
+        function isRetroPiece(name) {
+            return pieceDirFor(name).indexOf("/retro-medieval/") !== -1;
+        }
+
+        function isVillageBuilderPiece(name) {
+            return pieceDirFor(name).indexOf("/Village_Builder/") !== -1;
+        }
+
+        function isInteriorPiece(name) {
+            return pieceDirFor(name).indexOf("/Interiors_Furniture/") !== -1;
+        }
+
+        function isFoodPiece(name) {
+            return pieceDirFor(name).indexOf("/Food_Market/") !== -1;
+        }
+
+        function isTavernPiece(name) {
+            return pieceDirFor(name).indexOf("/Tavern/") !== -1;
+        }
+
         function pieceUrl(name) {
-            return pieceDirFor(name) + encodeURIComponent(name) + ".gltf?v=" + EDITOR_BUILD;
+            const ext = isRetroPiece(name) || isVillageBuilderPiece(name) || isInteriorPiece(name) || isFoodPiece(name) || isTavernPiece(name) ? ".glb" : ".gltf";
+            return pieceDirFor(name) + encodeURIComponent(gltfSourceName(name)) + ext + "?v=" + EDITOR_BUILD;
         }
 
         function mergeManifestExtra(extra) {
@@ -795,12 +815,19 @@
                                 const wrap = new THREE.Group();
                                 const mesh = gltf.scene;
                                 const mirrorGeo = isOverhangCorner2(name);
+                                const chunky = isRetroPiece(srcName) || isVillageBuilderPiece(srcName) || isInteriorPiece(srcName) || isFoodPiece(srcName);
                                 mesh.traverse((o) => {
                                     if (!o.isMesh) return;
                                     o.castShadow = true;
                                     o.receiveShadow = true;
                                     o.material = o.material.clone();
                                     o.material.side = THREE.DoubleSide;
+                                    shareColorMap(o.material);
+                                    if (chunky && o.material.map) {
+                                        o.material.map.magFilter = THREE.NearestFilter;
+                                        o.material.map.minFilter = THREE.NearestFilter;
+                                        o.material.map.needsUpdate = true;
+                                    }
                                     if (mirrorGeo) {
                                         const g = o.geometry.clone();
                                         g.scale(-1, 1, -1);
@@ -817,6 +844,9 @@
                     })
             );
             templateCache.set(name, promise);
+            promise.catch(() => {
+                if (templateCache.get(name) === promise) templateCache.delete(name);
+            });
             return promise;
         }
 
@@ -962,7 +992,7 @@
         }
 
         function pieceLabel(name) {
-            const label = name.replace(/_/g, " ");
+            const label = name.replace(/[_-]/g, " ");
             if (/OverhangCorner2$/.test(name)) return label + " (mirrored — opposite corner)";
             if (/OverhangCorner$/.test(name)) return label + " (corner A)";
             return label;
@@ -987,9 +1017,22 @@
             updateGhost();
         }
 
+        function categoryLabel(cat) {
+            let name = cat;
+            if (cat.startsWith("Furnishing_")) name = "Kit " + cat.slice("Furnishing_".length).replace(/_/g, " ");
+            else if (cat.startsWith("Interior ")) name = cat.slice("Interior ".length);
+            else if (cat.startsWith("Props ")) name = cat.slice("Props ".length);
+            return name.charAt(0).toUpperCase() + name.slice(1);
+        }
+
+        function groupForCategory(cat) {
+            if (cat.startsWith("Furnishing_") || cat.startsWith("Interior ")) return "interior";
+            if (cat.startsWith("Props ") || cat === "Prop" || cat === "Retro prop") return "props";
+            return "building";
+        }
+
         function categoryAllowed(cat) {
-            if (editMode === "furnish") return cat.startsWith("Furnishing_");
-            return !cat.startsWith("Furnishing_");
+            return groupForCategory(cat) === editMode;
         }
 
         function fillCategories() {
@@ -1003,7 +1046,7 @@
                 if (!show) continue;
                 const opt = document.createElement("option");
                 opt.value = cat;
-                opt.textContent = cat + " (" + names.length + ")";
+                opt.textContent = categoryLabel(cat) + " (" + names.length + ")";
                 categoryEl.appendChild(opt);
             }
             fillPieceList();
@@ -1146,7 +1189,7 @@
                 e.preventDefault();
                 undoLast();
             }
-            if (editMode === "furnish" && (e.code === "ArrowUp" || e.code === "ArrowDown" || e.code === "ArrowLeft" || e.code === "ArrowRight")) {
+            if ((editMode === "interior" || editMode === "props") && (e.code === "ArrowUp" || e.code === "ArrowDown" || e.code === "ArrowLeft" || e.code === "ArrowRight")) {
                 e.preventDefault();
                 const nudge = e.ctrlKey ? 0.1 : e.shiftKey ? 0.5 : 0.25;
                 let dx = 0;
@@ -1248,6 +1291,16 @@
         }
         window.addEventListener("resize", resize);
 
+        canvas.addEventListener("webglcontextlost", (event) => {
+            event.preventDefault();
+            setStatus("The view ran out of memory. Reloading this building…");
+        });
+        canvas.addEventListener("webglcontextrestored", () => {
+            templateCache.clear();
+            textureByUrl.clear();
+            rebuildScene("Reloaded after the view recovered.");
+        });
+
         function animate() {
             requestAnimationFrame(animate);
             try {
@@ -1312,13 +1365,23 @@
 
         async function boot() {
             try {
-                const [manifestRes, fantasyRes, pivotRes] = await Promise.all([
+                const [manifestRes, fantasyRes, retroRes, villageRes, interiorRes, foodRes, tavernRes, pivotRes] = await Promise.all([
                     fetch("./manifest.json"),
                     fetch("./manifest-fantasy-props.json"),
+                    fetch("./manifest-retro.json", { cache: "no-store" }),
+                    fetch("./manifest-village-builder.json", { cache: "no-store" }),
+                    fetch("./manifest-interiors.json", { cache: "no-store" }),
+                    fetch("./manifest-food.json", { cache: "no-store" }),
+                    fetch("./manifest-tavern.json", { cache: "no-store" }),
                     fetch("./piece-pivots.json")
                 ]);
                 manifest = await manifestRes.json();
                 if (fantasyRes.ok) mergeManifestExtra(await fantasyRes.json());
+                if (retroRes.ok) mergeManifestExtra(await retroRes.json());
+                if (villageRes.ok) mergeManifestExtra(await villageRes.json());
+                if (interiorRes.ok) mergeManifestExtra(await interiorRes.json());
+                if (foodRes.ok) mergeManifestExtra(await foodRes.json());
+                if (tavernRes.ok) mergeManifestExtra(await tavernRes.json());
                 if (pivotRes.ok) piecePivots = await pivotRes.json();
             } catch (err) {
                 setStatus("Open from a local server (repo root). Could not load manifest.json.");

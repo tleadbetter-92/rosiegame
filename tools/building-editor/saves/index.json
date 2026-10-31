@@ -28,7 +28,37 @@
       "maxY": 6.1,
       "spanX": 24,
       "spanZ": 18,
-      "pieces": 263
+      "pieces": 276
+    },
+    {
+      "id": "farm",
+      "name": "farm",
+      "file": "farm.json",
+      "cx": 9.25,
+      "cz": -0.75,
+      "minX": 0.5,
+      "maxX": 18,
+      "minZ": -18.5,
+      "maxZ": 17,
+      "maxY": 4,
+      "spanX": 19.5,
+      "spanZ": 37.5,
+      "pieces": 141
+    },
+    {
+      "id": "farm-starter",
+      "name": "farm starter",
+      "file": "farm-starter.json",
+      "cx": 0,
+      "cz": 11.5,
+      "minX": -8,
+      "maxX": 8,
+      "minZ": -1,
+      "maxZ": 24,
+      "maxY": 0,
+      "spanX": 18,
+      "spanZ": 27,
+      "pieces": 29
     },
     {
       "id": "farmhouse",
@@ -58,7 +88,7 @@
       "maxY": 6.1,
       "spanX": 24,
       "spanZ": 18,
-      "pieces": 140
+      "pieces": 152
     },
     {
       "id": "house-type-3",
@@ -74,6 +104,21 @@
       "spanX": 14,
       "spanZ": 14,
       "pieces": 118
+    },
+    {
+      "id": "house-type-5",
+      "name": "House Type 5",
+      "file": "house-type-5.json",
+      "cx": 1,
+      "cz": 22,
+      "minX": -5,
+      "maxX": 7,
+      "minZ": 16,
+      "maxZ": 28,
+      "maxY": 3,
+      "spanX": 14,
+      "spanZ": 14,
+      "pieces": 169
     },
     {
       "id": "large-fenced-shop",
@@ -136,6 +181,21 @@
       "pieces": 93
     },
     {
+      "id": "newbuildhouse",
+      "name": "NewBuildHouse",
+      "file": "newbuildhouse.json",
+      "cx": 1,
+      "cz": 4.25,
+      "minX": -4,
+      "maxX": 6,
+      "minZ": 0,
+      "maxZ": 8.5,
+      "maxY": 6,
+      "spanX": 12,
+      "spanZ": 10.5,
+      "pieces": 149
+    },
+    {
       "id": "flat roor garden house",
       "name": "random flat roof house",
       "file": "flat roor garden house.json",
@@ -149,6 +209,21 @@
       "spanX": 24,
       "spanZ": 18,
       "pieces": 140
+    },
+    {
+      "id": "random-flat-roof-house",
+      "name": "random flat roof house",
+      "file": "random-flat-roof-house.json",
+      "cx": 4,
+      "cz": 1,
+      "minX": -7,
+      "maxX": 15,
+      "minZ": -7,
+      "maxZ": 9,
+      "maxY": 6.1,
+      "spanX": 24,
+      "spanZ": 18,
+      "pieces": 150
     },
     {
       "id": "roman-coutyard-houed",
@@ -181,34 +256,49 @@
       "pieces": 88
     },
     {
+      "id": "salt-works-ex",
+      "name": "Salt works ex",
+      "file": "salt-works-ex.json",
+      "cx": 12.5,
+      "cz": 24.25,
+      "minX": 1.5,
+      "maxX": 23.5,
+      "minZ": 10,
+      "maxZ": 38.5,
+      "maxY": 3,
+      "spanX": 24,
+      "spanZ": 30.5,
+      "pieces": 127
+    },
+    {
       "id": "simple-house",
       "name": "simple house",
       "file": "simple-house.json",
-      "cx": 25,
+      "cx": 25.255000000000003,
       "cz": 19,
       "minX": 22,
-      "maxX": 28,
+      "maxX": 28.51,
       "minZ": 16,
       "maxZ": 22,
       "maxY": 6,
-      "spanX": 8,
+      "spanX": 8.510000000000002,
       "spanZ": 8,
-      "pieces": 83
+      "pieces": 95
     },
     {
       "id": "small-house1",
       "name": "small house1",
       "file": "small-house1.json",
       "cx": 29,
-      "cz": 26,
+      "cz": 26.5,
       "minX": 26,
       "maxX": 32,
-      "minZ": 21,
+      "minZ": 22,
       "maxZ": 31,
       "maxY": 6,
       "spanX": 8,
-      "spanZ": 12,
-      "pieces": 106
+      "spanZ": 11,
+      "pieces": 118
     },
     {
       "id": "storehouse",
@@ -238,7 +328,22 @@
       "maxY": 9.149999999999999,
       "spanX": 16,
       "spanZ": 16,
-      "pieces": 164
+      "pieces": 139
+    },
+    {
+      "id": "tester",
+      "name": "tester",
+      "file": "tester.json",
+      "cx": 1,
+      "cz": 23,
+      "minX": -6,
+      "maxX": 8,
+      "minZ": 16,
+      "maxZ": 30,
+      "maxY": 0,
+      "spanX": 16,
+      "spanZ": 16,
+      "pieces": 107
     }
   ]
 }

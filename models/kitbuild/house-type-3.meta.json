@@ -18,11 +18,13 @@
     },
     {
       "mat": "furniture",
-      "verts": 19950
+      "verts": 19950,
+      "tint": true
     },
     {
       "mat": "propmetal",
-      "verts": 13872
+      "verts": 13872,
+      "tint": true
     },
     {
       "mat": "propcloth",
@@ -30,7 +32,8 @@
     },
     {
       "mat": "proppack",
-      "verts": 19650
+      "verts": 19650,
+      "tint": true
     },
     {
       "mat": "brick",

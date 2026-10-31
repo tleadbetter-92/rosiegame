@@ -1,0 +1,37 @@
+{
+  "kind": "kitbuild",
+  "name": "NewBuildHouse",
+  "cx": 1,
+  "cz": 4.25,
+  "materials": [
+    {
+      "mat": "wood",
+      "verts": 37812
+    },
+    {
+      "mat": "plaster",
+      "verts": 1416
+    },
+    {
+      "mat": "brick",
+      "verts": 1806
+    },
+    {
+      "mat": "villagePalette",
+      "verts": 26316
+    },
+    {
+      "mat": "propcloth",
+      "verts": 5988
+    },
+    {
+      "mat": "furniture",
+      "verts": 28728,
+      "tint": true
+    },
+    {
+      "mat": "propmetal",
+      "verts": 16392
+    }
+  ]
+}

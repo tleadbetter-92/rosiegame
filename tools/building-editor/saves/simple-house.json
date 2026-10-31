@@ -584,6 +584,90 @@
       "z": 17,
       "y": 6,
       "yaw": 0
+    },
+    {
+      "id": "Door_1_Round",
+      "x": 27.49,
+      "z": 19,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Corner_ExteriorWide_Wood",
+      "x": 28,
+      "z": 22,
+      "y": 3,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Corner_ExteriorWide_Wood",
+      "x": 28,
+      "z": 16,
+      "y": 3,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Corner_ExteriorWide_Wood",
+      "x": 22,
+      "z": 22,
+      "y": 3,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Corner_ExteriorWide_Wood",
+      "x": 22,
+      "z": 16,
+      "y": 3,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Corner_ExteriorWide_Wood",
+      "x": 22,
+      "z": 16,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Corner_ExteriorWide_Wood",
+      "x": 22,
+      "z": 22,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Corner_ExteriorWide_Wood",
+      "x": 28,
+      "z": 16,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Corner_ExteriorWide_Wood",
+      "x": 28,
+      "z": 22,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Door_1_Round",
+      "x": 28.51,
+      "z": 19,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "DoorFrame_Round_Brick",
+      "x": 28,
+      "z": 19,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Door_1_Round",
+      "x": 28.51,
+      "z": 19,
+      "y": 0,
+      "yaw": 4.71238898038469
     }
   ]
 }

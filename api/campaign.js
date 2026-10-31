@@ -3074,6 +3074,7 @@ function present(state, now, turn, paused, opts) {
                 stores: stores || null,
                 army: {
                     soldiers: army && Number.isFinite(army.soldiers) ? army.soldiers : 0,
+                    veterans: army && Number.isFinite(army.veterans) ? army.veterans : 0,
                     x: station ? station.x : (region.capital ? region.capital.x : 0),
                     z: station ? station.z : (region.capital ? region.capital.z : 0),
                     garrison: garrisonPlace ? { id: garrisonPlace.id, name: garrisonPlace.name, x: garrisonPlace.x, z: garrisonPlace.z } : null,
@@ -3585,14 +3586,41 @@ function ensureCampaignArmies(state) {
     for (const region of state.regions || World.regions || []) {
         const key = String(region.faction);
         if (!state.campaignArmies[key] || !Number.isFinite(state.campaignArmies[key].soldiers)) {
-            state.campaignArmies[key] = { soldiers: 0, garrison: region.id };
+            state.campaignArmies[key] = { soldiers: 0, veterans: 0, garrison: region.id };
             dirty = true;
-        } else if (!state.campaignArmies[key].garrison && region.id) {
-            state.campaignArmies[key].garrison = region.id;
-            dirty = true;
+        } else {
+            if (!Number.isFinite(state.campaignArmies[key].veterans)) {
+                state.campaignArmies[key].veterans = 0;
+                dirty = true;
+            }
+            if (!state.campaignArmies[key].garrison && region.id) {
+                state.campaignArmies[key].garrison = region.id;
+                dirty = true;
+            }
         }
     }
     return dirty;
+}
+
+function armyHeads(army) {
+    if (!army) return 0;
+    return (army.soldiers || 0) + (army.veterans || 0);
+}
+
+function armyStrength(army) {
+    if (!army) return 0;
+    return (army.soldiers || 0) + (army.veterans || 0) * 3;
+}
+
+function spendArmyLoss(army, points) {
+    if (!army) return;
+    let left = Math.max(0, Math.round(points));
+    const fromSoldiers = Math.min(army.soldiers || 0, left);
+    army.soldiers = (army.soldiers || 0) - fromSoldiers;
+    left -= fromSoldiers;
+    const fromVeterans = Math.min(army.veterans || 0, Math.ceil(left / 3));
+    army.veterans = (army.veterans || 0) - fromVeterans;
+    if ((army.soldiers || 0) + (army.veterans || 0) < 1) army.soldiers = 1;
 }
 
 function trainCampaign(state, faction) {
@@ -3689,7 +3717,7 @@ function armyStation(state, faction) {
 function armyAt(state, faction, placeId) {
     const army = armyRecord(state, faction);
     const station = armyStation(state, faction);
-    return !!(army && station && station.id === placeId && army.soldiers > 0);
+    return !!(army && station && station.id === placeId && armyHeads(army) > 0);
 }
 
 function leaveGarrison(state, faction) {
@@ -3738,6 +3766,7 @@ function destroyArmy(state, faction) {
         setHolder(state, place.id, place.faction);
     }
     army.soldiers = 0;
+    army.veterans = 0;
     army.attack = null;
     army.verdict = null;
     const home = homeGarrison(state, faction);
@@ -3747,8 +3776,8 @@ function destroyArmy(state, faction) {
 function resolveBattle(state, attacker, defender, place, resisted) {
     const atk = armyRecord(state, attacker);
     const def = armyRecord(state, defender);
-    const atkN = atk ? atk.soldiers : 0;
-    const defN = resisted && def ? def.soldiers : 0;
+    const atkN = armyStrength(atk);
+    const defN = resisted ? armyStrength(def) : 0;
     const fought = defN > 0;
     const chance = strengthChance(atkN, defN);
     const atkWins = !fought || Math.random() < chance;
@@ -3853,8 +3882,8 @@ function resolvePendingBattles(state) {
         const defender = holderOf(state, place.id, place.faction);
         const def = armyRecord(state, defender);
         const resisted = !!(def && def.soldiers > 0 && (armyAt(state, defender, place.id) || (def.relief && def.relief.id === place.id)));
-        const atkN = army.soldiers;
-        const defN = resisted ? def.soldiers : 0;
+        const atkN = armyStrength(army);
+        const defN = resisted ? armyStrength(def) : 0;
         const chance = strengthChance(atkN, defN);
         fights.push({
             attacker: region.faction,
@@ -3949,7 +3978,7 @@ async function orderCampaignAttack(targetId) {
     const name = campaignFactionName(state, faction);
     if (!army) return { error: "That faction has no army." };
     if (army.verdict) return { error: "Choose whether to occupy or loot." };
-    if (!army.soldiers) return { error: "The army has no soldiers. The capital trains 10 a turn." };
+    if (!armyHeads(army)) return { error: "The army has no soldiers. The capital trains 10 a turn." };
     if (!place) return { error: "Choose an enemy town or capital." };
     if (holderOf(state, place.id, place.faction) === faction) return { error: "That settlement is already yours." };
     if (army.attack && army.attack.id === place.id) return freshPresent(state, now);
@@ -3975,7 +4004,7 @@ async function orderCampaignDefend() {
     if (!army) return { error: "That faction has no army." };
     if (army.verdict) return { error: "Choose whether to occupy or loot." };
     if (!threat) return { error: "Nothing to defend." };
-    if (!army.soldiers) return { error: "The army has no soldiers." };
+    if (!armyHeads(army)) return { error: "The army has no soldiers." };
     if (army.relief && army.relief.id === threat.id) return freshPresent(state, now);
     if (armyAt(state, faction, threat.id) && !(army.attack && army.attack.id === threat.id)) return { error: "The army is already there." };
     const place = campaignPlace(state, threat.id);
@@ -4033,7 +4062,7 @@ async function orderCampaignResolve(kind) {
             }
         }
         const losses = verdict.fought ? (verdict.losses || 0) : 0;
-        army.soldiers = Math.max(1, army.soldiers - losses);
+        if (losses) spendArmyLoss(army, losses);
         const home = homeGarrison(state, winner);
         if (home) army.garrison = home;
         army.attack = null;
@@ -6428,6 +6457,30 @@ async function hit(village, index) {
     return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
 }
 
+async function trainVeteran() {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    ensureCampaignStores(state);
+    ensureCampaignArmies(state);
+    ensureCampaignRound(state);
+    const faction = actingFaction(state);
+    if (faction < 0) return { error: "The next turn has not started." };
+    if (state.campaignRound.step === "wait") return { error: "The next turn has not started." };
+    const army = armyRecord(state, faction);
+    const stores = state.campaignStores && state.campaignStores[String(faction)];
+    if (!army || !stores) return { error: "That faction has no army." };
+    const gold = Number(stores.gold) || 0;
+    const food = Number(stores.food) || 0;
+    if (gold < 200 || food < 100) return { error: "A veteran costs 200 gold and 100 food." };
+    stores.gold = gold - 200;
+    stores.food = food - 100;
+    army.veterans = (army.veterans || 0) + 1;
+    note(state, campaignFactionName(state, faction) + " trains a veteran.");
+    await writeState(state);
+    return freshPresent(state, now);
+}
+
 async function endCampaignTurn() {
     const state = await readState();
     const now = Date.now();
@@ -6473,6 +6526,15 @@ async function campaignHandler(req, res) {
         if (req.method === "POST") {
             if (req.body && req.body.endTurn) {
                 res.status(200).json(await endCampaignTurn());
+                return;
+            }
+            if (req.body && req.body.veteran) {
+                const sent = await trainVeteran();
+                if (sent && sent.error && !sent.regions) {
+                    res.status(400).json({ error: sent.error });
+                    return;
+                }
+                res.status(200).json(sent);
                 return;
             }
             if (req.body && typeof req.body.attack === "string") {

@@ -1,0 +1,12 @@
+{
+  "kind": "kitbuild",
+  "name": "Shield",
+  "cx": 0,
+  "cz": 0,
+  "materials": [
+    {
+      "mat": "tvwalldecor",
+      "verts": 132
+    }
+  ]
+}

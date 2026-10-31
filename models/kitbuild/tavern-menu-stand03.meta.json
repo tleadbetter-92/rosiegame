@@ -1,0 +1,28 @@
+{
+  "kind": "kitbuild",
+  "name": "Tall menu board",
+  "cx": 0,
+  "cz": 0,
+  "materials": [
+    {
+      "mat": "tvWood006",
+      "verts": 150
+    },
+    {
+      "mat": "tvPaintedWood009A",
+      "verts": 6
+    },
+    {
+      "mat": "tvFabric063",
+      "verts": 72
+    },
+    {
+      "mat": "tvmenus",
+      "verts": 6
+    },
+    {
+      "mat": "tvMetal013",
+      "verts": 288
+    }
+  ]
+}

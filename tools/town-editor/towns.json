@@ -19,6 +19,18 @@
     {
       "id": "river-crossing",
       "name": "river crossing"
+    },
+    {
+      "id": "small-town-new",
+      "name": "small town new"
+    },
+    {
+      "id": "starter",
+      "name": "starter"
+    },
+    {
+      "id": "starter-town",
+      "name": "starter town"
     }
   ]
 }

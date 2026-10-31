@@ -1,0 +1,16 @@
+{
+  "kind": "kitbuild",
+  "name": "Large keg",
+  "cx": 0,
+  "cz": 0,
+  "materials": [
+    {
+      "mat": "tvWood003",
+      "verts": 492
+    },
+    {
+      "mat": "tvMetal013",
+      "verts": 144
+    }
+  ]
+}

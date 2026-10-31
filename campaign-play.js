@@ -173,7 +173,8 @@ function drawMap() {
             const capitalColor = owned ? color : holderColor(region.holder, color);
             mark(ctx, pack.capital.x, pack.capital.z, region.name + (owned ? "" : " · occupied"), capitalColor, true, region.id === picked);
             const army = armyPlace(region, regions);
-            const count = region.army && Number.isFinite(region.army.soldiers) ? region.army.soldiers : 0;
+            const count = (region.army && Number.isFinite(region.army.soldiers) ? region.army.soldiers : 0)
+                + (region.army && Number.isFinite(region.army.veterans) ? region.army.veterans : 0);
             const home = region.army && region.army.garrison;
             const marching = region.army && (region.army.attack || region.army.verdict || region.army.relief);
             if (marching && home && Number.isFinite(home.x)) {
@@ -278,7 +279,20 @@ function paintHand(hand) {
         endButton.style.background = hand.color || "#6a7a3a";
         endButton.textContent = hand.name + " is done";
     }
+    paintTurnHelp(hand);
     paintWait(hand);
+}
+
+function paintTurnHelp(hand) {
+    const box = document.getElementById("turn-help");
+    if (!box || !hand) return;
+    if (hand.waiting) {
+        box.innerHTML = "<strong>Waiting.</strong> Nothing to choose. Battles are worked out when the clock reaches the next turn.";
+    } else if (hand.reply) {
+        box.innerHTML = "<strong>" + hand.name + " can answer.</strong> Open your army and press Defend, or press Let it stand. The fight is still settled when the next turn begins.";
+    } else {
+        box.innerHTML = "<strong>" + hand.name + "'s turn.</strong> Click a town to see what it makes. Click the army to march, or to train a veteran. Then press the button above. The other faction goes straight after. Fights wait until twelve hours have passed.";
+    }
 }
 
 let waitTimer = 0;
@@ -384,6 +398,8 @@ function armyOf(id) {
         faction: region.factionName || "",
         where: (region.army && region.army.garrison && region.army.garrison.name) || region.name,
         soldiers: region.army && Number.isFinite(region.army.soldiers) ? region.army.soldiers : 0,
+        veterans: region.army && Number.isFinite(region.army.veterans) ? region.army.veterans : 0,
+        stores: region.stores || null,
         attack: attack,
         relief: region.army && region.army.relief && region.army.relief.name ? region.army.relief : null,
         verdict: verdict,
@@ -436,14 +452,21 @@ function paintRegions() {
         const faction = region.factionName || village.name || region.name;
         const capitalHeld = Number.isInteger(region.holder) && region.holder !== region.faction;
         const capitalEnemy = !!(aiming && placeHolder(region.id) !== aiming.faction);
+        const soldiers = (region.army && region.army.soldiers) || 0;
+        const veterans = (region.army && region.army.veterans) || 0;
+        const armyLabel = "Army · " + soldiers + " soldiers" + (veterans ? ", " + veterans + " veteran" + (veterans === 1 ? "" : "s") : "");
+        const turnNote = hand && hand.faction === region.faction && !hand.waiting ? "Choosing now" : "Three towns: one capital and two smaller ones";
         return "<article class=\"region-card" + acting + "\" style=\"border-top-color:" + (village.color || "#6a7a3a") + "\">" +
             "<h3>" + faction + "</h3>" +
-            "<p class=\"quiet\">Three districts</p>" +
+            "<p class=\"quiet\">" + turnNote + "</p>" +
+            "<p class=\"card-label\">Towns</p>" +
             "<ul>" +
-            "<li><button type=\"button\" class=\"place" + (region.id === picked ? " picked" : "") + (capitalEnemy ? " aim" : "") + "\" data-place=\"" + region.id + "\">" + region.name + (capitalHeld ? " · occupied" : "") + "</button></li>" +
+            "<li><button type=\"button\" class=\"place" + (region.id === picked ? " picked" : "") + (capitalEnemy ? " aim" : "") + "\" data-place=\"" + region.id + "\">" + region.name + " · capital" + (capitalHeld ? " · occupied" : "") + "</button></li>" +
             towns +
             "</ul>" +
-            "<p><button type=\"button\" class=\"place" + (picked === "army:" + region.id ? " picked" : "") + "\" data-place=\"army:" + region.id + "\">Army · " + ((region.army && region.army.soldiers) || 0) + "</button></p>" +
+            "<p class=\"card-label\">Army</p>" +
+            "<p><button type=\"button\" class=\"place" + (picked === "army:" + region.id ? " picked" : "") + "\" data-place=\"army:" + region.id + "\">" + armyLabel + "</button></p>" +
+            "<p class=\"card-label\">Stores</p>" +
             "<ul class=\"stores\">" + storeLines(region.stores) + "</ul></article>";
     }).join("");
 }
@@ -453,53 +476,70 @@ function paintSettlement() {
     if (!box) return;
     const army = armyOf(picked);
     if (army) {
-        let order = "Garrisoned in " + army.where + ". The capital trains 10 soldiers a turn.";
+        const strength = army.soldiers + army.veterans * 3;
+        const gold = army.stores && Number.isFinite(Number(army.stores.gold)) ? Number(army.stores.gold) : 0;
+        const food = army.stores && Number.isFinite(Number(army.stores.food)) ? Number(army.stores.food) : 0;
+        const canTrain = gold >= 200 && food >= 100;
+        let order = "Standing in " + army.where + ". The capital adds 10 soldiers when this faction ends its turn. They cost nothing.";
         let buttons = "";
         if (army.verdict) {
             const pct = Math.round((army.verdict.chance || 0) * 100);
             order = army.verdict.fought
-                ? "Won at " + army.verdict.placeName + " (" + pct + "%). Occupy keeps the army there, and that town's goods come to you until it is retaken. Loot and leave takes 100 of every resource, loses " + army.verdict.losses + " soldiers, and returns to garrison."
-                : army.verdict.placeName + " was undefended. Occupy keeps the army there, and that town's goods come to you until it is retaken. Loot and leave takes 100 of every resource and returns to garrison.";
+                ? "Won at " + army.verdict.placeName + " (" + pct + "% chance). Occupy stays there and takes that town's goods until someone takes it back. Loot and leave takes 100 of every resource, loses some soldiers, and goes home."
+                : army.verdict.placeName + " had no army. Occupy stays there and takes that town's goods until someone takes it back. Loot and leave takes 100 of every resource and goes home.";
             buttons = "<button type=\"button\" class=\"choice\" data-order=\"occupy\">Occupy " + army.verdict.placeName + "</button>" +
                 "<button type=\"button\" class=\"choice\" data-order=\"loot\">Loot and leave</button>";
         } else if (army.yours && army.relief) {
-            order = "Marching to defend " + army.relief.name + ". The battle is decided after 12 hours, when the next turn begins.";
+            order = "On the way to defend " + army.relief.name + ". The fight is worked out after twelve hours.";
         } else if (army.yours && army.defend) {
-            order = army.defend.name + " is under attack. Send the army now. The battle is decided after 12 hours, when the next turn begins.";
+            order = army.defend.name + " is being attacked. Send this army now, or leave it. The fight is worked out after twelve hours.";
             buttons = "<button type=\"button\" class=\"choice\" data-order=\"defend\">Defend " + army.defend.name + "</button>";
         } else if (army.yours && army.attack) {
-            order = "Besieging " + army.attack.name + ". Their army can answer now. The battle is decided after 12 hours, when the next turn begins.";
+            order = "Marching on " + army.attack.name + ". They can answer now. The fight is worked out after twelve hours.";
         } else if (army.yours) {
-            order = army.soldiers
-                ? "Garrisoned in " + army.where + ". Click an enemy town or capital to attack it. The capital trains 10 soldiers a turn."
-                : "Garrisoned in " + army.where + ". No soldiers yet. The capital trains 10 a turn.";
+            order = (army.soldiers + army.veterans)
+                ? "Standing in " + army.where + ". Click an enemy town to march there. The capital adds 10 soldiers when you end the turn."
+                : "Standing in " + army.where + ". No one is in the army yet. End the turn and the capital adds 10 soldiers.";
         } else if (army.attack) {
-            order = "Besieging " + army.attack.name + ".";
+            order = "Marching on " + army.attack.name + ".";
+        }
+        if (army.yours && !army.verdict && campaign && campaign.hand && !campaign.hand.waiting) {
+            buttons += canTrain
+                ? "<button type=\"button\" class=\"choice\" data-order=\"veteran\">Train a veteran · 200 gold, 100 food</button>"
+                : "<button type=\"button\" class=\"choice\" data-order=\"veteran\" disabled>Train a veteran · need 200 gold and 100 food</button>";
         }
         box.innerHTML = "<p class=\"place-kind\">" + army.faction + " · Army</p>" +
             "<h3>" + army.where + "</h3>" +
-            "<ul class=\"buildings\"><li><span>Soldiers</span><b>" + army.soldiers + "</b></li></ul>" +
+            "<ul class=\"buildings\">" +
+            "<li><span>Soldiers</span><b>" + army.soldiers + "</b><em></em><em class=\"yield\">10 free each turn</em></li>" +
+            "<li><span>Veterans</span><b>" + army.veterans + "</b><em></em><em class=\"yield\">each counts as 3</em></li>" +
+            "<li><span>Battle strength</span><b>" + strength + "</b><em></em><em class=\"yield\">used in the fight</em></li>" +
+            "</ul>" +
             buttons +
-            "<p class=\"quiet\">" + order + "</p>";
+            "<p class=\"quiet\">" + order + " A veteran is the new soldier: harder to kill, and costs 200 gold and 100 food.</p>";
         return;
     }
     const place = settlementOf(picked);
     if (!place) {
-        box.innerHTML = "<p class=\"quiet\">Click a town or a capital.</p>";
+        box.innerHTML = "<p class=\"quiet\">Click a town, a capital, or an army.</p>";
         return;
     }
     const sheet = buildingSheet(place);
     const rows = sheet.rows.map((row) => {
-        const label = row.name + (row.each && row.count > 1 ? " · " + row.each + " each" : "");
-        const made = row.yieldTurn ? "<em class=\"yield\">" + row.yieldTurn + " " + row.good + "</em>" : "<em class=\"yield\"></em>";
-        return "<li><span>" + label + "</span><b>" + row.count + "</b>" + (row.people ? "<em>" + row.people + "</em>" : "<em></em>") + made + "</li>";
+        const people = row.people ? row.people + " people" : "";
+        const made = row.yieldTurn ? "<em class=\"yield\">+" + row.yieldTurn + " " + row.good + " a turn</em>" : "<em class=\"yield\"></em>";
+        return "<li><span>" + row.name + "</span><b>" + row.count + "</b><em>" + people + "</em>" + made + "</li>";
     }).join("");
-    box.innerHTML = "<p class=\"place-kind\">" + place.faction + " · " + (place.major ? "Major settlement" : "Town") + (place.occupied ? " · occupied by " + place.holderName : "") + "</p>" +
+    const kind = place.major ? "Capital" : "Town";
+    const blurb = place.major
+        ? "The main town. Houses are homes. Farms, the barracks, and the other works are where people live and add goods to this faction's stores when the turn ends."
+        : "A smaller town. Its farms and works add goods to this faction's stores when the turn ends.";
+    box.innerHTML = "<p class=\"place-kind\">" + place.faction + " · " + kind + (place.occupied ? " · held by " + place.holderName : "") + "</p>" +
         "<h3>" + place.name + "</h3>" +
+        "<p class=\"quiet\">" + blurb + "</p>" +
         "<ul class=\"buildings\">" + rows + "</ul>" +
-        "<h3 class=\"stats-label\">Stats</h3>" +
-        "<p class=\"population\">Population " + sheet.population + "</p>" +
-        (place.occupied ? "<p class=\"quiet\">Its goods go to " + place.holderName + " until it is retaken.</p>" : "");
+        "<p class=\"population\">About " + sheet.population + " people</p>" +
+        (place.occupied ? "<p class=\"quiet\">Its goods go to " + place.holderName + " until someone takes it back.</p>" : "");
 }
 
 function paintLog() {
@@ -610,6 +650,7 @@ document.getElementById("settlement").addEventListener("click", (event) => {
     const order = button.getAttribute("data-order");
     if (order === "defend") postOrder({ defend: true }, picked);
     if (order === "occupy" || order === "loot") postOrder({ resolve: order }, picked);
+    if (order === "veteran") postOrder({ veteran: true }, picked);
 });
 
 endButton.addEventListener("click", async () => {

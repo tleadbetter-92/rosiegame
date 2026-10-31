@@ -370,7 +370,7 @@
     },
     {
       "id": "Door_1_Flat",
-      "x": 9,
+      "x": 9.49,
       "z": 1,
       "y": 0,
       "yaw": 1.5707963267948966
@@ -965,13 +965,6 @@
     },
     {
       "id": "Window_Wide_Round1",
-      "x": 4,
-      "z": 1,
-      "y": 3.05,
-      "yaw": 4.71238898038469
-    },
-    {
-      "id": "Window_Wide_Round1",
       "x": 2,
       "z": 1,
       "y": 3.05,
@@ -983,6 +976,97 @@
       "z": 9,
       "y": 0,
       "yaw": 0
+    },
+    {
+      "id": "Corner_ExteriorWide_Brick",
+      "x": 2,
+      "z": 4,
+      "y": 0,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Corner_ExteriorWide_Brick",
+      "x": 10,
+      "z": 4,
+      "y": 0,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Corner_ExteriorWide_Brick",
+      "x": 10,
+      "z": -2,
+      "y": 0,
+      "yaw": 0
+    },
+    {
+      "id": "Corner_ExteriorWide_Brick",
+      "x": 2,
+      "z": -2,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Corner_ExteriorWide_Brick",
+      "x": 2,
+      "z": -2,
+      "y": 3,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Corner_ExteriorWide_Brick",
+      "x": 10,
+      "z": 4,
+      "y": 3,
+      "yaw": 4.71238898038469
+    },
+    {
+      "id": "Corner_ExteriorWide_Brick",
+      "x": 2,
+      "z": 4,
+      "y": 3,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Corner_ExteriorWide_Brick",
+      "x": 10,
+      "z": -2,
+      "y": 3,
+      "yaw": 0
+    },
+    {
+      "id": "DoorFrame_Flat_Brick",
+      "x": 10,
+      "z": 1,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Door_1_Flat",
+      "x": 9.49,
+      "z": 1,
+      "y": 0,
+      "yaw": 1.5707963267948966
+    },
+    {
+      "id": "Floor_WoodDark_Half1",
+      "x": 9,
+      "z": 3,
+      "y": 3,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Bed_Twin1",
+      "x": 3,
+      "z": 2,
+      "y": 3,
+      "yaw": 3.141592653589793
+    },
+    {
+      "id": "Barrel_Apples",
+      "x": 3,
+      "z": -1,
+      "y": 3,
+      "yaw": 3.141592653589793
     }
   ]
 }

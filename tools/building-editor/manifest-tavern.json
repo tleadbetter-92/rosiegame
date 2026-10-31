@@ -1,0 +1,105 @@
+{
+  "kind": "tavern",
+  "grid": 0.5,
+  "categoryDirs": {
+    "Tavern wall": "/tools/building-editor/Tavern/glTF/",
+    "Tavern floor": "/tools/building-editor/Tavern/glTF/",
+    "Tavern opening": "/tools/building-editor/Tavern/glTF/",
+    "Tavern column": "/tools/building-editor/Tavern/glTF/",
+    "Tavern counter": "/tools/building-editor/Tavern/glTF/",
+    "Interior tavern furniture": "/tools/building-editor/Tavern/glTF/",
+    "Interior tavern storage": "/tools/building-editor/Tavern/glTF/",
+    "Interior tavern decor": "/tools/building-editor/Tavern/glTF/",
+    "Props tavern food": "/tools/building-editor/Tavern/glTF/",
+    "Props tavern drink": "/tools/building-editor/Tavern/glTF/",
+    "Props tavern market": "/tools/building-editor/Tavern/glTF/"
+  },
+  "categories": {
+    "Tavern wall": [
+      "wall01_full",
+      "wall01_d01",
+      "wall01f_full",
+      "wall01f_w01"
+    ],
+    "Tavern floor": [
+      "tavern-floor"
+    ],
+    "Tavern opening": [
+      "door01",
+      "window01",
+      "window02"
+    ],
+    "Tavern column": [
+      "column01",
+      "column02",
+      "column03",
+      "column04"
+    ],
+    "Tavern counter": [
+      "counter_L",
+      "counter_M",
+      "counter_R",
+      "counter_BL",
+      "counter_BR"
+    ],
+    "Interior tavern furniture": [
+      "chair01",
+      "stool",
+      "table01",
+      "table02",
+      "table03",
+      "table-cloth01",
+      "table-cloth02",
+      "table-cloth03",
+      "shelf01",
+      "shelf02"
+    ],
+    "Interior tavern storage": [
+      "crate01",
+      "crate02",
+      "keg01",
+      "keg02",
+      "basket-of-jars",
+      "basket-of-pastries"
+    ],
+    "Interior tavern decor": [
+      "tapestry01",
+      "tapestry02",
+      "plaque",
+      "shield",
+      "wall-candle",
+      "table-candle",
+      "herb-drying-hanger"
+    ],
+    "Props tavern food": [
+      "food-bread01",
+      "food-bread02",
+      "food-bread03",
+      "food-bread04",
+      "food-sausage",
+      "fruit-apple",
+      "veg-tomato",
+      "bowl-of-stew",
+      "platter-meal01",
+      "platter-meal02",
+      "platter-of-pie"
+    ],
+    "Props tavern drink": [
+      "mug01",
+      "mug02",
+      "mug03",
+      "bottle01",
+      "bottle02",
+      "pitcher",
+      "jug01"
+    ],
+    "Props tavern market": [
+      "food-display",
+      "balance-scale",
+      "menu-stand01",
+      "menu-stand02",
+      "menu-stand03",
+      "pouch-of-coins"
+    ]
+  }
+}

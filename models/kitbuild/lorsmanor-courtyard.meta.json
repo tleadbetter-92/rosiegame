@@ -38,7 +38,8 @@
     },
     {
       "mat": "furniture",
-      "verts": 19848
+      "verts": 19848,
+      "tint": true
     },
     {
       "mat": "propmetal",

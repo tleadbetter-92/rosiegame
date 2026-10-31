@@ -1,0 +1,158 @@
+{
+  "props": [
+    {
+      "id": "tavern-column01",
+      "name": "Column",
+      "pieces": 1,
+      "spanX": 0.6,
+      "spanZ": 0.6
+    },
+    {
+      "id": "tavern-column02",
+      "name": "Wide column",
+      "pieces": 1,
+      "spanX": 1.5,
+      "spanZ": 0.6
+    },
+    {
+      "id": "tavern-column03",
+      "name": "Split column",
+      "pieces": 1,
+      "spanX": 0.88,
+      "spanZ": 0.6
+    },
+    {
+      "id": "tavern-column04",
+      "name": "Capped column",
+      "pieces": 1,
+      "spanX": 0.88,
+      "spanZ": 0.6
+    },
+    {
+      "id": "tavern-crate01",
+      "name": "Crate",
+      "pieces": 1,
+      "spanX": 0.7,
+      "spanZ": 0.7
+    },
+    {
+      "id": "tavern-crate02",
+      "name": "Vegetable crate",
+      "pieces": 1,
+      "spanX": 0.7,
+      "spanZ": 0.7
+    },
+    {
+      "id": "tavern-keg01",
+      "name": "Keg",
+      "pieces": 1,
+      "spanX": 0.68,
+      "spanZ": 0.7
+    },
+    {
+      "id": "tavern-keg02",
+      "name": "Large keg",
+      "pieces": 1,
+      "spanX": 0.85,
+      "spanZ": 0.85
+    },
+    {
+      "id": "tavern-food-display",
+      "name": "Food stall",
+      "pieces": 1,
+      "spanX": 1.84,
+      "spanZ": 0.78
+    },
+    {
+      "id": "tavern-herb-drying-hanger",
+      "name": "Herb hanger",
+      "pieces": 1,
+      "spanX": 0.66,
+      "spanZ": 0.6
+    },
+    {
+      "id": "tavern-shield",
+      "name": "Shield",
+      "pieces": 1,
+      "spanX": 0.67,
+      "spanZ": 0.6
+    },
+    {
+      "id": "tavern-plaque",
+      "name": "Plaque",
+      "pieces": 1,
+      "spanX": 0.63,
+      "spanZ": 0.6
+    },
+    {
+      "id": "tavern-menu-stand01",
+      "name": "Menu board",
+      "pieces": 1,
+      "spanX": 0.6,
+      "spanZ": 0.6
+    },
+    {
+      "id": "tavern-menu-stand03",
+      "name": "Tall menu board",
+      "pieces": 1,
+      "spanX": 0.7,
+      "spanZ": 0.6
+    },
+    {
+      "id": "tavern-table01",
+      "name": "Square table",
+      "pieces": 1,
+      "spanX": 1.1,
+      "spanZ": 1.1
+    },
+    {
+      "id": "tavern-table02",
+      "name": "Large table",
+      "pieces": 1,
+      "spanX": 1.6,
+      "spanZ": 1.6
+    },
+    {
+      "id": "tavern-table03",
+      "name": "Long table",
+      "pieces": 1,
+      "spanX": 2.2,
+      "spanZ": 1.1
+    },
+    {
+      "id": "tavern-counter_L",
+      "name": "Counter, left",
+      "pieces": 1,
+      "spanX": 1.6,
+      "spanZ": 0.9
+    },
+    {
+      "id": "tavern-counter_M",
+      "name": "Counter",
+      "pieces": 1,
+      "spanX": 1.5,
+      "spanZ": 0.9
+    },
+    {
+      "id": "tavern-counter_R",
+      "name": "Counter, right",
+      "pieces": 1,
+      "spanX": 1.6,
+      "spanZ": 0.9
+    },
+    {
+      "id": "tavern-counter_BL",
+      "name": "Counter corner, left",
+      "pieces": 1,
+      "spanX": 1.36,
+      "spanZ": 1.36
+    },
+    {
+      "id": "tavern-counter_BR",
+      "name": "Counter corner, right",
+      "pieces": 1,
+      "spanX": 1.35,
+      "spanZ": 1.35
+    }
+  ]
+}

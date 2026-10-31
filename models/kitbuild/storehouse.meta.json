@@ -22,15 +22,18 @@
     },
     {
       "mat": "furniture",
-      "verts": 117996
+      "verts": 117996,
+      "tint": true
     },
     {
       "mat": "propmetal",
-      "verts": 174534
+      "verts": 174534,
+      "tint": true
     },
     {
       "mat": "proppack",
-      "verts": 151218
+      "verts": 151218,
+      "tint": true
     }
   ]
 }

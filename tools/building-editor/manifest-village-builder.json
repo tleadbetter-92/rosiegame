@@ -1,0 +1,66 @@
+{
+  "kind": "village-builder",
+  "grid": 2,
+  "categoryDirs": {
+    "Village fittings": "/tools/building-editor/Village_Builder/glTF/",
+    "Interior rooms": "/tools/building-editor/Village_Builder/glTF/",
+    "Props yard": "/tools/building-editor/Village_Builder/glTF/",
+    "Village building": "/tools/building-editor/Village_Builder/glTF/",
+    "Village opening": "/tools/building-editor/Village_Builder/glTF/",
+    "Village floor": "/tools/building-editor/Village_Builder/glTF/",
+    "Village stairs": "/tools/building-editor/Village_Builder/glTF/",
+    "Village roof": "/tools/building-editor/Village_Builder/glTF/",
+    "Village wall": "/tools/building-editor/Village_Builder/glTF/"
+  },
+  "categories": {
+    "Village fittings": [
+      "mdvl_village_beam_01",
+      "mdvl_village_chimney_01",
+      "mdvl_village_dirt_light_01",
+      "mdvl_village_fire_01",
+      "mdvl_village_fire_02",
+      "mdvl_village_ladder_01",
+      "mdvl_village_window_box_01"
+    ],
+    "Interior rooms": [
+      "mdvl_village_ceiling_01",
+      "mdvl_village_ceiling_beam_01",
+      "mdvl_village_hearth_01",
+      "mdvl_village_inwall_door_01",
+      "mdvl_village_inwall_plain_01"
+    ],
+    "Props yard": [
+      "mdvl_village_sign_inn_01",
+      "mdvl_village_stall_01"
+    ],
+    "Village building": [
+      "mdvl_village_cottage_01",
+      "mdvl_village_well_01"
+    ],
+    "Village opening": [
+      "mdvl_village_door_plank_01",
+      "mdvl_village_window_open_01"
+    ],
+    "Village floor": [
+      "mdvl_village_floor_wood_01"
+    ],
+    "Village stairs": [
+      "mdvl_village_stair_rail_01",
+      "mdvl_village_stair_wood_01"
+    ],
+    "Village roof": [
+      "mdvl_village_thatch_ridge_01",
+      "mdvl_village_thatch_ridge_end_01",
+      "mdvl_village_thatch_straight_01",
+      "mdvl_village_thatch_verge_01"
+    ],
+    "Village wall": [
+      "mdvl_village_wall_corner_01",
+      "mdvl_village_wall_door_01",
+      "mdvl_village_wall_gable_01",
+      "mdvl_village_wall_plain_01",
+      "mdvl_village_wall_quoin_01",
+      "mdvl_village_wall_window_01"
+    ]
+  }
+}

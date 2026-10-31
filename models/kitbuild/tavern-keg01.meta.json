@@ -1,0 +1,20 @@
+{
+  "kind": "kitbuild",
+  "name": "Keg",
+  "cx": 0,
+  "cz": 0,
+  "materials": [
+    {
+      "mat": "tvMetal013",
+      "verts": 606
+    },
+    {
+      "mat": "tvWood003",
+      "verts": 492
+    },
+    {
+      "mat": "tvWood006",
+      "verts": 204
+    }
+  ]
+}
