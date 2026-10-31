@@ -1,14 +1,6 @@
 {
   "towns": [
     {
-      "id": "island-town-kings-stone",
-      "name": "Island town kings stone"
-    },
-    {
-      "id": "island-town-salt-town",
-      "name": "Island town salt town"
-    },
-    {
       "id": "island-town-the-mines",
       "name": "Island town the mines"
     },
@@ -17,16 +9,8 @@
       "name": "Island town wuden"
     },
     {
-      "id": "river-crossing",
-      "name": "river crossing"
-    },
-    {
       "id": "small-town-new",
       "name": "small town new"
-    },
-    {
-      "id": "starter",
-      "name": "starter"
     },
     {
       "id": "starter-town",

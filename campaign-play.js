@@ -291,7 +291,7 @@ function paintTurnHelp(hand) {
     } else if (hand.reply) {
         box.innerHTML = "<strong>" + hand.name + " can answer.</strong> Open your army and press Defend, or press Let it stand. The fight is still settled when the next turn begins.";
     } else {
-        box.innerHTML = "<strong>" + hand.name + "'s turn.</strong> Click a town to see what it makes. Click the army to march, or to train a veteran. Then press the button above. The other faction goes straight after. Fights wait until twelve hours have passed.";
+        box.innerHTML = "<strong>" + hand.name + "'s turn.</strong> Click your capital to train soldiers. Ten can finish this turn. Any more wait. Then press the button above.";
     }
 }
 
@@ -353,7 +353,7 @@ function buildingSheet(place) {
         const each = popEach(row[0]);
         const people = each * row[1];
         const good = YIELD_GOOD[row[0]];
-        const yieldTurn = good ? people * 50 : 0;
+        const yieldTurn = good ? people * 10 : 0;
         return { name: row[0], count: row[1], each: each, have: people, cap: people, people: people, good: good, yieldTurn: yieldTurn };
     });
     const population = rows.reduce((sum, row) => sum + (Number.isFinite(row.have) ? row.have : (row.people || 0)), 0);
@@ -401,6 +401,7 @@ function armyOf(id) {
         where: (region.army && region.army.garrison && region.army.garrison.name) || region.name,
         soldiers: region.army && Number.isFinite(region.army.soldiers) ? region.army.soldiers : 0,
         veterans: region.army && Number.isFinite(region.army.veterans) ? region.army.veterans : 0,
+        drill: region.army && Number.isFinite(region.army.drill) ? region.army.drill : 0,
         stores: region.stores || null,
         attack: attack,
         relief: region.army && region.army.relief && region.army.relief.name ? region.army.relief : null,
@@ -473,6 +474,21 @@ function paintRegions() {
     }).join("");
 }
 
+function drillLine(queue) {
+    const n = Math.max(0, Math.round(Number(queue) || 0));
+    if (!n) return "";
+    const ready = Math.min(10, n);
+    let left = n - ready;
+    const bits = [ready + " ready this turn"];
+    if (left > 0) {
+        const next = Math.min(10, left);
+        left -= next;
+        bits.push(next + " next turn");
+    }
+    if (left > 0) bits.push(left + " later");
+    return bits.join(" · ");
+}
+
 function paintSettlement() {
     const box = document.getElementById("settlement");
     if (!box) return;
@@ -482,7 +498,7 @@ function paintSettlement() {
         const gold = army.stores && Number.isFinite(Number(army.stores.gold)) ? Number(army.stores.gold) : 0;
         const food = army.stores && Number.isFinite(Number(army.stores.food)) ? Number(army.stores.food) : 0;
         const canTrain = gold >= 200 && food >= 100;
-        let order = "Standing in " + army.where + ". The capital adds 10 soldiers when this faction ends its turn. They cost nothing.";
+        let order = "Standing in " + army.where + ". Open your capital to train soldiers.";
         let buttons = "";
         if (army.verdict) {
             const pct = Math.round((army.verdict.chance || 0) * 100);
@@ -500,8 +516,8 @@ function paintSettlement() {
             order = "Marching on " + army.attack.name + ". They can answer now. The fight is worked out after twelve hours.";
         } else if (army.yours) {
             order = (army.soldiers + army.veterans)
-                ? "Standing in " + army.where + ". Click an enemy town to march there. The capital adds 10 soldiers when you end the turn."
-                : "Standing in " + army.where + ". No one is in the army yet. End the turn and the capital adds 10 soldiers.";
+                ? "Standing in " + army.where + ". Click an enemy town to march there."
+                : "Standing in " + army.where + ". No one is in the army yet. Open your capital to train soldiers.";
         } else if (army.attack) {
             order = "Marching on " + army.attack.name + ".";
         }
@@ -513,7 +529,7 @@ function paintSettlement() {
         box.innerHTML = "<p class=\"place-kind\">" + army.faction + " · Army</p>" +
             "<h3>" + army.where + "</h3>" +
             "<ul class=\"buildings\">" +
-            "<li><span>Soldiers</span><b>" + army.soldiers + "</b><em></em><em class=\"yield\">10 free each turn</em></li>" +
+            "<li><span>Soldiers</span><b>" + army.soldiers + "</b><em></em><em class=\"yield\">" + (army.drill ? drillLine(army.drill) : "in the field") + "</em></li>" +
             "<li><span>Veterans</span><b>" + army.veterans + "</b><em></em><em class=\"yield\">each counts as 3</em></li>" +
             "<li><span>Battle strength</span><b>" + strength + "</b><em></em><em class=\"yield\">used in the fight</em></li>" +
             "</ul>" +
@@ -538,12 +554,12 @@ function paintSettlement() {
     const kind = place.major ? "Capital" : "Town";
     const yours = placeHolder(place.id) === handFaction();
     const choosing = !!(campaign && campaign.hand && !campaign.hand.waiting);
-    const gold = (function () {
+    const food = (function () {
         const regions = (campaign && campaign.regions) || [];
         for (let i = 0; i < regions.length; i++) {
             if (regions[i].faction === handFaction()) {
                 const stores = regions[i].stores;
-                return stores && Number.isFinite(Number(stores.gold)) ? Number(stores.gold) : 0;
+                return stores && Number.isFinite(Number(stores.food)) ? Number(stores.food) : 0;
             }
         }
         return 0;
@@ -551,20 +567,33 @@ function paintSettlement() {
     const short = sheet.room - sheet.population;
     let hire = "";
     if (yours && choosing) {
-        if (short > 0 && gold >= 50) {
-            hire = "<button type=\"button\" class=\"choice\" data-order=\"worker\" data-place=\"" + place.id + "\">Replace a worker · 50 gold</button>";
+        if (short > 0 && food >= 10) {
+            hire = "<button type=\"button\" class=\"choice\" data-order=\"worker\" data-place=\"" + place.id + "\">Replace a worker · 10 food</button>";
         } else if (short > 0) {
-            hire = "<button type=\"button\" class=\"choice\" data-order=\"worker\" disabled>Replace a worker · need 50 gold</button>";
+            hire = "<button type=\"button\" class=\"choice\" data-order=\"worker\" disabled>Replace a worker · need 10 food</button>";
         }
     }
+    let train = "";
+    const ownCapital = place.major && choosing && campaign && campaign.hand && campaign.hand.player && actingCapitalId() === place.id;
+    if (ownCapital) {
+        const gold = capitalGold();
+        const queued = capitalDrill();
+        const line = drillLine(queued);
+        train = (gold >= 10
+            ? "<button type=\"button\" class=\"choice\" data-order=\"soldiers\">Train a soldier · 10 gold</button>"
+            : "<button type=\"button\" class=\"choice\" disabled>Train a soldier · need 10 gold</button>") +
+            "<p class=\"quiet train-status\">Each click is one soldier. Ten finish when you end the turn. Any more wait for later turns.</p>" +
+            (line ? "<p class=\"population\">" + line + "</p>" : "");
+    }
     const blurb = place.major
-        ? "The people here are the workers in these buildings. A farm holds 4, the inn 2, the barracks 5, and the storehouse 1. They start full. A lost worker can be replaced for 50 gold."
-        : "The people here are the workers in these buildings. A farm holds 4 and the storehouse holds 1. They start full. A lost worker can be replaced for 50 gold.";
+        ? "The people here are the workers in these buildings. A farm holds 4, the inn 2, the barracks 5, and the storehouse 1. Each farmer makes 10 food a turn. People eat 3 food a day. A lost worker costs 10 food to replace."
+        : "The people here are the workers in these buildings. A farm holds 4 and the storehouse holds 1. Each farmer makes 10 food a turn, and each worker at a resource building makes 10 of that good. People eat 3 food a day. A lost worker costs 10 food to replace.";
     box.innerHTML = "<p class=\"place-kind\">" + place.faction + " · " + kind + (place.occupied ? " · held by " + place.holderName : "") + "</p>" +
         "<h3>" + place.name + "</h3>" +
         "<p class=\"quiet\">" + blurb + "</p>" +
         "<ul class=\"buildings\">" + rows + "</ul>" +
-        "<p class=\"population\">" + sheet.population + " people</p>" +
+        "<p class=\"population\">" + sheet.population + " people · " + (sheet.population * 3) + " food a day</p>" +
+        train +
         hire +
         (place.occupied ? "<p class=\"quiet\">Its goods go to " + place.holderName + " until someone takes it back.</p>" : "");
 }
@@ -617,7 +646,38 @@ land.addEventListener("click", (event) => {
     choosePlace(best);
 });
 
-async function postOrder(body, keep) {
+function actingCapitalId() {
+    const faction = handFaction();
+    const regions = (campaign && campaign.regions) || [];
+    for (let i = 0; i < regions.length; i++) {
+        if (regions[i].faction === faction) return regions[i].id;
+    }
+    return "";
+}
+
+function capitalGold() {
+    const faction = handFaction();
+    const regions = (campaign && campaign.regions) || [];
+    for (let i = 0; i < regions.length; i++) {
+        if (regions[i].faction !== faction) continue;
+        const stores = regions[i].stores;
+        return stores && Number.isFinite(Number(stores.gold)) ? Number(stores.gold) : 0;
+    }
+    return 0;
+}
+
+function capitalDrill() {
+    const faction = handFaction();
+    const regions = (campaign && campaign.regions) || [];
+    for (let i = 0; i < regions.length; i++) {
+        if (regions[i].faction !== faction) continue;
+        const army = regions[i].army;
+        return army && Number.isFinite(army.drill) ? army.drill : 0;
+    }
+    return 0;
+}
+
+async function sendOrder(body, keep) {
     const res = await fetch("/api/campaign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -631,12 +691,23 @@ async function postOrder(body, keep) {
             if (err.error) message = err.error;
         } catch (err) { /* keep the plain message */ }
         paintSettlement();
-        const quiet = document.querySelector("#settlement .quiet");
-        if (quiet) quiet.textContent = message;
+        const status = document.querySelector("#settlement .train-status");
+        if (status) status.textContent = message;
+        else {
+            const quiet = document.querySelector("#settlement .quiet");
+            if (quiet) quiet.textContent = message;
+        }
         return;
     }
     picked = keep;
     show(await res.json());
+}
+
+let orderChain = Promise.resolve();
+function postOrder(body, keep) {
+    const run = orderChain.then(() => sendOrder(body, keep));
+    orderChain = run.then(() => {}, () => {});
+    return run;
 }
 
 async function sendAttack(targetId) {
@@ -673,11 +744,12 @@ document.getElementById("regions").addEventListener("click", (event) => {
 
 document.getElementById("settlement").addEventListener("click", (event) => {
     const button = event.target.closest("[data-order]");
-    if (!button) return;
+    if (!button || button.disabled) return;
     const order = button.getAttribute("data-order");
     if (order === "defend") postOrder({ defend: true }, picked);
     if (order === "occupy" || order === "loot") postOrder({ resolve: order }, picked);
     if (order === "veteran") postOrder({ veteran: true }, picked);
+    if (order === "soldiers") postOrder({ soldiers: true }, picked);
     if (order === "worker") postOrder({ worker: true, place: button.getAttribute("data-place") }, picked);
 });
 

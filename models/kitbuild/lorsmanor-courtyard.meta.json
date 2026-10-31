@@ -6,7 +6,7 @@
   "materials": [
     {
       "mat": "wood",
-      "verts": 51834
+      "verts": 53958
     },
     {
       "mat": "plaster",
@@ -18,7 +18,7 @@
     },
     {
       "mat": "rock",
-      "verts": 65802
+      "verts": 96492
     },
     {
       "mat": "mosaicMed",

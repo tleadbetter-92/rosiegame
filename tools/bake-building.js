@@ -235,7 +235,9 @@ function addPiece(groups, tints, name, x, y, z, yaw) {
             const p = turn(src[i][0][0], src[i][0][1], src[i][0][2], yaw);
             const n = turn(src[i][1][0], src[i][1][1], src[i][1][2], yaw);
             const u = src[i][2][0];
-            const v = 1 - src[i][2][1];
+            // The wagon's broad boards sit on the pale stone band of the trim sheet. Shift them onto the brown planks.
+            let v = 1 - src[i][2][1];
+            if (name === "Prop_Wagon") v = Math.max(0.02, Math.min(0.62, v - 0.4));
             const s = shade(n);
             const color = src[i][3] || [1, 1, 1];
             list.push(
@@ -462,6 +464,31 @@ function retroBounds(name) {
     };
 }
 
+function writeDoorLeaf(id, file) {
+    const parts = piece(id);
+    const src = parts.wood || [];
+    if (!src.length) return;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let maxY = 0;
+    for (let i = 0; i < src.length; i++) {
+        minX = Math.min(minX, src[i][0][0]);
+        maxX = Math.max(maxX, src[i][0][0]);
+        maxY = Math.max(maxY, src[i][0][1]);
+    }
+    const spanX = Math.max(0.2, maxX - minX);
+    const floats = [];
+    for (let i = 0; i < src.length; i++) {
+        const p = src[i][0];
+        const n = src[i][1];
+        const u = (p[0] - minX) / spanX;
+        const v = maxY > 0.2 ? p[1] / maxY : 0;
+        floats.push(+(p[0] - minX).toFixed(4), +p[1].toFixed(4), +p[2].toFixed(4), +u.toFixed(4), +v.toFixed(4), +shade(n).toFixed(4));
+    }
+    fs.writeFileSync(path.join(outDir, file), Buffer.from(new Float32Array(floats).buffer));
+    console.log(file, floats.length / 6, "verts");
+}
+
 function physicsFromPieces(pieces) {
     let minX = Infinity;
     let maxX = -Infinity;
@@ -566,20 +593,45 @@ function physicsFromPieces(pieces) {
         y0: 0,
         h: maxY
     };
-    const doors = doorAnchors.map((doorAnchor) => {
+    const doors = [];
+    for (let i = 0; i < doorAnchors.length; i++) {
+        const doorAnchor = doorAnchors[i];
+        const y = doorAnchor.y || 0;
+        let twin = false;
+        for (let k = 0; k < doors.length; k++) {
+            if (Math.abs((doors[k].y || 0) - y) > 0.5) continue;
+            if (Math.hypot(doors[k].x - doorAnchor.x, doors[k].z - doorAnchor.z) < 1.15) {
+                twin = true;
+                break;
+            }
+        }
+        if (twin) continue;
         const yaw = doorAnchor.yaw || 0;
         const s = Math.sin(yaw);
         const c = Math.cos(yaw);
-        return {
+        let shape = "flat";
+        let best = 1.4;
+        for (let p = 0; p < pieces.length; p++) {
+            const piece = pieces[p];
+            if (!piece.id || piece.id.indexOf("Door_1_") !== 0) continue;
+            if (Math.abs((piece.y || 0) - y) > 0.5) continue;
+            const dist = Math.hypot(piece.x - doorAnchor.x, piece.z - doorAnchor.z);
+            if (dist < best) {
+                best = dist;
+                shape = piece.id.indexOf("Round") >= 0 ? "round" : "flat";
+            }
+        }
+        doors.push({
             x: doorAnchor.x,
             z: doorAnchor.z,
-            y: doorAnchor.y || 0,
+            y,
             fx: -s,
             fz: -c,
             yaw,
-            wide: 0.56
-        };
-    });
+            wide: 0.56,
+            shape
+        });
+    }
     if (!String(outName).startsWith("tavern-")) {
         floors.push({
             x: shell.minX + 0.45,
@@ -592,6 +644,9 @@ function physicsFromPieces(pieces) {
     }
     return { cx, cz, shell, solids, floors, doors };
 }
+
+writeDoorLeaf("Door_1_Round", "leaf-round.bin");
+writeDoorLeaf("Door_1_Flat", "leaf-flat.bin");
 
 const physics = physicsFromPieces(building.pieces);
 fs.writeFileSync(path.join(outDir, outName + ".physics.json"), JSON.stringify(physics, null, 2));

@@ -70,6 +70,31 @@ function townSave(req, res) {
         return;
     }
     const data = req.body || {};
+    if (data.delete) {
+        const id = slug(data.id || data.name);
+        if (!id) {
+            res.status(400).json({ error: "Name the town to delete." });
+            return;
+        }
+        let editor;
+        try {
+            editor = readEditor();
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+            return;
+        }
+        const towns = readCatalog().filter((town) => town.id !== id);
+        delete editor[id];
+        try {
+            writeEditor(editor);
+            writeCatalog(towns);
+        } catch (err) {
+            res.status(500).json({ error: "Could not remove that town." });
+            return;
+        }
+        res.json({ ok: true, id });
+        return;
+    }
     const name = String(data.name || "").trim();
     const id = slug(name);
     if (!name || !id) {

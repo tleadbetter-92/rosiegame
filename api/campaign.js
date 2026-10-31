@@ -3077,6 +3077,7 @@ function present(state, now, turn, paused, opts) {
                 army: {
                     soldiers: army && Number.isFinite(army.soldiers) ? army.soldiers : 0,
                     veterans: army && Number.isFinite(army.veterans) ? army.veterans : 0,
+                    drill: army && Number.isFinite(army.drill) ? army.drill : 0,
                     x: station ? station.x : (region.capital ? region.capital.x : 0),
                     z: station ? station.z : (region.capital ? region.capital.z : 0),
                     garrison: garrisonPlace ? { id: garrisonPlace.id, name: garrisonPlace.name, x: garrisonPlace.x, z: garrisonPlace.z } : null,
@@ -3540,7 +3541,9 @@ function ensureRegions(state) {
 }
 
 const CAMPAIGN_GOODS = ["gold", "stone", "food", "salt", "iron", "wood", "copper", "tin", "other"];
-const WORKER_GOLD = 50;
+const WORKER_FOOD = 10;
+const FOOD_PER_POP = 3;
+const YIELD_EACH = 10;
 const STAFF_EACH = {
     Farms: 4,
     Storehouse: 1,
@@ -3584,7 +3587,7 @@ function staffSheet(state, id, major) {
             have = Math.max(0, Math.min(cap, Math.round(Number(saved[row[0]]))));
         }
         const good = STAFF_GOOD[row[0]] || "";
-        return { name: row[0], count: row[1], each: each, cap: cap, have: have, good: good, yieldTurn: good ? have * 50 : 0 };
+        return { name: row[0], count: row[1], each: each, cap: cap, have: have, good: good, yieldTurn: good ? have * YIELD_EACH : 0 };
     });
 }
 
@@ -3592,7 +3595,7 @@ function addStaffYield(stores, rows) {
     for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
         if (!row.good || !row.have) continue;
-        stores[row.good] = (Number(stores[row.good]) || 0) + row.have * 50;
+        stores[row.good] = (Number(stores[row.good]) || 0) + row.have * YIELD_EACH;
     }
 }
 
@@ -3621,6 +3624,33 @@ function ensureCampaignStores(state) {
         }
     }
     return dirty;
+}
+
+function campaignPopulation(state, faction) {
+    let people = 0;
+    for (const region of state.regions || []) {
+        if (holderOf(state, region.id, region.faction) === faction) {
+            const rows = staffSheet(state, region.id, true);
+            for (let i = 0; i < rows.length; i++) people += rows[i].have;
+        }
+        for (const town of region.towns || []) {
+            if (holderOf(state, town.id, region.faction) !== faction) continue;
+            const rows = staffSheet(state, town.id, false);
+            for (let i = 0; i < rows.length; i++) people += rows[i].have;
+        }
+    }
+    return people;
+}
+
+function feedCampaign(state, faction) {
+    ensureCampaignStores(state);
+    const stores = state.campaignStores[String(faction)];
+    if (!stores) return;
+    const people = campaignPopulation(state, faction);
+    const cost = people * FOOD_PER_POP;
+    const have = Number(stores.food) || 0;
+    stores.food = Math.max(0, have - cost);
+    if (have < cost) note(state, campaignFactionName(state, faction) + " is short of food for " + people + " people.");
 }
 
 function produceCampaign(state, faction) {
@@ -3680,14 +3710,36 @@ function spendArmyLoss(army, points) {
     if ((army.soldiers || 0) + (army.veterans || 0) < 1) army.soldiers = 1;
 }
 
-function trainCampaign(state, faction) {
+const SOLDIER_GOLD = 10;
+const DRILL_EACH = 10;
+
+function graduateDrill(state, faction) {
     ensureCampaignArmies(state);
     const army = state.campaignArmies[String(faction)];
-    if (!army) return;
-    army.soldiers += 10;
+    if (!army || !(army.drill > 0)) return 0;
+    const n = Math.min(DRILL_EACH, army.drill);
+    army.soldiers = (army.soldiers || 0) + n;
+    army.drill -= n;
     if (!army.garrison) {
         const home = capitalPlace(state, faction);
         if (home) army.garrison = home.id;
+    }
+    const name = campaignFactionName(state, faction);
+    note(state, army.drill > 0
+        ? name + " trains " + n + " soldiers. " + army.drill + " still training."
+        : name + " trains " + n + " soldiers.");
+    return n;
+}
+
+function orderComputerDrill(state, faction) {
+    const army = armyRecord(state, faction);
+    const stores = state.campaignStores && state.campaignStores[String(faction)];
+    if (!army || !stores) return;
+    let room = DRILL_EACH;
+    while (room > 0 && (Number(stores.gold) || 0) >= SOLDIER_GOLD) {
+        stores.gold = (Number(stores.gold) || 0) - SOLDIER_GOLD;
+        army.drill = (army.drill || 0) + 1;
+        room -= 1;
     }
 }
 
@@ -6521,9 +6573,9 @@ function hireOneWorker(state, faction, id) {
     const open = firstOpenPost(state, place.id, place.major);
     if (!open) return "Those buildings are fully staffed.";
     const stores = state.campaignStores && state.campaignStores[String(faction)];
-    const gold = Number(stores && stores.gold) || 0;
-    if (gold < WORKER_GOLD) return "A worker costs " + WORKER_GOLD + " gold.";
-    stores.gold = gold - WORKER_GOLD;
+    const food = Number(stores && stores.food) || 0;
+    if (food < WORKER_FOOD) return "A worker costs " + WORKER_FOOD + " food.";
+    stores.food = food - WORKER_FOOD;
     if (!state.campaignCrew || typeof state.campaignCrew !== "object") state.campaignCrew = {};
     if (!state.campaignCrew[place.id]) state.campaignCrew[place.id] = {};
     state.campaignCrew[place.id][open.name] = open.have + 1;
@@ -6549,6 +6601,27 @@ function refillCampaignCrew(state, faction) {
         }
         if (!progressed) break;
     }
+}
+
+async function trainSoldiers() {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    ensureCampaignStores(state);
+    ensureCampaignArmies(state);
+    ensureCampaignRound(state);
+    const faction = actingFaction(state);
+    if (faction !== getPlayerFaction()) return { error: "It is not your turn." };
+    if (state.campaignRound.step === "wait") return { error: "The next turn has not started." };
+    const army = armyRecord(state, faction);
+    const stores = state.campaignStores && state.campaignStores[String(faction)];
+    if (!army || !stores) return { error: "That faction has no army." };
+    const gold = Number(stores.gold) || 0;
+    if (gold < SOLDIER_GOLD) return { error: "A soldier costs " + SOLDIER_GOLD + " gold." };
+    stores.gold = gold - SOLDIER_GOLD;
+    army.drill = (army.drill || 0) + 1;
+    await writeState(state);
+    return freshPresent(state, now);
 }
 
 async function trainWorker(placeId) {
@@ -6604,7 +6677,8 @@ async function endCampaignTurn() {
     if (round.step === "a") {
         const faction = getPlayerFaction();
         produceCampaign(state, faction);
-        trainCampaign(state, faction);
+        feedCampaign(state, faction);
+        graduateDrill(state, faction);
         note(state, campaignFactionName(state, faction) + " is done.");
         round.step = "b";
         if (majorOnMap(0)) {
@@ -6613,7 +6687,9 @@ async function endCampaignTurn() {
         }
     } else if (round.step === "b") {
         produceCampaign(state, 0);
-        trainCampaign(state, 0);
+        feedCampaign(state, 0);
+        orderComputerDrill(state, 0);
+        graduateDrill(state, 0);
         refillCampaignCrew(state, 0);
         note(state, campaignFactionName(state, 0) + " is done.");
         if (needsAttackReply(state)) {
@@ -6637,6 +6713,15 @@ async function campaignHandler(req, res) {
         if (req.method === "POST") {
             if (req.body && req.body.endTurn) {
                 res.status(200).json(await endCampaignTurn());
+                return;
+            }
+            if (req.body && req.body.soldiers) {
+                const sent = await trainSoldiers();
+                if (sent && sent.error && !sent.regions) {
+                    res.status(400).json({ error: sent.error });
+                    return;
+                }
+                res.status(200).json(sent);
                 return;
             }
             if (req.body && req.body.worker && typeof req.body.place === "string") {

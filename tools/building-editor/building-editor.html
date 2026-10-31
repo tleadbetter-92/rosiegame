@@ -36,7 +36,12 @@
             border-radius: 6px; border: 1px solid #e8c896; background: #6b4423;
             color: #fff; text-align: center; text-decoration: none; font: 600 13px "Segoe UI", sans-serif;
         }
-        #buildingList button { font-weight: 550; }
+        #buildingList .pick-row { display: flex; gap: 4px; align-items: stretch; }
+        #buildingList .pick-row button { width: auto; margin: 4px 0; }
+        #buildingList .pick-row button.open { flex: 1; }
+        #buildingList .pick-row button.danger {
+            flex: 0 0 auto; border-color: rgba(255, 120, 100, 0.55); color: #ffc9c0;
+        }
         button:hover { filter: brightness(1.08); }
         #status { font-size: 12px; color: #e8c896; min-height: 2.4em; margin-top: 8px; line-height: 1.35; }
         #file { display: none; }
@@ -1403,6 +1408,26 @@
             setStatus("Opened " + buildingLabel(entry) + " — " + placed.length + " pieces.");
         }
 
+        async function deleteBuildingSave(entry) {
+            const label = buildingLabel(entry);
+            if (!confirm("Delete " + label + "?\n\nIt leaves your buildings, and the town editor.")) return;
+            const res = await fetch("/api/building-save", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ delete: true, id: entry.id })
+            });
+            if (!res.ok) {
+                let message = "Could not delete " + label + ".";
+                try {
+                    const err = await res.json();
+                    if (err.error) message = err.error;
+                } catch (err) { /* keep the plain message */ }
+                throw new Error(message);
+            }
+            setStatus("Deleted " + label + ".");
+            loadBuildingList();
+        }
+
         function loadBuildingList() {
             const list = document.getElementById("buildingList");
             if (!list) return;
@@ -1416,13 +1441,25 @@
                         return;
                     }
                     for (const entry of buildings) {
+                        const row = document.createElement("div");
+                        row.className = "pick-row";
                         const button = document.createElement("button");
                         button.type = "button";
+                        button.className = "open";
                         button.textContent = buildingLabel(entry);
                         button.addEventListener("click", () => {
                             openBuildingSave(entry).catch((err) => setStatus(err.message));
                         });
-                        list.appendChild(button);
+                        const remove = document.createElement("button");
+                        remove.type = "button";
+                        remove.className = "danger";
+                        remove.textContent = "Delete";
+                        remove.addEventListener("click", () => {
+                            deleteBuildingSave(entry).catch((err) => setStatus(err.message));
+                        });
+                        row.appendChild(button);
+                        row.appendChild(remove);
+                        list.appendChild(row);
                     }
                 })
                 .catch(() => {

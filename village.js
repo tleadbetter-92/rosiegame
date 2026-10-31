@@ -1584,33 +1584,6 @@ function spawnGarrison() {
                 fixed: true
             });
         }
-        for (let side = 0; side < 4; side++) {
-            const spot = archerSpot(village, side);
-            men.push({
-                archer: true,
-                fixed: true,
-                village: village,
-                side: side,
-                post: village,
-                faction: village,
-                index: 40 + side,
-                health: 3,
-                x: spot.x,
-                z: spot.z,
-                stand: spot.stand,
-                homeYaw: spot.yaw,
-                yaw: spot.yaw,
-                bob: 0,
-                down: 0,
-                swing: -1,
-                hostile: false,
-                attackIn: 0.8,
-                striking: 0,
-                struck: false,
-                dying: false,
-                mode: "guard"
-            });
-        }
     }
     const hamlets = World.hamlets || [];
     for (let i = 0; i < hamlets.length; i++) {
@@ -4085,7 +4058,7 @@ function dressEditorHamletAt(layout, ox, oz, options) {
             continue;
         }
         if (piece.t === "wall" || piece.t === "gate") {
-            stampTownPalisade(piece, ox, oz);
+            stampTownPalisade(piece, ox, oz, village);
             continue;
         }
         const spec = sizes[piece.t] || sizes.farmhouse;
@@ -4115,6 +4088,7 @@ function dressEditorHamletAt(layout, ox, oz, options) {
         scenery.push({ x: house.minX, z: house.minZ, w: w, d: d, top: house.y + 4.2 });
         if (piece.t === "farmhouse" && opts.registerFarmhouse) Town.buildings.push(house);
     }
+    if (village === homeVillage) ensureGatePlatforms(layout, ox, oz, village);
     uploadHamletDecorMeshes();
     if (kitQueued && typeof runKitBuildQueue === "function") runKitBuildQueue();
     return kitQueued;
@@ -4265,6 +4239,31 @@ function dressMajorTowns() {
 
 let platformArcherN = 0;
 
+function ensureGatePlatforms(layout, ox, oz, village) {
+    const buildings = layout.buildings || [];
+    const placed = [];
+    for (let i = 0; i < buildings.length; i++) {
+        if (buildings[i].t === "archer") placed.push(buildings[i]);
+    }
+    for (let i = 0; i < buildings.length; i++) {
+        const gate = buildings[i];
+        if (gate.t !== "gate") continue;
+        const yaw = gate.yaw || 0;
+        const c = Math.cos(yaw);
+        const s = Math.sin(yaw);
+        const lx = gate.x + 6 * c - 2 * s;
+        const lz = gate.z + 6 * s + 2 * c;
+        let near = false;
+        for (let a = 0; a < placed.length; a++) {
+            if (Math.hypot(placed[a].x - lx, placed[a].z - lz) < 4) near = true;
+        }
+        if (near) continue;
+        const piece = { x: lx, z: lz, yaw: yaw + Math.PI / 2 };
+        placed.push(piece);
+        stampTownArcher(piece, ox, oz, village);
+    }
+}
+
 function stampTownArcher(piece, ox, oz, village) {
     const x = piece.x + ox;
     const z = piece.z + oz;
@@ -4345,7 +4344,137 @@ function stampTownLamp(piece, ox, oz) {
     scenery.push({ x: x - 0.14, z: z - 0.14, w: 0.28, d: 0.28, top: y + 2.9 });
 }
 
-function stampTownPalisade(piece, ox, oz) {
+const townGates = [];
+let townGateKey = "";
+
+function rememberTownGate(piece, x, z, y0, yaw, village) {
+    const c = Math.cos(yaw);
+    const s = Math.sin(yaw);
+    townGates.push({
+        faction: village,
+        district: districtStampId || null,
+        originX: x,
+        originZ: z,
+        y0: y0,
+        yaw: yaw,
+        ax: c,
+        az: s,
+        ox: s,
+        oz: -c,
+        cx: x + 1.95 * c,
+        cz: z + 1.95 * s,
+        x: x + 1.95 * c,
+        z: z + 1.95 * s,
+        outX: s,
+        outZ: -c,
+        open: 0,
+        want: 0,
+        health: 50
+    });
+}
+
+function townGatePoint(gate, lx, lz) {
+    const c = Math.cos(gate.yaw);
+    const s = Math.sin(gate.yaw);
+    return {
+        x: gate.originX + lx * c - lz * s,
+        z: gate.originZ + lx * s + lz * c
+    };
+}
+
+function addTownLeaf(list, hinge, closed, opened, open, y0) {
+    const ex = closed.x + (opened.x - closed.x) * open;
+    const ez = closed.z + (opened.z - closed.z) * open;
+    const dx = ex - hinge.x;
+    const dz = ez - hinge.z;
+    const len = Math.hypot(dx, dz) || 0.001;
+    const ang = Math.atan2(-dz, dx);
+    const c = Math.cos(ang);
+    const s = Math.sin(ang);
+    const xf = (px, py, pz) => {
+        const lx = px - hinge.x;
+        const lz = pz - hinge.z;
+        return [hinge.x + c * lx + s * lz, py, hinge.z - s * lx + c * lz];
+    };
+    addBox(list, hinge.x, y0 + 0.08, hinge.z - 0.04, len, 1.85, 0.1, xf);
+}
+
+function rebuildTownGates() {
+    const list = [];
+    for (let i = 0; i < townGates.length; i++) {
+        const gate = townGates[i];
+        if (gate.health <= 0) continue;
+        const leftH = townGatePoint(gate, 0.7, -0.06);
+        const leftC = townGatePoint(gate, 1.85, -0.06);
+        const leftO = townGatePoint(gate, 0.7, -1.21);
+        const rightH = townGatePoint(gate, 3.3, -0.06);
+        const rightC = townGatePoint(gate, 2.15, -0.06);
+        const rightO = townGatePoint(gate, 3.3, -1.21);
+        addTownLeaf(list, leftH, leftC, leftO, gate.open, gate.y0);
+        addTownLeaf(list, rightH, rightC, rightO, gate.open, gate.y0);
+    }
+    textures.townGates = textures.trunk || textures.wood;
+    uploadMesh("townGates", list);
+    if (mesh.townGates) mesh.townGates.cull = false;
+}
+
+function townGatePeopleNear(gate, enemy) {
+    const owner = gate.faction;
+    const reach = enemy ? 8 : 7.5;
+    if (!flying && !player.dead && !inside) {
+        const playerEnemy = angry(owner);
+        if (playerEnemy === enemy && Math.hypot(cam.x - gate.cx, cam.z - gate.cz) < reach) return true;
+    }
+    for (let i = 0; i < men.length; i++) {
+        const man = men[i];
+        if (man.dying || man.health <= 0 || man.archer || man.hidden) continue;
+        const foe = !!(man.raid || man.goblin || man.brute || man.faction !== owner);
+        if (foe !== enemy) continue;
+        if (Math.hypot(man.x - gate.cx, man.z - gate.cz) < reach) return true;
+    }
+    return false;
+}
+
+function updateTownGates(dt) {
+    if (!townGates.length) {
+        if (townGateKey) {
+            townGateKey = "";
+            uploadMesh("townGates", []);
+        }
+        return;
+    }
+    const step = Math.min(1, dt * 4.5);
+    let key = "";
+    for (let i = 0; i < townGates.length; i++) {
+        const gate = townGates[i];
+        const breached = gate.health <= 0;
+        const shut = !breached && townGatePeopleNear(gate, true);
+        const openFor = !shut && (breached || townGatePeopleNear(gate, false));
+        gate.want = openFor ? 1 : 0;
+        const current = gate.open;
+        gate.open = Math.abs(gate.want - current) < 0.02 ? gate.want : current + (gate.want - current) * step;
+        key += (breached ? "x" : Math.round(gate.open * 20)) + ",";
+    }
+    if (key !== townGateKey) {
+        townGateKey = key;
+        rebuildTownGates();
+    }
+}
+
+function townGateBlocks(x, z) {
+    for (let i = 0; i < townGates.length; i++) {
+        const gate = townGates[i];
+        if (gate.health <= 0 || gate.open > 0.55) continue;
+        const dx = x - gate.cx;
+        const dz = z - gate.cz;
+        const along = dx * gate.ax + dz * gate.az;
+        const across = dx * gate.ox + dz * gate.oz;
+        if (Math.abs(along) < 1.35 && Math.abs(across) < 0.55) return true;
+    }
+    return false;
+}
+
+function stampTownPalisade(piece, ox, oz, village) {
     const yaw = piece.yaw || 0;
     const c = Math.cos(yaw);
     const s = Math.sin(yaw);
@@ -4366,8 +4495,7 @@ function stampTownPalisade(piece, ox, oz) {
         rail(0.72, 3.35, 3.9);
         rail(1.4, 3.35, 3.9);
         rail(2.05, 0.55, 3.4);
-        addBox(batches.trunk, 0.7, 0, -0.06, 1.15, 1.9, 0.08, xf);
-        addBox(batches.trunk, 2.15, 0, -0.06, 1.15, 1.9, 0.08, xf);
+        rememberTownGate(piece, x, z, y0, yaw, village);
     } else {
         rail(0.72, 0.1, 3.9);
         rail(1.4, 0.1, 3.9);
@@ -4427,6 +4555,13 @@ let districtNoteAt = 0;
 const DISTRICT_SEE = 270;
 const DISTRICT_KEEP = 340;
 const DISTRICT_SOLDIERS = 24;
+const armySlain = new Map();
+
+function rememberArmySlain(man) {
+    if (!man || !man.campaignArmy) return;
+    const key = man.faction + ":" + (man.campaignPost || "");
+    armySlain.set(key, (armySlain.get(key) || 0) + 1);
+}
 const DISTRICT_BATCH_KEYS = ["plow", "yardgravel", "grass", "dirt", "cobble", "sand", "trunk", "bill", "billFront", "plaster", "roof", "glow"];
 
 function districtPlace(id) {
@@ -4526,6 +4661,12 @@ function releaseDistrictTown() {
     dropTagged(kitShells, id);
     dropTagged(scenery, id);
     dropTagged(hamletPads, id);
+    for (let i = townGates.length - 1; i >= 0; i--) {
+        if (townGates[i].district === id) townGates.splice(i, 1);
+    }
+    townGateKey = "";
+    raidGateList = null;
+    raidGatePick = null;
     for (let i = men.length - 1; i >= 0; i--) {
         if (men[i].campaignArmy && men[i].campaignPost === id) men.splice(i, 1);
         else if (men[i].platform && men[i].district === id) men.splice(i, 1);
@@ -4594,10 +4735,20 @@ function dressDistrictTown(spot) {
 
 function standDistrictArmy(spot) {
     const groups = districtNotes[spot.id] || [];
+    let fighting = false;
+    for (let g = 0; g < groups.length; g++) {
+        if (angry(groups[g].faction)) fighting = true;
+    }
+    if (fighting) {
+        for (let i = 0; i < men.length; i++) {
+            if (men[i].campaignArmy && men[i].campaignPost === spot.id && !men[i].dying) return;
+        }
+    }
     const formed = [];
     for (let g = 0; g < groups.length; g++) {
         const heads = (groups[g].soldiers || 0) + (groups[g].veterans || 0);
-        const count = Math.max(0, Math.min(DISTRICT_SOLDIERS, heads));
+        const slain = armySlain.get(groups[g].faction + ":" + spot.id) || 0;
+        const count = Math.max(0, Math.min(DISTRICT_SOLDIERS, heads) - slain);
         if (!count) continue;
         formed.push({
             faction: groups[g].faction,
@@ -5207,6 +5358,7 @@ function registerKitPhysics(id, wx, wz, baseY, meta, physics, building) {
                 fz: -Math.cos(faceYaw),
                 yaw: faceYaw,
                 wide: entry.wide || 0.56,
+                shape: entry.shape === "round" ? "round" : "flat",
                 swing: 0,
                 want: false
             });
@@ -5384,7 +5536,7 @@ function loadKitTint(id, mat) {
     if (!slot.tintJobs) slot.tintJobs = {};
     if (slot.tints[mat]) return Promise.resolve(slot.tints[mat]);
     if (slot.tintJobs[mat]) return slot.tintJobs[mat];
-    slot.tintJobs[mat] = fetch("models/kitbuild/" + id + "-" + mat + ".rgb.bin?v=colour2")
+    slot.tintJobs[mat] = fetch("models/kitbuild/" + id + "-" + mat + ".rgb.bin?v=doors2")
         .then((res) => {
             if (!res.ok) throw new Error("missing colour: " + id + " " + mat);
             return res.arrayBuffer();
@@ -5406,7 +5558,7 @@ function loadKitRaw(id, mat) {
     const slot = kitBinCache[id] || (kitBinCache[id] = { bins: {}, jobs: {} });
     if (slot.bins[mat]) return Promise.resolve(slot.bins[mat]);
     if (slot.jobs[mat]) return slot.jobs[mat];
-    slot.jobs[mat] = fetch("models/kitbuild/" + id + "-" + mat + ".bin?v=colour1")
+    slot.jobs[mat] = fetch("models/kitbuild/" + id + "-" + mat + ".bin?v=doors2")
         .then((res) => {
             if (!res.ok) throw new Error("missing bake: " + id + " " + mat);
             return res.arrayBuffer();
@@ -5752,7 +5904,7 @@ function stampKitBuildOnce(id, wx, wz, yaw, district, token) {
         shellOn: false, detailOn: false, interiorOn: false,
         shellJob: null, detailJob: null, interiorJob: null
     };
-    return fetch("models/kitbuild/" + id + ".meta.json")
+    return fetch("models/kitbuild/" + id + ".meta.json?v=doors2")
         .then((res) => {
             if (!res.ok) throw new Error("missing bake: " + id);
             return res.json();
@@ -5767,7 +5919,7 @@ function stampKitBuildOnce(id, wx, wz, yaw, district, token) {
                 const role = kitRole(item.mat, item.verts || 0);
                 if (role) building.groups[role].push(item);
             }
-            const physJob = fetch("models/kitbuild/" + id + ".physics.json?v=colour1")
+            const physJob = fetch("models/kitbuild/" + id + ".physics.json?v=doors2")
                 .then((res) => (res.ok ? res.json() : null))
                 .then((physics) => {
                     if (district && token !== districtToken) return;
@@ -5931,7 +6083,7 @@ const outdoorDrawList = [
     "wall", "door", "roof", "store", "plaster", "trunk", "leaf", "bloom", "rock", "linen", "glow",
     "bill", "billFront", "billBrick", "billBrickFront",
     "dfFront", "dfSide", "dfBack", "dfRoof", "dfLong", "dfThatch", "dfYard", "dfPlaster", "dfShop",
-    "bridge", "road", "wood", "gates", "palisade",
+    "bridge", "road", "wood", "gates", "townGates", "palisade",
     "cotWall", "cotRoof", "cotDoor", "cotWood", "cotGlow", "cotFloor",
     "raisedfield", "raisedleaf", "raisedtrunk", "raisedfloor", "raisedpad",
     "raisedbill", "raisedbillFront", "raisedplaster", "raisedroof",
@@ -9145,7 +9297,7 @@ function hurtPlayer(amount) {
     }
 }
 
-// Striking a faction turns that faction hostile until none of them are left standing.
+// Striking a faction turns that faction on the player until the player dies.
 const struckFactions = new Set();
 
 function angry(faction) {
@@ -9161,14 +9313,23 @@ function factionAlive(faction) {
     return false;
 }
 
-function settleFaction(faction) {
-    if (!struckFactions.has(faction)) return;
-    if (factionAlive(faction)) return;
-    struckFactions.delete(faction);
+function settleFaction() {
+    return;
 }
 
 function provoke(faction) {
     if (Number.isInteger(faction) && faction !== GOBLINS) struckFactions.add(faction);
+}
+
+function rouseFaction(faction) {
+    provoke(faction);
+    for (let i = 0; i < men.length; i++) {
+        const other = men[i];
+        if (other.dying || other.health <= 0 || other.faction !== faction) continue;
+        if (!baseSoldier(other) && !other.archer) continue;
+        other.hostile = true;
+        if (other.attackIn <= 0) other.attackIn = 0.15 + Math.random() * 0.35;
+    }
 }
 
 function forgiveAll() {
@@ -9201,6 +9362,8 @@ function respawn() {
     death.hidden = true;
     paintHealth();
     scheduleHeroSave();
+    struckFactions.clear();
+    armySlain.clear();
     for (const man of men) {
         man.hostile = false;
         man.striking = 0;
@@ -9360,7 +9523,7 @@ function postHit(body) {
 }
 
 function wound(man, label, quiet, knockX, knockZ) {
-    if (!man || man.dying || man.health <= 0 || man.jack || man.campaignArmy) return false;
+    if (!man || man.dying || man.health <= 0 || man.jack) return false;
     if (man.raid) {
         raidStrike(man, quiet ? 1 : playerStrikeDamage());
         return true;
@@ -9377,7 +9540,7 @@ function wound(man, label, quiet, knockX, knockZ) {
         else shrinkBoardCrew(man.boardOrder);
         return true;
     }
-    if (!man.goblin && !man.brute) provoke(man.faction);
+    if (!man.goblin && !man.brute) rouseFaction(man.faction);
     const word = label || "Hit";
     const strikeDamage = quiet ? 1 : playerStrikeDamage();
     if (man.brute) {
@@ -9478,16 +9641,7 @@ function wound(man, label, quiet, knockX, knockZ) {
         if (!blocked(nx, man.z, man.faction)) man.x = nx;
         if (!blocked(man.x, nz, man.faction)) man.z = nz;
     }
-    if (!quiet) {
-        for (const other of men) {
-            if (other.dying || other.archer || other.faction !== man.faction) continue;
-            const near = Math.hypot(other.x - man.x, other.z - man.z);
-            if (near < 12) {
-                other.hostile = true;
-                if (other.attackIn <= 0) other.attackIn = 0.3 + Math.random() * 0.6;
-            }
-        }
-    }
+    if (man.campaignArmy && man.health <= 0) rememberArmySlain(man);
     actorsDirty = true;
     if (unit) postHit({ village: man.faction, index: man.index });
     return true;
@@ -9637,6 +9791,49 @@ function steerToward(man, x, z, dt, speed, stopDist) {
 
 function moveToward(man, x, z, dt, speed) {
     return steerToward(man, x, z, dt, speed, 1.2);
+}
+
+// Local steering slides off a fence and then stops. A short path around the block gets soldiers out of houses and pens.
+function navigateToward(man, x, z, dt, speed, stopDist) {
+    const stop = stopDist == null ? 1.2 : stopDist;
+    const dist = Math.hypot(x - man.x, z - man.z);
+    if (dist <= stop) {
+        man.nav = null;
+        man.stuck = 0;
+        return steerToward(man, x, z, dt, speed, stop);
+    }
+    if (!man.nav) {
+        if (steerToward(man, x, z, dt, speed, stop)) {
+            man.stuck = 0;
+            return true;
+        }
+        man.stuck = (man.stuck || 0) + dt;
+        if (man.stuck < 0.35) return false;
+    }
+    const goalMoved = !man.navGoal || Math.hypot(man.navGoal.x - x, man.navGoal.z - z) > 4;
+    if (!man.nav || goalMoved || man.stuck > 1.6) {
+        const route = routeAround([{ x: man.x, z: man.z }, { x: x, z: z }], man.faction, 0.85, 28);
+        man.navGoal = { x: x, z: z };
+        man.stuck = 0.35;
+        if (!route || route.failed || !route.points || route.points.length < 2) {
+            man.nav = null;
+            return false;
+        }
+        man.nav = route.points;
+        man.navI = 1;
+    }
+    const pts = man.nav;
+    let i = man.navI || 1;
+    while (pts && i < pts.length - 1 && Math.hypot(pts[i].x - man.x, pts[i].z - man.z) < 0.85) i++;
+    man.navI = i;
+    if (!pts || i >= pts.length) {
+        man.nav = null;
+        return steerToward(man, x, z, dt, speed, stop);
+    }
+    const moved = steerToward(man, pts[i].x, pts[i].z, dt, speed, 0.4);
+    if (!moved) man.stuck = (man.stuck || 0) + dt;
+    else man.stuck = 0;
+    return moved;
 }
 
 function building(village, kind) {
@@ -10265,9 +10462,11 @@ function stepArrows(dt) {
 
 function stepArcher(man, dt) {
     const target = archerTarget(man);
-    man.hostile = false;
+    const mad = angry(man.faction) && !player.dead;
+    man.hostile = mad;
     if (man.swing > 0) man.swing = Math.max(-1, man.swing - dt / 0.7);
     if (target) {
+        man.walking = false;
         man.yaw = Math.atan2(-(target.x - man.x), -(target.z - man.z));
         man.attackIn -= dt;
         if (man.attackIn <= 0) {
@@ -10275,10 +10474,16 @@ function stepArcher(man, dt) {
             man.swing = 1;
             launchArrow(man.faction, man.x, (man.stand || 0) + 1.28, man.z, target.x, target.y, target.z, 9);
         }
-    } else {
-        man.yaw = man.homeYaw;
-        man.attackIn = Math.min(man.attackIn, 0.4);
+        man.bob = Math.sin(performance.now() * 0.004 + man.side) * 0.015;
+        return false;
     }
+    if (mad && !man.platform) {
+        man.walking = navigateToward(man, cam.x, cam.z, dt, 2.3, 12);
+        man.bob = man.walking ? Math.sin(performance.now() * 0.012 + (man.side || 0)) * 0.04 : 0;
+        return false;
+    }
+    man.yaw = man.homeYaw;
+    man.attackIn = Math.min(man.attackIn, 0.4);
     man.bob = Math.sin(performance.now() * 0.004 + man.side) * 0.015;
     man.walking = false;
     return false;
@@ -10682,8 +10887,7 @@ function stepRevenge(man, dt) {
     const mad = angry(man.faction) && !player.dead;
     if (!mad && !man.hostile && !man.returning) return false;
     rememberHome(man);
-    const fromHome = Math.hypot(cam.x - man.homeX, cam.z - man.homeZ);
-    if (mad && fromHome <= chaseLeash) {
+    if (mad) {
         man.returning = false;
         man.hostile = true;
         const dx = cam.x - man.x;
@@ -10692,12 +10896,7 @@ function stepRevenge(man, dt) {
         man.yaw = Math.atan2(-dx, -dz);
         let moving = false;
         if (dist > 1.4) {
-            const step = Math.min(2.35 * dt, dist - 1.3);
-            const nx = man.x + dx / dist * step;
-            const nz = man.z + dz / dist * step;
-            if (!blocked(nx, man.z, man.faction)) man.x = nx;
-            if (!blocked(man.x, nz, man.faction)) man.z = nz;
-            moving = true;
+            moving = navigateToward(man, cam.x, cam.z, dt, 2.35, 1.35);
             man.striking = 0;
         } else {
             man.attackIn = (man.attackIn || 0) - dt;
@@ -10729,7 +10928,7 @@ function stepRevenge(man, dt) {
     man.striking = 0;
     man.swing = -1;
     man.returning = true;
-    const moving = moveToward(man, man.homeX, man.homeZ, dt, 2.2);
+    const moving = navigateToward(man, man.homeX, man.homeZ, dt, 2.2, 1.2);
     man.walking = Boolean(moving);
     man.bob = moving ? Math.sin(performance.now() * 0.012 + man.index) * 0.05 : 0;
     if (moving) actorsDirty = true;
@@ -10758,8 +10957,18 @@ function raidStrike(man, amount) {
     actorsDirty = true;
 }
 
+function baseSoldier(man) {
+    if (!man || man.raid || man.dying || man.health <= 0) return false;
+    if (man.inn || man.decor || man.fisher || man.farmer || man.jack || man.archer || man.brute || man.goblin || man.staff || man.driver) return false;
+    return !!(man.campaignArmy || man.commander || man.fixed || man.mode === "guard");
+}
+
 function townGuard(man) {
-    return !!(man && man.post === RAID_TOWN && !man.raid && !man.dying && man.health > 0 && !man.inn && !man.decor && !man.fisher && !man.farmer && !man.jack && !man.archer && !man.brute && !man.goblin && (man.fixed || man.commander));
+    if (!man || man.raid || man.dying || man.health <= 0) return false;
+    if (man.inn || man.decor || man.fisher || man.farmer || man.jack || man.archer || man.brute || man.goblin || man.staff || man.driver) return false;
+    if (man.campaignArmy) return man.faction === RAID_TOWN;
+    if (man.commander) return man.post === RAID_TOWN;
+    return man.post === RAID_TOWN && (man.fixed || man.mode === "guard");
 }
 
 function livingRaid() {
@@ -10792,6 +11001,11 @@ let raidGatePick = null;
 let raidSlotMark = -1;
 
 function raidTownGates() {
+    const live = [];
+    for (let i = 0; i < townGates.length; i++) {
+        if (townGates[i].faction === RAID_TOWN) live.push(townGates[i]);
+    }
+    if (live.length) return live;
     if (raidGateList) return raidGateList;
     raidGateList = [];
     const town = places[RAID_TOWN];
@@ -10960,7 +11174,7 @@ function ringPoint(man, foe, mates) {
 }
 
 function chargeToward(man, x, z, dt, speed) {
-    return steerToward(man, x, z, dt, speed, 0.45);
+    return navigateToward(man, x, z, dt, speed, 0.45);
 }
 
 function swingAt(man, foe, dt) {
@@ -11189,6 +11403,11 @@ function stepMan(man, dt) {
         return man.down > 1.2;
     }
     if (man.campaignArmy) {
+        if (townGuard(man) && raidEngaged()) {
+            stepTownFight(man, dt);
+            return false;
+        }
+        if (stepRevenge(man, dt)) return false;
         man.walking = false;
         man.swing = -1;
         man.hostile = false;
@@ -11277,7 +11496,10 @@ function stepMan(man, dt) {
         return false;
     }
     if (shouldPatrol(man)) {
-        stepPatrol(man, dt);
+        man.walking = false;
+        man.swing = -1;
+        man.bob = 0;
+        plant(man);
         return false;
     }
     if (man.homeX != null) {
@@ -11373,7 +11595,8 @@ function updateFight(dt) {
             wearCrew(man, dt);
             continue;
         }
-        if (!activeSet.has(man) && !man.farmHand && !man.staff && !man.hostile && !man.returning && !man.raid && !(townGuard(man) && raidEngaged())) {
+        const provoked = (angry(man.faction) && !player.dead && (baseSoldier(man) || man.archer)) || (man.archer && raidEngaged() && man.faction === RAID_TOWN);
+        if (!activeSet.has(man) && !man.farmHand && !man.staff && !man.hostile && !man.returning && !man.raid && !(townGuard(man) && raidEngaged()) && !provoked) {
             man.walking = false;
             wearCrew(man, dt);
             continue;
@@ -11566,20 +11789,22 @@ const routeCache = new Map();
 // Route ends sit in doorways, at tree trunks and on the shore, so ground this close to them is never counted as blocked.
 const ROUTE_END_FREE = 3;
 
-function legClear(p, q, faction, a, b) {
+function legClear(p, q, faction, a, b, endFree) {
+    const free = endFree == null ? ROUTE_END_FREE : endFree;
     const len = Math.hypot(q.x - p.x, q.z - p.z);
     const steps = Math.ceil(len / 0.5);
     for (let i = 0; i <= steps; i++) {
         const x = p.x + (q.x - p.x) * i / steps;
         const z = p.z + (q.z - p.z) * i / steps;
-        if (Math.hypot(x - a.x, z - a.z) < ROUTE_END_FREE || Math.hypot(x - b.x, z - b.z) < ROUTE_END_FREE) continue;
+        if (Math.hypot(x - a.x, z - a.z) < free || Math.hypot(x - b.x, z - b.z) < free) continue;
         if (blockedOutside(x, z, faction)) return false;
     }
     return true;
 }
 
-function legAround(a, b, faction) {
-    const pad = 60;
+function legAround(a, b, faction, endFree, padOverride) {
+    const free = endFree == null ? ROUTE_END_FREE : endFree;
+    const pad = padOverride == null ? 60 : padOverride;
     // Half-metre cells: palisade walls are 0.72 m thick and farm gates leave about 1.2 m clear.
     const cell = 0.5;
     const x0 = Math.min(a.x, b.x) - pad;
@@ -11594,7 +11819,7 @@ function legAround(a, b, faction) {
         if (!state[i]) {
             const x = x0 + c * cell;
             const z = z0 + r * cell;
-            const end = Math.hypot(x - a.x, z - a.z) < ROUTE_END_FREE || Math.hypot(x - b.x, z - b.z) < ROUTE_END_FREE;
+            const end = Math.hypot(x - a.x, z - a.z) < free || Math.hypot(x - b.x, z - b.z) < free;
             state[i] = end || !blockedOutside(x, z, faction) ? 1 : 2;
         }
         return state[i] === 1;
@@ -11687,17 +11912,23 @@ function legAround(a, b, faction) {
     return pulled;
 }
 
-function routeAround(points, faction) {
-    const key = faction + "|" + points.map((p) => p.x.toFixed(1) + "," + p.z.toFixed(1)).join(";");
+function routeAround(points, faction, endFree, pad) {
+    const key = (endFree == null ? "" : endFree + ":" + (pad == null ? "" : pad) + "|") + faction + "|" + points.map((p) => p.x.toFixed(1) + "," + p.z.toFixed(1)).join(";");
     let route = routeCache.get(key);
     if (route) return route;
     const out = [points[0]];
+    let failed = false;
     for (let i = 1; i < points.length; i++) {
         const a = points[i - 1];
         const b = points[i];
-        const around = legClear(a, b, faction, a, b) ? null : legAround(a, b, faction);
+        const around = legClear(a, b, faction, a, b, endFree) ? null : legAround(a, b, faction, endFree, pad);
         if (around) out.push(...around.slice(1));
-        else out.push(b);
+        else if (endFree == null) out.push(b);
+        else failed = true;
+    }
+    if (failed) {
+        route = { points: [points[0]], length: 0, failed: true };
+        return route;
     }
     let length = 0;
     for (let i = 1; i < out.length; i++) length += Math.hypot(out[i].x - out[i - 1].x, out[i].z - out[i - 1].z);
@@ -12306,6 +12537,7 @@ function rebuildDoors() {
 }
 
 function updatePalisade(dt) {
+    updateTownGates(dt);
     const nowMs = performance.now();
     if (nowMs - gateScanAt > 200) {
         gateScanAt = nowMs;
@@ -12382,6 +12614,7 @@ function blockedOutside(x, z, faction, feet) {
     }
     if (World.tooSteep(x, z)) return true;
     if (World.wet(x, z)) return true;
+    if (townGateBlocks(x, z)) return true;
     if (hitsSolid(x, z, feet == null ? floorAt(x, z) : stand)) return true;
     return wallBlocks(x, z, who);
 }
@@ -13115,7 +13348,49 @@ function hitsDoor(door, x, z, r) {
     uploadMesh("housefloor", floorGeom);
 })();
 
+var doorLeaves = { round: null, flat: null };
+
+function loadDoorLeaves() {
+    ["round", "flat"].forEach((shape) => {
+        fetch("models/kitbuild/leaf-" + shape + ".bin?v=doors2")
+            .then((res) => (res.ok ? res.arrayBuffer() : null))
+            .then((buf) => {
+                if (!buf) return;
+                doorLeaves[shape] = new Float32Array(buf);
+                poseDoors();
+            })
+            .catch(() => null);
+    });
+}
+
+function addKitLeaf(geom, door) {
+    if (!doorLeaves || !door.shape) return false;
+    const src = doorLeaves[door.shape];
+    if (!src || !src.length) return false;
+    const leaf = doorLeaf(door);
+    const dirX = leaf.dirX;
+    const dirZ = leaf.dirZ;
+    const tx = -dirZ;
+    const tz = dirX;
+    const y = door.y || 0;
+    for (let i = 0; i < src.length; i += 6) {
+        const lx = src[i];
+        const ly = src[i + 1];
+        const lz = src[i + 2];
+        geom.push(
+            leaf.x0 + dirX * lx + tx * lz,
+            y + ly,
+            leaf.z0 + dirZ * lx + tz * lz,
+            src[i + 3],
+            src[i + 4],
+            src[i + 5]
+        );
+    }
+    return true;
+}
+
 function addSwungDoor(geom, door) {
+    if (addKitLeaf(geom, door)) return;
     const leaf = doorLeaf(door);
     const px = -leaf.dirZ * 0.04;
     const pz = leaf.dirX * 0.04;
@@ -13151,6 +13426,8 @@ function poseDoors() {
     uploadMesh("housedoor", geom);
     if (mesh.housedoor) mesh.housedoor.cull = false;
 }
+
+loadDoorLeaves();
 
 let raisedData = null;
 let raisedKey = "";
@@ -13976,9 +14253,21 @@ function stampRaisedPlots() {
     poseDoors();
 }
 
+function kitDoorBusy(door) {
+    const reach = 1.6;
+    if (!inside && Math.hypot(cam.x - door.x, cam.z - door.z) < reach) return true;
+    for (let i = 0; i < men.length; i++) {
+        const man = men[i];
+        if (man.hidden || man.dying || (man.health != null && man.health <= 0)) continue;
+        if (Math.hypot(man.x - door.x, man.z - door.z) < reach) return true;
+    }
+    return false;
+}
+
 function swingDoors(dt) {
     let moving = false;
     for (const door of doors) {
+        if (door.kind === "kit") door.want = kitDoorBusy(door);
         const target = door.want ? 1 : 0;
         if (Math.abs(door.swing - target) < 0.001) {
             door.swing = target;

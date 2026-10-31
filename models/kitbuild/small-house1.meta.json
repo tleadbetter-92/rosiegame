@@ -6,7 +6,7 @@
   "materials": [
     {
       "mat": "wood",
-      "verts": 21636
+      "verts": 22596
     },
     {
       "mat": "plaster",
@@ -18,7 +18,7 @@
     },
     {
       "mat": "rock",
-      "verts": 11328
+      "verts": 5688
     },
     {
       "mat": "propmetal",
@@ -26,7 +26,8 @@
     },
     {
       "mat": "furniture",
-      "verts": 26622
+      "verts": 26622,
+      "tint": true
     },
     {
       "mat": "propcloth",
@@ -34,7 +35,8 @@
     },
     {
       "mat": "proppack",
-      "verts": 3840
+      "verts": 3840,
+      "tint": true
     }
   ]
 }

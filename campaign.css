@@ -538,7 +538,8 @@ body.play h1 { font-size: 1.35rem; }
     text-transform: uppercase;
 }
 
-#settlement .choice:disabled {
+#settlement .choice:disabled,
+.turn-card .choice:disabled {
     opacity: 0.55;
     cursor: not-allowed;
 }
@@ -569,6 +570,7 @@ body.play h1 { font-size: 1.35rem; }
 }
 .region-card .place.picked { color: #e2b15a; }
 .region-card .place.aim { color: #f0c36a; text-decoration: underline; }
+.turn-card .choice,
 #settlement .choice {
     display: block;
     width: 100%;

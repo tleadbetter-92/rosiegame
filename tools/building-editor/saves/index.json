@@ -10,10 +10,10 @@
       "maxX": 17,
       "minZ": 12,
       "maxZ": 30,
-      "maxY": 1.5,
+      "maxY": 3,
       "spanX": 31,
       "spanZ": 20,
-      "pieces": 247
+      "pieces": 358
     },
     {
       "id": "blacksmith",
@@ -43,7 +43,7 @@
       "maxY": 4,
       "spanX": 19.5,
       "spanZ": 37.5,
-      "pieces": 141
+      "pieces": 145
     },
     {
       "id": "farm-starter",
@@ -91,19 +91,34 @@
       "pieces": 152
     },
     {
+      "id": "house-1",
+      "name": "House 1",
+      "file": "house-1.json",
+      "cx": 8.5,
+      "cz": 1.5,
+      "minX": 2,
+      "maxX": 15,
+      "minZ": -3,
+      "maxZ": 6,
+      "maxY": 6.1,
+      "spanX": 15,
+      "spanZ": 11,
+      "pieces": 103
+    },
+    {
       "id": "house-type-3",
       "name": "house type 3",
       "file": "house-type-3.json",
       "cx": 25,
       "cz": 19,
-      "minX": 19,
-      "maxX": 31,
-      "minZ": 13,
-      "maxZ": 25,
+      "minX": 22,
+      "maxX": 28,
+      "minZ": 16,
+      "maxZ": 22,
       "maxY": 6,
-      "spanX": 14,
-      "spanZ": 14,
-      "pieces": 118
+      "spanX": 8,
+      "spanZ": 8,
+      "pieces": 93
     },
     {
       "id": "house-type-5",
@@ -133,7 +148,7 @@
       "maxY": 6.1,
       "spanX": 18,
       "spanZ": 18,
-      "pieces": 187
+      "pieces": 199
     },
     {
       "id": "lorsmanor-courtyard",
@@ -148,7 +163,7 @@
       "maxY": 3.05,
       "spanX": 33,
       "spanZ": 24,
-      "pieces": 358
+      "pieces": 370
     },
     {
       "id": "lumber-works",
@@ -211,36 +226,6 @@
       "pieces": 140
     },
     {
-      "id": "random-flat-roof-house",
-      "name": "random flat roof house",
-      "file": "random-flat-roof-house.json",
-      "cx": 4,
-      "cz": 1,
-      "minX": -7,
-      "maxX": 15,
-      "minZ": -7,
-      "maxZ": 9,
-      "maxY": 6.1,
-      "spanX": 24,
-      "spanZ": 18,
-      "pieces": 150
-    },
-    {
-      "id": "roman-coutyard-houed",
-      "name": "roman coutyard houed",
-      "file": "roman-coutyard-houed.json",
-      "cx": 13.5,
-      "cz": 17,
-      "minX": -2,
-      "maxX": 29,
-      "minZ": 6,
-      "maxZ": 28,
-      "maxY": 3.05,
-      "spanX": 33,
-      "spanZ": 24,
-      "pieces": 295
-    },
-    {
       "id": "salt-works",
       "name": "Salt works",
       "file": "salt-works.json",
@@ -268,7 +253,7 @@
       "maxY": 3,
       "spanX": 24,
       "spanZ": 30.5,
-      "pieces": 127
+      "pieces": 131
     },
     {
       "id": "simple-house",
@@ -313,37 +298,22 @@
       "maxY": 3,
       "spanX": 19,
       "spanZ": 19,
-      "pieces": 214
+      "pieces": 222
     },
     {
       "id": "tall-tower",
       "name": "tall tower",
       "file": "tall-tower.json",
-      "cx": 14,
-      "cz": 4,
+      "cx": 12,
+      "cz": 3,
       "minX": 7,
-      "maxX": 21,
+      "maxX": 17,
       "minZ": -3,
-      "maxZ": 11,
+      "maxZ": 9,
       "maxY": 9.149999999999999,
-      "spanX": 16,
-      "spanZ": 16,
-      "pieces": 139
-    },
-    {
-      "id": "tester",
-      "name": "tester",
-      "file": "tester.json",
-      "cx": 1,
-      "cz": 23,
-      "minX": -6,
-      "maxX": 8,
-      "minZ": 16,
-      "maxZ": 30,
-      "maxY": 0,
-      "spanX": 16,
-      "spanZ": 16,
-      "pieces": 107
+      "spanX": 12,
+      "spanZ": 14,
+      "pieces": 123
     }
   ]
 }

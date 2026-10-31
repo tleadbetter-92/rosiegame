@@ -27,6 +27,12 @@
             color: #1c140c; font: 600 13px "Segoe UI", sans-serif;
         }
         label.tool.on { background: #8a5a32; border-color: #f0d8b0; }
+        .pick-row { display: flex; gap: 4px; align-items: stretch; }
+        .pick-row > button, .pick-row > label.tool { width: auto; margin: 4px 0; }
+        .pick-row > button.open, .pick-row > label.tool { flex: 1; }
+        .pick-row > button.danger {
+            flex: 0 0 auto; border-color: rgba(255, 120, 100, 0.55); color: #ffc9c0;
+        }
         #file { display: none; }
         #status { font-size: 12px; color: #f0d8b0; min-height: 1.2em; }
         p.listhead { font-size: 11px; margin: 10px 0 2px; color: #e8c896; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
@@ -49,13 +55,6 @@
         <label for="groundBrush" style="display:block;font-size:12px;color:#d9cbb4;margin:8px 0 4px;">Ground brush (cells)</label>
         <input type="range" id="groundBrush" min="0" max="8" value="2" style="width:100%;">
         <p id="groundBrushLabel" style="font-size:11px;color:#e8c896;margin:0 0 8px;">5 × 5 squares · [ smaller · ] larger</p>
-        <p class="listhead">Buildings</p>
-        <label class="tool on"><input type="radio" name="tool" value="smith" checked> Blacksmith</label>
-        <label class="tool"><input type="radio" name="tool" value="vshop"> Village shop</label>
-        <label class="tool"><input type="radio" name="tool" value="stores"> Storehouse</label>
-        <label class="tool"><input type="radio" name="tool" value="inn"> Inn</label>
-        <label class="tool"><input type="radio" name="tool" value="yard"> Lumber yard</label>
-        <label class="tool"><input type="radio" name="tool" value="farm"> Farm</label>
         <p class="listhead">Farm</p>
         <label class="tool"><input type="radio" name="tool" value="plow"> Plowed field</label>
         <label class="tool"><input type="radio" name="tool" value="farmhouse"> Farmhouse</label>
@@ -69,7 +68,7 @@
         <label class="tool"><input type="radio" name="tool" value="grass"> Grass</label>
         <p class="listhead">Walls and street</p>
         <label class="tool"><input type="radio" name="tool" value="fence"> Fence</label>
-        <label class="tool"><input type="radio" name="tool" value="wall"> Village wall</label>
+        <label class="tool on"><input type="radio" name="tool" value="wall" checked> Village wall</label>
         <label class="tool"><input type="radio" name="tool" value="wallrow"> Village wall ×10</label>
         <label class="tool"><input type="radio" name="tool" value="gate"> Village gate</label>
         <label class="tool"><input type="radio" name="tool" value="lamp"> Street lamp</label>
@@ -108,7 +107,7 @@
         function tavernTexKey(stem) { return "tv" + String(stem).replace(/[^A-Za-z0-9]/g, ""); }
 
         const block = { ground: {}, buildings: [], fences: [] };
-        let tool = "smith";
+        let tool = "wall";
         let yaw = 0;
         let camYaw = 0.6;
         let camPitch = 0.55;
@@ -1249,6 +1248,36 @@
                 })
                 .catch(() => {});
         }
+        function deleteKitBuilding(entry) {
+            const title = entry.name || entry.id;
+            if (!confirm("Delete " + title + "?\n\nIt leaves your kit buildings and the building editor.")) return;
+            const status = document.getElementById("status");
+            status.textContent = "Deleting " + title + "…";
+            fetch("/api/building-save", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ delete: true, id: entry.id })
+            }).then(async (res) => {
+                if (!res.ok) {
+                    let message = "Could not delete " + title + ".";
+                    try {
+                        const err = await res.json();
+                        if (err.error) message = err.error;
+                    } catch (err) { /* keep the plain message */ }
+                    status.textContent = message;
+                    return;
+                }
+                if (tool === "kit:" + entry.id) {
+                    tool = "wall";
+                    const wall = document.querySelector('input[name=tool][value=wall]');
+                    if (wall) wall.checked = true;
+                }
+                loadKitCatalog();
+            }).catch(() => {
+                status.textContent = "Could not delete " + title + ".";
+            });
+        }
+
         function loadKitCatalog() {
             fetch("../building-editor/saves/index.json")
                 .then((res) => (res.ok ? res.json() : { buildings: [] }))
@@ -1263,12 +1292,21 @@
                     };
                     const buildings = kitCatalog.slice().sort((a, b) => String(known[a.id] || a.name).localeCompare(String(known[b.id] || b.name)));
                     for (const b of buildings) {
+                        const row = document.createElement("div");
+                        row.className = "pick-row";
                         const label = document.createElement("label");
                         label.className = "tool";
                         label.style.display = "block";
                         const title = known[b.id] || b.name.replace(/_/g, " ");
                         label.innerHTML = '<input type="radio" name="tool" value="kit:' + b.id + '"> ' + title + " (" + b.pieces + " pcs)";
-                        list.appendChild(label);
+                        const remove = document.createElement("button");
+                        remove.type = "button";
+                        remove.className = "danger";
+                        remove.textContent = "Delete";
+                        remove.addEventListener("click", () => deleteKitBuilding(b));
+                        row.appendChild(label);
+                        row.appendChild(remove);
+                        list.appendChild(row);
                     }
                     document.querySelectorAll("#kitBuildList input[name=tool]").forEach(bindKitRadio);
                     document.getElementById("status").textContent = kitCatalog.length
@@ -1687,7 +1725,7 @@
 
         function fillTownList(extra) {
             const seen = {};
-            const towns = builtinTowns.slice();
+            const towns = builtinTowns.filter((town) => typeof EditorBlocks === "undefined" || EditorBlocks[town.id]);
             for (let i = 0; i < towns.length; i++) seen[towns[i].id] = true;
             for (let i = 0; i < (extra || []).length; i++) {
                 if (seen[extra[i].id]) continue;
@@ -1699,12 +1737,48 @@
             list.innerHTML = "";
             for (let i = 0; i < towns.length; i++) {
                 const town = towns[i];
+                const row = document.createElement("div");
+                row.className = "pick-row";
                 const button = document.createElement("button");
                 button.type = "button";
+                button.className = "open";
                 button.textContent = town.name;
                 button.addEventListener("click", () => openTown(town));
-                list.appendChild(button);
+                const remove = document.createElement("button");
+                remove.type = "button";
+                remove.className = "danger";
+                remove.textContent = "Delete";
+                remove.addEventListener("click", () => deleteTown(town));
+                row.appendChild(button);
+                row.appendChild(remove);
+                list.appendChild(row);
             }
+        }
+
+        function deleteTown(town) {
+            if (!confirm("Delete " + town.name + "?\n\nIt leaves the town list and the game file.")) return;
+            const status = document.getElementById("status");
+            status.textContent = "Deleting " + town.name + "…";
+            fetch("/api/town-save", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ delete: true, id: town.id })
+            }).then(async (res) => {
+                if (!res.ok) {
+                    let message = "Could not delete " + town.name + ".";
+                    try {
+                        const err = await res.json();
+                        if (err.error) message = err.error;
+                    } catch (err) { /* keep the plain message */ }
+                    status.textContent = message;
+                    return;
+                }
+                if (typeof EditorBlocks !== "undefined") delete EditorBlocks[town.id];
+                loadTownList();
+                status.textContent = "Deleted " + town.name + ".";
+            }).catch(() => {
+                status.textContent = "Could not delete " + town.name + ".";
+            });
         }
 
         function loadTownList() {
