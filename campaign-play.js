@@ -339,8 +339,8 @@ function buildingsFor(place) {
 }
 
 function popEach(name) {
-    if (name === "Farms") return 5;
-    if (name === "Storehouse") return 2;
+    if (name === "Farms") return 4;
+    if (name === "Storehouse") return 1;
     if (name === "Barracks") return 5;
     if (name === "Inn") return 2;
     if (name === "Salt farm" || name === "Lumbermill" || name === "Stone mine" || name === "Gold mine" || name === "Iron mine") return 10;
@@ -348,15 +348,17 @@ function popEach(name) {
 }
 
 function buildingSheet(place) {
-    const rows = buildingsFor(place).map((row) => {
+    const sent = place && Array.isArray(place.works) ? place.works : null;
+    const rows = sent || buildingsFor(place).map((row) => {
         const each = popEach(row[0]);
         const people = each * row[1];
         const good = YIELD_GOOD[row[0]];
         const yieldTurn = good ? people * 50 : 0;
-        return { name: row[0], count: row[1], each: each, people: people, good: good, yieldTurn: yieldTurn };
+        return { name: row[0], count: row[1], each: each, have: people, cap: people, people: people, good: good, yieldTurn: yieldTurn };
     });
-    const housed = rows.reduce((sum, row) => sum + row.people, 0);
-    return { rows: rows, population: housed * 3 };
+    const population = rows.reduce((sum, row) => sum + (Number.isFinite(row.have) ? row.have : (row.people || 0)), 0);
+    const room = rows.reduce((sum, row) => sum + (Number.isFinite(row.cap) ? row.cap : (row.people || 0)), 0);
+    return { rows: rows, population: population, room: room };
 }
 
 function handFaction() {
@@ -414,13 +416,13 @@ function settlementOf(id) {
         const region = regions[i];
         if (region.id === id) {
             const occupied = Number.isInteger(region.holder) && region.holder !== region.faction;
-            return { id: region.id, name: region.name, faction: region.factionName || "", holderName: region.holderName || "", occupied: occupied, major: true };
+            return { id: region.id, name: region.name, faction: region.factionName || "", holderName: region.holderName || "", occupied: occupied, major: true, works: region.works || null };
         }
         const towns = region.towns || [];
         for (let t = 0; t < towns.length; t++) {
             if (towns[t].id === id) {
                 const occupied = Number.isInteger(towns[t].holder) && towns[t].holder !== region.faction;
-                return { id: towns[t].id, name: towns[t].name, faction: region.factionName || "", holderName: towns[t].holderName || "", occupied: occupied, major: false };
+                return { id: towns[t].id, name: towns[t].name, faction: region.factionName || "", holderName: towns[t].holderName || "", occupied: occupied, major: false, works: towns[t].works || null };
             }
         }
     }
@@ -526,19 +528,44 @@ function paintSettlement() {
     }
     const sheet = buildingSheet(place);
     const rows = sheet.rows.map((row) => {
-        const people = row.people ? row.people + " people" : "";
+        const have = Number.isFinite(row.have) ? row.have : (row.people || 0);
+        const cap = Number.isFinite(row.cap) ? row.cap : have;
+        const word = have === 1 ? "person" : "people";
+        const people = cap ? (have === cap ? have + " " + word : have + " of " + cap) : "";
         const made = row.yieldTurn ? "<em class=\"yield\">+" + row.yieldTurn + " " + row.good + " a turn</em>" : "<em class=\"yield\"></em>";
         return "<li><span>" + row.name + "</span><b>" + row.count + "</b><em>" + people + "</em>" + made + "</li>";
     }).join("");
     const kind = place.major ? "Capital" : "Town";
+    const yours = placeHolder(place.id) === handFaction();
+    const choosing = !!(campaign && campaign.hand && !campaign.hand.waiting);
+    const gold = (function () {
+        const regions = (campaign && campaign.regions) || [];
+        for (let i = 0; i < regions.length; i++) {
+            if (regions[i].faction === handFaction()) {
+                const stores = regions[i].stores;
+                return stores && Number.isFinite(Number(stores.gold)) ? Number(stores.gold) : 0;
+            }
+        }
+        return 0;
+    })();
+    const short = sheet.room - sheet.population;
+    let hire = "";
+    if (yours && choosing) {
+        if (short > 0 && gold >= 50) {
+            hire = "<button type=\"button\" class=\"choice\" data-order=\"worker\" data-place=\"" + place.id + "\">Replace a worker · 50 gold</button>";
+        } else if (short > 0) {
+            hire = "<button type=\"button\" class=\"choice\" data-order=\"worker\" disabled>Replace a worker · need 50 gold</button>";
+        }
+    }
     const blurb = place.major
-        ? "The main town. Houses are homes. Farms, the barracks, and the other works are where people live and add goods to this faction's stores when the turn ends."
-        : "A smaller town. Its farms and works add goods to this faction's stores when the turn ends.";
+        ? "The people here are the workers in these buildings. A farm holds 4, the inn 2, the barracks 5, and the storehouse 1. They start full. A lost worker can be replaced for 50 gold."
+        : "The people here are the workers in these buildings. A farm holds 4 and the storehouse holds 1. They start full. A lost worker can be replaced for 50 gold.";
     box.innerHTML = "<p class=\"place-kind\">" + place.faction + " · " + kind + (place.occupied ? " · held by " + place.holderName : "") + "</p>" +
         "<h3>" + place.name + "</h3>" +
         "<p class=\"quiet\">" + blurb + "</p>" +
         "<ul class=\"buildings\">" + rows + "</ul>" +
-        "<p class=\"population\">About " + sheet.population + " people</p>" +
+        "<p class=\"population\">" + sheet.population + " people</p>" +
+        hire +
         (place.occupied ? "<p class=\"quiet\">Its goods go to " + place.holderName + " until someone takes it back.</p>" : "");
 }
 
@@ -651,6 +678,7 @@ document.getElementById("settlement").addEventListener("click", (event) => {
     if (order === "defend") postOrder({ defend: true }, picked);
     if (order === "occupy" || order === "loot") postOrder({ resolve: order }, picked);
     if (order === "veteran") postOrder({ veteran: true }, picked);
+    if (order === "worker") postOrder({ worker: true, place: button.getAttribute("data-place") }, picked);
 });
 
 endButton.addEventListener("click", async () => {

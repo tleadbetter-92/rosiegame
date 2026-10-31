@@ -67,7 +67,7 @@
                 <li><b>Floor</b> — <code>Floor_Mosaic_PolyHaven</code> = real CC0 photo mosaic (Poly Haven). Procedural: <code>Floor_Mosaic_Terra</code>, <code>BlackWhite</code>, <code>Medallion</code>, <code>Meander</code>. Same 2&nbsp;m tile; <b>R</b> to rotate.</li>
                 <li><b>OverhangCorner / OverhangCorner2</b> — same L-floor; <b>2</b> is the <b>opposite</b> corner (mirrored lip). Use <b>1</b> on one outer corner of a deck, <b>2</b> on the diagonally opposite outer corner; use <b>R</b> on each cell so lips face open air.</li>
                 <li><b>Prop</b> — crates, wagon, chimneys, vines, fences, border trim; search <b>prop</b> or <b>floor</b> above.</li>
-                <li><b>Building / Interior / Props</b> — walls and houses, then furniture and rooms, then food, market, and yard pieces. Building pieces step by half a metre, so they still land on a full metre. <b>Arrow keys</b> nudge the last interior or prop (0.25&nbsp;m; Shift 0.5; Ctrl 0.1).</li>
+                <li><b>Building / Interior</b> — walls and houses, then pieces sorted by what they are: furniture, large, small, decor, and work. Half-metre steps. <b>Arrow keys</b> nudge the last interior piece (0.25&nbsp;m; Shift 0.5; Ctrl 0.1).</li>
                 <li><b>Lantern_Wall</b> / <b>Torch_Metal</b> — wall edge + 1&nbsp;m along the wall; <b>R</b> to align with the wall run.</li>
                 <li>Medieval <b>street lamps</b> are not in the village kit — use the town editor lamp or CC0 under <code>models/town-props/</code>.</li>
             </ul>
@@ -308,6 +308,8 @@
 
         function isFurnishingPiece(pieceId) {
             if (!pieceId || !manifest || !manifest.categories) return false;
+            const dir = manifest.pieceDirs && manifest.pieceDirs[pieceId];
+            if (dir && dir.indexOf("/fantasy-props/") !== -1) return true;
             for (const cat of Object.keys(manifest.categories)) {
                 if (!cat.startsWith("Furnishing_")) continue;
                 if ((manifest.categories[cat] || []).includes(pieceId)) return true;
@@ -613,9 +615,9 @@
             const el = document.getElementById("editModeHint");
             if (!el) return;
             if (editMode === "interior") {
-                el.textContent = "Furniture, storage, worktools, kitchen, and rooms. Half-metre steps. Arrow keys nudge the last piece.";
+                el.textContent = "Furniture, large pieces, small pieces, decor, and work pieces. Half-metre steps. Arrow keys nudge the last piece.";
             } else if (editMode === "props") {
-                el.textContent = "Food, market, yard, and loose props. Half-metre steps. Arrow keys nudge the last piece.";
+                el.textContent = "Loose pieces that are not part of a wall or a room. Half-metre steps. Arrow keys nudge the last piece.";
             } else {
                 el.textContent = "Walls, floors, roofs, and whole houses. Half-metre steps, so a piece can sit on a full metre or halfway between.";
             }
@@ -754,7 +756,7 @@
 
         function lastPlacedFurnishing() {
             for (let i = placed.length - 1; i >= 0; i--) {
-                if (isFurnishingPiece(placed[i].id)) return { rec: placed[i], index: i };
+                if (isFormPiece(placed[i].id) || isFurnishingPiece(placed[i].id)) return { rec: placed[i], index: i };
             }
             return null;
         }
@@ -762,7 +764,7 @@
         function nudgeLastFurnishing(dx, dz) {
             const hit = lastPlacedFurnishing();
             if (!hit) {
-                setStatus("Place a Furnishing piece first, then use arrow keys to nudge it.");
+                setStatus("Place an interior piece first, then use arrow keys to nudge it.");
                 return;
             }
             hit.rec.x = Math.round((hit.rec.x + dx) * 1000) / 1000;
@@ -1025,9 +1027,68 @@
             return name.charAt(0).toUpperCase() + name.slice(1);
         }
 
+        const FORM_CATS = ["Furniture", "Large", "Small", "Decor", "Work"];
+
+        function isFormPiece(pieceId) {
+            if (!pieceId || !manifest || !manifest.categories) return false;
+            for (let i = 0; i < FORM_CATS.length; i++) {
+                if ((manifest.categories[FORM_CATS[i]] || []).indexOf(pieceId) >= 0) return true;
+            }
+            return false;
+        }
+
+        function objectForm(name) {
+            const n = String(name).toLowerCase();
+            const has = (re) => re.test(n);
+            if (has(/anvil|workbench|whetstone|weaponstand|weapon-stand|pickaxe|scales|balance-scale|pulley|stall|wagon|cart|ladder|dummy|axe_|sword/)) return "Work";
+            if (has(/banner|tapestry|rug|painting|plant|potted|vine|curtain|cushion|plaque|shield|vase|sign|window_box|window-box|herb-drying|chandelier|lantern|torch|flame|tree|fire_/)) return "Decor";
+            if (has(/bed|bench|chair|stool|pew|nightstand|shelf|cabinet|bookcase|bookstand|counter|menu-stand|menu_stand|peg|(^|[^a-z])table|altar/)) {
+                if (has(/fork|knife|spoon|plate|candle|cutlery/)) return "Small";
+                return "Furniture";
+            }
+            if (has(/potion/)) return "Small";
+            if (has(/crate|barrel|keg|chest|sack|cask|\bbag\b|pouch_large|cauldron|bucket|cage|basket|woodpile|potcrane|display|(^|[^a-z])pot([^a-z]|$)|hearth|(^|[^a-z])bricks([^a-z]|$)/)) return "Large";
+            if (has(/bottle|mug|jug|pitcher|book|scroll|coin|key|candle|chalice|fork|knife|spoon|plate|bowl|cutlery|food-|fruit-|veg-|apple|bread|carrot|cabbage|cheese|fish|grapes|ham|loaf|onion|roll|sausage|tomato|stew|platter|pie|ale|rope|chain|pouch|herb/)) return "Small";
+            return null;
+        }
+
+        function organizeObjectLists() {
+            if (!manifest || manifest._formed) return;
+            manifest.pieceDirs = manifest.pieceDirs || {};
+            manifest.categoryDirs = manifest.categoryDirs || {};
+            const next = { Furniture: [], Large: [], Small: [], Decor: [], Work: [] };
+            for (const cat of Object.keys(manifest.categories)) {
+                const dir = manifest.categoryDirs[cat] || manifest.piecesDir || "";
+                const stay = [];
+                for (const name of manifest.categories[cat]) {
+                    const form = objectForm(name);
+                    if (!form) {
+                        stay.push(name);
+                        continue;
+                    }
+                    if (dir && !manifest.pieceDirs[name]) manifest.pieceDirs[name] = dir;
+                    if (!next[form].includes(name)) next[form].push(name);
+                }
+                manifest.categories[cat] = stay;
+            }
+            for (const cat of Object.keys(manifest.categories)) {
+                if (!manifest.categories[cat].length) delete manifest.categories[cat];
+            }
+            for (const form of FORM_CATS) {
+                next[form].sort((a, b) => a.localeCompare(b));
+                manifest.categories[form] = next[form];
+            }
+            manifest._formed = true;
+            const propsBtn = document.querySelector(".editMode[data-edit='props']");
+            if (propsBtn) {
+                const anyProps = Object.keys(manifest.categories).some((cat) => groupForCategory(cat) === "props");
+                propsBtn.hidden = !anyProps;
+            }
+        }
+
         function groupForCategory(cat) {
-            if (cat.startsWith("Furnishing_") || cat.startsWith("Interior ")) return "interior";
-            if (cat.startsWith("Props ") || cat === "Prop" || cat === "Retro prop") return "props";
+            if (FORM_CATS.indexOf(cat) >= 0) return "interior";
+            if (cat === "Interior rooms") return "building";
             return "building";
         }
 
@@ -1037,7 +1098,13 @@
 
         function fillCategories() {
             const q = searchEl.value.trim().toLowerCase();
-            const cats = Object.keys(manifest.categories).sort();
+            organizeObjectLists();
+            const cats = Object.keys(manifest.categories).sort((a, b) => {
+                const ia = FORM_CATS.indexOf(a);
+                const ib = FORM_CATS.indexOf(b);
+                if (ia >= 0 || ib >= 0) return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+                return a.localeCompare(b);
+            });
             categoryEl.innerHTML = "";
             for (const cat of cats) {
                 if (!categoryAllowed(cat)) continue;

@@ -4529,7 +4529,7 @@ function releaseDistrictTown() {
     for (let i = men.length - 1; i >= 0; i--) {
         if (men[i].campaignArmy && men[i].campaignPost === id) men.splice(i, 1);
         else if (men[i].platform && men[i].district === id) men.splice(i, 1);
-        else if (men[i].farmHand && men[i].district === id) men.splice(i, 1);
+        else if ((men[i].farmHand || men[i].staff) && men[i].district === id) men.splice(i, 1);
     }
     solidGrid = null;
     floorGrid = null;
@@ -5665,6 +5665,39 @@ function spawnKitFarmHands(building, wx, wz, cx, cz, yaw) {
     }
 }
 
+function spawnKitIdleStaff(building, wx, wz, cx, cz, yaw, spots) {
+    const id = (building.district || "town") + ":staff:" + building.id + ":" + wx.toFixed(1) + ":" + wz.toFixed(1);
+    if (men.some((man) => man.staff && man.farmId === id)) return;
+    const point = (x, z) => kitWorldPoint(x, z, wx, wz, cx, cz, yaw);
+    const faction = crewFaction(building);
+    for (let hand = 0; hand < spots.length; hand++) {
+        const at = point(spots[hand][0], spots[hand][1]);
+        men.push({
+            staff: true,
+            farmId: id,
+            district: building.district || null,
+            fisher: false,
+            skin: "dwarf",
+            faction: faction,
+            index: -800 - ((farmHandSerial += 1) % 4000),
+            health: 3,
+            post: -1,
+            x: at.x,
+            z: at.z,
+            yaw: yaw,
+            bob: 0,
+            down: 0,
+            swing: -1,
+            walking: false,
+            hostile: false,
+            attackIn: 0,
+            striking: 0,
+            struck: false,
+            dying: false
+        });
+    }
+}
+
 function spawnKitSaltHands(building, wx, wz, cx, cz, yaw) {
     const id = (building.district || "town") + ":salt:" + wx.toFixed(1) + ":" + wz.toFixed(1);
     if (men.some((man) => man.farmHand && man.farmId === id)) return;
@@ -5741,6 +5774,8 @@ function stampKitBuildOnce(id, wx, wz, yaw, district, token) {
                     registerKitPhysics(id, wx, wz, baseY, meta, physics, building);
                     if (id === "farm") spawnKitFarmHands(building, wx, wz, meta.cx, meta.cz, yaw);
                     if (id === "salt-works-ex") spawnKitSaltHands(building, wx, wz, meta.cx, meta.cz, yaw);
+                    if (id === "storehouse") spawnKitIdleStaff(building, wx, wz, meta.cx, meta.cz, yaw, [[17, 12]]);
+                    if (id === "barracks") spawnKitIdleStaff(building, wx, wz, meta.cx, meta.cz, yaw, [[12, 19], [12, 20], [12, 21], [12, 22], [12, 23]]);
                 })
                 .catch(() => null);
             return physJob;
@@ -7620,7 +7655,7 @@ function mergeMen(data) {
             length: 0
         });
     });
-    const prev = new Map(men.filter((man) => !man.fisher && !man.farmer && !man.archer && !man.decor && !man.driver && !man.jack && !man.fixed && !man.inn && !man.commander && !man.brute).map((man) => [man.faction + ":" + man.index, man]));
+    const prev = new Map(men.filter((man) => !man.fisher && !man.farmer && !man.archer && !man.decor && !man.driver && !man.jack && !man.fixed && !man.inn && !man.commander && !man.brute && !man.staff).map((man) => [man.faction + ":" + man.index, man]));
     const next = [];
     const keep = new Set();
     for (const item of wanted) {
@@ -7669,9 +7704,9 @@ function mergeMen(data) {
             });
         }
     }
-    const keptFish = men.filter((man) => man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board || man.fixed || man.inn || man.commander || man.brute);
+    const keptFish = men.filter((man) => man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board || man.fixed || man.inn || man.commander || man.brute || man.staff);
     for (const man of men) {
-        if (man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board || man.fixed || man.inn || man.commander || man.brute) continue;
+        if (man.fisher || man.farmer || man.archer || man.decor || man.driver || man.jack || man.board || man.fixed || man.inn || man.commander || man.brute || man.staff) continue;
         const key = man.faction + ":" + man.index;
         if (keep.has(key)) continue;
         man.dying = true;
@@ -11230,6 +11265,17 @@ function stepMan(man, dt) {
     if (man.decor) return stepKeeper(man, dt);
     if (man.fisher) return stepFisher(man, dt);
     if (man.farmer) return stepFarmer(man, dt);
+    if (man.staff) {
+        man.walking = false;
+        man.swing = -1;
+        man.hostile = false;
+        man.bob = 0;
+        man.skin = "dwarf";
+        man.anim = "idle";
+        man.animTime = (man.animTime || 0) + dt;
+        plant(man);
+        return false;
+    }
     if (shouldPatrol(man)) {
         stepPatrol(man, dt);
         return false;
@@ -11257,7 +11303,7 @@ function separateMen(dt) {
     const near = [];
     for (let i = 0; i < picked.length; i++) {
         const man = picked[i].man;
-        if (man.dying || man.archer || man.decor || man.driver || man.inn || man.commander || man.indoors || man.mode === "march" || man.campaignArmy) continue;
+        if (man.dying || man.archer || man.decor || man.driver || man.inn || man.commander || man.indoors || man.mode === "march" || man.campaignArmy || man.staff) continue;
         near.push(man);
     }
     const step = dt * 2;
@@ -11327,7 +11373,7 @@ function updateFight(dt) {
             wearCrew(man, dt);
             continue;
         }
-        if (!activeSet.has(man) && !man.farmHand && !man.hostile && !man.returning && !man.raid && !(townGuard(man) && raidEngaged())) {
+        if (!activeSet.has(man) && !man.farmHand && !man.staff && !man.hostile && !man.returning && !man.raid && !(townGuard(man) && raidEngaged())) {
             man.walking = false;
             wearCrew(man, dt);
             continue;

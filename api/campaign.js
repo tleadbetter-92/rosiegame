@@ -3069,8 +3069,10 @@ function present(state, now, turn, paused, opts) {
                 holderName: campaignFactionName(state, holderOf(state, region.id, region.faction)),
                 towns: (region.towns || []).map((town) => Object.assign({}, town, {
                     holder: holderOf(state, town.id, region.faction),
-                    holderName: campaignFactionName(state, holderOf(state, town.id, region.faction))
+                    holderName: campaignFactionName(state, holderOf(state, town.id, region.faction)),
+                    works: staffSheet(state, town.id, false)
                 })),
+                works: staffSheet(state, region.id, true),
                 stores: stores || null,
                 army: {
                     soldiers: army && Number.isFinite(army.soldiers) ? army.soldiers : 0,
@@ -3538,12 +3540,69 @@ function ensureRegions(state) {
 }
 
 const CAMPAIGN_GOODS = ["gold", "stone", "food", "salt", "iron", "wood", "copper", "tin", "other"];
-const TOWN_YIELD = {
-    westfield: ["salt"],
-    southfield: ["wood"],
-    eastwatch: ["stone"],
-    westwatch: ["gold", "iron"]
+const WORKER_GOLD = 50;
+const STAFF_EACH = {
+    Farms: 4,
+    Storehouse: 1,
+    Barracks: 5,
+    Inn: 2,
+    "Salt farm": 10,
+    Lumbermill: 10,
+    "Stone mine": 10,
+    "Gold mine": 10,
+    "Iron mine": 10
 };
+const STAFF_GOOD = {
+    Farms: "food",
+    "Salt farm": "salt",
+    Lumbermill: "wood",
+    "Stone mine": "stone",
+    "Gold mine": "gold",
+    "Iron mine": "iron"
+};
+const TOWN_WORKS = {
+    westfield: [["Salt farm", 1]],
+    southfield: [["Lumbermill", 1]],
+    eastwatch: [["Stone mine", 1]],
+    westwatch: [["Gold mine", 1], ["Iron mine", 1]]
+};
+
+function buildingSpec(id, major) {
+    if (major) {
+        return [["Houses", 20], ["Farms", 6], ["Storehouse", 1], ["Blacksmith", 1], ["Barracks", 1], ["Inn", 1], ["Lord's house", 1]];
+    }
+    return [["Houses", 5], ["Farms", 2], ["Storehouse", 1]].concat(TOWN_WORKS[id] || []);
+}
+
+function staffSheet(state, id, major) {
+    const saved = state && state.campaignCrew && state.campaignCrew[id];
+    return buildingSpec(id, major).map((row) => {
+        const each = STAFF_EACH[row[0]] || 0;
+        const cap = each * row[1];
+        let have = cap;
+        if (saved && Number.isFinite(Number(saved[row[0]]))) {
+            have = Math.max(0, Math.min(cap, Math.round(Number(saved[row[0]]))));
+        }
+        const good = STAFF_GOOD[row[0]] || "";
+        return { name: row[0], count: row[1], each: each, cap: cap, have: have, good: good, yieldTurn: good ? have * 50 : 0 };
+    });
+}
+
+function addStaffYield(stores, rows) {
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row.good || !row.have) continue;
+        stores[row.good] = (Number(stores[row.good]) || 0) + row.have * 50;
+    }
+}
+
+function firstOpenPost(state, id, major) {
+    const rows = staffSheet(state, id, major);
+    for (let i = 0; i < rows.length; i++) {
+        if (rows[i].have < rows[i].cap) return rows[i];
+    }
+    return null;
+}
 
 function blankStores() {
     const row = {};
@@ -3569,12 +3628,10 @@ function produceCampaign(state, faction) {
     const stores = state.campaignStores[String(faction)];
     if (!stores) return;
     for (const region of state.regions || []) {
-        if (holderOf(state, region.id, region.faction) === faction) stores.food += 6 * 5 * 50;
+        if (holderOf(state, region.id, region.faction) === faction) addStaffYield(stores, staffSheet(state, region.id, true));
         for (const town of region.towns || []) {
             if (holderOf(state, town.id, region.faction) !== faction) continue;
-            stores.food += 2 * 5 * 50;
-            const goods = TOWN_YIELD[town.id] || [];
-            for (let g = 0; g < goods.length; g++) stores[goods[g]] += 10 * 50;
+            addStaffYield(stores, staffSheet(state, town.id, false));
         }
     }
 }
@@ -6457,6 +6514,59 @@ async function hit(village, index) {
     return present(state, now, turnOf(state, clock), Number.isFinite(state.pausedAt));
 }
 
+function hireOneWorker(state, faction, id) {
+    const place = campaignPlace(state, id);
+    if (!place) return "That town is not on the map.";
+    if (holderOf(state, place.id, place.faction) !== faction) return "That town is not yours.";
+    const open = firstOpenPost(state, place.id, place.major);
+    if (!open) return "Those buildings are fully staffed.";
+    const stores = state.campaignStores && state.campaignStores[String(faction)];
+    const gold = Number(stores && stores.gold) || 0;
+    if (gold < WORKER_GOLD) return "A worker costs " + WORKER_GOLD + " gold.";
+    stores.gold = gold - WORKER_GOLD;
+    if (!state.campaignCrew || typeof state.campaignCrew !== "object") state.campaignCrew = {};
+    if (!state.campaignCrew[place.id]) state.campaignCrew[place.id] = {};
+    state.campaignCrew[place.id][open.name] = open.have + 1;
+    note(state, campaignFactionName(state, faction) + " replaces a worker at " + place.name + " (" + open.name + ").");
+    return null;
+}
+
+function refillCampaignCrew(state, faction) {
+    const places = [];
+    for (const region of state.regions || []) {
+        if (region.faction !== faction) continue;
+        if (holderOf(state, region.id, region.faction) === faction) places.push(region.id);
+        for (const town of region.towns || []) {
+            if (holderOf(state, town.id, region.faction) === faction) places.push(town.id);
+        }
+    }
+    for (let guard = 0; guard < 40; guard++) {
+        let progressed = false;
+        for (let i = 0; i < places.length; i++) {
+            const place = campaignPlace(state, places[i]);
+            if (!place || !firstOpenPost(state, place.id, place.major)) continue;
+            if (!hireOneWorker(state, faction, place.id)) progressed = true;
+        }
+        if (!progressed) break;
+    }
+}
+
+async function trainWorker(placeId) {
+    const state = await readState();
+    const now = Date.now();
+    syncWorld(state, now);
+    ensureCampaignStores(state);
+    ensureCampaignArmies(state);
+    ensureCampaignRound(state);
+    const faction = actingFaction(state);
+    if (faction < 0) return { error: "The next turn has not started." };
+    if (state.campaignRound.step === "wait") return { error: "The next turn has not started." };
+    const problem = hireOneWorker(state, faction, placeId);
+    if (problem) return { error: problem };
+    await writeState(state);
+    return freshPresent(state, now);
+}
+
 async function trainVeteran() {
     const state = await readState();
     const now = Date.now();
@@ -6504,6 +6614,7 @@ async function endCampaignTurn() {
     } else if (round.step === "b") {
         produceCampaign(state, 0);
         trainCampaign(state, 0);
+        refillCampaignCrew(state, 0);
         note(state, campaignFactionName(state, 0) + " is done.");
         if (needsAttackReply(state)) {
             round.step = "reply";
@@ -6526,6 +6637,15 @@ async function campaignHandler(req, res) {
         if (req.method === "POST") {
             if (req.body && req.body.endTurn) {
                 res.status(200).json(await endCampaignTurn());
+                return;
+            }
+            if (req.body && req.body.worker && typeof req.body.place === "string") {
+                const sent = await trainWorker(req.body.place);
+                if (sent && sent.error && !sent.regions) {
+                    res.status(400).json({ error: sent.error });
+                    return;
+                }
+                res.status(200).json(sent);
                 return;
             }
             if (req.body && req.body.veteran) {
