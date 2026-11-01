@@ -788,7 +788,9 @@ function refreshHud() {
         buildBtns[key].disabled = !!pilot || !!placing || !kits[key] || wood < spec.wood || !hasWorker;
     });
     if (pilot) {
-        selEl.textContent = "You. WASD walks, mouse looks. F or Esc returns to the map.";
+        selEl.textContent = document.body.classList.contains("handheld")
+            ? "Drag the view to look. The pad walks. Map takes you back."
+            : "You. WASD walks, mouse looks. F or Esc returns to the map.";
         workerBtn.disabled = true;
         soldierBtn.disabled = true;
         return;
@@ -1044,6 +1046,31 @@ guardBtn.addEventListener("click", () => setStance("guard"));
 attackBtn.addEventListener("click", () => setStance("attack"));
 
 const SAVE_KEY = "aoe-save";
+let aGift = false;
+
+function dryNear(x, z) {
+    if (!inWater(x, z)) return { x: x, z: z };
+    for (let ring = 6; ring <= 48; ring += 4) {
+        for (let step = 0; step < 10; step++) {
+            const ang = (step / 10) * Math.PI * 2;
+            const nx = x + Math.cos(ang) * ring;
+            const nz = z + Math.sin(ang) * ring;
+            if (!inWater(nx, nz)) return { x: nx, z: nz };
+        }
+    }
+    return { x: home.x, z: home.z };
+}
+
+function grantTeamA() {
+    if (!home || !actors) return;
+    for (let i = 0; i < 50; i++) {
+        const ang = (i / 50) * Math.PI * 2;
+        const ring = 16 + (i % 6) * 3;
+        const spot = dryNear(home.x + Math.cos(ang) * ring, home.z + Math.sin(ang) * ring);
+        spawn("worker", spot.x, spot.z, "you");
+    }
+    aGift = true;
+}
 
 function readSave() {
     try {
@@ -1071,6 +1098,7 @@ function writeSave() {
         rally: rally ? { x: rally.x, z: rally.z } : null,
         houses: Object.keys(kits).some((key) => kits[key]) ? built.map((house) => ({ kind: house.kind, side: house.side || "you", x: house.x, z: house.z, y: house.y })) : ((readSave() || {}).houses || []),
         pending: Object.keys(kits).some((key) => kits[key]) ? sites.map((site) => ({ kind: site.kind, side: site.side || "you", x: site.x, z: site.z, y: site.y, left: site.left })) : ((readSave() || {}).pending || []),
+        aGift: aGift,
         trains: trains.map((job) => ({ side: job.side, kind: job.kind, left: job.left })),
         units: units.map((unit) => ({
             id: unit.id,
@@ -1180,6 +1208,8 @@ function restoreMatch(save) {
             trains.push({ side: row.side, kind: row.kind, left: Math.max(0, Number(row.left) || TRAIN_TIME) });
         }
     }
+    if (save.aGift) aGift = true;
+    else grantTeamA();
 }
 
 const floorPads = [];
@@ -1261,6 +1291,7 @@ async function startMatch(playerHome, otherHome) {
     const save = readSave();
     if (save) restoreMatch(save);
     else {
+        aGift = true;
         spawn("worker", home.x + 4, home.z + 24, "you");
         if (cpuHome) spawn("worker", cpuHome.x + 4, cpuHome.z + 24, "cpu");
     }
@@ -1763,7 +1794,7 @@ function stepSide(side) {
     for (let i = 0; i < units.length; i++) {
         const unit = units[i];
         if (unit.side !== side || unit.kind !== "worker" || unit === pilot) continue;
-        if (unit.orders || unit.state === "move" || unit.state === "return") held.push(unit);
+        if (unit.state === "move" || unit.state === "return" || unit.state === "goto" || unit.state === "gather") held.push(unit);
         else open.push(unit);
     }
     const workers = open.length + held.length;
@@ -2146,9 +2177,17 @@ let mapDrag = false;
 let mapMoved = false;
 let downX = 0;
 let downY = 0;
+let lookTouch = null;
+let panX = 0;
+let panY = 0;
 renderer.domElement.addEventListener("contextmenu", (event) => event.preventDefault());
 renderer.domElement.addEventListener("pointerdown", (event) => {
     if (pilot) {
+        if (event.pointerType === "touch" || document.body.classList.contains("handheld")) {
+            if (event.button !== 0 || event.target !== renderer.domElement) return;
+            lookTouch = { id: event.pointerId, x: event.clientX, y: event.clientY };
+            return;
+        }
         if (document.pointerLockElement !== renderer.domElement) {
             renderer.domElement.requestPointerLock();
             return;
@@ -2160,15 +2199,20 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     }
     downX = event.clientX;
     downY = event.clientY;
+    panX = event.clientX;
+    panY = event.clientY;
     boxMoved = false;
     mapMoved = false;
     if (event.button === 0) {
         if (placing) return;
-        if (event.shiftKey) boxDrag = true;
-        else mapDrag = true;
+        const finger = event.pointerType === "touch" && document.body.classList.contains("handheld");
+        if (finger && !document.body.classList.contains("selecting")) mapDrag = true;
+        else boxDrag = true;
     }
+    if (event.button === 2 && !placing) mapDrag = true;
 });
 window.addEventListener("pointerup", (event) => {
+    if (lookTouch && event.pointerId === lookTouch.id) lookTouch = null;
     if (pilot) return;
     if (placing && event.button === 2) {
         cancelPlace();
@@ -2180,6 +2224,11 @@ window.addEventListener("pointerup", (event) => {
         return;
     }
     if (event.button === 2) {
+        const dragged = mapDrag && mapMoved;
+        mapDrag = false;
+        mapMoved = false;
+        renderer.domElement.style.cursor = "";
+        if (dragged) return;
         const point = groundAt(event);
         if (!point) return;
         if (manorSelected && !selected.length) {
@@ -2187,6 +2236,21 @@ window.addEventListener("pointerup", (event) => {
             return;
         }
         commandAt(point);
+    }
+    if (event.button === 0 && mapDrag) {
+        const dragged = mapMoved;
+        mapDrag = false;
+        mapMoved = false;
+        renderer.domElement.style.cursor = "";
+        if (dragged) return;
+        const unit = pickUnit(event);
+        if (unit) setSelected([unit]);
+        else if (pickManor(event)) {
+            setSelected([]);
+            manorSelected = true;
+            refreshHud();
+        } else setSelected([]);
+        return;
     }
     if (boxDrag && event.button === 0) {
         if (boxMoved) {
@@ -2215,29 +2279,30 @@ window.addEventListener("pointerup", (event) => {
         boxDrag = false;
         boxEl.hidden = true;
     }
-    if (mapDrag && event.button === 0) {
-        if (!mapMoved) {
-            const unit = pickUnit(event);
-            if (unit) setSelected([unit]);
-            else if (pickManor(event)) {
-                setSelected([]);
-                manorSelected = true;
-                refreshHud();
-            } else setSelected([]);
-        }
-        mapDrag = false;
-        mapMoved = false;
-        renderer.domElement.style.cursor = "";
-    }
 });
 window.addEventListener("pointermove", (event) => {
+    if (lookTouch && event.pointerId === lookTouch.id) {
+        const dx = event.clientX - lookTouch.x;
+        const dy = event.clientY - lookTouch.y;
+        lookTouch.x = event.clientX;
+        lookTouch.y = event.clientY;
+        lookYaw -= dx * 0.005;
+        lookPitch = Math.max(-1.15, Math.min(1.15, lookPitch - dy * 0.005));
+        if (event.cancelable) event.preventDefault();
+        return;
+    }
     if (pilot) return;
     moveGhost(event);
     if (mapDrag) {
+        const dx = event.movementX || (event.clientX - panX);
+        const dy = event.movementY || (event.clientY - panY);
+        panX = event.clientX;
+        panY = event.clientY;
         if (Math.hypot(event.clientX - downX, event.clientY - downY) > 4) {
             mapMoved = true;
             renderer.domElement.style.cursor = "grabbing";
-            panBy(event.movementX, event.movementY, mapScale());
+            panBy(dx, dy, mapScale());
+            if (event.cancelable) event.preventDefault();
         }
     }
     if (boxDrag && Math.hypot(event.clientX - downX, event.clientY - downY) > 6) {
@@ -2285,6 +2350,10 @@ function paintSelf() {
     document.getElementById("pack-hands").textContent = arm === "bow" ? "Bow" : "Sword";
     document.body.classList.toggle("armed-bow", !!pilot && arm === "bow");
     document.body.classList.toggle("armed-sword", !!pilot && arm !== "bow");
+    const playBtn = document.getElementById("play-self");
+    if (playBtn) playBtn.textContent = pilot ? "Map" : "Become player";
+    const swingBtn = document.getElementById("swing");
+    if (swingBtn) swingBtn.textContent = arm === "bow" ? "Shoot" : "Swing";
     const list = document.getElementById("pack-list");
     list.textContent = "";
     packWeapons.forEach((id) => {
@@ -2323,6 +2392,52 @@ document.getElementById("pack").addEventListener("click", togglePack);
 document.getElementById("pack-close").addEventListener("click", () => {
     document.getElementById("pack-panel").hidden = true;
 });
+
+const handheldQuery = window.matchMedia("(max-width: 900px)");
+function applyHandheld(first) {
+    const on = handheldQuery.matches;
+    document.body.classList.toggle("handheld", on);
+    if (first && on) {
+        document.getElementById("bar").classList.add("folded");
+        document.getElementById("dock").classList.add("folded");
+        document.getElementById("bar-min").textContent = "Notes";
+        document.getElementById("dock-min").textContent = "Orders";
+    }
+}
+applyHandheld(true);
+if (handheldQuery.addEventListener) handheldQuery.addEventListener("change", () => applyHandheld(false));
+
+function holdKey(button, key) {
+    const press = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        keys[key] = true;
+        if (button.setPointerCapture) button.setPointerCapture(event.pointerId);
+    };
+    const release = () => { keys[key] = false; };
+    button.addEventListener("pointerdown", press);
+    button.addEventListener("pointerup", release);
+    button.addEventListener("pointercancel", release);
+}
+document.querySelectorAll("#move-pad button").forEach((button) => holdKey(button, button.dataset.move));
+document.getElementById("swing").addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (arm === "bow") playerShot();
+    else playerSwing("thrust");
+});
+document.getElementById("play-self").addEventListener("click", () => {
+    if (pilot) leaveBody();
+    else {
+        const mine = units.find((unit) => unit.side === "self");
+        if (mine) enterBody(mine);
+    }
+});
+document.getElementById("select-mode").addEventListener("click", () => {
+    document.body.classList.toggle("selecting");
+});
+document.getElementById("zoom-in").addEventListener("click", () => { dist = Math.max(16, dist - 18); });
+document.getElementById("zoom-out").addEventListener("click", () => { dist = Math.min(220, dist + 18); });
 
 function downSelf() {
     foes.clear();
@@ -2492,7 +2607,7 @@ function enterBody(unit) {
     camera.fov = 72;
     camera.near = 0.06;
     camera.updateProjectionMatrix();
-    renderer.domElement.requestPointerLock();
+    if (!document.body.classList.contains("handheld")) renderer.domElement.requestPointerLock();
     refreshHud();
 }
 
@@ -2508,10 +2623,12 @@ function leaveBody() {
     camera.near = 0.3;
     camera.updateProjectionMatrix();
     document.body.classList.remove("walking");
-    document.getElementById("bar").classList.remove("folded");
-    document.getElementById("dock").classList.remove("folded");
-    document.getElementById("bar-min").textContent = "Hide";
-    document.getElementById("dock-min").textContent = "Hide";
+    if (!document.body.classList.contains("handheld")) {
+        document.getElementById("bar").classList.remove("folded");
+        document.getElementById("dock").classList.remove("folded");
+        document.getElementById("bar-min").textContent = "Hide";
+        document.getElementById("dock-min").textContent = "Hide";
+    }
     paintSelf();
     if (document.pointerLockElement) document.exitPointerLock();
     refreshHud();
@@ -2956,9 +3073,9 @@ function paintMini() {
 
 let then = performance.now();
 let saveAcc = 0;
-function frame(now) {
-    const dt = Math.min(0.05, (now - then) / 1000);
-    then = now;
+let simBacklog = 0;
+
+function stepMatch(dt) {
     walkBody(dt);
     slide(dt);
     refreshLand(false);
@@ -2973,6 +3090,29 @@ function frame(now) {
         saveAcc = 0;
         writeSave();
     }
+}
+
+function pumpSim() {
+    const slice = Math.min(simBacklog, 0.4);
+    let left = slice;
+    while (left > 0.0001) {
+        const dt = Math.min(0.05, left);
+        stepMatch(dt);
+        left -= dt;
+    }
+    simBacklog = Math.max(0, simBacklog - slice);
+    if (simBacklog > 0.05) setTimeout(pumpSim, 0);
+}
+
+function noteSimTime(now) {
+    const gap = Math.max(0, (now - then) / 1000);
+    then = now;
+    simBacklog = Math.min(90, simBacklog + gap);
+}
+
+function frame(now) {
+    noteSimTime(now);
+    if (!document.hidden) pumpSim();
     placeCamera();
     refreshWoods();
     paintMini();
@@ -2980,6 +3120,19 @@ function frame(now) {
     requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+setInterval(() => {
+    try { localStorage.setItem("aoe-live", String(Date.now())); } catch (err) { /* the campaign page uses this to avoid a second match */ }
+    if (!document.hidden) return;
+    noteSimTime(performance.now());
+    pumpSim();
+}, 1000);
+
+window.addEventListener("pointercancel", (event) => {
+    if (lookTouch && event.pointerId === lookTouch.id) lookTouch = null;
+    mapDrag = false;
+    boxDrag = false;
+    boxEl.hidden = true;
+});
 
 window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;

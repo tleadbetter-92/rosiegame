@@ -6,7 +6,7 @@
     <title>Age of Empires</title>
     <style>
         html, body { margin: 0; height: 100%; background: #8ec8ee; overflow: hidden; }
-        canvas { display: block; width: 100%; height: 100%; }
+        canvas { display: block; width: 100%; height: 100%; touch-action: none; }
         #bar {
             position: absolute;
             top: 12px;
@@ -44,9 +44,107 @@
             cursor: pointer;
             font: inherit;
         }
-        body.walking #bar-min, body.walking #dock button#dock-min { display: inline-block; }
+        body.walking #bar-min, body.walking #dock button#dock-min,
+        body.handheld #bar-min, body.handheld #dock button#dock-min { display: inline-block; }
         #bar.folded > :not(#bar-min), #dock.folded > :not(#dock-min) { display: none; }
         #bar.folded, #dock.folded { max-width: none; width: auto; }
+        #play-self, #select-mode, #swing, #zoom, #move-pad { display: none; }
+        #play-self, #select-mode, #swing, #zoom button, #move-pad button {
+            font: 16px/1.2 system-ui, sans-serif;
+            border: 1px solid #8a6840;
+            border-radius: 10px;
+            background: rgba(255, 248, 236, 0.94);
+            color: #1c140c;
+            cursor: pointer;
+            touch-action: none;
+        }
+        body.handheld #play-self, body.handheld:not(.walking) #select-mode { display: block; }
+        body.handheld:not(.walking) #zoom { display: flex; }
+        body.handheld.walking #swing, body.handheld.walking #move-pad { display: block; }
+        body.handheld.walking #move-pad { display: grid; }
+        #play-self, #select-mode {
+            position: absolute;
+            z-index: 6;
+            min-height: 44px;
+            padding: 10px 14px;
+        }
+        #select-mode { left: 8px; bottom: 8px; }
+        #play-self { right: 8px; bottom: 8px; }
+        body.handheld.walking #play-self { top: 158px; right: 8px; bottom: auto; }
+        body.selecting #select-mode { background: #d7c4a0; }
+        #zoom {
+            position: absolute;
+            z-index: 6;
+            top: 8px;
+            right: 118px;
+            flex-direction: column;
+            gap: 6px;
+        }
+        #zoom button { width: 44px; height: 44px; padding: 0; }
+        #move-pad {
+            position: absolute;
+            z-index: 6;
+            left: 8px;
+            bottom: 8px;
+            width: 150px;
+            height: 150px;
+            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-rows: 1fr 1fr 1fr;
+            gap: 6px;
+            touch-action: none;
+        }
+        #move-pad button { padding: 0; font-size: 20px; }
+        #move-pad button[data-move="w"] { grid-column: 2; grid-row: 1; }
+        #move-pad button[data-move="a"] { grid-column: 1; grid-row: 2; }
+        #move-pad button[data-move="d"] { grid-column: 3; grid-row: 2; }
+        #move-pad button[data-move="s"] { grid-column: 2; grid-row: 3; }
+        #swing {
+            position: absolute;
+            z-index: 6;
+            right: 12px;
+            bottom: 16px;
+            width: 84px;
+            height: 84px;
+            border-radius: 50%;
+        }
+        body.handheld.walking #zoom { display: none; }
+        body.handheld #stock {
+            left: 8px;
+            right: 170px;
+            top: 8px;
+            transform: none;
+            max-width: none;
+            flex-wrap: nowrap;
+            justify-content: flex-start;
+            overflow-x: auto;
+            gap: 8px;
+            padding: 6px 8px;
+            font-size: 13px;
+        }
+        body.handheld #stock input { width: 4.2rem; }
+        body.handheld #minimap { width: 104px; height: 104px; top: 8px; right: 8px; }
+        body.handheld #pack { top: 120px; right: 8px; min-height: 40px; }
+        body.handheld #bar.folded { top: 58px; left: 8px; padding: 4px; }
+        body.handheld #dock.folded { top: 108px; left: 8px; bottom: auto; width: auto; padding: 4px; }
+        body.handheld #bar:not(.folded) {
+            top: 58px;
+            left: 8px;
+            right: 8px;
+            max-width: none;
+            max-height: 38vh;
+            overflow: auto;
+        }
+        body.handheld #dock:not(.folded) {
+            left: 8px;
+            bottom: 60px;
+            width: min(300px, calc(100% - 16px));
+            max-height: 42vh;
+            overflow: auto;
+        }
+        body.handheld #bar.folded #bar-min,
+        body.handheld #dock.folded button#dock-min { width: auto; margin: 0; min-height: 40px; padding: 8px 12px; }
+        body.handheld.walking #self-health { left: 8px; bottom: 168px; width: 150px; }
+        body.handheld #dock button { padding: 12px 8px; }
         #stock {
             position: absolute;
             top: 12px;
@@ -239,7 +337,7 @@
         <button id="bar-min" type="button">Hide</button>
         <strong>Age of Empires</strong>
         <p id="note">Placing the two manors…</p>
-        <p>WASD slides the map. Drag the ground and it follows your hand. Shift-drag selects. Right-click sends them. A building takes 5 minutes. A worker or soldier takes 1 minute. Press F to walk as yourself: left-click swings, P opens the pack. Hitting a side makes them your enemy until you fall. A small house costs 20 wood and holds 10 more people. Houses and barracks stay inside the ring around the manor. Right-click a farm and up to 5 people work the field, then drop the food at its house. Right-click ore for gold. A salt works can sit by the trees or water, and people drop off there when it is closer. Barracks, farm, salt works and the storehouse cost 100 wood. Soldiers: Guard or Attack.</p>
+        <p>WASD slides the map. Drag with the left button to select. Drag with the right button and the ground follows your hand. A right-click sends them. A building takes 5 minutes. A worker or soldier takes 1 minute. Press F to walk as yourself: left-click swings, P opens the pack. Hitting a side makes them your enemy until you fall. A small house costs 20 wood and holds 10 more people. Houses and barracks stay inside the ring around the manor. Right-click a farm and up to 5 people work the field, then drop the food at its house. Right-click ore for gold. A salt works can sit by the trees or water, and people drop off there when it is closer. Barracks, farm, salt works and the storehouse cost 100 wood. Soldiers: Guard or Attack.</p>
         <p><button id="restart" type="button">Restart match</button><a href="../village.html">Village</a></p>
     </div>
     <div id="stock">
@@ -270,6 +368,19 @@
     <div id="weapon" aria-hidden="true"></div>
     <div id="viewbow" aria-hidden="true"></div>
     <canvas id="minimap" width="180" height="180" aria-hidden="true"></canvas>
+    <div id="zoom" aria-label="Zoom">
+        <button id="zoom-in" type="button">+</button>
+        <button id="zoom-out" type="button">−</button>
+    </div>
+    <button id="select-mode" type="button">Select</button>
+    <button id="play-self" type="button">Become player</button>
+    <div id="move-pad" aria-label="Walk">
+        <button type="button" data-move="w">▲</button>
+        <button type="button" data-move="a">◀</button>
+        <button type="button" data-move="d">▶</button>
+        <button type="button" data-move="s">▼</button>
+    </div>
+    <button id="swing" type="button">Swing</button>
     <button id="pack" type="button">Pack</button>
     <div id="self-health" hidden><i id="self-health-fill"></i></div>
     <p id="strike"></p>
@@ -286,6 +397,6 @@
     <script src="../world.js?v=trees1"></script>
     <script src="../town.js"></script>
     <script src="../land-mesh.js?v=lip3"></script>
-    <script type="module" src="play.js?v=play53"></script>
+    <script type="module" src="play.js?v=play57"></script>
 </body>
 </html>

@@ -42,5 +42,25 @@
     <script src="world.js"></script>
     <script src="campaign-districts.js?v=1"></script>
     <script src="campaign-play.js?v=train2"></script>
+    <iframe id="aoe-keep" title="Match" style="position:fixed;left:0;bottom:0;width:4px;height:4px;border:0;opacity:0.02" src="about:blank"></iframe>
+    <script>
+        (function () {
+            var frame = document.getElementById("aoe-keep");
+            function running() {
+                var t = Number(localStorage.getItem("aoe-live") || 0);
+                return Date.now() - t < 3500;
+            }
+            function watch() {
+                var on = frame.getAttribute("src") || "";
+                if (running()) {
+                    if (on.indexOf("AoEgame") >= 0) frame.setAttribute("src", "about:blank");
+                    return;
+                }
+                if (on.indexOf("AoEgame") < 0) frame.setAttribute("src", "AoEgame/");
+            }
+            setInterval(watch, 2000);
+            watch();
+        })();
+    </script>
 </body>
 </html>
