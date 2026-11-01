@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Age of Empires</title>
+    <style>
+        html, body { margin: 0; height: 100%; background: #8ec8ee; overflow: hidden; }
+        canvas { display: block; width: 100%; height: 100%; }
+        #bar {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            color: #1c140c;
+            background: rgba(255, 248, 236, 0.92);
+            border: 1px solid #c4a574;
+            border-radius: 8px;
+            padding: 10px 14px;
+            font: 14px/1.4 system-ui, sans-serif;
+            max-width: 28rem;
+        }
+        #bar a { color: #6a3e28; }
+        #restart {
+            font: inherit;
+            margin-right: 8px;
+            padding: 2px 8px;
+            border: 1px solid #8a6840;
+            border-radius: 6px;
+            background: #efe2cc;
+            color: #1c140c;
+            cursor: pointer;
+        }
+        #bar p { margin: 0.2rem 0 0; }
+        #bar-min, #dock button#dock-min {
+            display: none;
+            float: right;
+            width: auto;
+            margin: 0 0 6px 8px;
+            padding: 2px 8px;
+            border: 1px solid #8a6840;
+            border-radius: 6px;
+            background: #efe2cc;
+            color: #1c140c;
+            cursor: pointer;
+            font: inherit;
+        }
+        body.walking #bar-min, body.walking #dock button#dock-min { display: inline-block; }
+        #bar.folded > :not(#bar-min), #dock.folded > :not(#dock-min) { display: none; }
+        #bar.folded, #dock.folded { max-width: none; width: auto; }
+        #stock {
+            position: absolute;
+            top: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 14px 18px;
+            max-width: 56rem;
+            align-items: center;
+            background: rgba(255, 248, 236, 0.94);
+            border: 1px solid #c4a574;
+            border-radius: 8px;
+            padding: 8px 16px;
+            font: 15px/1.3 system-ui, sans-serif;
+            color: #1c140c;
+        }
+        #stock label { display: flex; align-items: center; gap: 6px; }
+        #stock input {
+            width: 5rem;
+            font: inherit;
+            color: inherit;
+            padding: 2px 6px;
+            border: 1px solid #8a6840;
+            border-radius: 6px;
+            background: #fff;
+        }
+        #dock {
+            position: absolute;
+            left: 12px;
+            bottom: 12px;
+            width: 280px;
+            background: rgba(255, 248, 236, 0.94);
+            border: 1px solid #c4a574;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font: 14px/1.4 system-ui, sans-serif;
+            color: #1c140c;
+        }
+        #dock button {
+            display: block;
+            width: 100%;
+            margin-top: 6px;
+            padding: 8px;
+            border: 1px solid #8a6840;
+            border-radius: 6px;
+            background: #efe2cc;
+            cursor: pointer;
+        }
+        #dock button:disabled { opacity: 0.45; cursor: default; }
+        #box {
+            position: absolute;
+            border: 1px solid #f4e2a0;
+            background: rgba(244, 226, 160, 0.18);
+            pointer-events: none;
+        }
+        #pack, #strike { position: absolute; z-index: 4; font: 14px/1.3 system-ui, sans-serif; }
+        #minimap {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 4;
+            width: 148px;
+            height: 148px;
+            border: 2px solid rgba(244, 236, 220, 0.9);
+            border-radius: 50%;
+            background: #16324a;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+            pointer-events: none;
+        }
+        #pack {
+            top: 172px;
+            right: 12px;
+            padding: 6px 14px;
+            border: 1px solid #8a6840;
+            border-radius: 8px;
+            background: rgba(255, 248, 236, 0.92);
+            color: #1c140c;
+            cursor: pointer;
+        }
+        #self-health {
+            position: absolute;
+            left: 12px;
+            bottom: 12px;
+            z-index: 4;
+            width: 180px;
+            height: 10px;
+            border: 1px solid #8a6840;
+            border-radius: 6px;
+            background: rgba(255, 248, 236, 0.7);
+        }
+        #self-health[hidden] { display: none; }
+        #self-health i { display: block; height: 100%; width: 100%; background: #8f2d2d; }
+        #strike {
+            left: 50%;
+            bottom: 18%;
+            transform: translateX(-50%);
+            margin: 0;
+            color: #fff8ec;
+            text-shadow: 0 1px 3px #1c140c;
+            pointer-events: none;
+        }
+        #pack-panel {
+            position: absolute;
+            top: 52px;
+            right: 12px;
+            z-index: 5;
+            width: 240px;
+            padding: 12px;
+            border: 1px solid #c4a574;
+            border-radius: 8px;
+            background: rgba(28, 20, 12, 0.92);
+            color: #fff8ec;
+            font: 14px/1.4 system-ui, sans-serif;
+        }
+        #pack-panel[hidden] { display: none; }
+        #pack-panel h2 { margin: 10px 0 4px; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: #e7d7b2; }
+        #pack-panel button {
+            font: inherit;
+            margin: 2px 4px 2px 0;
+            padding: 4px 8px;
+            border: 1px solid #c4a574;
+            border-radius: 6px;
+            background: #efe2cc;
+            color: #1c140c;
+            cursor: pointer;
+        }
+        #weapon, #viewbow { display: none; pointer-events: none; }
+        #weapon {
+            position: fixed;
+            right: 14%;
+            bottom: 18px;
+            z-index: 2;
+            width: 132px;
+            height: 48vh;
+            transform-origin: 50% 100%;
+            transform: rotate(18deg);
+            background: linear-gradient(90deg, #2a3136 0%, #8e99a2 16%, #f4f7f8 34%, #c5ced4 42%, #4e585f 49%, #e7eef2 57%, #9aa3ab 74%, #2c3338 100%);
+            clip-path: polygon(47.5% 0, 52.5% 0, 58% 68%, 84% 69%, 88% 72.5%, 84% 76%, 57% 75%, 55% 90%, 60% 93%, 50% 100%, 40% 93%, 45% 90%, 43% 75%, 16% 76%, 12% 72.5%, 16% 69%, 42% 68%);
+            filter: drop-shadow(3px 10px 5px rgba(0, 0, 0, 0.5));
+        }
+        #weapon::before, #weapon::after { content: ""; position: absolute; left: 0; right: 0; }
+        #weapon::before { top: 67.5%; height: 9%; background: linear-gradient(#f3d48a, #a56b2e 58%, #e4be74); }
+        #weapon::after {
+            top: 77%;
+            bottom: 0;
+            background: radial-gradient(circle at 50% 88%, #efe2cc 0 5px, transparent 6px), repeating-linear-gradient(#6b4324 0 3px, #3c2414 3px 6px);
+        }
+        #weapon.swing-thrust { animation: thrust 0.32s ease-out; }
+        #viewbow {
+            position: fixed;
+            left: 16%;
+            bottom: 0;
+            z-index: 2;
+            width: 78px;
+            height: 40vh;
+            border: 7px solid transparent;
+            border-left: 9px solid #6a4324;
+            border-radius: 80% 0 0 80%;
+            transform: rotate(-6deg);
+            filter: drop-shadow(0 8px 6px rgba(0, 0, 0, 0.4));
+        }
+        #viewbow::before { content: ""; position: absolute; left: 6px; top: 6%; bottom: 6%; width: 2px; background: #efe6d4; }
+        #viewbow::after { content: ""; position: absolute; left: 8px; top: 49%; width: 78%; height: 3px; background: linear-gradient(90deg, #d7b278, #8d9094); }
+        #viewbow.loose { animation: loose 0.26s ease-out; }
+        body.walking.armed-sword #weapon, body.walking.armed-bow #viewbow { display: block; }
+        @keyframes thrust {
+            0% { transform: rotate(16deg) translateY(0); }
+            38% { transform: rotate(2deg) translateY(-26%); }
+            100% { transform: rotate(16deg) translateY(0); }
+        }
+        @keyframes loose {
+            0% { transform: rotate(-6deg) translateX(0); }
+            40% { transform: rotate(2deg) translateX(16px); }
+            100% { transform: rotate(-6deg) translateX(0); }
+        }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <div id="bar">
+        <button id="bar-min" type="button">Hide</button>
+        <strong>Age of Empires</strong>
+        <p id="note">Placing the two manors…</p>
+        <p>WASD slides the map. Drag the ground and it follows your hand. Shift-drag selects. Right-click sends them. A building takes 5 minutes. A worker or soldier takes 1 minute. Press F to walk as yourself: left-click swings, P opens the pack. Hitting a side makes them your enemy until you fall. A small house costs 20 wood and holds 10 more people. Houses and barracks stay inside the ring around the manor. Right-click a farm and up to 5 people work the field, then drop the food at its house. Right-click ore for gold. A salt works can sit by the trees or water, and people drop off there when it is closer. Barracks, farm, salt works and the storehouse cost 100 wood. Soldiers: Guard or Attack.</p>
+        <p><button id="restart" type="button">Restart match</button><a href="../village.html">Village</a></p>
+    </div>
+    <div id="stock">
+        <label>Food <input id="food" type="number" min="0" step="1" value="200"></label>
+        <label>Wood <input id="wood" type="number" min="0" step="1" value="0"></label>
+        <label>Gold <input id="gold" type="number" min="0" step="1" value="0"></label>
+        <span id="pop">People 1 / 30</span>
+        <span id="cpu-pop">Other people 1 / 30</span>
+        <label>Other food <input id="cpu-food" type="number" min="0" step="1" value="200"></label>
+        <label>Other wood <input id="cpu-wood" type="number" min="0" step="1" value="0"></label>
+        <label>Other gold <input id="cpu-gold" type="number" min="0" step="1" value="0"></label>
+    </div>
+    <div id="dock">
+        <button id="dock-min" type="button">Hide</button>
+        <p id="sel">Select the manor or a unit.</p>
+        <button id="make-worker" type="button" disabled>Train worker · 50 food</button>
+        <button id="make-soldier" type="button" disabled>Train soldier · 50 food</button>
+        <p id="train-note"></p>
+        <button id="make-house" type="button" disabled>Small house · 20 wood</button>
+        <button id="make-barracks" type="button" disabled>Barracks · 100 wood</button>
+        <button id="make-farm" type="button" disabled>Farm · 100 wood</button>
+        <button id="make-salt" type="button" disabled>Salt works · 100 wood</button>
+        <button id="make-store" type="button" disabled>Storehouse · 100 wood</button>
+        <button id="stance-guard" type="button" disabled>Guard</button>
+        <button id="stance-attack" type="button" disabled>Attack</button>
+    </div>
+    <div id="box" hidden></div>
+    <div id="weapon" aria-hidden="true"></div>
+    <div id="viewbow" aria-hidden="true"></div>
+    <canvas id="minimap" width="180" height="180" aria-hidden="true"></canvas>
+    <button id="pack" type="button">Pack</button>
+    <div id="self-health" hidden><i id="self-health-fill"></i></div>
+    <p id="strike"></p>
+    <div id="pack-panel" hidden>
+        <button id="pack-close" type="button">Close</button>
+        <p id="pack-gold">Gold: 25</p>
+        <h2>Hands</h2>
+        <p id="pack-hands">Sword</p>
+        <h2>Pack</h2>
+        <div id="pack-list"></div>
+        <p>Left-click swings. Hitting a side makes them your enemy until you fall.</p>
+    </div>
+    <script src="../world-edit.js?v=trees1"></script>
+    <script src="../world.js?v=trees1"></script>
+    <script src="../town.js"></script>
+    <script src="../land-mesh.js?v=lip3"></script>
+    <script type="module" src="play.js?v=play53"></script>
+</body>
+</html>

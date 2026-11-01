@@ -1500,6 +1500,15 @@
 
     const groves = plantGroves();
 
+    function editorGroveClear(x, z) {
+        const h = heightAt(x, z);
+        if (h < 0.35 || wet(x, z) || roadDist(x, z) < 12 || inField(x, z)) return false;
+        for (const place of places) {
+            if (Math.hypot(x - place.x, z - place.z) < 46) return false;
+        }
+        return true;
+    }
+
     function plantEditorForestGroves() {
         for (let p = 0; p < editForests.length; p++) {
             const cx = editForests[p][0];
@@ -1518,7 +1527,7 @@
                 const dist = Math.sqrt(n2) * r * 0.92;
                 const x = cx + Math.cos(ang) * dist;
                 const z = cz + Math.sin(ang) * dist;
-                if (!groveClear(x, z)) continue;
+                if (!editorGroveClear(x, z)) continue;
                 let close = false;
                 for (const spot of local) {
                     if (Math.hypot(spot.x - x, spot.z - z) < 3.05) close = true;

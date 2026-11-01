@@ -59,7 +59,7 @@
     }
 
     function countrySub() {
-        return 8;
+        return root && root.__aoeGround ? 4 : 8;
     }
 
     function townPatch(place) {
