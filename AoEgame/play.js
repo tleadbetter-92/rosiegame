@@ -486,6 +486,7 @@ function landGeometry(floats, stride) {
 
 let landMarkX = Infinity;
 let landMarkZ = Infinity;
+let landStep = 0;
 
 function refreshLand(force) {
     const world = window.World;
@@ -494,10 +495,15 @@ function refreshLand(force) {
     window.__aoeGround = true;
     const x = pilot ? pilot.x : look.x;
     const z = pilot ? pilot.z : look.z;
-    if (!force && Math.hypot(x - landMarkX, z - landMarkZ) < 80) return;
+    const step = pilot ? 8 : 16;
+    window.__aoeStep = step;
+    window.__aoeReach = pilot ? 160 : 360;
+    const moved = Math.hypot(x - landMarkX, z - landMarkZ);
+    if (!force && step === landStep && moved < (pilot ? 50 : 140)) return;
     landMarkX = x;
     landMarkZ = z;
-    const reach = Math.min(480, Math.max(340, dist * 2.2));
+    landStep = step;
+    const reach = window.__aoeReach;
     let built;
     try {
         built = meshLib.build(x, z, reach);
@@ -644,7 +650,8 @@ async function placeManors() {
         parts.forEach((part) => group.add(new THREE.Mesh(part.geom, part.mat)));
         scene.add(group);
         manors.push(group);
-        houses.push({ x: team.px, z: team.pz, y: y, group: group, player: index === 0 });
+        houses.push({ x: team.px, z: team.pz, y: y, group: group, player: index === 0, hx: MANOR_HX, hz: MANOR_HZ, kitId: MANOR });
+        attachRooms(houses[houses.length - 1], MANOR);
     });
     const playerHome = houses[0];
     look.set(playerHome.x + 2, 2, playerHome.z + 14);
@@ -861,7 +868,7 @@ function refreshHud() {
     });
     if (pilot) {
         selEl.textContent = document.body.classList.contains("handheld")
-            ? "Drag the view to look. The pad walks. Map takes you back."
+            ? "Drag the view to look. The pad walks. Campaign takes you back."
             : "You. WASD walks, mouse looks. F or Esc returns to the map.";
         workerBtn.disabled = true;
         soldierBtn.disabled = true;
@@ -1432,8 +1439,8 @@ async function startMatch(playerHome, otherHome) {
         /* a missing kit stays off the build list; the others still place */
     }
     actors = {
-        worker: await loadPerson("../models/kaykit/dwarf.skin.bin", "../models/kaykit/dwarf.skin.jpg"),
-        soldier: await loadPerson("../models/kaykit/heroic-warrior.skin.bin", "../models/kaykit/heroic-warrior.skin.jpg")
+        worker: await loadPerson("../models/meshy/villager.skin.bin", "../models/meshy/villager.skin.png"),
+        soldier: await loadPerson("../models/meshy/militia.skin.bin", "../models/meshy/militia.skin.png")
     };
     const save = readSave();
     if (save) restoreMatch(save);
@@ -1629,11 +1636,218 @@ function placeBuilding(kind, x, y, z, side) {
     for (let i = 0; i < parts.length; i++) group.add(new THREE.Mesh(parts[i].geom, parts[i].mat));
     scene.add(group);
     manors.push(group);
-    const entry = { kind: kind, side: side === "cpu" ? "cpu" : "you", x: x, z: z, y: y, hx: spec.hx, hz: spec.hz, group: group };
+    const entry = { kind: kind, side: side === "cpu" ? "cpu" : "you", x: x, z: z, y: y, hx: spec.hx, hz: spec.hz, group: group, kitId: spec.id };
     group.userData.building = entry;
     for (let i = 0; i < group.children.length; i++) group.children[i].userData.building = entry;
     if (kind === "farm") entry.node = { kind: "farm", x: x, z: z, farm: entry };
     built.push(entry);
+    attachRooms(entry, spec.id);
+}
+
+const INSIDE_MATS = [
+    ["furniture", "../models/furniture.png"],
+    ["propcloth", "../models/propcloth.png"],
+    ["propmetal", "../models/propmetal.png"],
+    ["proppack", "../models/proppack.png"]
+];
+const roomPlans = {};
+let doorMat = null;
+
+function doorMaterial() {
+    if (!doorMat) doorMat = new THREE.MeshStandardMaterial({ color: 0x6d4b2c, roughness: 0.82 });
+    return doorMat;
+}
+
+function outerDoors(physics, entry) {
+    const shell = physics && physics.shell;
+    if (!shell) {
+        const hz = entry.hz || MANOR_HZ;
+        return [{ hingeX: -0.55, hingeZ: -hz + 0.2, yaw: 0, wide: 1.1, x: 0, z: -hz + 0.2 }];
+    }
+    const cx = physics.cx;
+    const cz = physics.cz;
+    const minX = shell.minX;
+    const minZ = shell.minZ;
+    const maxX = minX + shell.w;
+    const maxZ = minZ + shell.d;
+    const walls = (physics.solids || []).filter((sol) => !sol.stair && sol.y0 < 1.1 && sol.y1 > 1.6 && Math.min(sol.w, sol.d) < 0.8);
+    const doors = [];
+    const take = (fixed, along0, along1, axis) => {
+        const spans = walls.filter((wall) => {
+            const a = axis === "z" ? wall.z : wall.x;
+            const b = a + (axis === "z" ? wall.d : wall.w);
+            return a < fixed + 1.6 && b > fixed - 0.4;
+        }).map((wall) => (axis === "z" ? [wall.x, wall.x + wall.w] : [wall.z, wall.z + wall.d])).sort((a, b) => a[0] - b[0]);
+        let cursor = along0;
+        const yaw = axis === "z" ? 0 : -Math.PI / 2;
+        const push = (from, to) => {
+            const gap = to - from;
+            if (gap < 0.7 || gap > 2.4) return;
+            const mid = (from + to) / 2;
+            const wide = Math.min(1.3, gap);
+            if (axis === "z") doors.push({ hingeX: from - cx, hingeZ: fixed - cz, x: mid - cx, z: fixed - cz, yaw: yaw, wide: wide });
+            else doors.push({ hingeX: fixed - cx, hingeZ: from - cz, x: fixed - cx, z: mid - cz, yaw: yaw, wide: wide });
+        };
+        for (let i = 0; i < spans.length; i++) {
+            push(cursor, spans[i][0]);
+            cursor = Math.max(cursor, spans[i][1]);
+        }
+        push(cursor, along1);
+    };
+    take(minZ, minX, maxX, "z");
+    take(maxZ, minX, maxX, "z");
+    take(minX, minZ, maxZ, "x");
+    take(maxX, minZ, maxZ, "x");
+    if (!doors.length) {
+        const hz = entry.hz || (shell.d / 2);
+        doors.push({ hingeX: -0.55, hingeZ: -hz + 0.2, yaw: 0, wide: 1.1, x: 0, z: -hz + 0.2 });
+    }
+    return doors;
+}
+
+function localSolids(physics) {
+    if (!physics) return [];
+    const cx = physics.cx;
+    const cz = physics.cz;
+    return (physics.solids || []).filter((sol) => !sol.stair && sol.y1 > 1.2 && sol.y0 < 1.3 && Math.min(sol.w, sol.d) < 0.8).map((sol) => ({
+        x: sol.x - cx,
+        z: sol.z - cz,
+        w: sol.w,
+        d: sol.d
+    }));
+}
+
+function addDoorLeaf(group, door) {
+    const leaf = new THREE.Mesh(new THREE.BoxGeometry(door.wide, 2.15, 0.08), doorMaterial());
+    leaf.position.set(door.wide / 2, 1.08, 0);
+    const pivot = new THREE.Group();
+    pivot.position.set(door.hingeX, 0, door.hingeZ);
+    pivot.rotation.y = door.yaw;
+    pivot.add(leaf);
+    group.add(pivot);
+    door.pivot = pivot;
+    door.open = 0;
+}
+
+function readRooms(id) {
+    if (!roomPlans[id]) {
+        roomPlans[id] = Promise.all([
+            fetch("../models/kitbuild/" + id + ".meta.json").then((res) => res.ok ? res.json() : null),
+            fetch("../models/kitbuild/" + id + ".physics.json").then((res) => res.ok ? res.json() : null)
+        ]).then((pair) => ({ meta: pair[0], physics: pair[1] })).catch(() => null);
+    }
+    return roomPlans[id];
+}
+
+function attachRooms(entry, id) {
+    entry.kitId = id;
+    readRooms(id).then((plan) => {
+        if (!plan) return;
+        entry.rooms = {
+            meta: plan.meta,
+            physics: plan.physics,
+            solids: localSolids(plan.physics),
+            doors: outerDoors(plan.physics, entry)
+        };
+        for (let i = 0; i < entry.rooms.doors.length; i++) addDoorLeaf(entry.group, entry.rooms.doors[i]);
+    }).catch(() => null);
+}
+
+function buildingInside(entry, x, z) {
+    const physics = entry.rooms && entry.rooms.physics;
+    if (!physics || !physics.shell) return false;
+    const shell = physics.shell;
+    const lx = x - entry.x;
+    const lz = z - entry.z;
+    const minX = shell.minX - physics.cx;
+    const minZ = shell.minZ - physics.cz;
+    return lx > minX + 0.45 && lx < minX + shell.w - 0.45 && lz > minZ + 0.45 && lz < minZ + shell.d - 0.45;
+}
+
+function blockedByBuilding(x, z) {
+    const list = built.slice();
+    if (home && home.rooms) list.push(home);
+    if (cpuHome && cpuHome.rooms) list.push(cpuHome);
+    for (let i = 0; i < list.length; i++) {
+        const entry = list[i];
+        if (!entry.rooms) continue;
+        const lx = x - entry.x;
+        const lz = z - entry.z;
+        if (Math.abs(lx) > (entry.hx || MANOR_HX) + 2 && Math.abs(lz) > (entry.hz || MANOR_HZ) + 2) continue;
+        const solids = entry.rooms.solids;
+        for (let s = 0; s < solids.length; s++) {
+            const sol = solids[s];
+            if (lx > sol.x - 0.22 && lx < sol.x + sol.w + 0.22 && lz > sol.z - 0.22 && lz < sol.z + sol.d + 0.22) return true;
+        }
+        const doors = entry.rooms.doors;
+        for (let d = 0; d < doors.length; d++) {
+            const door = doors[d];
+            if (door.open > 0.75) continue;
+            if (Math.hypot(lx - door.x, lz - door.z) < door.wide * 0.5 + 0.2) return true;
+        }
+    }
+    return false;
+}
+
+function ensureInterior(entry) {
+    if (entry.insideGroup) {
+        entry.insideGroup.visible = true;
+        return;
+    }
+    if (entry.insideLoading || !entry.rooms || !entry.rooms.meta) return;
+    entry.insideLoading = true;
+    const id = entry.kitId;
+    const meta = entry.rooms.meta;
+    const group = new THREE.Group();
+    entry.group.add(group);
+    entry.insideGroup = group;
+    const jobs = [];
+    for (let i = 0; i < INSIDE_MATS.length; i++) {
+        const matName = INSIDE_MATS[i][0];
+        if (!(meta.materials || []).some((item) => item.mat === matName)) continue;
+        jobs.push(Promise.all([
+            fetch("../models/kitbuild/" + id + "-" + matName + ".bin").then((res) => res.ok ? res.arrayBuffer() : null),
+            loadTexture(INSIDE_MATS[i][1])
+        ]).then((pair) => {
+            if (!pair[0]) return;
+            const mat = new THREE.MeshStandardMaterial({
+                map: pair[1],
+                vertexColors: true,
+                roughness: 0.9,
+                side: THREE.DoubleSide
+            });
+            group.add(new THREE.Mesh(kitGeometry(new Float32Array(pair[0]), meta.cx, meta.cz), mat));
+        }));
+    }
+    Promise.all(jobs).then(() => {
+        entry.insideLoading = false;
+        if (!pilot) group.visible = false;
+    }).catch(() => {
+        entry.insideLoading = false;
+    });
+}
+
+function stepRooms() {
+    const list = built.slice();
+    if (home) list.push(home);
+    if (cpuHome) list.push(cpuHome);
+    for (let i = 0; i < list.length; i++) {
+        const entry = list[i];
+        if (!entry.rooms) continue;
+        const inside = !!(pilot && buildingInside(entry, pilot.x, pilot.z));
+        let show = inside;
+        const doors = entry.rooms.doors;
+        for (let d = 0; d < doors.length; d++) {
+            const door = doors[d];
+            const near = !!(pilot && Math.hypot(pilot.x - (entry.x + door.x), pilot.z - (entry.z + door.z)) < 1.4);
+            const target = pilot && (near || inside) ? 1 : 0;
+            door.open += (target - door.open) * 0.25;
+            if (door.pivot) door.pivot.rotation.y = door.yaw + door.open * 1.35;
+            if (door.open > 0.35) show = true;
+        }
+        if (pilot && show) ensureInterior(entry);
+        else if (entry.insideGroup) entry.insideGroup.visible = false;
+    }
 }
 
 function addFoundation(site) {
@@ -2756,7 +2970,7 @@ function paintSelf() {
     document.body.classList.toggle("armed-bow", !!pilot && arm === "bow");
     document.body.classList.toggle("armed-sword", !!pilot && arm !== "bow");
     const playBtn = document.getElementById("play-self");
-    if (playBtn) playBtn.textContent = pilot ? "Map" : "Become player";
+    if (playBtn) playBtn.textContent = pilot ? "Campaign" : "Become player";
     const swingBtn = document.getElementById("swing");
     if (swingBtn) swingBtn.textContent = arm === "bow" ? "Shoot" : "Swing";
     const list = document.getElementById("pack-list");
@@ -2793,6 +3007,7 @@ function foldCard(cardId, buttonId, showLabel) {
 }
 document.getElementById("bar-min").addEventListener("click", () => foldCard("bar", "bar-min", "Notes"));
 document.getElementById("dock-min").addEventListener("click", () => foldCard("dock", "dock-min", "Orders"));
+document.getElementById("stock-min").addEventListener("click", () => foldCard("stock", "stock-min", "Stock"));
 document.getElementById("pack").addEventListener("click", togglePack);
 document.getElementById("pack-close").addEventListener("click", () => {
     document.getElementById("pack-panel").hidden = true;
@@ -2805,8 +3020,10 @@ function applyHandheld(first) {
     if (first && on) {
         document.getElementById("bar").classList.add("folded");
         document.getElementById("dock").classList.add("folded");
+        document.getElementById("stock").classList.add("folded");
         document.getElementById("bar-min").textContent = "Notes";
         document.getElementById("dock-min").textContent = "Orders";
+        document.getElementById("stock-min").textContent = "Stock";
     }
 }
 applyHandheld(true);
@@ -3028,12 +3245,6 @@ function leaveBody() {
     camera.near = 0.3;
     camera.updateProjectionMatrix();
     document.body.classList.remove("walking");
-    if (!document.body.classList.contains("handheld")) {
-        document.getElementById("bar").classList.remove("folded");
-        document.getElementById("dock").classList.remove("folded");
-        document.getElementById("bar-min").textContent = "Hide";
-        document.getElementById("dock-min").textContent = "Hide";
-    }
     paintSelf();
     if (document.pointerLockElement) document.exitPointerLock();
     refreshHud();
@@ -3048,8 +3259,9 @@ function canPass(nx, nz) {
     const span = dir.length();
     if (span < 0.0001) return true;
     const walls = [];
-    if (home && home.group) walls.push(home.group);
-    if (cpuHome && cpuHome.group) walls.push(cpuHome.group);
+    if (!(home && home.rooms) && home && home.group) walls.push(home.group);
+    if (!(cpuHome && cpuHome.rooms) && cpuHome && cpuHome.group) walls.push(cpuHome.group);
+    if (blockedByBuilding(nx, nz)) return false;
     if (!walls.length) return true;
     dir.multiplyScalar(1 / span);
     wallRay.set(new THREE.Vector3(pilot.x, y, pilot.z), dir);
@@ -3524,6 +3736,7 @@ function frame(now) {
     noteSimTime(now);
     if (!document.hidden) pumpSim();
     placeCamera();
+    stepRooms();
     refreshWoods();
     paintMini();
     renderer.render(scene, camera);

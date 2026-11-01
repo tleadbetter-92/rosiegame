@@ -1066,6 +1066,34 @@ if (process.argv[2] === "mixamo") {
     const punch = sampleNamed(json, bin, "punch", 6);
     const sampled = idle.concat(walk, punch, idle);
     writeClip(sampled, json, bin, "heroic-warrior", 0, true);
+} else if (process.argv[2] === "militia") {
+    bakeSkin(
+        process.argv[3],
+        path.join("models", "meshy", "militia.skin.bin"),
+        path.join("models", "meshy", "militia.skin.png"),
+        {
+            height: 1.8,
+            clips: [
+                { name: "Idle_6", out: "idle", fps: 8 },
+                { name: "Walking", out: "walk", fps: 20 },
+                { name: "Right_Hand_Sword_Slash", out: "punch", fps: 16 }
+            ]
+        }
+    );
+} else if (process.argv[2] === "villager") {
+    bakeSkin(
+        process.argv[3],
+        path.join("models", "meshy", "villager.skin.bin"),
+        path.join("models", "meshy", "villager.skin.jpg"),
+        {
+            height: 1.8,
+            clips: [
+                { name: "Idle_4", out: "idle", fps: 8 },
+                { name: "Walking", out: "walk", fps: 20 },
+                { name: "Punch_Combo", out: "punch", fps: 16 }
+            ]
+        }
+    );
 } else if (process.argv[2] === "horse2") {
     const file = path.join("models", "horse.glb");
     const { json, bin } = loadGlb(file);

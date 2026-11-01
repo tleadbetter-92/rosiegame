@@ -59,7 +59,8 @@
     }
 
     function countrySub() {
-        return root && root.__aoeGround ? 4 : 8;
+        if (root && root.__aoeGround) return root.__aoeStep || 16;
+        return 8;
     }
 
     function townPatch(place) {
@@ -133,7 +134,8 @@
         const blends = {};
         for (let i = 0; i < NAMES.length; i++) batches[NAMES[i]] = [];
         const cell = 32;
-        const reach = Math.max(TOWN_VIEW, drawFar || 300) + 48;
+        const aoe = !!(root && root.__aoeGround);
+        const reach = Math.max(aoe ? (root.__aoeReach || 280) : TOWN_VIEW, drawFar || 300) + 48;
         const x0 = Math.floor((cx - reach) / cell) * cell;
         const z0 = Math.floor((cz - reach) / cell) * cell;
         const x1 = Math.ceil((cx + reach) / cell) * cell;
@@ -224,13 +226,13 @@
             for (let ix = 0; ix < nx; ix++) {
                 const x = x0 + ix * cell;
                 const z = z0 + iz * cell;
-                if (x >= finePatch.x0 && x < finePatch.x1 && z >= finePatch.z0 && z < finePatch.z1) continue;
+                if (!aoe && x >= finePatch.x0 && x < finePatch.x1 && z >= finePatch.z0 && z < finePatch.z1) continue;
                 subdivide(x, z, countrySub(), sample(ix, iz), sample(ix + 1, iz), sample(ix + 1, iz + 1), sample(ix, iz + 1));
             }
         }
         const fine = 8;
         const inner = 100;
-        for (let x = finePatch.x0; x < finePatch.x1; x += fine) {
+        if (!aoe) for (let x = finePatch.x0; x < finePatch.x1; x += fine) {
             for (let z = finePatch.z0; z < finePatch.z1; z += fine) {
                 if (homeFocus && x >= home.x - inner && x < home.x + inner && z >= home.z - inner && z < home.z + inner) continue;
                 const h00 = World.heightAt(x, z);
@@ -246,7 +248,7 @@
                 ]);
             }
         }
-        if (homeFocus) {
+        if (!aoe && homeFocus) {
             const pave = 2;
             const cover = root.SwSquare ? root.SwSquare.bounds() : null;
             for (let x = home.x - inner; x < home.x + inner; x += pave) {
