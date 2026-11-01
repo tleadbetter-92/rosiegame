@@ -337,18 +337,29 @@
         <button id="bar-min" type="button">Hide</button>
         <strong>Age of Empires</strong>
         <p id="note">Placing the two manors…</p>
-        <p>WASD slides the map. Drag with the left button to select. Drag with the right button and the ground follows your hand. A right-click sends them. A building takes 5 minutes. A worker or soldier takes 1 minute. Press F to walk as yourself: left-click swings, P opens the pack. Hitting a side makes them your enemy until you fall. A small house costs 20 wood and holds 10 more people. Houses and barracks stay inside the ring around the manor. Right-click a farm and up to 5 people work the field, then drop the food at its house. Right-click ore for gold. A salt works can sit by the trees or water, and people drop off there when it is closer. Barracks, farm, salt works and the storehouse cost 100 wood. Soldiers: Guard or Attack.</p>
+        <p>WASD slides the map. Drag with the left button to select. Drag with the right button and the ground follows your hand. A right-click sends them. A building takes 5 minutes. A worker or soldier takes 1 minute. At 9 pm workers go into a house, up to 20 in each, and come back out at 5 am. One real minute is one hour. Press F to walk as yourself: left-click swings, P opens the pack. Hitting a side makes them your enemy until you fall. A small house costs 20 wood and holds 5 more workers. A barracks holds 15 soldiers. Houses stay inside the ring around the manor. A barracks can sit anywhere, and selecting it trains soldiers. Right-click a farm and up to 5 people work the field, then drop the food at its house. Right-click ore for gold. A salt works can sit by the trees or water, and people drop off there when it is closer. Barracks, farm, salt works and the storehouse cost 100 wood. Soldiers: Guard or Attack.</p>
         <p><button id="restart" type="button">Restart match</button><a href="../village.html">Village</a></p>
     </div>
     <div id="stock">
         <label>Food <input id="food" type="number" min="0" step="1" value="200"></label>
         <label>Wood <input id="wood" type="number" min="0" step="1" value="0"></label>
         <label>Gold <input id="gold" type="number" min="0" step="1" value="0"></label>
-        <span id="pop">People 1 / 30</span>
-        <span id="cpu-pop">Other people 1 / 30</span>
+        <label>Iron <input id="iron" type="number" min="0" step="1" value="0"></label>
+        <label>Salt <input id="salt" type="number" min="0" step="1" value="0"></label>
+        <label>Stone <input id="stone" type="number" min="0" step="1" value="0"></label>
+        <label>Fabrics <input id="fabric" type="number" min="0" step="1" value="0"></label>
+        <span id="clock">8:00 am</span>
+        <span id="pop">Workers 1 / 30</span>
+        <span id="soldiers">Soldiers 0 / 0</span>
+        <span id="cpu-pop">Other workers 1 / 30</span>
+        <span id="cpu-soldiers">Other soldiers 0 / 0</span>
         <label>Other food <input id="cpu-food" type="number" min="0" step="1" value="200"></label>
         <label>Other wood <input id="cpu-wood" type="number" min="0" step="1" value="0"></label>
         <label>Other gold <input id="cpu-gold" type="number" min="0" step="1" value="0"></label>
+        <label>Other iron <input id="cpu-iron" type="number" min="0" step="1" value="0"></label>
+        <label>Other salt <input id="cpu-salt" type="number" min="0" step="1" value="0"></label>
+        <label>Other stone <input id="cpu-stone" type="number" min="0" step="1" value="0"></label>
+        <label>Other fabrics <input id="cpu-fabric" type="number" min="0" step="1" value="0"></label>
     </div>
     <div id="dock">
         <button id="dock-min" type="button">Hide</button>
@@ -397,6 +408,6 @@
     <script src="../world.js?v=trees1"></script>
     <script src="../town.js"></script>
     <script src="../land-mesh.js?v=lip3"></script>
-    <script type="module" src="play.js?v=play57"></script>
+    <script type="module" src="play.js?v=play61"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { natureData } from "./generated_terrain%20Big%20map.js?v=map2";
+import { natureData } from "./generated_terrain%20Big%20map.js?v=map3";
 import { loadPerson, personMesh } from "./people.js?v=play43";
 
 const MANOR = "lorsmanor-courtyard";
@@ -242,6 +242,34 @@ function placeTrees() {
     });
 }
 placeTrees();
+
+const rockFiles = ["Rock_Medium_1", "Rock_Medium_2", "Rock_Medium_3"];
+Promise.all(rockFiles.map((id) => loadTree("../models/nature-megakit/glTF/" + encodeURIComponent(id) + ".gltf"))).then((models) => {
+    natureData.forEach((item, index) => {
+        if (item.type !== "cylinder") return;
+        for (let k = 0; k < 4; k++) {
+            const mesh = models[(index + k) % models.length].clone(true);
+            mesh.traverse((child) => {
+                if (!child.isMesh || !child.material) return;
+                const list = Array.isArray(child.material) ? child.material : [child.material];
+                list.forEach((mat) => {
+                    mat.metalness = 0;
+                    mat.roughness = 1;
+                    mat.side = THREE.DoubleSide;
+                });
+            });
+            const ang = k * 1.7 + index;
+            const rad = k === 0 ? 0 : 2.4;
+            const x = item.px + Math.cos(ang) * rad;
+            const z = item.pz + Math.sin(ang) * rad;
+            mesh.position.set(x, heightAt(x, z), z);
+            mesh.rotation.y = ang;
+            const wide = 1.5 + (k % 3) * 0.35;
+            mesh.scale.set(wide, wide, wide);
+            scene.add(mesh);
+        }
+    });
+}).catch(() => {});
 
 const woods = new THREE.Group();
 scene.add(woods);
@@ -622,7 +650,7 @@ async function placeManors() {
     look.set(playerHome.x + 2, 2, playerHome.z + 14);
     dist = 58;
     await startMatch(playerHome, houses[1] || null);
-    note.textContent = "You are the eastern side. Both manors keep adding houses, workers, and stores. You can still give orders. The two sides are at peace. Forest is wood, water is food, ore is gold.";
+    note.textContent = "You are the eastern side. Both manors keep adding houses, workers, and stores. You can still give orders. The two sides are at peace. Forest is wood, water is food, ore is gold, and the rock piles are stone.";
     return playerHome;
 }
 
@@ -644,13 +672,16 @@ const HIT = 8;
 const HOUSE_TIME = 300;
 const TRAIN_TIME = 60;
 const trains = [];
-const TOWN_RANGE = 70;
+let dayMin = 8 * 60;
+const DAY_MINUTES = 24 * 60;
+const HOUSE_BEDS = 20;
+const TOWN_RANGE = 140;
 const BUILDINGS = {
-    house: { id: "small-house1", label: "Small house", wood: 20, hx: 4, hz: 5.5, pop: 10, town: true },
-    barracks: { id: "barracks", label: "Barracks", wood: 100, hx: 15.5, hz: 10, pop: 0, town: true },
-    farm: { id: "farm", label: "Farm", wood: 100, hx: 9.75, hz: 18.75, pop: 0 },
-    salt: { id: "salt-works-ex", label: "Salt works", wood: 100, hx: 12, hz: 15.25, pop: 0 },
-    store: { id: "storehouse", label: "Storehouse", wood: 100, hx: 9.5, hz: 9.5, pop: 0 }
+    house: { id: "small-house1", label: "Small house", wood: 20, hx: 4, hz: 5.5, workers: 5, soldiers: 0, town: true },
+    barracks: { id: "barracks", label: "Barracks", wood: 100, hx: 15.5, hz: 10, workers: 0, soldiers: 15 },
+    farm: { id: "farm", label: "Farm", wood: 100, hx: 9.75, hz: 18.75, workers: 0, soldiers: 0 },
+    salt: { id: "salt-works-ex", label: "Salt works", wood: 100, hx: 12, hz: 15.25, workers: 0, soldiers: 0 },
+    store: { id: "storehouse", label: "Storehouse", wood: 100, hx: 9.5, hz: 9.5, workers: 0, soldiers: 0 }
 };
 const FARM_SLOTS = [
     { x: -5, z: 2 },
@@ -668,14 +699,23 @@ natureData.forEach((item) => {
     if (item.type === "tree") nodes.push({ kind: "wood", x: item.px, z: item.pz, r: 3 });
     if (item.type === "water") nodes.push({ kind: "food", x: item.px, z: item.pz, r: 1.6 * (item.s || 1) });
     if (item.type === "ore") nodes.push({ kind: "gold", x: item.px, z: item.pz, r: 2.5 });
+    if (item.type === "cylinder") nodes.push({ kind: "stone", x: item.px, z: item.pz, r: 6 });
 });
 
 let food = 200;
 let wood = 0;
 let gold = 0;
+let iron = 0;
+let salt = 0;
+let stone = 0;
+let fabric = 0;
 let cpuFood = 200;
 let cpuWood = 0;
 let cpuGold = 0;
+let cpuIron = 0;
+let cpuSalt = 0;
+let cpuStone = 0;
+let cpuFabric = 0;
 let home = null;
 let cpuHome = null;
 let actors = null;
@@ -687,15 +727,26 @@ const units = [];
 let nextId = 1;
 let selected = [];
 let manorSelected = false;
+let selectedHouse = null;
 const raycaster = new THREE.Raycaster();
 const foodEl = document.getElementById("food");
 const cpuFoodEl = document.getElementById("cpu-food");
 const cpuWoodEl = document.getElementById("cpu-wood");
 const cpuGoldEl = document.getElementById("cpu-gold");
+const ironEl = document.getElementById("iron");
+const saltEl = document.getElementById("salt");
+const stoneEl = document.getElementById("stone");
+const fabricEl = document.getElementById("fabric");
+const cpuIronEl = document.getElementById("cpu-iron");
+const cpuSaltEl = document.getElementById("cpu-salt");
+const cpuStoneEl = document.getElementById("cpu-stone");
+const cpuFabricEl = document.getElementById("cpu-fabric");
 const woodEl = document.getElementById("wood");
 const goldEl = document.getElementById("gold");
 const popEl = document.getElementById("pop");
+const soldierEl = document.getElementById("soldiers");
 const cpuPopEl = document.getElementById("cpu-pop");
+const cpuSoldierEl = document.getElementById("cpu-soldiers");
 const trainNote = document.getElementById("train-note");
 const selEl = document.getElementById("sel");
 const workerBtn = document.getElementById("make-worker");
@@ -744,18 +795,29 @@ rallyFlag.add(rallyCloth);
 rallyFlag.visible = false;
 scene.add(rallyFlag);
 
-function sidePop(side) {
+function sideKind(side, kind) {
     let n = 0;
-    for (let i = 0; i < units.length; i++) if (units[i].side === side) n++;
+    for (let i = 0; i < units.length; i++) {
+        if (units[i].side === side && units[i].kind === kind) n++;
+    }
     return n;
 }
 
-function popCap(side) {
-    let cap = POP_MAX;
+function kindQueued(side, kind) {
+    let n = 0;
+    for (let i = 0; i < trains.length; i++) {
+        if (trains[i].side === side && trains[i].kind === kind) n++;
+    }
+    return n;
+}
+
+function kindCap(side, kind) {
+    let cap = kind === "worker" ? POP_MAX : 0;
     for (let i = 0; i < built.length; i++) {
         if ((built[i].side || "you") !== side) continue;
         const spec = BUILDINGS[built[i].kind];
-        if (spec) cap += spec.pop;
+        if (!spec) continue;
+        cap += kind === "worker" ? (spec.workers || 0) : (spec.soldiers || 0);
     }
     return cap;
 }
@@ -764,11 +826,21 @@ function refreshHud() {
     if (document.activeElement !== foodEl) foodEl.value = String(Math.floor(food));
     if (document.activeElement !== woodEl) woodEl.value = String(Math.floor(wood));
     if (document.activeElement !== goldEl) goldEl.value = String(Math.floor(gold));
+    if (ironEl && document.activeElement !== ironEl) ironEl.value = String(Math.floor(iron));
+    if (saltEl && document.activeElement !== saltEl) saltEl.value = String(Math.floor(salt));
+    if (stoneEl && document.activeElement !== stoneEl) stoneEl.value = String(Math.floor(stone));
+    if (fabricEl && document.activeElement !== fabricEl) fabricEl.value = String(Math.floor(fabric));
     if (document.activeElement !== cpuFoodEl) cpuFoodEl.value = String(Math.floor(cpuFood));
     if (document.activeElement !== cpuWoodEl) cpuWoodEl.value = String(Math.floor(cpuWood));
     if (document.activeElement !== cpuGoldEl) cpuGoldEl.value = String(Math.floor(cpuGold));
-    popEl.textContent = "People " + sidePop("you") + " / " + popCap("you");
-    if (cpuPopEl) cpuPopEl.textContent = "Other people " + sidePop("cpu") + " / " + popCap("cpu");
+    if (cpuIronEl && document.activeElement !== cpuIronEl) cpuIronEl.value = String(Math.floor(cpuIron));
+    if (cpuSaltEl && document.activeElement !== cpuSaltEl) cpuSaltEl.value = String(Math.floor(cpuSalt));
+    if (cpuStoneEl && document.activeElement !== cpuStoneEl) cpuStoneEl.value = String(Math.floor(cpuStone));
+    if (cpuFabricEl && document.activeElement !== cpuFabricEl) cpuFabricEl.value = String(Math.floor(cpuFabric));
+    popEl.textContent = "Workers " + sideKind("you", "worker") + " / " + kindCap("you", "worker");
+    if (soldierEl) soldierEl.textContent = "Soldiers " + sideKind("you", "soldier") + " / " + kindCap("you", "soldier");
+    if (cpuPopEl) cpuPopEl.textContent = "Other workers " + sideKind("cpu", "worker") + " / " + kindCap("cpu", "worker");
+    if (cpuSoldierEl) cpuSoldierEl.textContent = "Other soldiers " + sideKind("cpu", "soldier") + " / " + kindCap("cpu", "soldier");
     if (trainNote) {
         const mine = trains.filter((job) => job.side === "you");
         if (!mine.length) trainNote.textContent = "";
@@ -801,10 +873,11 @@ function refreshHud() {
         soldierBtn.disabled = true;
         return;
     }
-    const queuedYou = trains.filter((job) => job.side === "you").length;
-    const canTrain = manorSelected && food >= COST && sidePop("you") + queuedYou < popCap("you");
-    workerBtn.disabled = !canTrain;
-    soldierBtn.disabled = !canTrain;
+    const barracksSelected = selectedHouse && selectedHouse.kind === "barracks" && (selectedHouse.side || "you") === "you";
+    const canTrainWorker = manorSelected && food >= COST && sideKind("you", "worker") + kindQueued("you", "worker") < kindCap("you", "worker");
+    const canTrainSoldier = barracksSelected && food >= COST && sideKind("you", "soldier") + kindQueued("you", "soldier") < kindCap("you", "soldier");
+    workerBtn.disabled = !canTrainWorker;
+    soldierBtn.disabled = !canTrainSoldier;
     if (selected.length === 1) {
         const u = selected[0];
         if (u.kind === "soldier") {
@@ -826,6 +899,10 @@ function refreshHud() {
         selEl.textContent = soldierPick.length + " soldiers" + (attack ? " · attack" : guard ? " · guard" : "");
     } else if (selected.length) {
         selEl.textContent = selected.length + " selected";
+    } else if (selectedHouse) {
+        selEl.textContent = selectedHouse.kind === "barracks"
+            ? ((selectedHouse.side || "you") === "you" ? "Your barracks. Train a soldier here." : "Their barracks.")
+            : insideText(selectedHouse);
     } else if (manorSelected) {
         selEl.textContent = rally
             ? "Your manor. New people walk to the flag. Right-click the map to move it."
@@ -839,6 +916,7 @@ function setSelected(list) {
     selected.forEach((u) => { u.ring.visible = false; });
     selected = list;
     manorSelected = false;
+    selectedHouse = null;
     selected.forEach((u) => { u.ring.visible = true; });
     refreshHud();
 }
@@ -928,9 +1006,22 @@ function sideQueued(side) {
 
 function deliverTrain(side, kind) {
     const base = side === "cpu" ? cpuHome : home;
-    if (!base || sidePop(side) >= popCap(side)) return false;
-    const ang = Math.PI * 0.5 + sidePop(side) * 0.32;
-    const unit = spawn(kind, base.x + Math.cos(ang) * 22, base.z + Math.sin(ang) * 22, side);
+    let place = base;
+    if (kind === "soldier") {
+        if (side === "you" && selectedHouse && selectedHouse.kind === "barracks" && (selectedHouse.side || "you") === "you") place = selectedHouse;
+        else {
+            for (let i = 0; i < built.length; i++) {
+                if (built[i].kind === "barracks" && (built[i].side || "you") === side) {
+                    place = built[i];
+                    break;
+                }
+            }
+        }
+    }
+    if (!place || sideKind(side, kind) >= kindCap(side, kind)) return false;
+    const ang = Math.PI * 0.5 + sideKind(side, kind) * 0.32;
+    const reach = kind === "soldier" && place.hx ? Math.max(place.hx, place.hz) + 3 : 22;
+    const unit = spawn(kind, place.x + Math.cos(ang) * reach, place.z + Math.sin(ang) * reach, side);
     if (side === "you" && rally) {
         const slot = rallySlot();
         const spread = slot === 0 ? 0 : 1.6;
@@ -947,11 +1038,15 @@ function deliverTrain(side, kind) {
 
 function trainFor(side, kind, auto) {
     const base = side === "cpu" ? cpuHome : home;
-    if (!auto && side === "you" && !manorSelected) return;
+    if (!auto && side === "you") {
+        if (kind === "soldier") {
+            if (!selectedHouse || selectedHouse.kind !== "barracks" || (selectedHouse.side || "you") !== "you") return;
+        } else if (!manorSelected) return;
+    }
     if (!actors || !base) return;
     if (auto && sideQueued(side) > 0) return;
     if (side === "cpu" ? cpuFood < COST : food < COST) return;
-    if (sidePop(side) + sideQueued(side) >= popCap(side)) return;
+    if (sideKind(side, kind) + kindQueued(side, kind) >= kindCap(side, kind)) return;
     if (side === "cpu") cpuFood -= COST;
     else food -= COST;
     trains.push({ side: side, kind: kind, left: TRAIN_TIME });
@@ -966,7 +1061,7 @@ function stepTrains(dt) {
         const job = trains[i];
         if (ticking[job.side]) continue;
         ticking[job.side] = true;
-        if (sidePop(job.side) >= popCap(job.side)) continue;
+        if (sideKind(job.side, job.kind) >= kindCap(job.side, job.kind)) continue;
         job.left -= dt;
         if (job.left > 0) continue;
         if (deliverTrain(job.side, job.kind)) {
@@ -1006,17 +1101,35 @@ function applyStock() {
     const nextFood = Math.floor(Number(foodEl.value));
     const nextWood = Math.floor(Number(woodEl.value));
     const nextGold = Math.floor(Number(goldEl.value));
+    const nextIron = Math.floor(Number(ironEl.value));
+    const nextSalt = Math.floor(Number(saltEl.value));
+    const nextStone = Math.floor(Number(stoneEl.value));
+    const nextFabric = Math.floor(Number(fabricEl.value));
     const nextCpuFood = Math.floor(Number(cpuFoodEl.value));
     const nextCpuWood = Math.floor(Number(cpuWoodEl.value));
     const nextCpuGold = Math.floor(Number(cpuGoldEl.value));
+    const nextCpuIron = Math.floor(Number(cpuIronEl.value));
+    const nextCpuSalt = Math.floor(Number(cpuSaltEl.value));
+    const nextCpuStone = Math.floor(Number(cpuStoneEl.value));
+    const nextCpuFabric = Math.floor(Number(cpuFabricEl.value));
     if (!Number.isFinite(nextFood) || !Number.isFinite(nextWood) || !Number.isFinite(nextGold)) return;
+    if (!Number.isFinite(nextIron) || !Number.isFinite(nextSalt) || !Number.isFinite(nextStone) || !Number.isFinite(nextFabric)) return;
     if (!Number.isFinite(nextCpuFood) || !Number.isFinite(nextCpuWood) || !Number.isFinite(nextCpuGold)) return;
+    if (!Number.isFinite(nextCpuIron) || !Number.isFinite(nextCpuSalt) || !Number.isFinite(nextCpuStone) || !Number.isFinite(nextCpuFabric)) return;
     food = Math.max(0, nextFood);
     wood = Math.max(0, nextWood);
     gold = Math.max(0, nextGold);
+    iron = Math.max(0, nextIron);
+    salt = Math.max(0, nextSalt);
+    stone = Math.max(0, nextStone);
+    fabric = Math.max(0, nextFabric);
     cpuFood = Math.max(0, nextCpuFood);
     cpuWood = Math.max(0, nextCpuWood);
     cpuGold = Math.max(0, nextCpuGold);
+    cpuIron = Math.max(0, nextCpuIron);
+    cpuSalt = Math.max(0, nextCpuSalt);
+    cpuStone = Math.max(0, nextCpuStone);
+    cpuFabric = Math.max(0, nextCpuFabric);
     refreshHud();
     writeSave();
 }
@@ -1026,6 +1139,14 @@ cpuWoodEl.addEventListener("input", applyStock);
 cpuGoldEl.addEventListener("input", applyStock);
 woodEl.addEventListener("input", applyStock);
 goldEl.addEventListener("input", applyStock);
+ironEl.addEventListener("input", applyStock);
+saltEl.addEventListener("input", applyStock);
+stoneEl.addEventListener("input", applyStock);
+fabricEl.addEventListener("input", applyStock);
+cpuIronEl.addEventListener("input", applyStock);
+cpuSaltEl.addEventListener("input", applyStock);
+cpuStoneEl.addEventListener("input", applyStock);
+cpuFabricEl.addEventListener("input", applyStock);
 
 function setStance(stance) {
     let changed = false;
@@ -1090,15 +1211,24 @@ function writeSave() {
         food: food,
         wood: wood,
         gold: gold,
+        iron: iron,
+        salt: salt,
+        stone: stone,
+        fabric: fabric,
         cpuFood: cpuFood,
         cpuWood: cpuWood,
         cpuGold: cpuGold,
+        cpuIron: cpuIron,
+        cpuSalt: cpuSalt,
+        cpuStone: cpuStone,
+        cpuFabric: cpuFabric,
         nextId: nextId,
         look: { x: look.x, z: look.z, yaw: yaw, dist: dist },
         rally: rally ? { x: rally.x, z: rally.z } : null,
         houses: Object.keys(kits).some((key) => kits[key]) ? built.map((house) => ({ kind: house.kind, side: house.side || "you", x: house.x, z: house.z, y: house.y })) : ((readSave() || {}).houses || []),
         pending: Object.keys(kits).some((key) => kits[key]) ? sites.map((site) => ({ kind: site.kind, side: site.side || "you", x: site.x, z: site.z, y: site.y, left: site.left })) : ((readSave() || {}).pending || []),
         aGift: aGift,
+        clock: dayMin,
         trains: trains.map((job) => ({ side: job.side, kind: job.kind, left: job.left })),
         units: units.map((unit) => ({
             id: unit.id,
@@ -1116,7 +1246,8 @@ function writeSave() {
             target: unit.targetId || null,
             goal: unit.goal ? { x: unit.goal.x, z: unit.goal.z } : null,
             node: unit.jobNode ? { kind: unit.jobNode.kind, x: unit.jobNode.x, z: unit.jobNode.z } : null,
-            orders: !!unit.orders
+            orders: !!unit.orders,
+            bed: unit.shelter ? { x: unit.shelter.x, z: unit.shelter.z } : null
         }))
     };
     try {
@@ -1146,9 +1277,17 @@ function restoreMatch(save) {
     food = Number(save.food) || 0;
     wood = Number(save.wood) || 0;
     gold = Number(save.gold) || 0;
+    iron = Number(save.iron) || 0;
+    salt = Number(save.salt) || 0;
+    stone = Number(save.stone) || 0;
+    fabric = Number(save.fabric) || 0;
     cpuFood = Number(save.cpuFood) || 0;
     cpuWood = Number(save.cpuWood) || 0;
     cpuGold = Number(save.cpuGold) || 0;
+    cpuIron = Number(save.cpuIron) || 0;
+    cpuSalt = Number(save.cpuSalt) || 0;
+    cpuStone = Number(save.cpuStone) || 0;
+    cpuFabric = Number(save.cpuFabric) || 0;
     for (let i = 0; i < save.units.length; i++) {
         const row = save.units[i];
         if (row.side !== "you" && row.side !== "cpu" && row.side !== "self") continue;
@@ -1159,7 +1298,7 @@ function restoreMatch(save) {
         unit.id = row.id || unit.id;
         unit.yaw = Number(row.yaw) || 0;
         unit.group.rotation.y = unit.yaw;
-        unit.job = row.job === "wood" || row.job === "food" || row.job === "gold" ? row.job : null;
+        unit.job = row.job === "wood" || row.job === "food" || row.job === "gold" || row.job === "stone" ? row.job : null;
         unit.carry = Math.max(0, Math.min(15, Number(row.carry) || 0));
         unit.goal = row.goal && Number.isFinite(row.goal.x) && Number.isFinite(row.goal.z) ? { x: row.goal.x, z: row.goal.z } : null;
         unit.jobNode = row.node && row.node.kind === "farm" && Number.isFinite(Number(row.node.x)) && Number.isFinite(Number(row.node.z))
@@ -1172,7 +1311,12 @@ function restoreMatch(save) {
             if (Number.isFinite(Number(row.hp))) unit.hp = Math.max(1, Number(row.hp));
         } else if (Number.isFinite(Number(row.hp))) unit.hp = Math.max(1, Number(row.hp));
         const state = row.state;
-        if ((state === "goto" || state === "return") && unit.goal && (state !== "goto" || unit.jobNode)) unit.state = state;
+        if (state === "inside" || state === "home") {
+            unit.bedSave = row.bed && Number.isFinite(Number(row.bed.x)) && Number.isFinite(Number(row.bed.z))
+                ? { x: Number(row.bed.x), z: Number(row.bed.z), inside: state === "inside" }
+                : null;
+            unit.state = "idle";
+        } else if ((state === "goto" || state === "return") && unit.goal && (state !== "goto" || unit.jobNode)) unit.state = state;
         else if (state === "gather" && unit.jobNode) unit.state = "gather";
         else if (state === "move" && unit.goal) unit.state = "move";
         else if ((state === "chase" || state === "strike") && unit.targetId) unit.state = "chase";
@@ -1210,6 +1354,9 @@ function restoreMatch(save) {
     }
     if (save.aGift) aGift = true;
     else grantTeamA();
+    if (Number.isFinite(Number(save.clock))) dayMin = ((Number(save.clock) % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES;
+    paintClock();
+    if (!nightTime()) wakeAll();
 }
 
 const floorPads = [];
@@ -1483,6 +1630,8 @@ function placeBuilding(kind, x, y, z, side) {
     scene.add(group);
     manors.push(group);
     const entry = { kind: kind, side: side === "cpu" ? "cpu" : "you", x: x, z: z, y: y, hx: spec.hx, hz: spec.hz, group: group };
+    group.userData.building = entry;
+    for (let i = 0; i < group.children.length; i++) group.children[i].userData.building = entry;
     if (kind === "farm") entry.node = { kind: "farm", x: x, z: z, farm: entry };
     built.push(entry);
 }
@@ -1541,6 +1690,7 @@ function restoreHouses(save) {
         sites.push(site);
     }
     linkFarms();
+    settleBeds();
 }
 
 function cancelPlace() {
@@ -1557,6 +1707,7 @@ function bankCarry(unit) {
         if (unit.job === "wood") stock ? cpuWood += gained : wood += gained;
         if (unit.job === "food") stock ? cpuFood += gained : food += gained;
         if (unit.job === "gold") stock ? cpuGold += gained : gold += gained;
+        if (unit.job === "stone") stock ? cpuStone += gained : stone += gained;
     }
     unit.carry = 0;
     unit.job = null;
@@ -1697,7 +1848,7 @@ function sidePlace(side, kind) {
             if (spotOk(x, z, spec, base) === "") spot = { x: x, z: z };
         }
     } else {
-        const rings = kind === "house" ? 8 : 4;
+        const rings = kind === "house" ? Math.ceil((TOWN_RANGE - 24) / 8) + 1 : 4;
         const angles = kind === "house" ? 12 : 8;
         for (let ring = 0; ring < rings && !spot; ring++) {
             const dist = 24 + ring * 8;
@@ -1782,9 +1933,189 @@ function sendSideWork(unit, kind, yard, base) {
     return true;
 }
 
+function nightTime() {
+    const hour = Math.floor(dayMin / 60) % 24;
+    return hour >= 21 || hour < 5;
+}
+
+function formatClock() {
+    const total = ((dayMin % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES;
+    const h24 = Math.floor(total / 60);
+    const minute = Math.floor(total % 60);
+    let h = h24 % 12;
+    if (h === 0) h = 12;
+    return h + ":" + String(minute).padStart(2, "0") + (h24 < 12 ? " am" : " pm");
+}
+
+function paintClock() {
+    const el = document.getElementById("clock");
+    if (el) el.textContent = formatClock();
+}
+
+function houseMates(house) {
+    let n = 0;
+    for (let i = 0; i < units.length; i++) {
+        const unit = units[i];
+        if (unit.shelter === house && (unit.state === "inside" || unit.state === "home")) n++;
+    }
+    return n;
+}
+
+function indoorPoint(house, index) {
+    const cols = 5;
+    const rows = 4;
+    const col = index % cols;
+    const row = Math.floor(index / cols) % rows;
+    return {
+        x: house.x + ((col + 0.5) / cols - 0.5) * house.hx * 1.4,
+        z: house.z + ((row + 0.5) / rows - 0.5) * house.hz * 1.4
+    };
+}
+
+function bedIndex(house, unit) {
+    let n = 0;
+    for (let i = 0; i < units.length; i++) {
+        const other = units[i];
+        if (other.shelter === house && (other.state === "inside" || other.state === "home") && other.id < unit.id) n++;
+    }
+    return n;
+}
+
+function nearestBed(unit) {
+    let best = null;
+    let bestD = Infinity;
+    for (let i = 0; i < built.length; i++) {
+        const house = built[i];
+        if (house.kind !== "house" || (house.side || "you") !== unit.side) continue;
+        if (houseMates(house) >= HOUSE_BEDS) continue;
+        const d = Math.hypot(house.x - unit.x, house.z - unit.z);
+        if (d < bestD) {
+            bestD = d;
+            best = house;
+        }
+    }
+    return best;
+}
+
+function tuckIn(unit) {
+    const house = unit.shelter;
+    if (!house) return;
+    const spot = unit.goal ? { x: unit.goal.x, z: unit.goal.z } : indoorPoint(house, bedIndex(house, unit));
+    unit.x = spot.x;
+    unit.z = spot.z;
+    unit.goal = null;
+    unit.job = null;
+    unit.jobNode = null;
+    unit.targetId = null;
+    unit.orders = false;
+    unit.state = "inside";
+    unit.group.position.x = spot.x;
+    unit.group.position.z = spot.z;
+    unit.group.visible = !!pilot;
+    const at = selected.indexOf(unit);
+    if (at >= 0) {
+        selected.splice(at, 1);
+        unit.ring.visible = false;
+    }
+    if (selectedHouse === house) refreshHud();
+}
+
+function wake(unit) {
+    const house = unit.shelter;
+    unit.shelter = null;
+    unit.state = "idle";
+    unit.job = null;
+    unit.jobNode = null;
+    unit.goal = null;
+    unit.orders = false;
+    unit.group.visible = true;
+    if (!house) return;
+    const ang = (unit.id % HOUSE_BEDS) / HOUSE_BEDS * Math.PI * 2;
+    const reach = Math.max(house.hx, house.hz) + 1.8;
+    unit.x = house.x + Math.cos(ang) * reach;
+    unit.z = house.z + Math.sin(ang) * reach;
+    unit.group.position.x = unit.x;
+    unit.group.position.z = unit.z;
+}
+
+function sendSleepers(side) {
+    for (let i = 0; i < units.length; i++) {
+        const unit = units[i];
+        if (unit.side !== side || unit.kind !== "worker" || unit.hp <= 0 || unit.dying > 0) continue;
+        if (unit.state === "inside" || unit.state === "home") continue;
+        const house = nearestBed(unit);
+        if (!house) continue;
+        if (unit.carry > 0.2) bankCarry(unit);
+        const index = houseMates(house);
+        unit.job = null;
+        unit.jobNode = null;
+        unit.targetId = null;
+        unit.orders = false;
+        unit.shelter = house;
+        unit.state = "home";
+        unit.goal = indoorPoint(house, index);
+    }
+}
+
+function wakeAll() {
+    for (let i = 0; i < units.length; i++) {
+        const unit = units[i];
+        if (unit.state === "inside" || unit.state === "home") wake(unit);
+    }
+    if (selectedHouse) refreshHud();
+}
+
+function settleBeds() {
+    for (let i = 0; i < units.length; i++) {
+        const unit = units[i];
+        const saved = unit.bedSave;
+        if (!saved || !Number.isFinite(saved.x) || !Number.isFinite(saved.z)) continue;
+        unit.bedSave = null;
+        let house = null;
+        let bestD = 6;
+        for (let j = 0; j < built.length; j++) {
+            const place = built[j];
+            if (place.kind !== "house") continue;
+            const d = Math.hypot(place.x - saved.x, place.z - saved.z);
+            if (d < bestD) {
+                bestD = d;
+                house = place;
+            }
+        }
+        if (!house) continue;
+        unit.shelter = house;
+        if (saved.inside) tuckIn(unit);
+        else {
+            unit.state = "home";
+            unit.goal = indoorPoint(house, bedIndex(house, unit));
+        }
+    }
+}
+
+function stepClock(dt) {
+    const asleep = nightTime();
+    dayMin = (dayMin + dt) % DAY_MINUTES;
+    if (dayMin < 0) dayMin += DAY_MINUTES;
+    paintClock();
+    if (nightTime()) {
+        sendSleepers("you");
+        sendSleepers("cpu");
+    } else if (asleep) wakeAll();
+}
+
+function insideText(house) {
+    let n = 0;
+    for (let i = 0; i < units.length; i++) {
+        if (units[i].state === "inside" && units[i].shelter === house) n++;
+    }
+    if (n === 1) return "1 worker inside";
+    return n + " workers inside";
+}
+
 function stepSide(side) {
     const base = sideBase(side);
     if (!base) return;
+    if (nightTime()) return;
     let yard = null;
     for (let i = 0; i < built.length; i++) {
         if (built[i].kind === "farm" && (built[i].side || "you") === side) yard = built[i];
@@ -1794,6 +2125,7 @@ function stepSide(side) {
     for (let i = 0; i < units.length; i++) {
         const unit = units[i];
         if (unit.side !== side || unit.kind !== "worker" || unit === pilot) continue;
+        if (unit.state === "inside" || unit.state === "home") continue;
         if (unit.state === "move" || unit.state === "return" || unit.state === "goto" || unit.state === "gather") held.push(unit);
         else open.push(unit);
     }
@@ -1803,7 +2135,12 @@ function stepSide(side) {
     const woodNeed = Math.max(2, Math.round(workers * 0.4));
     for (let i = 0; i < foodNeed; i++) jobs.push("food");
     for (let i = 0; i < woodNeed; i++) jobs.push("wood");
-    while (jobs.length < workers) jobs.push("gold");
+    const hasStone = nodes.some((node) => node.kind === "stone");
+    let spareJob = 0;
+    while (jobs.length < workers) {
+        jobs.push(hasStone && spareJob % 2 === 1 ? "stone" : "gold");
+        spareJob++;
+    }
     for (let i = 0; i < held.length; i++) {
         const at = jobs.indexOf(held[i].job);
         if (at >= 0) jobs.splice(at, 1);
@@ -1822,7 +2159,7 @@ function stepSide(side) {
         if (!placed && ownedCount(built, "salt", side) + ownedCount(sites, "salt", side) < 1 && sideWood(side) >= 100 && workers >= 4) placed = sidePlace(side, "salt");
     }
     const foodStock = side === "cpu" ? cpuFood : food;
-    if (!placed && foodStock >= COST && sidePop(side) < popCap(side)) trainFor(side, "worker", true);
+    if (!placed && foodStock >= COST && sideKind(side, "worker") < kindCap(side, "worker")) trainFor(side, "worker", true);
 }
 
 function stepCpu(dt) {
@@ -1972,6 +2309,15 @@ function stepUnits(dt) {
             if (unit.dying <= 0) bury(unit);
             continue;
         }
+        if (unit.state === "inside") {
+            unit.group.visible = !!pilot;
+            unit.group.position.y = feetAt(unit.x, unit.z);
+            unit.anim += dt;
+            const idle = unit.actor.frames.idle;
+            const frame = idle[Math.floor(unit.anim) % idle.length];
+            if (unit.body.geometry !== frame) unit.body.geometry = frame;
+            continue;
+        }
         if (unit === pilot) {
             const moving = !!(keys.w || keys.a || keys.s || keys.d || keys.arrowup || keys.arrowdown || keys.arrowleft || keys.arrowright);
             unit.group.position.y = feetAt(unit.x, unit.z);
@@ -1982,22 +2328,32 @@ function stepUnits(dt) {
             continue;
         }
         if (unit.side === "self") unit.state = "idle";
+        if (unit.state === "home" && !unit.goal) {
+            tuckIn(unit);
+            continue;
+        }
         let moving = false;
-        if (unit.state === "goto" || unit.state === "move" || unit.state === "return" || unit.state === "chase" || unit.state === "back") {
+        if (unit.state === "goto" || unit.state === "move" || unit.state === "return" || unit.state === "chase" || unit.state === "back" || unit.state === "home") {
             moving = true;
             const stop = unit.state === "return" ? 0.8 : 0.45;
             if (arrive(unit, unit.goal, stop, dt)) {
                 moving = false;
+                if (unit.state === "home") {
+                    tuckIn(unit);
+                    continue;
+                }
                 if (unit.state === "return") {
                     const gained = Math.round(unit.carry);
                     if (unit.side === "cpu") {
                         if (unit.job === "wood") cpuWood += gained;
                         if (unit.job === "food") cpuFood += gained;
                         if (unit.job === "gold") cpuGold += gained;
+                        if (unit.job === "stone") cpuStone += gained;
                     } else {
                         if (unit.job === "wood") wood += gained;
                         if (unit.job === "food") food += gained;
                         if (unit.job === "gold") gold += gained;
+                        if (unit.job === "stone") stone += gained;
                         refreshHud();
                     }
                     unit.carry = 0;
@@ -2054,13 +2410,18 @@ function groundAt(event) {
 
 function pickUnit(event) {
     raycaster.setFromCamera(ndc(event), camera);
-    const bodies = units.map((unit) => unit.body);
+    const bodies = [];
+    for (let i = 0; i < units.length; i++) {
+        if (units[i].state === "inside" && !pilot) continue;
+        bodies.push(units[i].body);
+    }
     const hit = raycaster.intersectObjects(bodies, false)[0];
-    if (hit && hit.object.userData.unit.side === "you") return hit.object.userData.unit;
+    if (hit && hit.object.userData.unit && hit.object.userData.unit.side === "you" && hit.object.userData.unit.state !== "inside") return hit.object.userData.unit;
     let best = null;
     let bestD = 28;
     const rect = renderer.domElement.getBoundingClientRect();
     for (let i = 0; i < units.length; i++) {
+        if (units[i].state === "inside") continue;
         const spot = new THREE.Vector3(units[i].x, units[i].group.position.y + 0.7, units[i].z).project(camera);
         if (units[i].side !== "you" || spot.z > 1) continue;
         const sx = (spot.x * 0.5 + 0.5) * rect.width + rect.left;
@@ -2072,6 +2433,56 @@ function pickUnit(event) {
         }
     }
     return best;
+}
+
+function pickHouse(event) {
+    raycaster.setFromCamera(ndc(event), camera);
+    const groups = [];
+    for (let i = 0; i < built.length; i++) {
+        if ((built[i].kind === "house" || built[i].kind === "barracks") && built[i].group) groups.push(built[i].group);
+    }
+    const hit = groups.length ? raycaster.intersectObjects(groups, true)[0] : null;
+    if (hit) {
+        let obj = hit.object;
+        while (obj && !obj.userData.building) obj = obj.parent;
+        if (obj && obj.userData.building) return obj.userData.building;
+    }
+    const point = groundAt(event);
+    if (!point) return null;
+    let best = null;
+    let bestD = 10;
+    for (let i = 0; i < built.length; i++) {
+        const house = built[i];
+        if (house.kind !== "house" && house.kind !== "barracks") continue;
+        const d = Math.hypot(point.x - house.x, point.z - house.z);
+        if (d < bestD && Math.abs(point.x - house.x) <= house.hx + 1.5 && Math.abs(point.z - house.z) <= house.hz + 1.5) {
+            bestD = d;
+            best = house;
+        }
+    }
+    return best;
+}
+
+function chooseClick(event) {
+    const unit = pickUnit(event);
+    if (unit) {
+        setSelected([unit]);
+        return;
+    }
+    const house = pickHouse(event);
+    if (house) {
+        setSelected([]);
+        selectedHouse = house;
+        refreshHud();
+        return;
+    }
+    if (pickManor(event)) {
+        setSelected([]);
+        manorSelected = true;
+        refreshHud();
+        return;
+    }
+    setSelected([]);
 }
 
 function pickManor(event) {
@@ -2130,12 +2541,16 @@ function formationGoals(movers, point) {
 
 function commandAt(point) {
     if (!selected.length) return;
-    selected.forEach((unit) => { if (unit.side === "you") unit.orders = true; });
+    selected.forEach((unit) => {
+        if (unit.side !== "you" || unit.state === "inside" || unit.state === "home") return;
+        unit.orders = true;
+    });
     const farm = farmAt(point.x, point.z);
     const node = farm ? null : nearestNode(point.x, point.z);
     const soldiers = [];
     const farmHands = [];
     selected.forEach((unit) => {
+        if (unit.side !== "you" || unit.state === "inside" || unit.state === "home") return;
         if (farm && unit.kind === "worker") {
             farmHands.push(unit);
         } else if (node && unit.kind === "worker") {
@@ -2243,13 +2658,7 @@ window.addEventListener("pointerup", (event) => {
         mapMoved = false;
         renderer.domElement.style.cursor = "";
         if (dragged) return;
-        const unit = pickUnit(event);
-        if (unit) setSelected([unit]);
-        else if (pickManor(event)) {
-            setSelected([]);
-            manorSelected = true;
-            refreshHud();
-        } else setSelected([]);
+        chooseClick(event);
         return;
     }
     if (boxDrag && event.button === 0) {
@@ -2264,18 +2673,14 @@ window.addEventListener("pointerup", (event) => {
                 const rect = renderer.domElement.getBoundingClientRect();
                 const sx = (spot.x * 0.5 + 0.5) * rect.width + rect.left;
                 const sy = (-spot.y * 0.5 + 0.5) * rect.height + rect.top;
-                if (units[i].side === "you" && sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) hits.push(units[i]);
+                if (units[i].side === "you" && units[i].state !== "inside" && sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) hits.push(units[i]);
             }
             setSelected(hits);
-        } else {
-            const unit = pickUnit(event);
-            if (unit) setSelected([unit]);
-            else if (pickManor(event)) {
-                setSelected([]);
-                manorSelected = true;
-                refreshHud();
-            } else setSelected([]);
-        }
+            } else {
+                const unit = pickUnit(event);
+                if (unit) setSelected([unit]);
+                else chooseClick(event);
+            }
         boxDrag = false;
         boxEl.hidden = true;
     }
@@ -2470,7 +2875,7 @@ function reachHit(profile) {
     let bestT = profile.reach;
     for (let i = 0; i < units.length; i++) {
         const unit = units[i];
-        if (unit.side === "self" || unit.hp <= 0) continue;
+        if (unit.side === "self" || unit.hp <= 0 || unit.state === "inside") continue;
         const chest = unit.group.position.y + 1.1;
         const dx = unit.x - ox;
         const dy = chest - oy;
@@ -2557,7 +2962,7 @@ function stepArrows(dt) {
         const len2 = sx * sx + sy * sy + sz * sz || 1;
         for (let u = 0; u < units.length; u++) {
             const unit = units[u];
-            if (unit.side === "self" || unit.hp <= 0 || unit.dying) continue;
+            if (unit.side === "self" || unit.hp <= 0 || unit.dying || unit.state === "inside") continue;
             const chest = unit.group.position.y + 1.1;
             let t = ((unit.x - x0) * sx + (chest - y0) * sy + (unit.z - z0) * sz) / len2;
             t = Math.max(0, Math.min(1, t));
@@ -2641,11 +3046,15 @@ function canPass(nx, nz) {
     const y = pilot.group.position.y + 0.85;
     const dir = new THREE.Vector3(nx - pilot.x, 0, nz - pilot.z);
     const span = dir.length();
-    if (span < 0.0001 || !manors.length) return true;
+    if (span < 0.0001) return true;
+    const walls = [];
+    if (home && home.group) walls.push(home.group);
+    if (cpuHome && cpuHome.group) walls.push(cpuHome.group);
+    if (!walls.length) return true;
     dir.multiplyScalar(1 / span);
     wallRay.set(new THREE.Vector3(pilot.x, y, pilot.z), dir);
     wallRay.far = span + 0.28;
-    return wallRay.intersectObjects(manors, true).length === 0;
+    return wallRay.intersectObjects(walls, true).length === 0;
 }
 
 function walkBody(dt) {
@@ -3080,6 +3489,7 @@ function stepMatch(dt) {
     slide(dt);
     refreshLand(false);
     stepCpu(dt);
+    stepClock(dt);
     stepFight(dt);
     stepUnits(dt);
     stepSites(dt);
