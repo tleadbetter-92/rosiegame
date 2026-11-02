@@ -154,12 +154,16 @@
             overflow: auto;
         }
         body.handheld #dock:not(.folded) {
-            left: 8px;
-            bottom: 60px;
-            width: min(300px, calc(100% - 16px));
-            max-height: 42vh;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            width: auto;
+            max-width: none;
+            max-height: 46vh;
             overflow: auto;
+            flex-wrap: wrap;
         }
+        body.handheld #commands { grid-template-columns: repeat(3, 96px); }
         body.handheld #bar.folded #bar-min,
         body.handheld #dock.folded button#dock-min { width: auto; margin: 0; min-height: 40px; padding: 8px 12px; }
         body.handheld.walking #self-health { left: 8px; bottom: 168px; width: 150px; }
@@ -177,47 +181,87 @@
             gap: 8px 12px;
             max-width: none;
             align-items: center;
-            background: rgba(255, 248, 236, 0.94);
-            border: 1px solid #c4a574;
-            border-radius: 0 0 8px 0;
+            background: linear-gradient(#3a2a1c, #24160e);
+            border: none;
+            border-bottom: 2px solid #8a6840;
+            border-radius: 0;
             padding: 6px 12px;
             font: 14px/1.2 system-ui, sans-serif;
-            color: #1c140c;
+            color: #f3e6c8;
         }
         #stock label, #stock span { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
         #stock input {
             width: 4.2rem;
             font: inherit;
-            color: inherit;
+            color: #f3e6c8;
             padding: 2px 6px;
             border: 1px solid #8a6840;
-            border-radius: 6px;
-            background: #fff;
+            border-radius: 4px;
+            background: #1a120c;
         }
+        #stock-min { background: #5c4030; color: #f3e6c8; border-color: #c4a574; }
         #dock {
             position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            width: auto;
+            max-width: none;
+            display: flex;
+            align-items: stretch;
+            gap: 16px;
+            background: linear-gradient(#3a2a1c, #24160e);
+            border: none;
+            border-top: 2px solid #8a6840;
+            border-radius: 0;
+            padding: 10px 14px 12px;
+            font: 14px/1.35 system-ui, sans-serif;
+            color: #f3e6c8;
+            min-height: 112px;
+            box-sizing: border-box;
+        }
+        #dock-min { position: static; align-self: flex-start; float: none; flex: none; }
+        #readout { flex: 1 1 160px; min-width: 140px; }
+        #sel { margin: 0; white-space: pre-line; }
+        #train-note { margin: 6px 0 0; color: #e7d7b2; min-height: 0; }
+        #train-note:empty { display: none; }
+        #commands {
+            margin-left: auto;
+            width: min(460px, 100%);
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+            gap: 6px;
+            align-content: start;
+        }
+        #commands button {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: 52px;
+            margin: 0;
+            padding: 4px;
+            border: 1px solid #c4a574;
+            border-radius: 4px;
+            background: #5c4030;
+            color: #f6edd8;
+            cursor: pointer;
+            font: 13px/1.15 system-ui, sans-serif;
+        }
+        #commands button small { display: block; margin-top: 3px; font-size: 11px; color: #e7d7b2; }
+        #commands button:disabled { opacity: 0.4; cursor: default; }
+        #dock.folded {
+            right: auto;
+            min-height: 0;
+            width: auto;
+            padding: 4px;
             left: 12px;
             bottom: 12px;
-            width: auto;
-            max-width: min(720px, calc(100% - 24px));
-            background: rgba(255, 248, 236, 0.94);
-            border: 1px solid #c4a574;
-            border-radius: 8px;
-            padding: 10px 12px;
-            font: 14px/1.4 system-ui, sans-serif;
-            color: #1c140c;
-        }
-        #dock button {
-            display: inline-block;
-            width: auto;
-            margin: 4px 4px 0 0;
-            padding: 8px;
             border: 1px solid #8a6840;
-            border-radius: 6px;
-            background: #efe2cc;
-            cursor: pointer;
+            border-radius: 8px;
         }
-        #dock button:disabled { opacity: 0.45; cursor: default; }
+        #dock.folded #dock-min { position: static; }
         #box {
             position: absolute;
             border: 1px solid #f4e2a0;
@@ -386,17 +430,21 @@
     </div>
     <div id="dock">
         <button id="dock-min" type="button">Hide</button>
-        <p id="sel">Select the manor or a unit.</p>
-        <button id="make-worker" type="button" disabled>Train worker · 50 food</button>
-        <button id="make-soldier" type="button" disabled>Train soldier · 50 food</button>
-        <p id="train-note"></p>
-        <button id="make-house" type="button" disabled>Small house · 20 wood</button>
-        <button id="make-barracks" type="button" disabled>Barracks · 100 wood</button>
-        <button id="make-farm" type="button" disabled>Farm · 100 wood</button>
-        <button id="make-salt" type="button" disabled>Salt works · 100 wood</button>
-        <button id="make-store" type="button" disabled>Storehouse · 100 wood</button>
-        <button id="stance-guard" type="button" disabled>Guard</button>
-        <button id="stance-attack" type="button" disabled>Attack</button>
+        <div id="readout">
+            <p id="sel">Select a building or units.</p>
+            <p id="train-note"></p>
+        </div>
+        <div id="commands">
+            <button id="make-worker" type="button" disabled><b>Worker</b><small>50 food</small></button>
+            <button id="make-soldier" type="button" disabled><b>Soldier</b><small>50 food</small></button>
+            <button id="make-house" type="button" disabled><b>House</b><small>20 wood</small></button>
+            <button id="make-barracks" type="button" disabled><b>Barracks</b><small>100 wood</small></button>
+            <button id="make-farm" type="button" disabled><b>Farm</b><small>100 wood</small></button>
+            <button id="make-salt" type="button" disabled><b>Salt works</b><small>100 wood</small></button>
+            <button id="make-store" type="button" disabled><b>Storehouse</b><small>100 wood</small></button>
+            <button id="stance-guard" type="button" disabled><b>Guard</b></button>
+            <button id="stance-attack" type="button" disabled><b>Attack</b></button>
+        </div>
     </div>
     <div id="box" hidden></div>
     <div id="weapon" aria-hidden="true"></div>
@@ -431,6 +479,6 @@
     <script src="../world.js?v=trees1"></script>
     <script src="../town.js"></script>
     <script src="../land-mesh.js?v=lip4"></script>
-    <script type="module" src="play.js?v=play65"></script>
+    <script type="module" src="play.js?v=play66"></script>
 </body>
 </html>

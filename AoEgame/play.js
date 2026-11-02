@@ -885,37 +885,42 @@ function refreshHud() {
     const canTrainSoldier = barracksSelected && food >= COST && sideKind("you", "soldier") + kindQueued("you", "soldier") < kindCap("you", "soldier");
     workerBtn.disabled = !canTrainWorker;
     soldierBtn.disabled = !canTrainSoldier;
-    if (selected.length === 1) {
-        const u = selected[0];
-        if (u.kind === "soldier") {
-            const task = u.state === "chase" || u.state === "strike" ? "fighting" : u.state === "back" ? "returning" : u.state === "move" ? "moving" : "standing";
-            selEl.textContent = "Soldier · " + (u.stance === "attack" ? "attack" : "guard") + " · " + task;
-        } else {
-            let task;
-            if (u.jobNode && u.jobNode.kind === "farm") {
-                task = u.state === "gather" ? "working the field" : u.state === "return" ? "dropping off at the farmhouse" : u.state === "goto" ? "going to the field" : u.state === "move" ? "moving" : "standing";
+    if (selected.length) {
+        let workers = 0;
+        let soldiers = 0;
+        let soldierHp = null;
+        let workerHp = null;
+        for (let i = 0; i < selected.length; i++) {
+            const unit = selected[i];
+            if (unit.kind === "soldier") {
+                soldiers += 1;
+                soldierHp = soldierHp == null ? unit.hp : Math.min(soldierHp, unit.hp);
             } else {
-                task = u.state === "gather" ? "gathering " + u.job : u.state === "return" ? "returning" : u.state === "goto" ? "going to " + u.job : u.state === "move" ? "moving" : "standing";
+                workers += 1;
+                workerHp = workerHp == null ? unit.hp : Math.min(workerHp, unit.hp);
             }
-            const cargo = u.carry > 0.2 ? " · carrying " + Math.floor(u.carry) : "";
-            selEl.textContent = "Worker · " + task + cargo;
         }
-    } else if (selected.length && soldierPick.length === selected.length) {
-        const attack = soldierPick.every((unit) => unit.stance === "attack");
-        const guard = soldierPick.every((unit) => unit.stance !== "attack");
-        selEl.textContent = soldierPick.length + " soldiers" + (attack ? " · attack" : guard ? " · guard" : "");
-    } else if (selected.length) {
-        selEl.textContent = selected.length + " selected";
-    } else if (selectedHouse) {
-        selEl.textContent = selectedHouse.kind === "barracks"
-            ? ((selectedHouse.side || "you") === "you" ? "Your barracks. Train a soldier here." : "Their barracks.")
-            : insideText(selectedHouse);
-    } else if (manorSelected) {
-        selEl.textContent = rally
-            ? "Your manor. New people walk to the flag. Right-click the map to move it."
-            : "Your manor. Right-click the map to choose where new people go.";
+        const lines = [];
+        if (workers) lines.push(workers + (workers === 1 ? " worker" : " workers"));
+        if (soldiers) lines.push(soldiers + (soldiers === 1 ? " soldier" : " soldiers"));
+        if (soldiers) lines.push("soldier\nhealth " + Math.max(0, Math.ceil(soldierHp)));
+        else lines.push("health " + Math.max(0, Math.ceil(workerHp)));
+        selEl.textContent = lines.join("\n");
+    } else if (selectedHouse || manorSelected) {
+        const house = selectedHouse;
+        const label = manorSelected ? "Manor" : (BUILDINGS[house.kind] ? BUILDINGS[house.kind].label : house.kind);
+        const lines = ["Building", label];
+        const side = manorSelected ? "you" : (house.side || "you");
+        if (side === "you") {
+            const queued = manorSelected ? kindQueued("you", "worker") : house.kind === "barracks" ? kindQueued("you", "soldier") : 0;
+            const who = manorSelected ? "worker" : "soldier";
+            if (queued) lines.push("training " + queued + " " + who + (queued === 1 ? "" : "s"));
+        }
+        const inside = houseMates(manorSelected ? home : house);
+        if (inside) lines.push(inside + " garrisoned inside");
+        selEl.textContent = lines.join("\n");
     } else {
-        selEl.textContent = "Select the manor or a unit.";
+        selEl.textContent = "Select a building or units.";
     }
 }
 
@@ -3017,11 +3022,13 @@ const handheldQuery = window.matchMedia("(max-width: 900px)");
 function applyHandheld(first) {
     const on = handheldQuery.matches;
     document.body.classList.toggle("handheld", on);
-    if (first && on) {
+    if (first) {
         document.getElementById("bar").classList.add("folded");
+        document.getElementById("bar-min").textContent = "Notes";
+    }
+    if (first && on) {
         document.getElementById("dock").classList.add("folded");
         document.getElementById("stock").classList.add("folded");
-        document.getElementById("bar-min").textContent = "Notes";
         document.getElementById("dock-min").textContent = "Orders";
         document.getElementById("stock-min").textContent = "Stock";
     }
