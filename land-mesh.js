@@ -144,13 +144,27 @@
         const nz = (z1 - z0) / cell;
         const heights = new Float32Array((nx + 1) * (nz + 1));
         const sample = (ix, iz) => heights[iz * (nx + 1) + ix];
-        const subdivide = (x, z, sub, h00, h10, h11, h01) => {
+        const skirtEdge = (x0, y0, z0, x1, y1, z1) => {
+            const drop = Math.abs(y0 - y1);
+            if (drop < 1.4) return;
+            const base = Math.min(y0, y1);
+            const tone = 0.7;
+            const a = [x0, y0, z0, x0 / 8, z0 / 8, tone];
+            const b = [x1, y1, z1, x1 / 8, z1 / 8, tone];
+            const c = [x1, base, z1, x1 / 8, z1 / 8, tone];
+            const d = [x0, base, z0, x0 / 8, z0 / 8, tone];
+            const list = batches.crag;
+            pushQuad(list, a, b, c, d);
+            pushQuad(list, a, d, c, b);
+        };
+        const subdivide = (x, z, sub, h00, h10, h11, h01, resample) => {
             const k = cell / sub + 1;
             const grid = new Float32Array(k * k);
             for (let j = 0; j < k; j++) {
                 for (let i = 0; i < k; i++) {
                     const last = k - 1;
-                    if (i === 0 && j === 0) grid[0] = h00;
+                    if (resample) grid[j * k + i] = World.heightAt(x + i * sub, z + j * sub);
+                    else if (i === 0 && j === 0) grid[0] = h00;
                     else if (i === last && j === 0) grid[i] = h10;
                     else if (i === last && j === last) grid[j * k + i] = h11;
                     else if (i === 0 && j === last) grid[j * k] = h01;
@@ -179,6 +193,20 @@
                         grid[c], grid[c + 1], grid[c + k + 1], grid[c + k],
                         [kinds[c], kinds[c + 1], kinds[c + k + 1], kinds[c + k]]
                     );
+                    if (resample) {
+                        const x0 = x + i * sub;
+                        const z0 = z + j * sub;
+                        const x1 = x0 + sub;
+                        const z1 = z0 + sub;
+                        const s0 = grid[c];
+                        const s1 = grid[c + 1];
+                        const s2 = grid[c + k + 1];
+                        const s3 = grid[c + k];
+                        if (j === 0) skirtEdge(x0, s0, z0, x1, s1, z0);
+                        skirtEdge(x1, s1, z0, x1, s2, z1);
+                        if (i === 0) skirtEdge(x0, s3, z1, x0, s0, z0);
+                        skirtEdge(x0, s3, z1, x1, s2, z1);
+                    }
                 }
             }
             const edges = [];
@@ -227,7 +255,13 @@
                 const x = x0 + ix * cell;
                 const z = z0 + iz * cell;
                 if (!aoe && x >= finePatch.x0 && x < finePatch.x1 && z >= finePatch.z0 && z < finePatch.z1) continue;
-                subdivide(x, z, countrySub(), sample(ix, iz), sample(ix + 1, iz), sample(ix + 1, iz + 1), sample(ix, iz + 1));
+                let sub = countrySub();
+                if (aoe && root.__aoeNear > 1) {
+                    const dx = Math.max(x - cx, 0, cx - (x + cell));
+                    const dz = Math.max(z - cz, 0, cz - (z + cell));
+                    if (Math.hypot(dx, dz) <= (root.__aoeNearReach || 0)) sub = root.__aoeNear;
+                }
+                subdivide(x, z, sub, sample(ix, iz), sample(ix + 1, iz), sample(ix + 1, iz + 1), sample(ix, iz + 1), aoe);
             }
         }
         const fine = 8;

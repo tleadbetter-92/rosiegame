@@ -48,7 +48,7 @@
         }
         body.walking #bar-min, body.walking #dock button#dock-min,
         body.handheld #bar-min, body.handheld #dock button#dock-min { display: inline-block; }
-        #bar.folded > :not(#bar-min), #dock.folded > :not(#dock-min), #stock.folded > :not(#stock-min) { display: none; }
+        #bar.folded > :not(#bar-min), #dock.folded > :not(#dock-min):not(#pane-map), #stock.folded > :not(#stock-min) { display: none; }
         #bar.folded, #dock.folded, #stock.folded { max-width: none; width: auto; }
         #stock-min {
             display: inline-block;
@@ -64,8 +64,9 @@
         }
         #stock.folded { gap: 0; padding: 4px 8px; right: auto; left: 12px; top: 8px; border-radius: 8px; }
         body.walking #bar,
-        body.walking #dock,
-        body.walking #stock { display: none; }
+        body.walking #stock,
+        body.walking #dock > :not(#pane-map) { display: none; }
+        body.walking #dock { background: none; border: none; padding: 0; min-height: 0; pointer-events: none; }
         #play-self, #select-mode, #swing, #zoom, #move-pad { display: none; }
         #play-self, #select-mode, #swing, #zoom button, #move-pad button {
             font: 16px/1.2 system-ui, sans-serif;
@@ -142,8 +143,11 @@
         body.handheld #census { max-height: 72px; overflow: auto; }
         body.handheld #stock.folded { right: auto; width: auto; overflow: hidden; }
         body.handheld #stock input { width: 4.2rem; }
-        body.handheld #minimap { width: 104px; height: 104px; top: 8px; right: 8px; }
-        body.handheld #pack { top: 120px; right: 8px; min-height: 40px; }
+        body.handheld #dock.folded #pane-map { top: 8px; right: 8px; }
+        body.handheld #dock.folded #minimap, body.handheld.walking #minimap { width: 104px; height: 104px; }
+        body.handheld #dock.folded ~ #pack { top: 120px; right: 8px; }
+        body.handheld #dock:not(.folded) ~ #pack { top: 8px; right: 8px; }
+        body.handheld #pack { min-height: 40px; }
         body.handheld #bar.folded { top: 58px; left: 8px; padding: 4px; }
         body.handheld #dock.folded { top: 108px; left: 8px; bottom: auto; width: auto; padding: 4px; }
         body.handheld #bar:not(.folded) {
@@ -160,11 +164,13 @@
             bottom: 0;
             width: auto;
             max-width: none;
-            max-height: 46vh;
+            max-height: 52vh;
             overflow: auto;
             flex-wrap: wrap;
         }
-        body.handheld #commands { grid-template-columns: repeat(3, 96px); }
+        body.handheld #pane-commands { flex: 1 1 100%; }
+        body.handheld #commands { flex-wrap: wrap; }
+        body.handheld .cmd-group { grid-template-columns: repeat(3, 96px); }
         body.handheld #bar.folded #bar-min,
         body.handheld #dock.folded button#dock-min,
         body.handheld #stock.folded #stock-min { width: auto; margin: 0; min-height: 40px; padding: 8px 12px; }
@@ -228,33 +234,47 @@
             max-width: none;
             display: flex;
             align-items: stretch;
-            gap: 16px;
+            gap: 8px;
             background: linear-gradient(#3a2a1c, #24160e);
             border: none;
             border-top: 2px solid #8a6840;
             border-radius: 0;
-            padding: 10px 14px 12px;
+            padding: 8px;
             font: 14px/1.35 system-ui, sans-serif;
             color: #f3e6c8;
-            min-height: 112px;
+            min-height: 0;
             box-sizing: border-box;
         }
         #dock-min { position: static; align-self: flex-start; float: none; flex: none; }
-        #readout { flex: 1 1 280px; min-width: 220px; }
-        #census { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 8px; font-size: 12px; color: #e7d7b2; }
-        #census label, #census span { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
-        #census input { width: 4.4rem; font: inherit; color: #f3e6c8; background: #1a120c; border: 1px solid #8a6840; border-radius: 3px; padding: 1px 4px; }
+        .pane {
+            background: #1c120c;
+            border: 1px solid #6d5338;
+            border-radius: 4px;
+            padding: 8px 10px;
+            box-sizing: border-box;
+            min-width: 0;
+        }
+        .pane h3 {
+            margin: 0 0 6px;
+            font: 700 11px/1 system-ui, sans-serif;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #c4a574;
+        }
+        #pane-map { flex: none; padding: 6px; display: flex; align-items: center; justify-content: center; }
+        #pane-you { flex: none; display: flex; flex-direction: column; gap: 6px; min-width: 132px; }
+        #pane-you span { white-space: nowrap; }
+        #pane-sel { flex: 1 1 180px; display: flex; flex-direction: column; }
         #sel { margin: 0; white-space: pre-line; }
         #train-note { margin: 6px 0 0; color: #e7d7b2; min-height: 0; }
         #train-note:empty { display: none; }
-        #commands {
-            margin-left: auto;
-            width: min(460px, 100%);
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
-            gap: 6px;
-            align-content: start;
-        }
+        #pane-commands { flex: none; }
+        #commands { display: flex; gap: 0; width: auto; margin: 0; align-items: start; }
+        .cmd-group { display: grid; gap: 4px; align-content: start; }
+        .cmd-group[hidden], #pane-commands[hidden], #commands button[hidden] { display: none; }
+        #commands .cmd-group:not([hidden]) ~ .cmd-group:not([hidden]) { border-left: 1px solid #6d5338; margin-left: 8px; padding-left: 8px; }
+        #cmd-people, #cmd-stance { grid-template-columns: 84px; }
+        #cmd-build { grid-template-columns: repeat(3, 84px); }
         #commands button {
             display: flex;
             flex-direction: column;
@@ -284,6 +304,15 @@
             border-radius: 8px;
         }
         #dock.folded #dock-min { position: static; }
+        #dock.folded #pane-map, body.walking #pane-map {
+            position: fixed;
+            top: 12px;
+            right: 12px;
+            z-index: 4;
+            padding: 0;
+            border: none;
+            background: none;
+        }
         #box {
             position: absolute;
             border: 1px solid #f4e2a0;
@@ -292,18 +321,18 @@
         }
         #pack, #strike { position: absolute; z-index: 4; font: 14px/1.3 system-ui, sans-serif; }
         #minimap {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            z-index: 4;
-            width: 148px;
-            height: 148px;
+            position: static;
+            display: block;
+            width: 116px;
+            height: 116px;
             border: 2px solid rgba(244, 236, 220, 0.9);
             border-radius: 50%;
             background: #16324a;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
             pointer-events: none;
         }
+        #dock.folded #minimap, body.walking #minimap { width: 148px; height: 148px; }
+        #dock:not(.folded) ~ #pack { top: 12px; }
         #pack {
             top: 172px;
             right: 12px;
@@ -442,41 +471,45 @@
     </div>
     <div id="dock" class="folded">
         <button id="dock-min" type="button">Orders</button>
-        <div id="readout">
-            <div id="census">
-                <span id="clock">8:00 am</span>
-                <span id="pop">Workers 1 / 30</span>
-                <span id="soldiers">Soldiers 0 / 0</span>
-                <span id="cpu-pop">Other workers 1 / 30</span>
-                <span id="cpu-soldiers">Other soldiers 0 / 0</span>
-                <label>Other food <input id="cpu-food" type="number" min="0" step="1" value="200"></label>
-                <label>Other wood <input id="cpu-wood" type="number" min="0" step="1" value="0"></label>
-                <label>Other gold <input id="cpu-gold" type="number" min="0" step="1" value="0"></label>
-                <label>Other iron <input id="cpu-iron" type="number" min="0" step="1" value="0"></label>
-                <label>Other salt <input id="cpu-salt" type="number" min="0" step="1" value="0"></label>
-                <label>Other stone <input id="cpu-stone" type="number" min="0" step="1" value="0"></label>
-                <label>Other fabrics <input id="cpu-fabric" type="number" min="0" step="1" value="0"></label>
-            </div>
+        <section id="pane-map" class="pane">
+            <canvas id="minimap" width="180" height="180" aria-hidden="true"></canvas>
+        </section>
+        <section id="pane-you" class="pane">
+            <h3>You</h3>
+            <span id="clock">8:00 am</span>
+            <span id="pop">Workers 1 / 30</span>
+            <span id="soldiers">Soldiers 0 / 0</span>
+        </section>
+        <section id="pane-sel" class="pane">
+            <h3>Selected</h3>
             <p id="sel">Select a building or units.</p>
             <p id="train-note"></p>
-        </div>
-        <div id="commands">
-            <button id="make-worker" type="button" disabled><b>Worker</b><small>50 food</small></button>
-            <button id="make-soldier" type="button" disabled><b>Soldier</b><small>50 food</small></button>
-            <button id="make-house" type="button" disabled><b>House</b><small>20 wood</small></button>
-            <button id="make-barracks" type="button" disabled><b>Barracks</b><small>100 wood</small></button>
-            <button id="make-farm" type="button" disabled><b>Farm</b><small>100 wood</small></button>
-            <button id="make-salt" type="button" disabled><b>Salt works</b><small>100 wood</small></button>
-            <button id="make-horse" type="button" disabled><b>Horse</b><small>50 food</small></button>
-            <button id="make-store" type="button" disabled><b>Storehouse</b><small>100 wood</small></button>
-            <button id="stance-guard" type="button" disabled><b>Guard</b></button>
-            <button id="stance-attack" type="button" disabled><b>Attack</b></button>
-        </div>
+        </section>
+        <section id="pane-commands" class="pane">
+            <h3 id="cmd-title">Train</h3>
+            <div id="commands">
+                <div id="cmd-people" class="cmd-group">
+                    <button id="make-worker" type="button" disabled><b>Worker</b><small>50 food</small></button>
+                    <button id="make-soldier" type="button" disabled><b>Soldier</b><small>50 food</small></button>
+                    <button id="make-horse" type="button" disabled><b>Horse</b><small>50 food</small></button>
+                </div>
+                <div id="cmd-build" class="cmd-group">
+                    <button id="make-house" type="button" disabled><b>House</b><small>20 wood</small></button>
+                    <button id="make-barracks" type="button" disabled><b>Barracks</b><small>100 wood</small></button>
+                    <button id="make-farm" type="button" disabled><b>Farm</b><small>100 wood</small></button>
+                    <button id="make-salt" type="button" disabled><b>Salt works</b><small>100 wood</small></button>
+                    <button id="make-store" type="button" disabled><b>Storehouse</b><small>100 wood</small></button>
+                </div>
+                <div id="cmd-stance" class="cmd-group">
+                    <button id="stance-guard" type="button" disabled><b>Guard</b></button>
+                    <button id="stance-attack" type="button" disabled><b>Attack</b></button>
+                </div>
+            </div>
+        </section>
     </div>
     <div id="box" hidden></div>
     <div id="weapon" aria-hidden="true"></div>
     <div id="viewbow" aria-hidden="true"></div>
-    <canvas id="minimap" width="180" height="180" aria-hidden="true"></canvas>
     <div id="zoom" aria-label="Zoom">
         <button id="zoom-in" type="button">+</button>
         <button id="zoom-out" type="button">−</button>
@@ -506,7 +539,7 @@
     <script src="../world-edit.js?v=trees1"></script>
     <script src="../world.js?v=trees1"></script>
     <script src="../town.js"></script>
-    <script src="../land-mesh.js?v=lip4"></script>
-    <script type="module" src="play.js?v=play71"></script>
+    <script src="../land-mesh.js?v=lip5"></script>
+    <script type="module" src="play.js?v=play75"></script>
 </body>
 </html>

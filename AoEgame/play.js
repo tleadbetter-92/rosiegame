@@ -131,8 +131,40 @@ function heightAt(x, z) {
     return world ? world.heightAt(x, z) : 0;
 }
 
+function groundStep(x, z) {
+    if (!pilot || landStep === 16) return 16;
+    const reach = window.__aoeNearReach || 0;
+    if (reach && Math.hypot(x - landMarkX, z - landMarkZ) <= reach) return 2;
+    return 8;
+}
+
+function latticeHeight(x, z) {
+    const step = groundStep(x, z);
+    const x0 = Math.floor(x / step) * step;
+    const z0 = Math.floor(z / step) * step;
+    const tx = (x - x0) / step;
+    const tz = (z - z0) / step;
+    const h00 = heightAt(x0, z0);
+    const h10 = heightAt(x0 + step, z0);
+    const h01 = heightAt(x0, z0 + step);
+    const h11 = heightAt(x0 + step, z0 + step);
+    return (h00 * (1 - tx) + h10 * tx) * (1 - tz) + (h01 * (1 - tx) + h11 * tx) * tz;
+}
+
+function porchAt(x, z) {
+    let y = null;
+    for (let i = 0; i < floorPads.length; i++) {
+        const pad = floorPads[i];
+        if (x < pad.minX || z < pad.minZ || x > pad.minX + pad.w || z > pad.minZ + pad.d) continue;
+        if (y == null || pad.y > y) y = pad.y;
+    }
+    return y;
+}
+
 function feetAt(x, z) {
-    const ground = heightAt(x, z);
+    let ground = latticeHeight(x, z);
+    const porch = porchAt(x, z);
+    if (porch != null) ground = Math.max(ground, porch);
     const world = window.World;
     const deck = world && world.bridgeDeck ? world.bridgeDeck(x, z) : null;
     return deck == null ? ground : Math.max(ground, deck);
@@ -498,9 +530,11 @@ function refreshLand(force) {
     const z = pilot ? pilot.z : look.z;
     const step = pilot ? 8 : 16;
     window.__aoeStep = step;
+    window.__aoeNear = pilot ? 2 : 0;
+    window.__aoeNearReach = pilot ? 48 : 0;
     window.__aoeReach = pilot ? 160 : 360;
     const moved = Math.hypot(x - landMarkX, z - landMarkZ);
-    if (!force && step === landStep && moved < (pilot ? 50 : 140)) return;
+    if (!force && step === landStep && moved < (pilot ? 20 : 140)) return;
     landMarkX = x;
     landMarkZ = z;
     landStep = step;
@@ -845,6 +879,49 @@ function kindCap(side, kind) {
     return cap;
 }
 
+function showButton(button, visible) {
+    if (button) button.hidden = !visible;
+}
+
+function paintCommands() {
+    const yourWorkers = selected.some((unit) => unit.side === "you" && unit.kind === "worker");
+    const barracks = selectedHouse && selectedHouse.kind === "barracks" ? selectedHouse : null;
+    const depot = selectedHouse && DEPOTS[selectedHouse.kind] ? selectedHouse : null;
+    const trainSide = barracks ? (barracks.side || "you") : "you";
+    const trainFood = trainSide === "cpu" ? cpuFood : food;
+    showButton(workerBtn, !pilot && !placing && manorSelected);
+    showButton(soldierBtn, !pilot && !placing && !!barracks);
+    showButton(horseBtn, !pilot && !placing && !!depot);
+    workerBtn.disabled = !(manorSelected && food >= COST && sideKind("you", "worker") + kindQueued("you", "worker") < kindCap("you", "worker"));
+    soldierBtn.disabled = !(barracks && trainFood >= COST && sideKind(trainSide, "soldier") + kindQueued(trainSide, "soldier") < kindCap(trainSide, "soldier"));
+    if (horseBtn) {
+        const lost = depot && depot.lostHorse && !(depot.horse && depot.horse.alive) && !(depot.horseLeft > 0);
+        horseBtn.disabled = !lost || sideFood((depot && depot.side) || "you") < HORSE_COST;
+    }
+    const showBuild = !pilot && (yourWorkers || !!placing);
+    Object.keys(buildBtns).forEach((key) => {
+        const spec = BUILDINGS[key];
+        buildBtns[key].hidden = !showBuild;
+        buildBtns[key].disabled = !showBuild || !!placing || !kits[key] || wood < spec.wood;
+    });
+    const soldierPick = selected.filter((unit) => (unit.side === "you" || unit.side === "cpu") && unit.kind === "soldier");
+    showButton(guardBtn, !pilot && !placing && soldierPick.length > 0);
+    showButton(attackBtn, !pilot && !placing && soldierPick.length > 0);
+    guardBtn.disabled = !soldierPick.length;
+    attackBtn.disabled = !soldierPick.length;
+    const people = document.getElementById("cmd-people");
+    const build = document.getElementById("cmd-build");
+    const stance = document.getElementById("cmd-stance");
+    const pane = document.getElementById("pane-commands");
+    const title = document.getElementById("cmd-title");
+    const open = (root) => !!(root && root.querySelector("button:not([hidden])"));
+    if (people) people.hidden = !open(people);
+    if (build) build.hidden = !open(build);
+    if (stance) stance.hidden = !open(stance);
+    if (pane) pane.hidden = !(people && !people.hidden) && !(build && !build.hidden) && !(stance && !stance.hidden);
+    if (title) title.textContent = people && !people.hidden ? "Train" : build && !build.hidden ? "Build" : "Orders";
+}
+
 function refreshHud() {
     if (document.activeElement !== foodEl) foodEl.value = String(Math.floor(food));
     if (document.activeElement !== woodEl) woodEl.value = String(Math.floor(wood));
@@ -853,9 +930,9 @@ function refreshHud() {
     if (saltEl && document.activeElement !== saltEl) saltEl.value = String(Math.floor(salt));
     if (stoneEl && document.activeElement !== stoneEl) stoneEl.value = String(Math.floor(stone));
     if (fabricEl && document.activeElement !== fabricEl) fabricEl.value = String(Math.floor(fabric));
-    if (document.activeElement !== cpuFoodEl) cpuFoodEl.value = String(Math.floor(cpuFood));
-    if (document.activeElement !== cpuWoodEl) cpuWoodEl.value = String(Math.floor(cpuWood));
-    if (document.activeElement !== cpuGoldEl) cpuGoldEl.value = String(Math.floor(cpuGold));
+    if (cpuFoodEl && document.activeElement !== cpuFoodEl) cpuFoodEl.value = String(Math.floor(cpuFood));
+    if (cpuWoodEl && document.activeElement !== cpuWoodEl) cpuWoodEl.value = String(Math.floor(cpuWood));
+    if (cpuGoldEl && document.activeElement !== cpuGoldEl) cpuGoldEl.value = String(Math.floor(cpuGold));
     if (cpuIronEl && document.activeElement !== cpuIronEl) cpuIronEl.value = String(Math.floor(cpuIron));
     if (cpuSaltEl && document.activeElement !== cpuSaltEl) cpuSaltEl.value = String(Math.floor(cpuSalt));
     if (cpuStoneEl && document.activeElement !== cpuStoneEl) cpuStoneEl.value = String(Math.floor(cpuStone));
@@ -874,39 +951,16 @@ function refreshHud() {
             trainNote.textContent = "Recruiting " + who + " · " + clock + (mine.length > 1 ? " · " + mine.length + " in line" : "");
         }
     }
-    const soldierPick = selected.filter((unit) => (unit.side === "you" || unit.side === "cpu") && unit.kind === "soldier");
-    guardBtn.disabled = !!pilot || !!placing || !soldierPick.length;
-    attackBtn.disabled = guardBtn.disabled;
-    const hasWorker = units.some((unit) => unit.side === "you" && unit.kind === "worker");
-    Object.keys(buildBtns).forEach((key) => {
-        const spec = BUILDINGS[key];
-        buildBtns[key].disabled = !!pilot || !!placing || !kits[key] || wood < spec.wood || !hasWorker;
-    });
+    paintCommands();
     if (pilot) {
         selEl.textContent = document.body.classList.contains("handheld")
             ? "Drag the view to look. The pad walks. Campaign takes you back."
             : "You. WASD walks, mouse looks. F or Esc returns to the map.";
-        workerBtn.disabled = true;
-        soldierBtn.disabled = true;
-        if (horseBtn) horseBtn.disabled = true;
         return;
     }
     if (placing) {
         selEl.textContent = "Click the ground for the " + BUILDINGS[placing].label.toLowerCase() + ". Right-click cancels.";
-        workerBtn.disabled = true;
-        soldierBtn.disabled = true;
-        if (horseBtn) horseBtn.disabled = true;
         return;
-    }
-    const barracksSelected = selectedHouse && selectedHouse.kind === "barracks" && (selectedHouse.side || "you") === "you";
-    const canTrainWorker = manorSelected && food >= COST && sideKind("you", "worker") + kindQueued("you", "worker") < kindCap("you", "worker");
-    const canTrainSoldier = barracksSelected && food >= COST && sideKind("you", "soldier") + kindQueued("you", "soldier") < kindCap("you", "soldier");
-    workerBtn.disabled = !canTrainWorker;
-    soldierBtn.disabled = !canTrainSoldier;
-    if (horseBtn) {
-        const yard = selectedHouse && DEPOTS[selectedHouse.kind] ? selectedHouse : null;
-        const lost = yard && yard.lostHorse && !(yard.horse && yard.horse.alive) && !(yard.horseLeft > 0);
-        horseBtn.disabled = !lost || sideFood(yard.side || "you") < HORSE_COST;
     }
     if (selected.length) {
         let workers = 0;
@@ -935,11 +989,10 @@ function refreshHud() {
         const label = manorSelected ? "Manor" : (BUILDINGS[house.kind] ? BUILDINGS[house.kind].label : house.kind);
         const lines = ["Building", label];
         const side = manorSelected ? "you" : (house.side || "you");
-        if (side === "you") {
-            const queued = manorSelected ? kindQueued("you", "worker") : house.kind === "barracks" ? kindQueued("you", "soldier") : 0;
-            const who = manorSelected ? "worker" : "soldier";
-            if (queued) lines.push("training " + queued + " " + who + (queued === 1 ? "" : "s"));
-        }
+        if (side === "cpu") lines.push("Other side");
+        const queued = manorSelected ? kindQueued("you", "worker") : house && house.kind === "barracks" ? kindQueued(side, "soldier") : 0;
+        const who = manorSelected ? "worker" : "soldier";
+        if (queued) lines.push("training " + queued + " " + who + (queued === 1 ? "" : "s"));
         if (house && DEPOTS[house.kind]) {
             lines.push(holdLine(house.hold));
             lines.push(horseLine(house));
@@ -1085,10 +1138,10 @@ function deliverTrain(side, kind) {
 
 function trainFor(side, kind, auto) {
     const base = side === "cpu" ? cpuHome : home;
-    if (!auto && side === "you") {
+    if (!auto) {
         if (kind === "soldier") {
-            if (!selectedHouse || selectedHouse.kind !== "barracks" || (selectedHouse.side || "you") !== "you") return;
-        } else if (!manorSelected) return;
+            if (!selectedHouse || selectedHouse.kind !== "barracks" || (selectedHouse.side || "you") !== side) return;
+        } else if (!manorSelected || side !== "you") return;
     }
     if (!actors || !base) return;
     if (auto && sideQueued(side) > 0) return;
@@ -1125,7 +1178,8 @@ function stepTrains(dt) {
 }
 
 function train(kind) {
-    trainFor("you", kind);
+    const side = kind === "soldier" && selectedHouse ? (selectedHouse.side || "you") : "you";
+    trainFor(side, kind);
 }
 
 workerBtn.addEventListener("click", () => train("worker"));
@@ -1156,17 +1210,8 @@ function applyStock() {
     const nextSalt = Math.floor(Number(saltEl.value));
     const nextStone = Math.floor(Number(stoneEl.value));
     const nextFabric = Math.floor(Number(fabricEl.value));
-    const nextCpuFood = Math.floor(Number(cpuFoodEl.value));
-    const nextCpuWood = Math.floor(Number(cpuWoodEl.value));
-    const nextCpuGold = Math.floor(Number(cpuGoldEl.value));
-    const nextCpuIron = Math.floor(Number(cpuIronEl.value));
-    const nextCpuSalt = Math.floor(Number(cpuSaltEl.value));
-    const nextCpuStone = Math.floor(Number(cpuStoneEl.value));
-    const nextCpuFabric = Math.floor(Number(cpuFabricEl.value));
     if (!Number.isFinite(nextFood) || !Number.isFinite(nextWood) || !Number.isFinite(nextGold)) return;
     if (!Number.isFinite(nextIron) || !Number.isFinite(nextSalt) || !Number.isFinite(nextStone) || !Number.isFinite(nextFabric)) return;
-    if (!Number.isFinite(nextCpuFood) || !Number.isFinite(nextCpuWood) || !Number.isFinite(nextCpuGold)) return;
-    if (!Number.isFinite(nextCpuIron) || !Number.isFinite(nextCpuSalt) || !Number.isFinite(nextCpuStone) || !Number.isFinite(nextCpuFabric)) return;
     food = Math.max(0, nextFood);
     wood = Math.max(0, nextWood);
     gold = Math.max(0, nextGold);
@@ -1174,30 +1219,12 @@ function applyStock() {
     salt = Math.max(0, nextSalt);
     stone = Math.max(0, nextStone);
     fabric = Math.max(0, nextFabric);
-    cpuFood = Math.max(0, nextCpuFood);
-    cpuWood = Math.max(0, nextCpuWood);
-    cpuGold = Math.max(0, nextCpuGold);
-    cpuIron = Math.max(0, nextCpuIron);
-    cpuSalt = Math.max(0, nextCpuSalt);
-    cpuStone = Math.max(0, nextCpuStone);
-    cpuFabric = Math.max(0, nextCpuFabric);
     refreshHud();
     writeSave();
 }
-foodEl.addEventListener("input", applyStock);
-cpuFoodEl.addEventListener("input", applyStock);
-cpuWoodEl.addEventListener("input", applyStock);
-cpuGoldEl.addEventListener("input", applyStock);
-woodEl.addEventListener("input", applyStock);
-goldEl.addEventListener("input", applyStock);
-ironEl.addEventListener("input", applyStock);
-saltEl.addEventListener("input", applyStock);
-stoneEl.addEventListener("input", applyStock);
-fabricEl.addEventListener("input", applyStock);
-cpuIronEl.addEventListener("input", applyStock);
-cpuSaltEl.addEventListener("input", applyStock);
-cpuStoneEl.addEventListener("input", applyStock);
-cpuFabricEl.addEventListener("input", applyStock);
+[foodEl, woodEl, goldEl, ironEl, saltEl, stoneEl, fabricEl].forEach((el) => {
+    if (el) el.addEventListener("input", applyStock);
+});
 
 function setStance(stance) {
     let changed = false;
@@ -1413,54 +1440,48 @@ function restoreMatch(save) {
 }
 
 const floorPads = [];
-const FLOOR_LIP = 3;
-const FLOOR_SKIRT = 2;
+const porchMat = new THREE.MeshStandardMaterial({ color: 0x6e5840, roughness: 1 });
 
-function installFloorHeights() {
-    const world = window.World;
-    if (!world || world.__floorHeights) return;
-    const raw = world.heightAt.bind(world);
-    world.heightAt = function (x, z) {
-        const h = raw(x, z);
-        let best = null;
-        let bestDist = FLOOR_SKIRT;
-        for (let i = 0; i < floorPads.length; i++) {
-            const pad = floorPads[i];
-            const dx = Math.max(pad.minX - x, 0, x - pad.minX - pad.w);
-            const dz = Math.max(pad.minZ - z, 0, z - pad.minZ - pad.d);
-            const dist = Math.hypot(dx, dz);
-            if (dist < bestDist) {
-                bestDist = dist;
-                best = pad;
-            }
-        }
-        if (!best || h < -0.05) return h;
-        if (bestDist <= 0) return best.y;
-        const t = 1 - bestDist / FLOOR_SKIRT;
-        return h + (best.y - h) * t;
-    };
-    world.__floorHeights = true;
+function fitPorch(group, hx, hz, drop) {
+    const depth = Math.max(0.25, Math.min(2.6, drop));
+    let mesh = group.userData.porch;
+    if (!mesh) {
+        mesh = new THREE.Mesh(new THREE.BoxGeometry(hx * 2 + 0.6, 1, hz * 2 + 0.6), porchMat);
+        mesh.receiveShadow = true;
+        group.add(mesh);
+        group.userData.porch = mesh;
+    }
+    mesh.scale.y = depth;
+    mesh.position.y = -depth / 2;
 }
 
 function seatFloors() {
     const world = window.World;
     if (!world || !world.bareHeight) return;
     if (world.setLevelPads) world.setLevelPads([]);
-    installFloorHeights();
     floorPads.length = 0;
     const seat = (x, z, hx, hz, group, record) => {
         if (world.wet && world.wet(x, z)) return 0;
         if (world.tooSteep && world.tooSteep(x, z)) return 0;
-        const y = Math.max(0.2, world.bareHeight(x, z));
-        if (group) group.position.y = y;
+        const corners = [
+            heightAt(x - hx, z - hz),
+            heightAt(x + hx, z - hz),
+            heightAt(x - hx, z + hz),
+            heightAt(x + hx, z + hz),
+            heightAt(x, z)
+        ];
+        let y = 0.2;
+        let low = corners[0];
+        for (let i = 0; i < corners.length; i++) {
+            if (corners[i] > y) y = corners[i];
+            if (corners[i] < low) low = corners[i];
+        }
+        if (group) {
+            group.position.y = y;
+            fitPorch(group, hx, hz, y - low + 0.2);
+        }
         if (record) record.y = y;
-        floorPads.push({
-            minX: x - hx - FLOOR_LIP,
-            minZ: z - hz - FLOOR_LIP,
-            w: hx * 2 + FLOOR_LIP * 2,
-            d: hz * 2 + FLOOR_LIP * 2,
-            y: y
-        });
+        floorPads.push({ minX: x - hx, minZ: z - hz, w: hx * 2, d: hz * 2, y: y });
         return y;
     };
     if (home && home.group) seat(home.x, home.z, MANOR_HX, MANOR_HZ, home.group, home);
@@ -3823,6 +3844,9 @@ function leaveBody() {
 function canPass(nx, nz) {
     const world = window.World;
     if (!canStep(pilot.x, pilot.z, nx, nz)) return false;
+    const rise = feetAt(nx, nz) - feetAt(pilot.x, pilot.z);
+    const step = Math.hypot(nx - pilot.x, nz - pilot.z) || 0.001;
+    if (rise > 0.45 && rise / step > 0.65) return false;
     if (world && world.bridgeWall && world.bridgeWall(nx, nz) != null) return false;
     const y = pilot.group.position.y + 0.85;
     const dir = new THREE.Vector3(nx - pilot.x, 0, nz - pilot.z);
