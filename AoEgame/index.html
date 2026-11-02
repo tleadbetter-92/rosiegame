@@ -128,17 +128,18 @@
         body.handheld.walking #zoom { display: none; }
         body.handheld #stock {
             left: 8px;
-            right: 170px;
+            right: 120px;
             top: 8px;
             transform: none;
             max-width: none;
             flex-wrap: nowrap;
             justify-content: flex-start;
-            overflow-x: auto;
+            overflow: hidden;
             gap: 8px;
             padding: 6px 8px;
             font-size: 13px;
         }
+        body.handheld #census { max-height: 72px; overflow: auto; }
         body.handheld #stock.folded { right: auto; width: auto; overflow: hidden; }
         body.handheld #stock input { width: 4.2rem; }
         body.handheld #minimap { width: 104px; height: 104px; top: 8px; right: 8px; }
@@ -165,7 +166,24 @@
         }
         body.handheld #commands { grid-template-columns: repeat(3, 96px); }
         body.handheld #bar.folded #bar-min,
-        body.handheld #dock.folded button#dock-min { width: auto; margin: 0; min-height: 40px; padding: 8px 12px; }
+        body.handheld #dock.folded button#dock-min,
+        body.handheld #stock.folded #stock-min { width: auto; margin: 0; min-height: 40px; padding: 8px 12px; }
+        #layout-mode { display: none; }
+        body.handheld #layout-mode, body.force-desktop #layout-mode {
+            display: inline-block;
+            position: absolute;
+            z-index: 7;
+            left: 8px;
+            top: 156px;
+            min-height: 40px;
+            padding: 8px 12px;
+            border: 1px solid #8a6840;
+            border-radius: 8px;
+            background: rgba(255, 248, 236, 0.94);
+            color: #1c140c;
+            font: 16px/1.2 system-ui, sans-serif;
+        }
+        body.force-desktop #layout-mode { top: auto; left: 96px; bottom: 12px; }
         body.handheld.walking #self-health { left: 8px; bottom: 168px; width: 150px; }
         body.handheld #dock button { padding: 12px 8px; }
         #stock {
@@ -177,8 +195,8 @@
             display: flex;
             flex-wrap: nowrap;
             justify-content: flex-start;
-            overflow-x: auto;
-            gap: 8px 12px;
+            overflow: hidden;
+            gap: 10px;
             max-width: none;
             align-items: center;
             background: linear-gradient(#3a2a1c, #24160e);
@@ -189,9 +207,10 @@
             font: 14px/1.2 system-ui, sans-serif;
             color: #f3e6c8;
         }
+        #stock-you { display: flex; align-items: center; gap: 8px 10px; min-width: 0; flex: 1 1 auto; overflow-x: auto; }
         #stock label, #stock span { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
         #stock input {
-            width: 4.2rem;
+            width: 3.6rem;
             font: inherit;
             color: #f3e6c8;
             padding: 2px 6px;
@@ -199,7 +218,7 @@
             border-radius: 4px;
             background: #1a120c;
         }
-        #stock-min { background: #5c4030; color: #f3e6c8; border-color: #c4a574; }
+        #stock-min, #dock button#dock-min { background: #5c4030; color: #f3e6c8; border-color: #c4a574; }
         #dock {
             position: absolute;
             left: 0;
@@ -221,7 +240,10 @@
             box-sizing: border-box;
         }
         #dock-min { position: static; align-self: flex-start; float: none; flex: none; }
-        #readout { flex: 1 1 160px; min-width: 140px; }
+        #readout { flex: 1 1 280px; min-width: 220px; }
+        #census { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 8px; font-size: 12px; color: #e7d7b2; }
+        #census label, #census span { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+        #census input { width: 4.4rem; font: inherit; color: #f3e6c8; background: #1a120c; border: 1px solid #8a6840; border-radius: 3px; padding: 1px 4px; }
         #sel { margin: 0; white-space: pre-line; }
         #train-note { margin: 6px 0 0; color: #e7d7b2; min-height: 0; }
         #train-note:empty { display: none; }
@@ -399,38 +421,42 @@
     </script>
 </head>
 <body>
-    <div id="bar">
-        <button id="bar-min" type="button">Hide</button>
+    <div id="bar" class="folded">
+        <button id="bar-min" type="button">Notes</button>
         <strong>Age of Empires</strong>
         <p id="note">Placing the two manors…</p>
         <p>WASD slides the map. Drag with the left button to select. Drag with the right button and the ground follows your hand. A right-click sends them. A building takes 5 minutes. A worker or soldier takes 1 minute. At 9 pm workers go into a house, up to 20 in each, and come back out at 5 am. One real minute is one hour. Press F to walk as yourself: left-click swings, P opens the pack. Hitting a side makes them your enemy until you fall. A small house costs 20 wood and holds 5 more workers. A barracks holds 15 soldiers. Houses stay inside the ring around the manor. A barracks can sit anywhere, and selecting it trains soldiers. Right-click a farm and up to 5 people work the field, then drop the food at its house. Right-click ore for gold. A salt works can sit by the trees or water, and people drop off there when it is closer. Barracks, farm, salt works and the storehouse cost 100 wood. Soldiers: Guard or Attack.</p>
         <p><button id="restart" type="button">Restart match</button><a href="../village.html">Village</a></p>
     </div>
-    <div id="stock">
-        <button id="stock-min" type="button">Hide</button>
-        <label>Food <input id="food" type="number" min="0" step="1" value="200"></label>
-        <label>Wood <input id="wood" type="number" min="0" step="1" value="0"></label>
-        <label>Gold <input id="gold" type="number" min="0" step="1" value="0"></label>
-        <label>Iron <input id="iron" type="number" min="0" step="1" value="0"></label>
-        <label>Salt <input id="salt" type="number" min="0" step="1" value="0"></label>
-        <label>Stone <input id="stone" type="number" min="0" step="1" value="0"></label>
-        <label>Fabrics <input id="fabric" type="number" min="0" step="1" value="0"></label>
-        <span id="clock">8:00 am</span>
-        <span id="pop">Workers 1 / 30</span>
-        <span id="soldiers">Soldiers 0 / 0</span>
-        <span id="cpu-pop">Other workers 1 / 30</span>
-        <span id="cpu-soldiers">Other soldiers 0 / 0</span>
-        <label>Other food <input id="cpu-food" type="number" min="0" step="1" value="200"></label>
-        <label>Other wood <input id="cpu-wood" type="number" min="0" step="1" value="0"></label>
-        <label>Other gold <input id="cpu-gold" type="number" min="0" step="1" value="0"></label>
-        <label>Other iron <input id="cpu-iron" type="number" min="0" step="1" value="0"></label>
-        <label>Other salt <input id="cpu-salt" type="number" min="0" step="1" value="0"></label>
-        <label>Other stone <input id="cpu-stone" type="number" min="0" step="1" value="0"></label>
-        <label>Other fabrics <input id="cpu-fabric" type="number" min="0" step="1" value="0"></label>
+    <div id="stock" class="folded">
+        <button id="stock-min" type="button">Stock</button>
+        <div id="stock-you">
+            <label>Food <input id="food" type="number" min="0" step="1" value="200"></label>
+            <label>Wood <input id="wood" type="number" min="0" step="1" value="0"></label>
+            <label>Gold <input id="gold" type="number" min="0" step="1" value="0"></label>
+            <label>Stone <input id="stone" type="number" min="0" step="1" value="0"></label>
+            <label>Iron <input id="iron" type="number" min="0" step="1" value="0"></label>
+            <label>Salt <input id="salt" type="number" min="0" step="1" value="0"></label>
+            <label>Fabrics <input id="fabric" type="number" min="0" step="1" value="0"></label>
+        </div>
     </div>
-    <div id="dock">
-        <button id="dock-min" type="button">Hide</button>
+    <div id="dock" class="folded">
+        <button id="dock-min" type="button">Orders</button>
         <div id="readout">
+            <div id="census">
+                <span id="clock">8:00 am</span>
+                <span id="pop">Workers 1 / 30</span>
+                <span id="soldiers">Soldiers 0 / 0</span>
+                <span id="cpu-pop">Other workers 1 / 30</span>
+                <span id="cpu-soldiers">Other soldiers 0 / 0</span>
+                <label>Other food <input id="cpu-food" type="number" min="0" step="1" value="200"></label>
+                <label>Other wood <input id="cpu-wood" type="number" min="0" step="1" value="0"></label>
+                <label>Other gold <input id="cpu-gold" type="number" min="0" step="1" value="0"></label>
+                <label>Other iron <input id="cpu-iron" type="number" min="0" step="1" value="0"></label>
+                <label>Other salt <input id="cpu-salt" type="number" min="0" step="1" value="0"></label>
+                <label>Other stone <input id="cpu-stone" type="number" min="0" step="1" value="0"></label>
+                <label>Other fabrics <input id="cpu-fabric" type="number" min="0" step="1" value="0"></label>
+            </div>
             <p id="sel">Select a building or units.</p>
             <p id="train-note"></p>
         </div>
@@ -441,6 +467,7 @@
             <button id="make-barracks" type="button" disabled><b>Barracks</b><small>100 wood</small></button>
             <button id="make-farm" type="button" disabled><b>Farm</b><small>100 wood</small></button>
             <button id="make-salt" type="button" disabled><b>Salt works</b><small>100 wood</small></button>
+            <button id="make-horse" type="button" disabled><b>Horse</b><small>50 food</small></button>
             <button id="make-store" type="button" disabled><b>Storehouse</b><small>100 wood</small></button>
             <button id="stance-guard" type="button" disabled><b>Guard</b></button>
             <button id="stance-attack" type="button" disabled><b>Attack</b></button>
@@ -454,6 +481,7 @@
         <button id="zoom-in" type="button">+</button>
         <button id="zoom-out" type="button">−</button>
     </div>
+    <button id="layout-mode" type="button" hidden>Desktop</button>
     <button id="select-mode" type="button">Select</button>
     <button id="play-self" type="button">Become player</button>
     <div id="move-pad" aria-label="Walk">
@@ -479,6 +507,6 @@
     <script src="../world.js?v=trees1"></script>
     <script src="../town.js"></script>
     <script src="../land-mesh.js?v=lip4"></script>
-    <script type="module" src="play.js?v=play66"></script>
+    <script type="module" src="play.js?v=play71"></script>
 </body>
 </html>

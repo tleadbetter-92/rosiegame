@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { natureData } from "./generated_terrain%20Big%20map.js?v=map3";
 import { loadPerson, personMesh } from "./people.js?v=play43";
 
@@ -666,6 +667,8 @@ placeManors().catch((err) => {
 });
 
 const COST = 50;
+const CARRY_MAX = 10;
+const CARRY_TIME = 60;
 const POP_MAX = 30;
 const SPEED = 3.4;
 const SIGHT = 100;
@@ -688,7 +691,8 @@ const BUILDINGS = {
     barracks: { id: "barracks", label: "Barracks", wood: 100, hx: 15.5, hz: 10, workers: 0, soldiers: 15 },
     farm: { id: "farm", label: "Farm", wood: 100, hx: 9.75, hz: 18.75, workers: 0, soldiers: 0 },
     salt: { id: "salt-works-ex", label: "Salt works", wood: 100, hx: 12, hz: 15.25, workers: 0, soldiers: 0 },
-    store: { id: "storehouse", label: "Storehouse", wood: 100, hx: 9.5, hz: 9.5, workers: 0, soldiers: 0 }
+    store: { id: "storehouse", label: "Storehouse", wood: 100, hx: 9.5, hz: 9.5, workers: 0, soldiers: 0 },
+    smith: { id: "blacksmith", label: "Blacksmith", wood: 100, hx: 5, hz: 5, workers: 0, soldiers: 0, mesh: true }
 };
 const FARM_SLOTS = [
     { x: -5, z: 2 },
@@ -731,6 +735,16 @@ let placing = null;
 const built = [];
 const sites = [];
 const units = [];
+const haulers = [];
+const DEPOTS = { salt: true };
+const HAUL_MINUTES = 360;
+const HORSE_COST = 50;
+const HORSE_TIME = 60;
+const HORSE_HP = 30;
+const GOODS = ["food", "wood", "gold", "stone", "iron", "salt", "fabric"];
+let horseGltf = null;
+let haulMark = -1;
+let haulSave = null;
 let nextId = 1;
 let selected = [];
 let manorSelected = false;
@@ -767,10 +781,12 @@ const buildBtns = {
 };
 const guardBtn = document.getElementById("stance-guard");
 const attackBtn = document.getElementById("stance-attack");
+const horseBtn = document.getElementById("make-horse");
 const boxEl = document.getElementById("box");
 const ringGeom = new THREE.RingGeometry(0.42, 0.62, 18);
 ringGeom.rotateX(-Math.PI / 2);
 const ringMat = new THREE.MeshBasicMaterial({ color: 0xf4e2a0, side: THREE.DoubleSide, depthTest: false });
+const pickMat = new THREE.MeshBasicMaterial({ color: 0xfff6c2, side: THREE.DoubleSide, depthTest: false });
 const foeMat = new THREE.MeshBasicMaterial({ color: 0x8a3030, side: THREE.DoubleSide, depthTest: false });
 const selfMat = new THREE.MeshBasicMaterial({ color: 0x7eb6e0, side: THREE.DoubleSide, depthTest: false });
 const padGeom = new THREE.BoxGeometry(BUILDINGS.house.hx * 2, 0.18, BUILDINGS.house.hz * 2);
@@ -858,7 +874,7 @@ function refreshHud() {
             trainNote.textContent = "Recruiting " + who + " · " + clock + (mine.length > 1 ? " · " + mine.length + " in line" : "");
         }
     }
-    const soldierPick = selected.filter((unit) => unit.side === "you" && unit.kind === "soldier");
+    const soldierPick = selected.filter((unit) => (unit.side === "you" || unit.side === "cpu") && unit.kind === "soldier");
     guardBtn.disabled = !!pilot || !!placing || !soldierPick.length;
     attackBtn.disabled = guardBtn.disabled;
     const hasWorker = units.some((unit) => unit.side === "you" && unit.kind === "worker");
@@ -872,12 +888,14 @@ function refreshHud() {
             : "You. WASD walks, mouse looks. F or Esc returns to the map.";
         workerBtn.disabled = true;
         soldierBtn.disabled = true;
+        if (horseBtn) horseBtn.disabled = true;
         return;
     }
     if (placing) {
         selEl.textContent = "Click the ground for the " + BUILDINGS[placing].label.toLowerCase() + ". Right-click cancels.";
         workerBtn.disabled = true;
         soldierBtn.disabled = true;
+        if (horseBtn) horseBtn.disabled = true;
         return;
     }
     const barracksSelected = selectedHouse && selectedHouse.kind === "barracks" && (selectedHouse.side || "you") === "you";
@@ -885,6 +903,11 @@ function refreshHud() {
     const canTrainSoldier = barracksSelected && food >= COST && sideKind("you", "soldier") + kindQueued("you", "soldier") < kindCap("you", "soldier");
     workerBtn.disabled = !canTrainWorker;
     soldierBtn.disabled = !canTrainSoldier;
+    if (horseBtn) {
+        const yard = selectedHouse && DEPOTS[selectedHouse.kind] ? selectedHouse : null;
+        const lost = yard && yard.lostHorse && !(yard.horse && yard.horse.alive) && !(yard.horseLeft > 0);
+        horseBtn.disabled = !lost || sideFood(yard.side || "you") < HORSE_COST;
+    }
     if (selected.length) {
         let workers = 0;
         let soldiers = 0;
@@ -901,6 +924,7 @@ function refreshHud() {
             }
         }
         const lines = [];
+        if (selected[0].side === "cpu") lines.push("Other side");
         if (workers) lines.push(workers + (workers === 1 ? " worker" : " workers"));
         if (soldiers) lines.push(soldiers + (soldiers === 1 ? " soldier" : " soldiers"));
         if (soldiers) lines.push("soldier\nhealth " + Math.max(0, Math.ceil(soldierHp)));
@@ -916,6 +940,10 @@ function refreshHud() {
             const who = manorSelected ? "worker" : "soldier";
             if (queued) lines.push("training " + queued + " " + who + (queued === 1 ? "" : "s"));
         }
+        if (house && DEPOTS[house.kind]) {
+            lines.push(holdLine(house.hold));
+            lines.push(horseLine(house));
+        }
         const inside = houseMates(manorSelected ? home : house);
         if (inside) lines.push(inside + " garrisoned inside");
         selEl.textContent = lines.join("\n");
@@ -924,12 +952,19 @@ function refreshHud() {
     }
 }
 
+function showRing(unit) {
+    const picked = selected.indexOf(unit) >= 0;
+    unit.ring.visible = picked || unit.side === "cpu" || unit.side === "self";
+    unit.ring.scale.setScalar(picked ? 1.65 : 1);
+    if (picked) unit.ring.material = pickMat;
+    else unit.ring.material = unit.side === "cpu" ? foeMat : unit.side === "self" ? selfMat : ringMat;
+}
+
 function setSelected(list) {
-    selected.forEach((u) => { u.ring.visible = false; });
     selected = list;
     manorSelected = false;
     selectedHouse = null;
-    selected.forEach((u) => { u.ring.visible = true; });
+    for (let i = 0; i < units.length; i++) showRing(units[i]);
     refreshHud();
 }
 
@@ -1095,6 +1130,10 @@ function train(kind) {
 
 workerBtn.addEventListener("click", () => train("worker"));
 soldierBtn.addEventListener("click", () => train("soldier"));
+if (horseBtn) horseBtn.addEventListener("click", () => {
+    if (horseBtn.disabled || !selectedHouse) return;
+    trainHorse(selectedHouse);
+});
 function beginPlace(kind) {
     const spec = BUILDINGS[kind];
     if (!spec || !kits[kind] || buildBtns[kind].disabled) return;
@@ -1164,7 +1203,7 @@ function setStance(stance) {
     let changed = false;
     for (let i = 0; i < selected.length; i++) {
         const unit = selected[i];
-        if (unit.kind !== "soldier" || unit.side !== "you") continue;
+        if (unit.kind !== "soldier" || (unit.side !== "you" && unit.side !== "cpu")) continue;
         unit.stance = stance;
         if (stance === "guard") {
             unit.post = unit.state === "move" && unit.goal ? { x: unit.goal.x, z: unit.goal.z } : { x: unit.x, z: unit.z };
@@ -1237,10 +1276,11 @@ function writeSave() {
         nextId: nextId,
         look: { x: look.x, z: look.z, yaw: yaw, dist: dist },
         rally: rally ? { x: rally.x, z: rally.z } : null,
-        houses: Object.keys(kits).some((key) => kits[key]) ? built.map((house) => ({ kind: house.kind, side: house.side || "you", x: house.x, z: house.z, y: house.y })) : ((readSave() || {}).houses || []),
+        houses: Object.keys(kits).some((key) => kits[key]) ? built.filter((house) => !house.preview).map((house) => ({ kind: house.kind, side: house.side || "you", x: house.x, z: house.z, y: house.y })) : ((readSave() || {}).houses || []),
         pending: Object.keys(kits).some((key) => kits[key]) ? sites.map((site) => ({ kind: site.kind, side: site.side || "you", x: site.x, z: site.z, y: site.y, left: site.left })) : ((readSave() || {}).pending || []),
         aGift: aGift,
         clock: dayMin,
+        depots: depotRows(),
         trains: trains.map((job) => ({ side: job.side, kind: job.kind, left: job.left })),
         units: units.map((unit) => ({
             id: unit.id,
@@ -1286,6 +1326,7 @@ function matchNode(saved) {
 }
 
 function restoreMatch(save) {
+    haulSave = save;
     food = Number(save.food) || 0;
     wood = Number(save.wood) || 0;
     gold = Number(save.gold) || 0;
@@ -1311,7 +1352,7 @@ function restoreMatch(save) {
         unit.yaw = Number(row.yaw) || 0;
         unit.group.rotation.y = unit.yaw;
         unit.job = row.job === "wood" || row.job === "food" || row.job === "gold" || row.job === "stone" ? row.job : null;
-        unit.carry = Math.max(0, Math.min(15, Number(row.carry) || 0));
+        unit.carry = Math.max(0, Math.min(CARRY_MAX, Number(row.carry) || 0));
         unit.goal = row.goal && Number.isFinite(row.goal.x) && Number.isFinite(row.goal.z) ? { x: row.goal.x, z: row.goal.z } : null;
         unit.jobNode = row.node && row.node.kind === "farm" && Number.isFinite(Number(row.node.x)) && Number.isFinite(Number(row.node.z))
             ? { kind: "farm", x: Number(row.node.x), z: Number(row.node.z), farm: null }
@@ -1455,6 +1496,9 @@ async function startMatch(playerHome, otherHome) {
         if (cpuHome) spawn("worker", cpuHome.x + 4, cpuHome.z + 24, "cpu");
     }
     if (!units.some((unit) => unit.side === "you")) spawn("worker", home.x + 4, home.z + 24, "you");
+    await loadHorse();
+    bootHaulers();
+    await showBlacksmith();
     ensureSelf();
     seatFloors();
     refreshLand(true);
@@ -1520,7 +1564,7 @@ function dropAt(unit) {
     if (unit.side === "you" || unit.side === "cpu") {
         for (let i = 0; i < built.length; i++) {
             const yard = built[i];
-            if (yard.kind !== "salt" || (yard.side || "you") !== unit.side) continue;
+            if (!DEPOTS[yard.kind] || (yard.side || "you") !== unit.side) continue;
             const spot = edgeOf(yard.x, yard.z, yard.hx, yard.hz, unit.x, unit.z);
             if (spot.d < bestD) {
                 bestD = spot.d;
@@ -1530,6 +1574,355 @@ function dropAt(unit) {
         }
     }
     return { x: bestX, z: bestZ };
+}
+
+function emptyHold() {
+    const hold = {};
+    for (let i = 0; i < GOODS.length; i++) hold[GOODS[i]] = 0;
+    return hold;
+}
+
+function copyHold(hold) {
+    const next = emptyHold();
+    if (!hold) return next;
+    for (let i = 0; i < GOODS.length; i++) next[GOODS[i]] = Math.max(0, Math.round(Number(hold[GOODS[i]]) || 0));
+    return next;
+}
+
+function holdSum(hold) {
+    if (!hold) return 0;
+    let n = 0;
+    for (let i = 0; i < GOODS.length; i++) n += hold[GOODS[i]] || 0;
+    return n;
+}
+
+const GOOD_LABEL = { food: "food", wood: "wood", gold: "gold", stone: "stone", iron: "iron", salt: "salt", fabric: "fabrics" };
+
+function holdLine(hold) {
+    const bits = [];
+    for (let i = 0; i < GOODS.length; i++) {
+        const n = Math.floor(hold && hold[GOODS[i]] || 0);
+        if (n > 0) bits.push(n + " " + GOOD_LABEL[GOODS[i]]);
+    }
+    return bits.length ? bits.join(", ") + " stored" : "nothing stored";
+}
+
+function sideFood(side) {
+    return side === "cpu" ? cpuFood : food;
+}
+
+function takeFood(side, amount) {
+    if (side === "cpu") cpuFood = Math.max(0, cpuFood - amount);
+    else food = Math.max(0, food - amount);
+}
+
+function addGood(side, kind, n) {
+    if (n <= 0 || GOODS.indexOf(kind) < 0) return;
+    if (side === "cpu") {
+        if (kind === "wood") cpuWood += n;
+        else if (kind === "food") cpuFood += n;
+        else if (kind === "gold") cpuGold += n;
+        else if (kind === "stone") cpuStone += n;
+        else if (kind === "iron") cpuIron += n;
+        else if (kind === "salt") cpuSalt += n;
+        else if (kind === "fabric") cpuFabric += n;
+    } else if (kind === "wood") wood += n;
+    else if (kind === "food") food += n;
+    else if (kind === "gold") gold += n;
+    else if (kind === "stone") stone += n;
+    else if (kind === "iron") iron += n;
+    else if (kind === "salt") salt += n;
+    else if (kind === "fabric") fabric += n;
+}
+
+function depotUnder(unit) {
+    const side = unit.side === "cpu" ? "cpu" : "you";
+    for (let i = 0; i < built.length; i++) {
+        const yard = built[i];
+        if (!DEPOTS[yard.kind] || (yard.side || "you") !== side) continue;
+        if (Math.abs(unit.x - yard.x) <= yard.hx + 3 && Math.abs(unit.z - yard.z) <= yard.hz + 3) return yard;
+    }
+    return null;
+}
+
+function depositCarry(unit) {
+    const gained = Math.round(unit.carry);
+    const job = unit.job;
+    unit.carry = 0;
+    if (gained <= 0 || !job) return;
+    const yard = depotUnder(unit);
+    if (yard) {
+        if (!yard.hold) yard.hold = emptyHold();
+        if (GOODS.indexOf(job) >= 0) yard.hold[job] = (yard.hold[job] || 0) + gained;
+        return;
+    }
+    addGood(unit.side === "cpu" ? "cpu" : "you", job, gained);
+}
+
+function manorGate(yard) {
+    const base = sideBase(yard.side || "you");
+    if (!base) return { x: yard.x, z: yard.z + yard.hz + 4 };
+    return edgeOf(base.x, base.z, MANOR_HX, MANOR_HZ, yard.x, yard.z);
+}
+
+function yardGate(yard) {
+    const base = sideBase(yard.side || "you");
+    const fromX = base ? base.x : yard.x;
+    const fromZ = base ? base.z : yard.z + yard.hz + 8;
+    return edgeOf(yard.x, yard.z, yard.hx, yard.hz, fromX, fromZ);
+}
+
+function depotRows() {
+    const kitsReady = Object.keys(kits).some((key) => kits[key]);
+    if (!kitsReady) return (readSave() || {}).depots || [];
+    const rows = [];
+    for (let i = 0; i < built.length; i++) {
+        const yard = built[i];
+        if (!DEPOTS[yard.kind]) continue;
+        const horse = yard.horse;
+        rows.push({
+            x: yard.x,
+            z: yard.z,
+            hold: copyHold(yard.hold),
+            horseDead: !!yard.lostHorse,
+            horseLeft: yard.horseLeft || 0,
+            phase: horse ? horse.phase : "wait",
+            hx: horse ? horse.x : yard.x,
+            hz: horse ? horse.z : yard.z,
+            yaw: horse ? horse.yaw : 0,
+            hp: horse ? horse.hp : 0,
+            cargo: horse ? copyHold(horse.cargo) : null
+        });
+    }
+    return rows;
+}
+
+function loadHorse() {
+    return new Promise((resolve) => {
+        new GLTFLoader().load("../models/horse/horse.glb", (gltf) => {
+            horseGltf = gltf;
+            resolve();
+        }, undefined, () => resolve());
+    });
+}
+
+function spawnHorse(yard, saved) {
+    if (!horseGltf || !yard || yard.horse) return;
+    const model = cloneSkinned(horseGltf.scene);
+    model.traverse((mesh) => {
+        if (mesh.isMesh) {
+            mesh.castShadow = true;
+            mesh.frustumCulled = false;
+        }
+    });
+    const mixer = new THREE.AnimationMixer(model);
+    let idle = null;
+    let trot = null;
+    const clips = horseGltf.animations || [];
+    for (let i = 0; i < clips.length; i++) {
+        if (clips[i].name === "Idle") idle = mixer.clipAction(clips[i]);
+        if (clips[i].name === "Trot") trot = mixer.clipAction(clips[i]);
+    }
+    if (idle) idle.play();
+    const group = new THREE.Group();
+    group.add(model);
+    const gate = yardGate(yard);
+    const x = saved && Number.isFinite(Number(saved.hx)) ? Number(saved.hx) : gate.x;
+    const z = saved && Number.isFinite(Number(saved.hz)) ? Number(saved.hz) : gate.z;
+    group.position.set(x, feetAt(x, z), z);
+    scene.add(group);
+    const phase = saved && (saved.phase === "out" || saved.phase === "back") ? saved.phase : "wait";
+    const horse = {
+        haul: true,
+        yard: yard,
+        side: yard.side || "you",
+        x: x,
+        z: z,
+        yaw: saved ? Number(saved.yaw) || 0 : 0,
+        hp: saved && Number(saved.hp) > 0 ? Number(saved.hp) : HORSE_HP,
+        alive: true,
+        phase: phase,
+        cargo: copyHold(saved && saved.cargo),
+        stuck: 0,
+        speed: 6.4,
+        id: nextId++,
+        group: group,
+        mixer: mixer,
+        idle: idle,
+        trot: trot,
+        moving: false
+    };
+    group.rotation.y = horse.yaw;
+    haulers.push(horse);
+    yard.horse = horse;
+    yard.lostHorse = false;
+}
+
+function bootHaulers() {
+    const rows = haulSave && Array.isArray(haulSave.depots) ? haulSave.depots : [];
+    const seen = [];
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        let yard = null;
+        let bestD = 3;
+        for (let j = 0; j < built.length; j++) {
+            const place = built[j];
+            if (!DEPOTS[place.kind] || seen.indexOf(place) >= 0) continue;
+            const d = Math.hypot(place.x - Number(row.x), place.z - Number(row.z));
+            if (d < bestD) {
+                bestD = d;
+                yard = place;
+            }
+        }
+        if (!yard) continue;
+        seen.push(yard);
+        yard.hold = copyHold(row.hold);
+        yard.horseLeft = Math.max(0, Number(row.horseLeft) || 0);
+        yard.lostHorse = !!row.horseDead;
+        if (yard.horseLeft > 0 || yard.lostHorse) continue;
+        spawnHorse(yard, row);
+    }
+    for (let i = 0; i < built.length; i++) {
+        const yard = built[i];
+        if (!DEPOTS[yard.kind] || yard.horse || yard.horseLeft > 0 || yard.lostHorse) continue;
+        if (!yard.hold) yard.hold = emptyHold();
+        spawnHorse(yard);
+    }
+}
+
+function loseHorse(horse) {
+    if (!horse || !horse.alive) return;
+    horse.alive = false;
+    horse.hp = 0;
+    horse.cargo = emptyHold();
+    horse.phase = "wait";
+    if (horse.group) scene.remove(horse.group);
+    const yard = horse.yard;
+    if (yard) {
+        yard.horse = null;
+        yard.lostHorse = true;
+    }
+    const at = haulers.indexOf(horse);
+    if (at >= 0) haulers.splice(at, 1);
+    refreshHud();
+}
+
+function setHorseClip(horse, moving) {
+    if (horse.moving === moving) return;
+    horse.moving = moving;
+    if (moving) {
+        if (horse.idle) horse.idle.fadeOut(0.2);
+        if (horse.trot) horse.trot.reset().fadeIn(0.2).play();
+    } else {
+        if (horse.trot) horse.trot.fadeOut(0.2);
+        if (horse.idle) horse.idle.reset().fadeIn(0.2).play();
+    }
+}
+
+function giveCargo(side, cargo) {
+    for (let i = 0; i < GOODS.length; i++) addGood(side, GOODS[i], Math.round(cargo && cargo[GOODS[i]] || 0));
+}
+
+function dispatchHaul() {
+    for (let i = 0; i < built.length; i++) {
+        const yard = built[i];
+        if (!DEPOTS[yard.kind]) continue;
+        const horse = yard.horse;
+        if (!horse || !horse.alive || horse.phase !== "wait") continue;
+        if (holdSum(yard.hold) <= 0) continue;
+        horse.cargo = copyHold(yard.hold);
+        yard.hold = emptyHold();
+        horse.phase = "out";
+    }
+}
+
+function stepHaulers(dt) {
+    const mark = Math.floor(dayMin / HAUL_MINUTES);
+    if (haulMark < 0) haulMark = mark;
+    else if (mark !== haulMark) {
+        haulMark = mark;
+        dispatchHaul();
+    }
+    for (let i = 0; i < haulers.length; i++) {
+        const horse = haulers[i];
+        if (!horse.alive) continue;
+        if (horse.mixer) horse.mixer.update(dt);
+        if (horse.phase === "wait") {
+            setHorseClip(horse, false);
+            continue;
+        }
+        const goal = horse.phase === "out" ? manorGate(horse.yard) : yardGate(horse.yard);
+        const there = arrive(horse, goal, 2.2, dt);
+        horse.group.position.y = feetAt(horse.x, horse.z);
+        setHorseClip(horse, !there);
+        if (!there) continue;
+        if (horse.phase === "out") {
+            giveCargo(horse.side, horse.cargo);
+            horse.cargo = emptyHold();
+            horse.phase = "back";
+        } else horse.phase = "wait";
+        refreshHud();
+    }
+    for (let i = 0; i < built.length; i++) {
+        const yard = built[i];
+        if (!(yard.horseLeft > 0)) continue;
+        yard.horseLeft -= dt;
+        if (selectedHouse === yard) {
+            const shown = Math.ceil(yard.horseLeft);
+            if (shown !== yard.horseShown) {
+                yard.horseShown = shown;
+                refreshHud();
+            }
+        }
+        if (yard.horseLeft > 0) continue;
+        yard.horseLeft = 0;
+        yard.lostHorse = false;
+        spawnHorse(yard);
+        refreshHud();
+    }
+}
+
+function trainHorse(yard) {
+    if (!yard || !DEPOTS[yard.kind]) return;
+    if (yard.horse && yard.horse.alive) return;
+    if (yard.horseLeft > 0) return;
+    const side = yard.side || "you";
+    if (sideFood(side) < HORSE_COST) return;
+    takeFood(side, HORSE_COST);
+    yard.horseLeft = HORSE_TIME;
+    yard.lostHorse = true;
+    refreshHud();
+    writeSave();
+}
+
+function retrainHorses(side) {
+    if (!horseGltf) return;
+    for (let i = 0; i < built.length; i++) {
+        const yard = built[i];
+        if (!DEPOTS[yard.kind] || (yard.side || "you") !== side) continue;
+        if (yard.horse && yard.horse.alive) continue;
+        if (yard.horseLeft > 0) continue;
+        if (!yard.lostHorse) {
+            spawnHorse(yard);
+            continue;
+        }
+        if (sideFood(side) < HORSE_COST) continue;
+        trainHorse(yard);
+    }
+}
+
+function horseLine(yard) {
+    if (yard.horseLeft > 0) {
+        const secs = Math.max(0, Math.ceil(yard.horseLeft));
+        return "training a horse · " + Math.floor(secs / 60) + ":" + String(secs % 60).padStart(2, "0");
+    }
+    const horse = yard.horse;
+    if (!horse || !horse.alive) return "horse lost";
+    const load = holdSum(horse.cargo);
+    const carried = load > 0 ? " with " + load : "";
+    if (horse.phase === "out") return "horse on the way to the manor" + carried;
+    if (horse.phase === "back") return "horse coming back";
+    return "horse waiting";
 }
 
 async function loadKit(id) {
@@ -1563,12 +1956,68 @@ async function loadKit(id) {
 async function loadKits() {
     const keys = Object.keys(BUILDINGS);
     await Promise.all(keys.map(async (key) => {
+        if (BUILDINGS[key].mesh) {
+            kits[key] = null;
+            return;
+        }
         try {
             kits[key] = await loadKit(BUILDINGS[key].id);
         } catch (err) {
             kits[key] = null;
         }
     }));
+}
+
+const SMITH_SCALE = 10;
+let smithGltf = null;
+
+function loadSmith() {
+    return new Promise((resolve) => {
+        new GLTFLoader().load("../models/meshy/blacksmith.glb", (gltf) => {
+            smithGltf = gltf;
+            resolve();
+        }, undefined, () => resolve());
+    });
+}
+
+async function showBlacksmith() {
+    if (!home) return;
+    await loadSmith();
+    if (!smithGltf) return;
+    const spec = BUILDINGS.smith;
+    let spot = null;
+    for (let ring = 0; ring < 6 && !spot; ring++) {
+        const dist = 34 + ring * 8;
+        for (let i = 0; i < 10; i++) {
+            const ang = (i - 4.5) * 0.28;
+            const x = home.x + Math.sin(ang) * dist;
+            const z = home.z - Math.cos(ang) * dist;
+            if (spotOk(x, z, spec, home) === "") {
+                spot = { x: x, z: z };
+                break;
+            }
+        }
+    }
+    if (!spot) return;
+    const model = smithGltf.scene.clone(true);
+    model.scale.setScalar(SMITH_SCALE);
+    model.position.y = 0.29 * SMITH_SCALE;
+    model.traverse((mesh) => {
+        if (!mesh.isMesh) return;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+    });
+    const group = new THREE.Group();
+    group.add(model);
+    const y = heightAt(spot.x, spot.z);
+    group.position.set(spot.x, y, spot.z);
+    scene.add(group);
+    const entry = { kind: "smith", side: "you", x: spot.x, z: spot.z, y: y, hx: spec.hx, hz: spec.hz, group: group, preview: true };
+    group.userData.building = entry;
+    model.traverse((mesh) => {
+        mesh.userData.building = entry;
+    });
+    built.push(entry);
 }
 
 function shapeGround(cx, cz, targetY, hx, hz) {
@@ -1645,7 +2094,13 @@ function placeBuilding(kind, x, y, z, side) {
     group.userData.building = entry;
     for (let i = 0; i < group.children.length; i++) group.children[i].userData.building = entry;
     if (kind === "farm") entry.node = { kind: "farm", x: x, z: z, farm: entry };
+    if (DEPOTS[kind]) {
+        entry.hold = emptyHold();
+        entry.horseLeft = 0;
+        entry.lostHorse = false;
+    }
     built.push(entry);
+    if (DEPOTS[kind] && horseGltf) spawnHorse(entry);
     attachRooms(entry, spec.id);
 }
 
@@ -2343,7 +2798,7 @@ function stepSide(side) {
     const held = [];
     for (let i = 0; i < units.length; i++) {
         const unit = units[i];
-        if (unit.side !== side || unit.kind !== "worker" || unit === pilot) continue;
+        if (unit.side !== side || unit.kind !== "worker" || unit === pilot || unit.orders) continue;
         if (unit.state === "inside" || unit.state === "home") continue;
         if (unit.state === "move" || unit.state === "return" || unit.state === "goto" || unit.state === "gather") held.push(unit);
         else open.push(unit);
@@ -2388,6 +2843,7 @@ function stepCpu(dt) {
     cpuThink = 0;
     stepSide("you");
     stepSide("cpu");
+    retrainHorses("cpu");
 }
 
 function farmAt(x, z) {
@@ -2462,7 +2918,7 @@ function sendToFarm(workers, farm) {
         n++;
         unit.job = "food";
         unit.jobNode = farm.node;
-        if (unit.carry >= 15) {
+        if (unit.carry >= CARRY_MAX) {
             unit.goal = dropAt(unit);
             unit.state = "return";
         } else {
@@ -2487,29 +2943,97 @@ function nearestNode(x, z) {
     return best;
 }
 
+function peopleBlock(unit, x, z) {
+    const need = (unit.stuck || 0) > 24 ? 0.42 : 0.8;
+    for (let i = 0; i < units.length; i++) {
+        const other = units[i];
+        if (other === unit || other.hp <= 0 || other.state === "inside") continue;
+        if (Math.hypot(other.x - x, other.z - z) < need) return true;
+    }
+    for (let i = 0; i < haulers.length; i++) {
+        const other = haulers[i];
+        if (other === unit || !other.alive) continue;
+        if (Math.hypot(other.x - x, other.z - z) < need) return true;
+    }
+    return false;
+}
+
+function stepOk(unit, nx, nz) {
+    if (!canStep(unit.x, unit.z, nx, nz)) return false;
+    if (peopleBlock(unit, nx, nz)) return false;
+    const world = window.World;
+    if (world && world.bridgeDeck && world.bridgeDeck(unit.x, unit.z) != null && world.bridgeDeck(nx, nz) == null && inWater(nx, nz)) return false;
+    return true;
+}
+
+function slideFree(unit, goal, step) {
+    const world = window.World;
+    const onDeck = world && world.bridgeDeck && world.bridgeDeck(unit.x, unit.z) != null;
+    const wet = inWater(unit.x, unit.z);
+    let best = null;
+    let bestScore = Infinity;
+    for (let i = 0; i < 8; i++) {
+        const ang = i * Math.PI / 4;
+        const nx = unit.x + Math.sin(ang) * step;
+        const nz = unit.z + Math.cos(ang) * step;
+        if (!canStep(unit.x, unit.z, nx, nz)) continue;
+        if (peopleBlock(unit, nx, nz)) continue;
+        const deck = world && world.bridgeDeck && world.bridgeDeck(nx, nz) != null;
+        if (onDeck && !deck && inWater(nx, nz)) continue;
+        const d = Math.hypot(goal.x - nx, goal.z - nz);
+        const score = d + (wet && inWater(nx, nz) && !deck ? 40 : 0) + (onDeck && deck ? 0 : 2);
+        if (score < bestScore) {
+            bestScore = score;
+            best = { x: nx, z: nz };
+        }
+    }
+    return best;
+}
+
 function arrive(unit, goal, stop, dt) {
     const dx = goal.x - unit.x;
     const dz = goal.z - unit.z;
     const distLeft = Math.hypot(dx, dz);
-    if (distLeft <= stop) return true;
-    const step = Math.min(distLeft, SPEED * dt);
-    let nx = unit.x + (dx / distLeft) * step;
-    let nz = unit.z + (dz / distLeft) * step;
-    if (unit.kind === "soldier" && (unit.state === "chase" || unit.state === "strike") && crowded(unit, nx, nz)) {
-        const side = unit.id % 2 ? 1 : -1;
-        nx = unit.x + (-dz / distLeft) * step * side;
-        nz = unit.z + (dx / distLeft) * step * side;
-        if (crowded(unit, nx, nz)) return false;
+    if (distLeft <= stop) {
+        unit.stuck = 0;
+        return true;
     }
-    if (!canStep(unit.x, unit.z, nx, nz)) {
-        const side = unit.id % 2 ? -1 : 1;
-        nx = unit.x + (-dz / distLeft) * step * side;
-        nz = unit.z + (dx / distLeft) * step * side;
-        if (!canStep(unit.x, unit.z, nx, nz)) return false;
+    const step = Math.min(distLeft, (unit.speed || SPEED) * dt);
+    const angles = [0, 0.6, -0.6, 1.15, -1.15, 1.8, -1.8];
+    let nx = unit.x;
+    let nz = unit.z;
+    let moved = false;
+    for (let i = 0; i < angles.length; i++) {
+        const ang = angles[i];
+        const c = Math.cos(ang);
+        const s = Math.sin(ang);
+        const tx = dx * c - dz * s;
+        const tz = dx * s + dz * c;
+        const len = Math.hypot(tx, tz) || 1;
+        const tryX = unit.x + (tx / len) * step;
+        const tryZ = unit.z + (tz / len) * step;
+        if (!stepOk(unit, tryX, tryZ)) continue;
+        nx = tryX;
+        nz = tryZ;
+        moved = true;
+        break;
     }
+    if (!moved) {
+        unit.stuck = (unit.stuck || 0) + 1;
+        if (unit.stuck > 8) {
+            const slip = slideFree(unit, goal, step);
+            if (slip) {
+                nx = slip.x;
+                nz = slip.z;
+                moved = true;
+                unit.stuck = 0;
+            }
+        }
+        if (!moved) return false;
+    } else unit.stuck = 0;
+    unit.yaw = Math.atan2(nx - unit.x, nz - unit.z);
     unit.x = nx;
     unit.z = nz;
-    unit.yaw = Math.atan2(dx, dz);
     unit.group.position.x = unit.x;
     unit.group.position.z = unit.z;
     unit.group.rotation.y = unit.yaw;
@@ -2562,20 +3086,7 @@ function stepUnits(dt) {
                     continue;
                 }
                 if (unit.state === "return") {
-                    const gained = Math.round(unit.carry);
-                    if (unit.side === "cpu") {
-                        if (unit.job === "wood") cpuWood += gained;
-                        if (unit.job === "food") cpuFood += gained;
-                        if (unit.job === "gold") cpuGold += gained;
-                        if (unit.job === "stone") cpuStone += gained;
-                    } else {
-                        if (unit.job === "wood") wood += gained;
-                        if (unit.job === "food") food += gained;
-                        if (unit.job === "gold") gold += gained;
-                        if (unit.job === "stone") stone += gained;
-                        refreshHud();
-                    }
-                    unit.carry = 0;
+                    depositCarry(unit);
                     if (unit.jobNode) {
                         unit.goal = standAt(unit.jobNode, unit);
                         unit.state = "goto";
@@ -2595,8 +3106,9 @@ function stepUnits(dt) {
                 }
             }
         } else if (unit.state === "gather") {
-            unit.carry = Math.min(15, unit.carry + dt);
-            if (unit.carry >= 15) {
+            unit.carry = Math.min(CARRY_MAX, unit.carry + dt * (CARRY_MAX / CARRY_TIME));
+            if (unit.carry >= CARRY_MAX - 0.001) {
+                unit.carry = CARRY_MAX;
                 unit.goal = dropAt(unit);
                 unit.state = "return";
             }
@@ -2635,14 +3147,14 @@ function pickUnit(event) {
         bodies.push(units[i].body);
     }
     const hit = raycaster.intersectObjects(bodies, false)[0];
-    if (hit && hit.object.userData.unit && hit.object.userData.unit.side === "you" && hit.object.userData.unit.state !== "inside") return hit.object.userData.unit;
+    if (hit && hit.object.userData.unit && (hit.object.userData.unit.side === "you" || hit.object.userData.unit.side === "cpu") && hit.object.userData.unit.state !== "inside") return hit.object.userData.unit;
     let best = null;
     let bestD = 28;
     const rect = renderer.domElement.getBoundingClientRect();
     for (let i = 0; i < units.length; i++) {
         if (units[i].state === "inside") continue;
         const spot = new THREE.Vector3(units[i].x, units[i].group.position.y + 0.7, units[i].z).project(camera);
-        if (units[i].side !== "you" || spot.z > 1) continue;
+        if ((units[i].side !== "you" && units[i].side !== "cpu") || spot.z > 1) continue;
         const sx = (spot.x * 0.5 + 0.5) * rect.width + rect.left;
         const sy = (-spot.y * 0.5 + 0.5) * rect.height + rect.top;
         const d = Math.hypot(event.clientX - sx, event.clientY - sy);
@@ -2658,7 +3170,7 @@ function pickHouse(event) {
     raycaster.setFromCamera(ndc(event), camera);
     const groups = [];
     for (let i = 0; i < built.length; i++) {
-        if ((built[i].kind === "house" || built[i].kind === "barracks") && built[i].group) groups.push(built[i].group);
+        if ((built[i].kind === "house" || built[i].kind === "barracks" || built[i].kind === "smith") && built[i].group) groups.push(built[i].group);
     }
     const hit = groups.length ? raycaster.intersectObjects(groups, true)[0] : null;
     if (hit) {
@@ -2672,7 +3184,7 @@ function pickHouse(event) {
     let bestD = 10;
     for (let i = 0; i < built.length; i++) {
         const house = built[i];
-        if (house.kind !== "house" && house.kind !== "barracks") continue;
+        if (house.kind !== "house" && house.kind !== "barracks" && house.kind !== "smith") continue;
         const d = Math.hypot(point.x - house.x, point.z - house.z);
         if (d < bestD && Math.abs(point.x - house.x) <= house.hx + 1.5 && Math.abs(point.z - house.z) <= house.hz + 1.5) {
             bestD = d;
@@ -2761,7 +3273,7 @@ function formationGoals(movers, point) {
 function commandAt(point) {
     if (!selected.length) return;
     selected.forEach((unit) => {
-        if (unit.side !== "you" || unit.state === "inside" || unit.state === "home") return;
+        if ((unit.side !== "you" && unit.side !== "cpu") || unit.state === "inside" || unit.state === "home") return;
         unit.orders = true;
     });
     const farm = farmAt(point.x, point.z);
@@ -2769,13 +3281,13 @@ function commandAt(point) {
     const soldiers = [];
     const farmHands = [];
     selected.forEach((unit) => {
-        if (unit.side !== "you" || unit.state === "inside" || unit.state === "home") return;
+        if ((unit.side !== "you" && unit.side !== "cpu") || unit.state === "inside" || unit.state === "home") return;
         if (farm && unit.kind === "worker") {
             farmHands.push(unit);
         } else if (node && unit.kind === "worker") {
             unit.job = node.kind;
             unit.jobNode = node;
-            if (unit.carry >= 15) {
+            if (unit.carry >= CARRY_MAX) {
                 unit.goal = dropAt(unit);
                 unit.state = "return";
             } else {
@@ -2892,9 +3404,16 @@ window.addEventListener("pointerup", (event) => {
                 const rect = renderer.domElement.getBoundingClientRect();
                 const sx = (spot.x * 0.5 + 0.5) * rect.width + rect.left;
                 const sy = (-spot.y * 0.5 + 0.5) * rect.height + rect.top;
-                if (units[i].side === "you" && units[i].state !== "inside" && sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) hits.push(units[i]);
+                if ((units[i].side === "you" || units[i].side === "cpu") && units[i].state !== "inside" && sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) hits.push(units[i]);
             }
-            setSelected(hits);
+            let yours = 0;
+            let theirs = 0;
+            for (let i = 0; i < hits.length; i++) {
+                if (hits[i].side === "cpu") theirs += 1;
+                else yours += 1;
+            }
+            const keep = theirs > yours ? "cpu" : "you";
+            setSelected(yours && theirs ? hits.filter((unit) => unit.side === keep) : hits);
             } else {
                 const unit = pickUnit(event);
                 if (unit) setSelected([unit]);
@@ -3019,22 +3538,32 @@ document.getElementById("pack-close").addEventListener("click", () => {
 });
 
 const handheldQuery = window.matchMedia("(max-width: 900px)");
-function applyHandheld(first) {
-    const on = handheldQuery.matches;
-    document.body.classList.toggle("handheld", on);
-    if (first) {
-        document.getElementById("bar").classList.add("folded");
-        document.getElementById("bar-min").textContent = "Notes";
-    }
-    if (first && on) {
-        document.getElementById("dock").classList.add("folded");
-        document.getElementById("stock").classList.add("folded");
-        document.getElementById("dock-min").textContent = "Orders";
-        document.getElementById("stock-min").textContent = "Stock";
+const viewMeta = document.querySelector('meta[name="viewport"]');
+function phoneScreen() {
+    return Math.min(window.screen.width, window.screen.height) <= 900;
+}
+function desktopLayout() {
+    return localStorage.getItem("aoe-layout") === "desktop";
+}
+function applyHandheld() {
+    const phone = phoneScreen();
+    const desktop = phone && desktopLayout();
+    if (viewMeta) viewMeta.setAttribute("content", desktop ? "width=1200" : "width=device-width, initial-scale=1");
+    document.body.classList.toggle("handheld", phone && !desktop);
+    document.body.classList.toggle("force-desktop", desktop);
+    const layoutBtn = document.getElementById("layout-mode");
+    if (layoutBtn) {
+        layoutBtn.hidden = !phone;
+        layoutBtn.textContent = desktop ? "Phone" : "Desktop";
     }
 }
-applyHandheld(true);
-if (handheldQuery.addEventListener) handheldQuery.addEventListener("change", () => applyHandheld(false));
+applyHandheld();
+if (handheldQuery.addEventListener) handheldQuery.addEventListener("change", () => applyHandheld());
+document.getElementById("layout-mode").addEventListener("click", () => {
+    localStorage.setItem("aoe-layout", desktopLayout() ? "phone" : "desktop");
+    applyHandheld();
+    requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+});
 
 function holdKey(button, key) {
     const press = (event) => {
@@ -3082,7 +3611,10 @@ function strikeUnit(unit, amount, label) {
     if (unit.side === "you" || unit.side === "cpu") foes.add(unit.side);
     showStrike(label);
     paintSelf();
-    if (unit.hp <= 0) fell(unit);
+    if (unit.hp <= 0) {
+        if (unit.haul) loseHorse(unit);
+        else fell(unit);
+    }
 }
 
 function reachHit(profile) {
@@ -3109,6 +3641,21 @@ function reachHit(profile) {
         const wide = Math.hypot(dx - fx * t, dz - fz * t);
         if (wide < profile.radius && Math.abs(dy - fy * t) < 1.4 && t < bestT) {
             best = unit;
+            bestT = t;
+        }
+    }
+    for (let i = 0; i < haulers.length; i++) {
+        const horse = haulers[i];
+        if (!horse.alive || horse.hp <= 0) continue;
+        const chest = horse.group.position.y + 1.2;
+        const dx = horse.x - ox;
+        const dy = chest - oy;
+        const dz = horse.z - oz;
+        const t = dx * fx + dy * fy + dz * fz;
+        if (t < 0.4 || t > profile.reach) continue;
+        const wide = Math.hypot(dx - fx * t, dz - fz * t);
+        if (wide < 1.6 && Math.abs(dy - fy * t) < 1.5 && t < bestT) {
+            best = horse;
             bestT = t;
         }
     }
@@ -3196,6 +3743,22 @@ function stepArrows(dt) {
             if (Math.hypot(unit.x - px, chest - py, unit.z - pz) < 0.55) {
                 hit = unit;
                 break;
+            }
+        }
+        if (!hit) {
+            for (let u = 0; u < haulers.length; u++) {
+                const horse = haulers[u];
+                if (!horse.alive || horse.hp <= 0) continue;
+                const chest = horse.group.position.y + 1.2;
+                let t = ((horse.x - x0) * sx + (chest - y0) * sy + (horse.z - z0) * sz) / len2;
+                t = Math.max(0, Math.min(1, t));
+                const px = x0 + sx * t;
+                const py = y0 + sy * t;
+                const pz = z0 + sz * t;
+                if (Math.hypot(horse.x - px, chest - py, horse.z - pz) < 1.2) {
+                    hit = horse;
+                    break;
+                }
             }
         }
         const ground = feetAt(arrow.x, arrow.z);
@@ -3356,6 +3919,9 @@ function living(id) {
     for (let i = 0; i < units.length; i++) {
         if (units[i].id === id && units[i].hp > 0) return units[i];
     }
+    for (let i = 0; i < haulers.length; i++) {
+        if (haulers[i].id === id && haulers[i].alive && haulers[i].hp > 0) return haulers[i];
+    }
     return null;
 }
 
@@ -3368,6 +3934,7 @@ function tooFar(unit, enemy) {
 
 function hostile(unit, other) {
     if (!other || other.hp <= 0 || other.side === unit.side) return false;
+    if (other.haul) return unit.side === "self" && foes.has(other.side);
     if (other.side === "self") return foes.has(unit.side);
     if (unit.side === "self") return foes.has(other.side);
     return false;
@@ -3378,6 +3945,15 @@ function nearestFoe(unit) {
     let bestD = SIGHT * SIGHT;
     for (let i = 0; i < units.length; i++) {
         const other = units[i];
+        if (!hostile(unit, other)) continue;
+        const d = dist2(unit.x, unit.z, other.x, other.z);
+        if (d < bestD && !tooFar(unit, other)) {
+            bestD = d;
+            best = other;
+        }
+    }
+    for (let i = 0; i < haulers.length; i++) {
+        const other = haulers[i];
         if (!hostile(unit, other)) continue;
         const d = dist2(unit.x, unit.z, other.x, other.z);
         if (d < bestD && !tooFar(unit, other)) {
@@ -3460,6 +4036,11 @@ function shareRing(foe) {
 
 function landSwing(unit, foe) {
     if (foe.hp <= 0) return;
+    if (foe.haul) {
+        foe.hp -= HIT;
+        if (foe.hp <= 0) loseHorse(foe);
+        return;
+    }
     foe.hp -= HIT;
     if (foe.side === "self") paintSelf();
     if (foe.hp <= 0) {
@@ -3482,7 +4063,7 @@ function stepFight(dt) {
             unit.canHit = false;
             unit.swing = 0;
             unit.landed = false;
-            if (unit.stance === "guard" && unit.post && dist2(unit.x, unit.z, unit.post.x, unit.post.z) > 1.44) {
+            if (!unit.orders && unit.stance === "guard" && unit.post && dist2(unit.x, unit.z, unit.post.x, unit.post.z) > 1.44) {
                 if (unit.state !== "back") {
                     unit.goal = { x: unit.post.x, z: unit.post.z };
                     unit.state = "back";
@@ -3709,6 +4290,7 @@ function stepMatch(dt) {
     refreshLand(false);
     stepCpu(dt);
     stepClock(dt);
+    stepHaulers(dt);
     stepFight(dt);
     stepUnits(dt);
     stepSites(dt);
