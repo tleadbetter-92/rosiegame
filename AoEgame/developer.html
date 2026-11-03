@@ -51,7 +51,7 @@
             box-shadow: 4px 4px 0 #111;
         }
         #dev-menu-list[hidden] { display: none; }
-        #dev-menu-list button, #dev-menu-list span {
+        #dev-menu-list button, #dev-menu-list a, #dev-menu-list span {
             display: block;
             width: 100%;
             padding: 6px 14px;
@@ -61,8 +61,8 @@
             text-align: left;
             font: inherit;
         }
-        #dev-menu-list button { cursor: pointer; }
-        #dev-menu-list button:hover { background: #eee; }
+        #dev-menu-list button, #dev-menu-list a { cursor: pointer; color: #111; text-decoration: none; }
+        #dev-menu-list button:hover, #dev-menu-list a:hover { background: #eee; }
         #dev-menu-list button.on { text-decoration: underline; }
         #dev-menu-list span { color: #888; }
         #look {
@@ -137,7 +137,7 @@
                     <button id="open-weapons" type="button">Weapons</button>
                     <button id="open-campaign" type="button">Campaign</button>
                     <span>Map</span>
-                    <span>Play test</span>
+                    <a href="index.html?playtest=1" target="_blank" rel="noopener">Play test</a>
                     <span>build editor</span>
                     <span>town editor</span>
                     <span>terrain editor</span>
@@ -254,7 +254,7 @@
             <div id="faction-list"></div>
             <p class="bar"></p>
             <p class="hint note" id="campaign-note"></p>
-            <p class="hint">Each faction keeps its own starting resources, units, and buildings. Team A and Team B are the two sides already on the map. Rename either one here. A faction you add is kept in this browser. A new match starts with that side’s resources, units, and any extra buildings. The two manors are already on the map. Rename a side here and the match uses that name. A faction you add is kept here until it has a side on the map.</p>
+            <p class="hint">Each faction keeps its own resources, units, and buildings. Team A and Team B are the two sides on the map. Change a number here and the match follows it: the stock, the people, and the extra buildings. The manors stay where they are. A side’s name is used as soon as you rename it. A faction you add is kept here until it has a side on the map. Soldier and worker are the people the match can field, and a military or economical unit you added is placed with that body. Reload the match once after this update so the current game picks up the page.</p>
         </section>
     </div>
     <script type="importmap">
@@ -265,7 +265,7 @@
         }
     }
     </script>
-    <script src="dev-sheet.js?v=sheet24"></script>
+    <script src="dev-sheet.js?v=sheet25"></script>
     <script type="module" src="preview.js?v=look8"></script>
     <dialog id="look">
         <h2 id="look-title">Graphic</h2>
@@ -1216,7 +1216,7 @@
 
         function saveCampaign() {
             window.AoeSheet.writeFactions(readCampaign());
-            document.getElementById("campaign-note").textContent = "Saved. The match does not use this yet.";
+            document.getElementById("campaign-note").textContent = "Saved. The match uses this.";
         }
 
         function drawLines(card, faction, kind) {

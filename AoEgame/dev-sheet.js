@@ -10,7 +10,7 @@
         barracks: { name: "Barracks", map: "barracks", model: "barracks", makes: "soldier", time: 300, wood: 100, hx: 14.26, hz: 9.09, placed: true },
         farm: { name: "Farm", map: "farm", model: "farm", makes: "", time: 300, wood: 100, hx: 8.81, hz: 18.43, placed: true },
         salt: { name: "Salt works", map: "salt-works-ex", model: "salt-works-ex", makes: "", time: 300, wood: 100, hx: 11.06, hz: 14.33, placed: true },
-        store: { name: "Storehouse", map: "storehouse", model: "storehouse", makes: "", time: 300, wood: 100, hx: 16.08, hz: 11.12, placed: true },
+        store: { name: "Storehouse", map: "storehouse", model: "storehouse", makes: "", time: 300, wood: 100, hx: 8.06, hz: 8.11, placed: true },
         smith: { name: "Blacksmith", map: "blacksmith", model: "blacksmith", makes: "", time: 300, wood: 100, hx: 5, hz: 5, placed: false }
     };
     const CREATURES = {
@@ -76,7 +76,7 @@
             barracks: [14.26, 9.09],
             farm: [8.81, 18.43],
             salt: [11.06, 14.33],
-            store: [16.08, 11.12],
+            store: [8.06, 8.11],
             smith: [5, 5]
         },
         units: { soldier: [1.1, 0.63], worker: [0.62, 0.4] },
@@ -90,6 +90,17 @@
             data = JSON.parse(localStorage.getItem(KEY) || "{}");
         } catch (err) {
             data = {};
+        }
+        data.buildings = data.buildings || {};
+        const store = data.buildings.store || {};
+        const wide = Number(store.hx);
+        const deep = Number(store.hz);
+        if (data.storeFit !== 1) {
+            if (!Number.isFinite(wide) || Math.abs(wide - 16.08) < 0.05) store.hx = 8.06;
+            if (!Number.isFinite(deep) || Math.abs(deep - 11.12) < 0.05) store.hz = 8.11;
+            data.buildings.store = store;
+            data.storeFit = 1;
+            saveAll(data);
         }
         if (data.sizeStamp === 1) return data;
         data.buildings = data.buildings || {};

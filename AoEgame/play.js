@@ -42,6 +42,12 @@ scene.add(terrain);
 // The mountain range saved from the terrain studio. A new match does not resume the old island.
 const BOARD_URL = "terrain.glb?v=range1";
 const BOARD_SEA = 106;
+const playTest = new URLSearchParams(location.search).get("playtest") === "1";
+if (playTest) {
+    document.title = "Play test";
+    const rules = document.querySelector("#bar p:not(#note)");
+    if (rules) rules.textContent = "In this play test a building or a person goes down as soon as you click the ground, for the side you are leading, and nothing is taken from the stock. The rest of the match is the same. " + rules.textContent;
+}
 let board = null;
 let viewFar = 220;
 
@@ -935,7 +941,9 @@ async function placeManors() {
         look.set(playerHome.x + 2, playerHome.y, playerHome.z + 14);
         dist = 110;
     }
-    note.textContent = (board ? "This is the mountain range. The two manors are on dry ground, and this match starts new. " : "") + "You are the eastern side. Both manors keep adding houses, workers, and stores. You can still give orders. The two sides are at peace. Forest is wood, water is food, ore is gold, and the rock piles are stone.";
+    note.textContent = playTest
+        ? "Play test. This is not the saved match. Choose Team A or Team B in the menu, then a building or a person, and click the ground. Right-click stops. Become player to walk up to them."
+        : (board ? "This is the mountain range. The two manors are on dry ground, and this match starts new. " : "") + "You are the eastern side. Both manors keep adding houses, workers, and stores. You can still give orders. The two sides are at peace. Forest is wood, water is food, ore is gold, and the rock piles are stone.";
     return playerHome;
 }
 
@@ -944,6 +952,22 @@ placeManors().catch((err) => {
 });
 
 const COST = 50;
+let sheetCache = null;
+function sheetTables() {
+    if (sheetCache) return sheetCache;
+    const api = window.AoeSheet;
+    sheetCache = {
+        units: api && api.read ? api.read() : null,
+        buildings: api && api.buildings ? api.buildings() : null,
+        player: api && api.player ? api.player() : null,
+        factions: api && api.factions ? api.factions() : null,
+        creatures: api && api.creatures ? api.creatures() : null
+    };
+    return sheetCache;
+}
+function dropSheetCache() {
+    sheetCache = null;
+}
 function unitRow(kind) {
     const base = {
         hp: kind === "soldier" ? 40 : 20,
@@ -954,21 +978,40 @@ function unitRow(kind) {
         w: kind === "soldier" ? 1.1 : 0.62,
         d: kind === "soldier" ? 0.63 : 0.4
     };
-    const sheet = window.AoeSheet && window.AoeSheet.read ? window.AoeSheet.read() : null;
+    const sheet = sheetTables().units;
     return (sheet && sheet[kind]) || base;
 }
 function unitCost(kind) {
     return unitRow(kind).cost;
 }
+function unitUse(kind) {
+    const row = unitRow(kind);
+    if (row && row.use === "military") return "military";
+    if (row && row.use === "economical") return "economical";
+    if (kind === "soldier") return "military";
+    if (kind === "worker") return "economical";
+    return "";
+}
+function militaryKind(kind) {
+    if (kind === "soldier") return true;
+    if (kind === "worker") return false;
+    return unitUse(kind) === "military";
+}
+function workerKind(kind) {
+    if (kind === "worker") return true;
+    if (kind === "soldier") return false;
+    return unitUse(kind) === "economical";
+}
 function playerRow() {
-    const row = window.AoeSheet && window.AoeSheet.player ? window.AoeSheet.player() : null;
+    const row = sheetTables().player;
     return row || { hp: 40, attack: 12, shot: 8, defence: 0, move: SPEED * 2, w: 1.1, d: 0.63 };
 }
 function tuned(kind) {
     const spec = BUILDINGS[kind];
     if (!spec) return null;
     const next = Object.assign({ time: HOUSE_TIME }, spec);
-    const row = window.AoeSheet && window.AoeSheet.buildings ? window.AoeSheet.buildings()[kind] : null;
+    const buildings = sheetTables().buildings;
+    const row = buildings ? buildings[kind] : null;
     if (!row) return next;
     next.wood = row.wood;
     next.hx = row.hx;
@@ -977,14 +1020,16 @@ function tuned(kind) {
     return next;
 }
 function manorPad() {
-    const row = window.AoeSheet && window.AoeSheet.buildings ? window.AoeSheet.buildings().manor : null;
+    const buildings = sheetTables().buildings;
+    const row = buildings ? buildings.manor : null;
     return {
         hx: row ? row.hx : MANOR_HX,
         hz: row ? row.hz : MANOR_HZ
     };
 }
 function mapGraphic(kind) {
-    const row = window.AoeSheet && window.AoeSheet.buildings ? window.AoeSheet.buildings()[kind] : null;
+    const buildings = sheetTables().buildings;
+    const row = buildings ? buildings[kind] : null;
     const map = row && row.map;
     return typeof map === "string" && /\.fbx$/i.test(map) ? map : "";
 }
@@ -1092,7 +1137,7 @@ const BUILDINGS = {
     barracks: { id: "barracks", label: "Barracks", wood: 100, hx: 14.26, hz: 9.09, workers: 0, soldiers: 15 },
     farm: { id: "farm", label: "Farm", wood: 100, hx: 8.81, hz: 18.43, workers: 0, soldiers: 0 },
     salt: { id: "salt-works-ex", label: "Salt works", wood: 100, hx: 11.06, hz: 14.33, workers: 0, soldiers: 0 },
-    store: { id: "storehouse", label: "Storehouse", wood: 100, hx: 16.08, hz: 11.12, workers: 0, soldiers: 0 },
+    store: { id: "storehouse", label: "Storehouse", wood: 100, hx: 8.06, hz: 8.11, workers: 0, soldiers: 0 },
     smith: { id: "blacksmith", label: "Blacksmith", wood: 100, hx: 5, hz: 5, workers: 0, soldiers: 0, mesh: true }
 };
 const FARM_SLOTS = [
@@ -1236,39 +1281,96 @@ function kindQueued(side, kind) {
     return n;
 }
 
-function kindCap(side, kind) {
-    let cap = kind === "worker" ? POP_MAX : 0;
+function roleCount(side, military) {
+    let n = 0;
+    for (let i = 0; i < units.length; i++) {
+        const unit = units[i];
+        if (unit.side !== side) continue;
+        if (military ? militaryKind(unit.kind) : workerKind(unit.kind)) n++;
+    }
+    return n;
+}
+
+function roleQueued(side, military) {
+    let n = 0;
+    for (let i = 0; i < trains.length; i++) {
+        if (trains[i].side !== side) continue;
+        if (military ? militaryKind(trains[i].kind) : workerKind(trains[i].kind)) n++;
+    }
+    return n;
+}
+
+function roomFor(side, kind) {
+    const military = militaryKind(kind);
+    let cap = military ? 0 : POP_MAX;
     for (let i = 0; i < built.length; i++) {
         if ((built[i].side || "you") !== side) continue;
         const spec = BUILDINGS[built[i].kind];
         if (!spec) continue;
-        cap += kind === "worker" ? (spec.workers || 0) : (spec.soldiers || 0);
+        cap += military ? (spec.soldiers || 0) : (spec.workers || 0);
     }
     return cap;
+}
+
+function housed(side, kind) {
+    const military = militaryKind(kind);
+    return roleCount(side, military) + roleQueued(side, military) < roomFor(side, kind);
+}
+
+function fielded(side, kind) {
+    return roleCount(side, militaryKind(kind)) < roomFor(side, kind);
 }
 
 function showButton(button, visible) {
     if (button) button.hidden = !visible;
 }
 
+const trainBtns = {};
+
+function trainButton(kind) {
+    if (kind === "worker") return workerBtn;
+    if (kind === "soldier") return soldierBtn;
+    if (trainBtns[kind]) return trainBtns[kind];
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.train = kind;
+    const name = document.createElement("b");
+    const price = document.createElement("small");
+    button.append(name, price);
+    button.addEventListener("click", () => playTest ? beginPlaceUnit(kind) : train(kind));
+    const box = document.getElementById("cmd-people");
+    if (box) box.append(button);
+    trainBtns[kind] = button;
+    return button;
+}
+
+function paintTrain(kind, making, trainSide) {
+    const button = trainButton(kind);
+    const on = making.indexOf(kind) >= 0;
+    showButton(button, !pilot && !placing && on);
+    const name = button.querySelector("b");
+    if (name) name.textContent = unitRow(kind).name || kind;
+    const price = button.querySelector("small");
+    if (price) price.textContent = billText(unitBill(kind));
+    button.disabled = !(on && canPay(trainSide, unitBill(kind)) && housed(trainSide, kind));
+}
+
 function paintCommands() {
-    const yourWorkers = selected.some((unit) => unit.side === led && unit.kind === "worker");
+    const yourWorkers = selected.some((unit) => unit.side === led && workerKind(unit.kind));
     const depot = selectedHouse && DEPOTS[selectedHouse.kind] ? selectedHouse : null;
     const making = manorSelected ? madeBy("manor") : (selectedHouse ? madeBy(selectedHouse.kind) : []);
     const trainSide = manorSelected ? led : (selectedHouse ? (selectedHouse.side || "you") : led);
-    showButton(workerBtn, !pilot && !placing && making.indexOf("worker") >= 0);
-    showButton(soldierBtn, !pilot && !placing && making.indexOf("soldier") >= 0);
+    const shown = {};
+    for (let i = 0; i < making.length; i++) {
+        paintTrain(making[i], making, trainSide);
+        shown[making[i]] = true;
+    }
+    if (!shown.worker) showButton(workerBtn, false);
+    if (!shown.soldier) showButton(soldierBtn, false);
+    Object.keys(trainBtns).forEach((kind) => {
+        if (!shown[kind]) showButton(trainBtns[kind], false);
+    });
     showButton(horseBtn, !pilot && !placing && !!depot);
-    const workerName = workerBtn.querySelector("b");
-    const soldierName = soldierBtn.querySelector("b");
-    if (workerName) workerName.textContent = unitRow("worker").name || "Worker";
-    if (soldierName) soldierName.textContent = unitRow("soldier").name || "Soldier";
-    const workerPrice = workerBtn.querySelector("small");
-    if (workerPrice) workerPrice.textContent = billText(unitBill("worker"));
-    const soldierPrice = soldierBtn.querySelector("small");
-    if (soldierPrice) soldierPrice.textContent = billText(unitBill("soldier"));
-    workerBtn.disabled = !(making.indexOf("worker") >= 0 && canPay(trainSide, unitBill("worker")) && sideKind(trainSide, "worker") + kindQueued(trainSide, "worker") < kindCap(trainSide, "worker"));
-    soldierBtn.disabled = !(making.indexOf("soldier") >= 0 && canPay(trainSide, unitBill("soldier")) && sideKind(trainSide, "soldier") + kindQueued(trainSide, "soldier") < kindCap(trainSide, "soldier"));
     if (horseBtn) {
         const lost = depot && depot.lostHorse && !(depot.horse && depot.horse.alive) && !(depot.horseLeft > 0);
         const horsePrice = horseBtn.querySelector("small");
@@ -1278,7 +1380,8 @@ function paintCommands() {
     const showBuild = !pilot && (yourWorkers || !!placing);
     Object.keys(buildBtns).forEach((key) => {
         const spec = tuned(key);
-        const row = window.AoeSheet && window.AoeSheet.buildings ? window.AoeSheet.buildings()[key] : null;
+        const buildings = sheetTables().buildings;
+        const row = buildings ? buildings[key] : null;
         const title = buildBtns[key].querySelector("b");
         if (title && row && row.name) title.textContent = row.name;
         const price = buildBtns[key].querySelector("small");
@@ -1286,7 +1389,7 @@ function paintCommands() {
         buildBtns[key].hidden = !showBuild;
         buildBtns[key].disabled = !showBuild || !!placing || !kits[key] || !spec || !canPay(led, buildingBill(key));
     });
-    const soldierPick = selected.filter((unit) => (unit.side === "you" || unit.side === "cpu") && unit.kind === "soldier");
+    const soldierPick = selected.filter((unit) => (unit.side === "you" || unit.side === "cpu") && militaryKind(unit.kind));
     showButton(guardBtn, !pilot && !placing && soldierPick.length > 0);
     showButton(attackBtn, !pilot && !placing && soldierPick.length > 0);
     guardBtn.disabled = !soldierPick.length;
@@ -1302,6 +1405,48 @@ function paintCommands() {
     if (stance) stance.hidden = !open(stance);
     if (pane) pane.hidden = !(people && !people.hidden) && !(build && !build.hidden) && !(stance && !stance.hidden);
     if (title) title.textContent = people && !people.hidden ? "Train" : build && !build.hidden ? "Build" : "Orders";
+    if (playTest && !pilot) {
+        ensureTestUnits();
+        showButton(workerBtn, true);
+        showButton(soldierBtn, true);
+        workerBtn.disabled = false;
+        soldierBtn.disabled = false;
+        const workerPrice = workerBtn.querySelector("small");
+        if (workerPrice) workerPrice.textContent = "free";
+        const soldierPrice = soldierBtn.querySelector("small");
+        if (soldierPrice) soldierPrice.textContent = "free";
+        Object.keys(buildBtns).forEach((key) => {
+            buildBtns[key].hidden = false;
+            const price = buildBtns[key].querySelector("small");
+            if (price) price.textContent = "free";
+            buildBtns[key].disabled = !kits[key];
+        });
+        Object.keys(trainBtns).forEach((kind) => showButton(trainBtns[kind], false));
+        if (people) people.hidden = false;
+        if (build) build.hidden = false;
+        if (pane) pane.hidden = false;
+        if (title) title.textContent = "Place";
+    }
+}
+
+function ensureTestUnits() {
+    if (!playTest || ensureTestUnits.done) return;
+    const sheet = sheetTables().units;
+    if (!sheet) return;
+    ensureTestUnits.done = true;
+    const box = document.getElementById("cmd-people");
+    Object.keys(sheet).forEach((id) => {
+        if (id === "worker" || id === "soldier") return;
+        const row = sheet[id];
+        if (!row || (row.use !== "military" && row.use !== "economical")) return;
+        const button = document.createElement("button");
+        button.type = "button";
+        const name = document.createElement("b");
+        name.textContent = row.name || id;
+        button.append(name);
+        button.addEventListener("click", () => beginPlaceUnit(id));
+        box.append(button);
+    });
 }
 
 function stockBag(side) {
@@ -1332,7 +1477,7 @@ function writeBag(side, bag) {
 const PAY = ["food", "wood", "gold", "stone", "iron", "salt", "fabric"];
 
 function factionRow(side) {
-    const rows = window.AoeSheet && window.AoeSheet.factions ? window.AoeSheet.factions() : null;
+    const rows = sheetTables().factions;
     if (!rows) return null;
     for (let i = 0; i < rows.length; i++) if (rows[i].id === side) return rows[i];
     return null;
@@ -1354,6 +1499,7 @@ function withExtra(bill, costs) {
 }
 
 function canPay(side, bill) {
+    if (playTest) return true;
     const bag = stockBag(side);
     for (let i = 0; i < PAY.length; i++) {
         const key = PAY[i];
@@ -1363,6 +1509,7 @@ function canPay(side, bill) {
 }
 
 function spend(side, bill) {
+    if (playTest) return;
     const bag = stockBag(side);
     for (let i = 0; i < PAY.length; i++) {
         const key = PAY[i];
@@ -1386,12 +1533,14 @@ function unitBill(kind) {
 
 function buildingBill(kind) {
     const spec = tuned(kind);
-    const row = window.AoeSheet && window.AoeSheet.buildings ? window.AoeSheet.buildings()[kind] : null;
+    const buildings = sheetTables().buildings;
+    const row = buildings ? buildings[kind] : null;
     return withExtra({ wood: spec ? Math.max(0, Number(spec.wood) || 0) : 0 }, row && row.costs);
 }
 
 function horseRow() {
-    return window.AoeSheet && window.AoeSheet.creatures ? window.AoeSheet.creatures().horse : null;
+    const creatures = sheetTables().creatures;
+    return creatures ? creatures.horse : null;
 }
 
 function horseBill() {
@@ -1401,7 +1550,7 @@ function horseBill() {
 }
 
 function madeBy(buildingId) {
-    const rows = window.AoeSheet && window.AoeSheet.buildings ? window.AoeSheet.buildings() : null;
+    const rows = sheetTables().buildings;
     const row = rows && rows[buildingId];
     let list = row && Array.isArray(row.makesList) && row.makesList.length ? row.makesList : null;
     if (!list) {
@@ -1409,9 +1558,16 @@ function madeBy(buildingId) {
         else if (buildingId === "barracks") list = ["soldier"];
         else list = [];
     }
+    const known = sheetTables().units;
     const out = [];
     for (let i = 0; i < list.length; i++) {
-        if ((list[i] === "worker" || list[i] === "soldier") && out.indexOf(list[i]) < 0) out.push(list[i]);
+        const id = list[i];
+        if (!id || out.indexOf(id) >= 0) continue;
+        if (id !== "worker" && id !== "soldier") {
+            const spec = known && known[id];
+            if (!spec || (spec.use !== "military" && spec.use !== "economical")) continue;
+        }
+        out.push(id);
     }
     return out;
 }
@@ -1437,17 +1593,17 @@ function refreshHud() {
     if (cpuSaltEl && document.activeElement !== cpuSaltEl) cpuSaltEl.value = String(Math.floor(cpuSalt));
     if (cpuStoneEl && document.activeElement !== cpuStoneEl) cpuStoneEl.value = String(Math.floor(cpuStone));
     if (cpuFabricEl && document.activeElement !== cpuFabricEl) cpuFabricEl.value = String(Math.floor(cpuFabric));
-    popEl.textContent = "Workers " + sideKind(led, "worker") + " / " + kindCap(led, "worker");
-    if (soldierEl) soldierEl.textContent = "Soldiers " + sideKind(led, "soldier") + " / " + kindCap(led, "soldier");
-    if (cpuPopEl) cpuPopEl.textContent = "Other workers " + sideKind("cpu", "worker") + " / " + kindCap("cpu", "worker");
-    if (cpuSoldierEl) cpuSoldierEl.textContent = "Other soldiers " + sideKind("cpu", "soldier") + " / " + kindCap("cpu", "soldier");
+    popEl.textContent = "Workers " + roleCount(led, false) + " / " + roomFor(led, "worker");
+    if (soldierEl) soldierEl.textContent = "Soldiers " + roleCount(led, true) + " / " + roomFor(led, "soldier");
+    if (cpuPopEl) cpuPopEl.textContent = "Other workers " + roleCount("cpu", false) + " / " + roomFor("cpu", "worker");
+    if (cpuSoldierEl) cpuSoldierEl.textContent = "Other soldiers " + roleCount("cpu", true) + " / " + roomFor("cpu", "soldier");
     if (trainNote) {
         const mine = trains.filter((job) => job.side === led);
         if (!mine.length) trainNote.textContent = "";
         else {
             const secs = Math.max(0, Math.ceil(mine[0].left));
             const clock = Math.floor(secs / 60) + ":" + String(secs % 60).padStart(2, "0");
-            const who = mine[0].kind === "soldier" ? "soldier" : "worker";
+            const who = unitRow(mine[0].kind).name || mine[0].kind;
             trainNote.textContent = "Recruiting " + who + " · " + clock + (mine.length > 1 ? " · " + mine.length + " in line" : "");
         }
     }
@@ -1474,7 +1630,7 @@ function refreshHud() {
         for (let i = 0; i < selected.length; i++) {
             const unit = selected[i];
             if (unit.side === "self") continue;
-            if (unit.kind === "soldier") {
+            if (militaryKind(unit.kind)) {
                 soldiers += 1;
                 soldierHp = soldierHp == null ? unit.hp : Math.min(soldierHp, unit.hp);
             } else {
@@ -1485,10 +1641,15 @@ function refreshHud() {
         const lines = [];
         const lead = selected.find((unit) => unit.side === "you" || unit.side === "cpu");
         if (lead && lead.side !== led) lines.push(teamName(lead.side));
-        if (workers) lines.push(workers + (workers === 1 ? " worker" : " workers"));
-        if (soldiers) lines.push(soldiers + (soldiers === 1 ? " soldier" : " soldiers"));
-        if (soldiers) lines.push("soldier\nhealth " + Math.max(0, Math.ceil(soldierHp)));
-        else lines.push("health " + Math.max(0, Math.ceil(workerHp)));
+        if (selected.length === 1 && lead) {
+            lines.push(unitRow(lead.kind).name || lead.kind);
+            lines.push("health " + Math.max(0, Math.ceil(lead.hp)));
+        } else {
+            if (workers) lines.push(workers + (workers === 1 ? " worker" : " workers"));
+            if (soldiers) lines.push(soldiers + (soldiers === 1 ? " soldier" : " soldiers"));
+            if (soldiers) lines.push("soldier\nhealth " + Math.max(0, Math.ceil(soldierHp)));
+            else lines.push("health " + Math.max(0, Math.ceil(workerHp)));
+        }
         selEl.textContent = lines.join("\n");
     } else if (selectedHouse || manorSelected) {
         const house = selectedHouse;
@@ -1496,9 +1657,14 @@ function refreshHud() {
         const lines = ["Building", label];
         const side = manorSelected ? led : (house.side || "you");
         if (side !== led) lines.push(teamName(side));
-        const queued = manorSelected ? kindQueued(led, "worker") : house && house.kind === "barracks" ? kindQueued(side, "soldier") : 0;
-        const who = manorSelected ? "worker" : "soldier";
-        if (queued) lines.push("training " + queued + " " + who + (queued === 1 ? "" : "s"));
+        const from = manorSelected ? "manor" : (house && house.kind);
+        const linesOf = from ? madeBy(from) : [];
+        const training = [];
+        for (let i = 0; i < linesOf.length; i++) {
+            const n = kindQueued(side, linesOf[i]);
+            if (n) training.push(n + " " + (unitRow(linesOf[i]).name || linesOf[i]));
+        }
+        if (training.length) lines.push("training " + training.join(", "));
         if (house && DEPOTS[house.kind]) {
             lines.push(holdLine(house.hold));
             lines.push(horseLine(house));
@@ -1528,8 +1694,211 @@ function setSelected(list) {
     refreshHud();
 }
 
+function bodyFor(kind) {
+    if (actors[kind]) return actors[kind];
+    const row = unitRow(kind);
+    if (row && row.use === "military" && actors.soldier) return actors.soldier;
+    if (row && row.use === "economical" && actors.worker) return actors.worker;
+    return null;
+}
+
+const roster = {};
+const rosterQueue = [];
+let rosterBusy = false;
+
+function rosterFile(model) {
+    const raw = String(model || "").trim();
+    if (/\.(glb|gltf)$/i.test(raw)) return raw;
+    return "";
+}
+
+function queueRoster() {
+    const rows = sheetTables().units || {};
+    Object.keys(rows).forEach((id) => {
+        const row = rows[id];
+        if (!row || (row.use !== "military" && row.use !== "economical")) return;
+        const file = rosterFile(row.model);
+        if (!file || roster[file]) return;
+        roster[file] = { pending: true };
+        rosterQueue.push(file);
+    });
+    pumpRoster();
+}
+
+function pumpRoster() {
+    if (rosterBusy || !rosterQueue.length) return;
+    rosterBusy = true;
+    const file = rosterQueue.shift();
+    setTimeout(() => beginRosterLoad(file), 40);
+}
+
+function beginRosterLoad(file) {
+    let settled = false;
+    const finish = (gltf) => {
+        if (settled) return;
+        settled = true;
+        roster[file] = gltf ? { gltf: gltf } : { failed: true };
+        if (roster[file].gltf) dressWaiting(file);
+        rosterBusy = false;
+        pumpRoster();
+    };
+    const timer = setTimeout(() => finish(null), 12000);
+    new GLTFLoader().load(encodeURI(file), (gltf) => {
+        clearTimeout(timer);
+        finish(gltf);
+    }, undefined, () => {
+        clearTimeout(timer);
+        finish(null);
+    });
+}
+
+function dressWaiting(file) {
+    const packed = roster[file];
+    if (!packed || !packed.gltf) return;
+    for (let i = 0; i < units.length; i++) {
+        const unit = units[i];
+        if (unit.pendingModel !== file) continue;
+        try {
+            attachFigure(unit, packed);
+        } catch (err) {
+            unit.pendingModel = "";
+        }
+    }
+}
+
+function clipNamed(clips, pattern) {
+    const names = Object.keys(clips);
+    for (let i = 0; i < names.length; i++) if (pattern.test(names[i])) return names[i];
+    return "";
+}
+
+function figurePose(model, gltf) {
+    const mixer = new THREE.AnimationMixer(model);
+    const clips = {};
+    const animations = gltf.animations || [];
+    for (let i = 0; i < animations.length; i++) clips[animations[i].name] = mixer.clipAction(animations[i]);
+    const walkClip = clipNamed(clips, /walk/i) || clipNamed(clips, /run/i) || "";
+    const idleClip = clipNamed(clips, /idle/i) || walkClip || Object.keys(clips)[0] || "";
+    return { mixer: mixer, clips: clips, walkClip: walkClip, idleClip: idleClip };
+}
+
+function boneSpan(model) {
+    const point = new THREE.Vector3();
+    let low = null;
+    let high = null;
+    model.traverse((obj) => {
+        if (!obj.isBone) return;
+        obj.getWorldPosition(point);
+        if (!low || point.y < low.y) low = point.clone();
+        if (!high || point.y > high.y) high = point.clone();
+    });
+    if (!low || !high) return null;
+    return { low: low, high: high };
+}
+
+function plantFigure(model, group) {
+    const yaw = group.rotation.y;
+    group.rotation.y = 0;
+    model.position.set(0, 0, 0);
+    model.scale.set(1, 1, 1);
+    group.updateMatrixWorld(true);
+    const rest = boneSpan(model);
+    if (!rest) {
+        group.rotation.y = yaw;
+        return;
+    }
+    const s = 1.75 / Math.max(0.4, rest.high.y - rest.low.y);
+    model.scale.setScalar(s);
+    group.updateMatrixWorld(true);
+    const stood = boneSpan(model);
+    const origin = group.getWorldPosition(new THREE.Vector3());
+    model.position.x += origin.x - (stood.low.x + stood.high.x) / 2;
+    model.position.z += origin.z - (stood.low.z + stood.high.z) / 2;
+    model.position.y += origin.y - stood.low.y;
+    group.rotation.y = yaw;
+    group.updateMatrixWorld(true);
+}
+
+function attachFigure(unit, packed) {
+    const model = cloneSkinned(packed.gltf.scene);
+    const posed = figurePose(model, packed.gltf);
+    model.traverse((mesh) => {
+        if (!mesh.isMesh) return;
+        mesh.castShadow = true;
+        mesh.frustumCulled = false;
+        mesh.userData.pick = true;
+        mesh.userData.unit = unit;
+    });
+    if (unit.body && unit.body.parent) unit.body.parent.remove(unit.body);
+    unit.group.add(model);
+    model.userData.unit = unit;
+    unit.body = model;
+    unit.actor = null;
+    unit.mixer = posed.mixer;
+    unit.clips = posed.clips;
+    unit.idleClip = posed.idleClip;
+    unit.walkClip = posed.walkClip;
+    unit.pose = "";
+    unit.pendingModel = "";
+    if (posed.idleClip) playArcher(unit, posed.idleClip, false);
+    posed.mixer.update(0);
+    plantFigure(model, unit.group);
+}
+
+function spawnFigure(kind, x, z, side, packed, row) {
+    const ring = new THREE.Mesh(ringGeom, side === "cpu" ? foeMat : side === "self" ? selfMat : ringMat);
+    ring.position.y = 0.06;
+    ring.visible = side === "cpu" || side === "self";
+    const group = new THREE.Group();
+    group.add(ring);
+    group.position.set(x, heightAt(x, z), z);
+    scene.add(group);
+    const unit = {
+        id: nextId++,
+        side: side,
+        kind: kind,
+        x: x,
+        z: z,
+        yaw: 0,
+        state: "idle",
+        job: null,
+        jobNode: null,
+        goal: null,
+        carry: 0,
+        anim: 0,
+        hp: row.hp,
+        speed: row.move,
+        attack: row.attack,
+        defence: row.defence,
+        stance: "guard",
+        post: militaryKind(kind) ? { x: x, z: z } : null,
+        targetId: null,
+        orders: false,
+        body: null,
+        ring: ring,
+        ringScale: Math.max(row.w || 1, row.d || 0.6) / 1.24,
+        group: group,
+        actor: null,
+        mixer: null,
+        clips: null,
+        idleClip: "",
+        walkClip: "",
+        pose: "",
+        pendingModel: ""
+    };
+    ring.scale.setScalar(unit.ringScale);
+    units.push(unit);
+    attachFigure(unit, packed);
+    return unit;
+}
+
 function spawn(kind, x, z, side) {
-    const actor = actors[kind];
+    const row = unitRow(kind);
+    const file = rosterFile(row.model);
+    const packed = file && roster[file];
+    if (packed && packed.gltf) return spawnFigure(kind, x, z, side, packed, row);
+    const actor = bodyFor(kind);
+    if (!actor) return null;
     const body = personMesh(actor);
     body.userData.pick = true;
     const ring = new THREE.Mesh(ringGeom, side === "cpu" ? foeMat : side === "self" ? selfMat : ringMat);
@@ -1540,7 +1909,6 @@ function spawn(kind, x, z, side) {
     group.add(ring);
     group.position.set(x, heightAt(x, z), z);
     scene.add(group);
-    const row = unitRow(kind);
     fitMapModel(body, row.w / 2, row.d / 2);
     const unit = {
         id: nextId++,
@@ -1560,7 +1928,7 @@ function spawn(kind, x, z, side) {
         attack: unitRow(kind).attack,
         defence: unitRow(kind).defence,
         stance: "guard",
-        post: kind === "soldier" ? { x: x, z: z } : null,
+        post: militaryKind(kind) ? { x: x, z: z } : null,
         targetId: null,
         orders: false,
         body: body,
@@ -1572,13 +1940,14 @@ function spawn(kind, x, z, side) {
     ring.scale.setScalar(unit.ringScale);
     body.userData.unit = unit;
     units.push(unit);
+    if (file && (!packed || packed.pending)) unit.pendingModel = file;
     return unit;
 }
 
 let archerGltf = null;
 const armGltf = {};
 const ARMS = {
-    sword: { name: "Sword", hand: "right", attack: "slash", file: "weapons pack/3D_fantasy_weapons_pack/models/knights_longsword.glb", scale: 0.55, pos: [0.3, 0.02, 0], rot: [0, 0, 0] },
+    sword: { name: "Sword", hand: "right", attack: "slash", file: "weapons pack/3D_fantasy_weapons_pack/models/knights_longsword.glb", scale: 0.55, pos: [0.21, 0.02, 0], rot: [0, Math.PI, 0] },
     axe: { name: "Axe", hand: "right", attack: "slash", file: "weapons pack/3D_fantasy_weapons_pack/models/dwarven_war_axe.glb", scale: 0.5, pos: [0.22, 0.02, 0], rot: [0, 0, 0] },
     halberd: { name: "Halberd", hand: "right", attack: "slash", file: "weapons pack/3D_fantasy_weapons_pack/models/halberd.glb", scale: 0.85, pos: [0.18, 0, -0.12], rot: [0, 0, 0] },
     mace: { name: "Mace", hand: "right", attack: "slash", file: "weapons pack/3D_fantasy_weapons_pack/models/spiked_mace.glb", scale: 0.42, pos: [0.05, 0.12, 0], rot: [0, 0, -1.57] },
@@ -1815,10 +2184,11 @@ function trainSpot(side, kind) {
 
 function deliverTrain(side, kind) {
     const place = trainSpot(side, kind);
-    if (!place || sideKind(side, kind) >= kindCap(side, kind)) return false;
+    if (!place || !fielded(side, kind)) return false;
     const ang = Math.PI * 0.5 + sideKind(side, kind) * 0.32;
-    const reach = kind === "soldier" && place.hx ? Math.max(place.hx, place.hz) + 3 : 22;
+    const reach = militaryKind(kind) && place.hx ? Math.max(place.hx, place.hz) + 3 : 22;
     const unit = spawn(kind, place.x + Math.cos(ang) * reach, place.z + Math.sin(ang) * reach, side);
+    if (!unit) return false;
     if (side === "you" && rally) {
         const slot = rallySlot();
         const spread = slot === 0 ? 0 : 1.6;
@@ -1845,7 +2215,7 @@ function trainFor(side, kind, auto) {
     if (auto && sideQueued(side) > 0) return;
     const bill = unitBill(kind);
     if (!canPay(side, bill)) return;
-    if (sideKind(side, kind) + kindQueued(side, kind) >= kindCap(side, kind)) return;
+    if (!housed(side, kind)) return;
     spend(side, bill);
     trains.push({ side: side, kind: kind, left: TRAIN_TIME });
     refreshHud();
@@ -1859,7 +2229,7 @@ function stepTrains(dt) {
         const job = trains[i];
         if (ticking[job.side]) continue;
         ticking[job.side] = true;
-        if (sideKind(job.side, job.kind) >= kindCap(job.side, job.kind)) continue;
+        if (!fielded(job.side, job.kind)) continue;
         job.left -= dt;
         if (job.left > 0) continue;
         if (deliverTrain(job.side, job.kind)) {
@@ -1880,15 +2250,30 @@ function train(kind) {
     trainFor(side, kind);
 }
 
-workerBtn.addEventListener("click", () => train("worker"));
-soldierBtn.addEventListener("click", () => train("soldier"));
+workerBtn.addEventListener("click", () => playTest ? beginPlaceUnit("worker") : train("worker"));
+soldierBtn.addEventListener("click", () => playTest ? beginPlaceUnit("soldier") : train("soldier"));
 if (horseBtn) horseBtn.addEventListener("click", () => {
     if (horseBtn.disabled || !selectedHouse) return;
     trainHorse(selectedHouse);
 });
+let placingUnit = null;
+
+function beginPlaceUnit(kind) {
+    if (!playTest || !bodyFor(kind)) return;
+    placing = null;
+    townRing.visible = false;
+    placingUnit = kind;
+    ghost.geometry.dispose();
+    ghost.geometry = new THREE.BoxGeometry(1.1, 0.18, 0.7);
+    ghost.visible = false;
+    const row = unitRow(kind);
+    selEl.textContent = "Click the ground to put down " + (row.name || kind) + " for " + teamName(led) + ". Right-click stops.";
+}
+
 function beginPlace(kind) {
     const spec = tuned(kind);
     if (!spec || !kits[kind] || buildBtns[kind].disabled) return;
+    placingUnit = null;
     placing = kind;
     ghost.geometry.dispose();
     ghost.geometry = new THREE.BoxGeometry(spec.hx * 2, 0.18, spec.hz * 2);
@@ -1931,7 +2316,7 @@ function setStance(stance) {
     let changed = false;
     for (let i = 0; i < selected.length; i++) {
         const unit = selected[i];
-        if (unit.kind !== "soldier" || (unit.side !== "you" && unit.side !== "cpu")) continue;
+        if (!militaryKind(unit.kind) || (unit.side !== "you" && unit.side !== "cpu")) continue;
         unit.stance = stance;
         if (stance === "guard") {
             unit.post = unit.state === "move" && unit.goal ? { x: unit.goal.x, z: unit.goal.z } : { x: unit.x, z: unit.z };
@@ -1945,7 +2330,7 @@ function setStance(stance) {
 guardBtn.addEventListener("click", () => setStance("guard"));
 attackBtn.addEventListener("click", () => setStance("attack"));
 
-const SAVE_KEY = BOARD_URL ? "aoe-board-save" : "aoe-save";
+const SAVE_KEY = playTest ? "aoe-playtest-save" : (BOARD_URL ? "aoe-board-save" : "aoe-save");
 let aGift = false;
 
 function dryNear(x, z) {
@@ -2007,6 +2392,7 @@ function writeSave() {
         houses: Object.keys(kits).some((key) => kits[key]) ? built.filter((house) => !house.preview).map((house) => ({ kind: house.kind, side: house.side || "you", x: house.x, z: house.z, y: house.y })) : ((readSave() || {}).houses || []),
         pending: Object.keys(kits).some((key) => kits[key]) ? sites.map((site) => ({ kind: site.kind, side: site.side || "you", x: site.x, z: site.z, y: site.y, left: site.left })) : ((readSave() || {}).pending || []),
         aGift: aGift,
+        campaignMark: appliedCampaign,
         clock: dayMin,
         depots: depotRows(),
         trains: trains.map((job) => ({ side: job.side, kind: job.kind, left: job.left })),
@@ -2021,7 +2407,7 @@ function writeSave() {
             job: unit.job,
             carry: unit.carry,
             hp: unit.hp,
-            stance: unit.kind === "soldier" ? unit.stance : null,
+            stance: militaryKind(unit.kind) ? unit.stance : null,
             post: unit.post ? { x: unit.post.x, z: unit.post.z } : null,
             target: unit.targetId || null,
             goal: unit.goal ? { x: unit.goal.x, z: unit.goal.z } : null,
@@ -2073,7 +2459,7 @@ function restoreMatch(save) {
         const row = save.units[i];
         if (row.side !== "you" && row.side !== "cpu" && row.side !== "self") continue;
         if (row.side === "cpu" && !cpuHome) continue;
-        if (row.kind !== "worker" && row.kind !== "soldier") continue;
+        if (!workerKind(row.kind) && !militaryKind(row.kind)) continue;
         if (row.hp != null && Number(row.hp) <= 0) continue;
         const unit = spawn(row.kind, Number(row.x) || 0, Number(row.z) || 0, row.side);
         unit.id = row.id || unit.id;
@@ -2085,7 +2471,7 @@ function restoreMatch(save) {
         unit.jobNode = row.node && row.node.kind === "farm" && Number.isFinite(Number(row.node.x)) && Number.isFinite(Number(row.node.z))
             ? { kind: "farm", x: Number(row.node.x), z: Number(row.node.z), farm: null }
             : matchNode(row.node);
-        if (unit.kind === "soldier") {
+        if (militaryKind(unit.kind)) {
             unit.stance = row.stance === "attack" ? "attack" : "guard";
             unit.post = row.post && Number.isFinite(row.post.x) && Number.isFinite(row.post.z) ? { x: row.post.x, z: row.post.z } : { x: unit.x, z: unit.z };
             unit.targetId = Number(row.target) || null;
@@ -2129,7 +2515,7 @@ function restoreMatch(save) {
         for (let i = 0; i < save.trains.length; i++) {
             const row = save.trains[i];
             if (!row || (row.side !== "you" && row.side !== "cpu")) continue;
-            if (row.kind !== "worker" && row.kind !== "soldier") continue;
+            if (!workerKind(row.kind) && !militaryKind(row.kind)) continue;
             trains.push({ side: row.side, kind: row.kind, left: Math.max(0, Number(row.left) || TRAIN_TIME) });
         }
     }
@@ -2204,10 +2590,8 @@ async function startMatch(playerHome, otherHome) {
     await loadArcher();
     const save = readSave();
     if (save) restoreMatch(save);
-    else {
-        aGift = true;
-        startFromSheet();
-    }
+    else aGift = true;
+    if (!playTest || !save) applyCampaign(save && save.campaignMark);
     if (!window.AoeSheet && !units.some((unit) => unit.side === "you")) spawn("worker", home.x + 4, home.z + 24, "you");
     await loadHorse();
     bootHaulers();
@@ -2217,6 +2601,7 @@ async function startMatch(playerHome, otherHome) {
     refreshLand(true);
     refreshHud();
     writeSave();
+    setTimeout(queueRoster, 60);
 }
 
 document.getElementById("restart").addEventListener("click", () => {
@@ -2226,40 +2611,159 @@ document.getElementById("restart").addEventListener("click", () => {
 });
 window.addEventListener("pagehide", writeSave);
 
-function startFromSheet() {
+let appliedCampaign = "";
+
+function campaignMark() {
+    const pack = {};
     ["you", "cpu"].forEach((side) => {
-        if (side === "cpu" && !cpuHome) return;
         const row = factionRow(side);
-        const base = side === "cpu" ? cpuHome : home;
-        if (row) {
-            const bag = stockBag(side);
-            for (let i = 0; i < PAY.length; i++) {
-                const key = PAY[i];
-                if (Number.isFinite(Number(row[key]))) bag[key] = Number(row[key]);
+        if (!row) return;
+        const goods = {};
+        for (let i = 0; i < PAY.length; i++) goods[PAY[i]] = Number(row[PAY[i]]) || 0;
+        pack[side] = { name: row.name, goods: goods, units: row.units || [], buildings: row.buildings || [] };
+    });
+    return JSON.stringify(pack);
+}
+
+function wantedCounts(lines) {
+    const want = {};
+    const list = Array.isArray(lines) ? lines : [];
+    for (let i = 0; i < list.length; i++) {
+        const id = list[i] && list[i].id;
+        if (!id || id === "manor") continue;
+        const count = Math.max(0, Math.min(24, Number(list[i].count) || 0));
+        want[id] = (want[id] || 0) + count;
+    }
+    return want;
+}
+
+function dropSite(site) {
+    const index = sites.indexOf(site);
+    if (index >= 0) sites.splice(index, 1);
+    if (site.mark) {
+        scene.remove(site.mark);
+        site.mark = null;
+    }
+}
+
+function dropBuilding(entry) {
+    if (!entry || entry.kind === "manor" || entry.preview) return;
+    if (entry.horse) loseHorse(entry.horse);
+    if (entry.group) scene.remove(entry.group);
+    const at = built.indexOf(entry);
+    if (at >= 0) built.splice(at, 1);
+    const drawn = manors.indexOf(entry.group);
+    if (drawn >= 0) manors.splice(drawn, 1);
+    if (selectedHouse === entry) selectedHouse = null;
+}
+
+function giftBuilding(side, kind) {
+    const spec = tuned(kind);
+    const base = sideBase(side);
+    if (!spec || !kits[kind] || !base) return false;
+    let spot = null;
+    const rings = kind === "house" ? Math.ceil((TOWN_RANGE - 24) / 8) + 1 : 4;
+    const angles = kind === "house" ? 12 : 8;
+    for (let ring = 0; ring < rings && !spot; ring++) {
+        const dist = 24 + ring * 8;
+        if (spec.town && dist > TOWN_RANGE - 4) break;
+        for (let i = 0; i < angles; i++) {
+            const ang = i * Math.PI * 2 / angles + ring;
+            const x = base.x + Math.cos(ang) * dist;
+            const z = base.z + Math.sin(ang) * dist;
+            if (spotOk(x, z, spec, base) === "") {
+                spot = { x: x, z: z };
+                break;
             }
-            writeBag(side, bag);
         }
-        const lines = row && row.units && row.units.length ? row.units : [{ id: "worker", count: 1 }];
-        let n = 0;
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            if (line.id !== "worker" && line.id !== "soldier") continue;
-            const count = Math.max(0, Math.min(24, Number(line.count) || 0));
-            for (let c = 0; c < count; c++) {
-                const ang = n * 0.7;
-                spawn(line.id, base.x + 6 + Math.cos(ang) * 4, base.z + 18 + Math.sin(ang) * 4, side);
-                n++;
-            }
+    }
+    if (!spot) return false;
+    placeBuilding(kind, spot.x, heightAt(spot.x, spot.z), spot.z, side);
+    return true;
+}
+
+function syncSideUnits(side, lines) {
+    const want = wantedCounts(lines);
+    const base = sideBase(side);
+    Object.keys(want).forEach((kind) => {
+        if (!bodyFor(kind)) delete want[kind];
+    });
+    const grouped = {};
+    for (let i = 0; i < units.length; i++) {
+        const unit = units[i];
+        if (unit.side !== side || unit.hp <= 0 || want[unit.kind] == null) continue;
+        if (!grouped[unit.kind]) grouped[unit.kind] = [];
+        grouped[unit.kind].push(unit);
+    }
+    Object.keys(grouped).forEach((kind) => {
+        const list = grouped[kind];
+        while (list.length > want[kind]) bury(list.pop());
+    });
+    if (!base) return;
+    Object.keys(want).forEach((kind) => {
+        let got = 0;
+        for (let i = 0; i < units.length; i++) {
+            if (units[i].side === side && units[i].kind === kind && units[i].hp > 0) got++;
         }
-        const builds = row && row.buildings ? row.buildings : [];
-        for (let i = 0; i < builds.length; i++) {
-            const line = builds[i];
-            if (!line.id || line.id === "manor" || !BUILDINGS[line.id]) continue;
-            const count = Math.max(0, Math.min(4, Number(line.count) || 0));
-            for (let c = 0; c < count; c++) sidePlace(side, line.id);
+        for (let n = got; n < want[kind]; n++) {
+            const ang = n * 0.7;
+            spawn(kind, base.x + 6 + Math.cos(ang) * 4, base.z + 18 + Math.sin(ang) * 4, side);
         }
     });
 }
+
+function syncSideBuildings(side, lines) {
+    const want = wantedCounts(lines);
+    const kinds = Object.keys(want);
+    for (let k = 0; k < kinds.length; k++) {
+        const kind = kinds[k];
+        if (kind === "manor" || !BUILDINGS[kind] || !kits[kind]) continue;
+        const need = Math.min(4, want[kind]);
+        for (let i = sites.length - 1; i >= 0; i--) {
+            if ((sites[i].side || "you") === side && sites[i].kind === kind) dropSite(sites[i]);
+        }
+        const owned = [];
+        for (let i = 0; i < built.length; i++) {
+            const entry = built[i];
+            if (entry.preview || entry.kind !== kind || (entry.side || "you") !== side) continue;
+            owned.push(entry);
+        }
+        while (owned.length > need) dropBuilding(owned.pop());
+        for (let n = owned.length; n < need; n++) {
+            if (!giftBuilding(side, kind)) break;
+        }
+    }
+}
+
+function applyCampaign(previous) {
+    if (!home || !actors) return false;
+    const mark = campaignMark();
+    if (!mark || mark === "{}" || mark === previous) return false;
+    ["you", "cpu"].forEach((side) => {
+        if (side === "cpu" && !cpuHome) return;
+        const row = factionRow(side);
+        if (!row) return;
+        const bag = stockBag(side);
+        for (let i = 0; i < PAY.length; i++) {
+            const key = PAY[i];
+            if (Number.isFinite(Number(row[key]))) bag[key] = Number(row[key]);
+        }
+        writeBag(side, bag);
+        syncSideUnits(side, row.units);
+        syncSideBuildings(side, row.buildings);
+    });
+    appliedCampaign = mark;
+    refreshHud();
+    writeSave();
+    return true;
+}
+
+window.addEventListener("storage", (event) => {
+    if (event.key !== "aoe-dev-sheet") return;
+    dropSheetCache();
+    if (playTest) return;
+    applyCampaign(appliedCampaign);
+});
 
 function standAt(node, unit) {
     if (node && node.kind === "farm" && node.farm) return farmStand(node.farm, unit);
@@ -2474,7 +2978,7 @@ function spawnHorse(yard, saved) {
     if (idle) idle.play();
     const group = new THREE.Group();
     group.add(model);
-    const sized = window.AoeSheet && window.AoeSheet.creatures ? window.AoeSheet.creatures().horse : null;
+    const sized = horseRow();
     const horseWide = sized && Number.isFinite(sized.w) ? sized.w : 0.63;
     const horseDeep = sized && Number.isFinite(sized.d) ? sized.d : 3.21;
     const gate = yardGate(yard);
@@ -2835,7 +3339,7 @@ function overlaps(ax, az, ahx, ahz, bx, bz, bhx, bhz) {
 function spotOk(x, z, spec, anchor) {
     const base = anchor || home;
     if (hitsWater(x, z, spec.hx + 2.2, spec.hz + 2.2)) return "water";
-    if (spec.town && base && Math.hypot(x - base.x, z - base.z) > TOWN_RANGE) return "far";
+    if (!playTest && spec.town && base && Math.hypot(x - base.x, z - base.z) > TOWN_RANGE) return "far";
     const pads = [];
     if (home) pads.push(home);
     if (cpuHome) pads.push(cpuHome);
@@ -2897,50 +3401,59 @@ function doorMaterial() {
     return doorMat;
 }
 
-function outerDoors(physics, entry) {
-    const shell = physics && physics.shell;
-    if (!shell) {
-        const hz = entry.hz || MANOR_HZ;
-        return [{ hingeX: -0.55, hingeZ: -hz + 0.2, yaw: 0, wide: 1.1, x: 0, z: -hz + 0.2 }];
-    }
+function outerDoors(physics) {
+    if (!physics) return [];
     const cx = physics.cx;
     const cz = physics.cz;
-    const minX = shell.minX;
-    const minZ = shell.minZ;
-    const maxX = minX + shell.w;
-    const maxZ = minZ + shell.d;
     const walls = (physics.solids || []).filter((sol) => !sol.stair && sol.y0 < 1.1 && sol.y1 > 1.6 && Math.min(sol.w, sol.d) < 0.8);
+    const lines = [];
+    walls.forEach((sol) => {
+        const alongX = sol.w >= sol.d;
+        const fixed = alongX ? sol.z + sol.d / 2 : sol.x + sol.w / 2;
+        const key = (alongX ? "z:" : "x:") + Math.round(fixed * 2);
+        let line = null;
+        for (let i = 0; i < lines.length; i++) if (lines[i].key === key) line = lines[i];
+        if (!line) {
+            line = { key: key, alongX: alongX, fixed: fixed, spans: [] };
+            lines.push(line);
+        }
+        line.spans.push(alongX ? [sol.x, sol.x + sol.w] : [sol.z, sol.z + sol.d]);
+    });
+    const extreme = (alongX) => {
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (let i = 0; i < lines.length; i++) {
+            if (lines[i].alongX !== alongX) continue;
+            lo = Math.min(lo, lines[i].fixed);
+            hi = Math.max(hi, lines[i].fixed);
+        }
+        return { lo: lo, hi: hi };
+    };
+    const xEdge = extreme(false);
+    const zEdge = extreme(true);
     const doors = [];
-    const take = (fixed, along0, along1, axis) => {
-        const spans = walls.filter((wall) => {
-            const a = axis === "z" ? wall.z : wall.x;
-            const b = a + (axis === "z" ? wall.d : wall.w);
-            return a < fixed + 1.6 && b > fixed - 0.4;
-        }).map((wall) => (axis === "z" ? [wall.x, wall.x + wall.w] : [wall.z, wall.z + wall.d])).sort((a, b) => a[0] - b[0]);
-        let cursor = along0;
-        const yaw = axis === "z" ? 0 : -Math.PI / 2;
-        const push = (from, to) => {
+    lines.forEach((line) => {
+        const edge = line.alongX ? zEdge : xEdge;
+        if (Math.min(Math.abs(line.fixed - edge.lo), Math.abs(line.fixed - edge.hi)) > 1) return;
+        const spans = line.spans.slice().sort((a, b) => a[0] - b[0]);
+        const merged = [];
+        for (let i = 0; i < spans.length; i++) {
+            const span = spans[i];
+            const last = merged[merged.length - 1];
+            if (last && span[0] <= last[1] + 0.15) last[1] = Math.max(last[1], span[1]);
+            else merged.push([span[0], span[1]]);
+        }
+        for (let i = 0; i < merged.length - 1; i++) {
+            const from = merged[i][1];
+            const to = merged[i + 1][0];
             const gap = to - from;
-            if (gap < 0.7 || gap > 2.4) return;
+            if (gap < 0.7 || gap > 2.6) continue;
             const mid = (from + to) / 2;
             const wide = Math.min(1.3, gap);
-            if (axis === "z") doors.push({ hingeX: from - cx, hingeZ: fixed - cz, x: mid - cx, z: fixed - cz, yaw: yaw, wide: wide });
-            else doors.push({ hingeX: fixed - cx, hingeZ: from - cz, x: fixed - cx, z: mid - cz, yaw: yaw, wide: wide });
-        };
-        for (let i = 0; i < spans.length; i++) {
-            push(cursor, spans[i][0]);
-            cursor = Math.max(cursor, spans[i][1]);
+            if (line.alongX) doors.push({ hingeX: from - cx, hingeZ: line.fixed - cz, x: mid - cx, z: line.fixed - cz, yaw: 0, wide: wide });
+            else doors.push({ hingeX: line.fixed - cx, hingeZ: from - cz, x: line.fixed - cx, z: mid - cz, yaw: -Math.PI / 2, wide: wide });
         }
-        push(cursor, along1);
-    };
-    take(minZ, minX, maxX, "z");
-    take(maxZ, minX, maxX, "z");
-    take(minX, minZ, maxZ, "x");
-    take(maxX, minZ, maxZ, "x");
-    if (!doors.length) {
-        const hz = entry.hz || (shell.d / 2);
-        doors.push({ hingeX: -0.55, hingeZ: -hz + 0.2, yaw: 0, wide: 1.1, x: 0, z: -hz + 0.2 });
-    }
+    });
     return doors;
 }
 
@@ -2978,17 +3491,38 @@ function readRooms(id) {
     return roomPlans[id];
 }
 
+function kitToGroup(shell, x, z) {
+    if (!shell) return { x: x, z: z };
+    return {
+        x: shell.position.x + x * shell.scale.x,
+        z: shell.position.z + z * shell.scale.z
+    };
+}
+
 function attachRooms(entry, id) {
     entry.kitId = id;
     readRooms(id).then((plan) => {
         if (!plan) return;
+        const host = entry.fpModel || entry.group;
+        const doors = outerDoors(plan.physics);
+        const solids = localSolids(plan.physics).map((sol) => {
+            const at = kitToGroup(entry.fpModel, sol.x, sol.z);
+            const far = kitToGroup(entry.fpModel, sol.x + sol.w, sol.z + sol.d);
+            return { x: Math.min(at.x, far.x), z: Math.min(at.z, far.z), w: Math.abs(far.x - at.x), d: Math.abs(far.z - at.z) };
+        });
+        doors.forEach((door) => {
+            addDoorLeaf(host, door);
+            const at = kitToGroup(entry.fpModel, door.x, door.z);
+            door.x = at.x;
+            door.z = at.z;
+        });
         entry.rooms = {
             meta: plan.meta,
             physics: plan.physics,
-            solids: localSolids(plan.physics),
-            doors: outerDoors(plan.physics, entry)
+            solids: solids,
+            doors: doors,
+            fit: entry.fpModel ? { x: entry.fpModel.position.x, z: entry.fpModel.position.z, sx: entry.fpModel.scale.x, sz: entry.fpModel.scale.z } : null
         };
-        for (let i = 0; i < entry.rooms.doors.length; i++) addDoorLeaf(entry.group, entry.rooms.doors[i]);
     }).catch(() => null);
 }
 
@@ -2996,11 +3530,14 @@ function buildingInside(entry, x, z) {
     const physics = entry.rooms && entry.rooms.physics;
     if (!physics || !physics.shell) return false;
     const shell = physics.shell;
+    const fit = entry.rooms.fit || { x: 0, z: 0, sx: 1, sz: 1 };
     const lx = x - entry.x;
     const lz = z - entry.z;
-    const minX = shell.minX - physics.cx;
-    const minZ = shell.minZ - physics.cz;
-    return lx > minX + 0.45 && lx < minX + shell.w - 0.45 && lz > minZ + 0.45 && lz < minZ + shell.d - 0.45;
+    const minX = fit.x + (shell.minX - physics.cx) * fit.sx;
+    const minZ = fit.z + (shell.minZ - physics.cz) * fit.sz;
+    const maxX = minX + shell.w * fit.sx;
+    const maxZ = minZ + shell.d * fit.sz;
+    return lx > Math.min(minX, maxX) + 0.45 && lx < Math.max(minX, maxX) - 0.45 && lz > Math.min(minZ, maxZ) + 0.45 && lz < Math.max(minZ, maxZ) - 0.45;
 }
 
 function blockedByBuilding(x, z) {
@@ -3038,7 +3575,7 @@ function ensureInterior(entry) {
     const id = entry.kitId;
     const meta = entry.rooms.meta;
     const group = new THREE.Group();
-    entry.group.add(group);
+    (entry.fpModel || entry.group).add(group);
     entry.insideGroup = group;
     const jobs = [];
     for (let i = 0; i < INSIDE_MATS.length; i++) {
@@ -3150,6 +3687,7 @@ function restoreHouses(save) {
 
 function cancelPlace() {
     placing = null;
+    placingUnit = null;
     ghost.visible = false;
     townRing.visible = false;
     refreshHud();
@@ -3170,8 +3708,8 @@ function bankCarry(unit) {
 }
 
 function nearestBuilder(x, z) {
-    const picked = selected.filter((unit) => unit.side === led && unit.kind === "worker" && unit !== pilot);
-    const pool = picked.length ? picked : units.filter((unit) => unit.side === led && unit.kind === "worker" && unit !== pilot);
+    const picked = selected.filter((unit) => unit.side === led && workerKind(unit.kind) && unit !== pilot);
+    const pool = picked.length ? picked : units.filter((unit) => unit.side === led && workerKind(unit.kind) && unit !== pilot);
     let best = null;
     let bestD = Infinity;
     for (let i = 0; i < pool.length; i++) {
@@ -3186,6 +3724,27 @@ function nearestBuilder(x, z) {
 
 function tryPlace(x, z) {
     const spec = tuned(placing);
+    if (playTest && spec && kits[placing]) {
+        const why = spotOk(x, z, spec, sideBase(led));
+        if (why === "water") {
+            selEl.textContent = "Not on water.";
+            return;
+        }
+        if (why === "far") {
+            selEl.textContent = "Too far from the manor.";
+            return;
+        }
+        if (why) {
+            selEl.textContent = "Too close to a building.";
+            return;
+        }
+        placeBuilding(placing, x, heightAt(x, z), z, led);
+        seatFloors();
+        refreshHud();
+        writeSave();
+        selEl.textContent = (spec.label || "Building") + " is down for " + teamName(led) + ". Click again, or right-click to stop.";
+        return;
+    }
     const bill = buildingBill(placing);
     if (!spec || !kits[placing] || !canPay(led, bill)) {
         selEl.textContent = (spec ? spec.label : "That building") + " needs " + billText(bill) + ".";
@@ -3222,7 +3781,31 @@ function tryPlace(x, z) {
     writeSave();
 }
 
+function putDownUnit(x, z) {
+    const unit = spawn(placingUnit, x, z, led);
+    if (!unit) return;
+    if (militaryKind(unit.kind)) {
+        unit.stance = "guard";
+        unit.post = { x: x, z: z };
+    }
+    refreshHud();
+    writeSave();
+    const row = unitRow(placingUnit);
+    selEl.textContent = (row.name || placingUnit) + " is down for " + teamName(led) + ". Click again, or right-click to stop.";
+}
+
 function moveGhost(event) {
+    if (placingUnit) {
+        const point = groundAt(event);
+        if (!point) {
+            ghost.visible = false;
+            return;
+        }
+        ghost.visible = true;
+        ghost.position.set(point.x, heightAt(point.x, point.z) + 0.16, point.z);
+        ghost.material.color.setHex(0x6dbf4a);
+        return;
+    }
     if (!placing) return;
     const spec = tuned(placing);
     const point = groundAt(event);
@@ -3333,7 +3916,7 @@ function sidePlace(side, kind) {
     let bestD = Infinity;
     for (let i = 0; i < units.length; i++) {
         const unit = units[i];
-        if (unit.side !== side || unit.kind !== "worker" || unit.orders) continue;
+        if (unit.side !== side || !workerKind(unit.kind) || unit.orders) continue;
         const d = Math.hypot(unit.x - spot.x, unit.z - spot.z);
         if (d < bestD) {
             bestD = d;
@@ -3355,7 +3938,7 @@ function marchCpu() {
     const movers = [];
     for (let i = 0; i < units.length; i++) {
         const unit = units[i];
-        if (unit.side !== "cpu" || unit.kind !== "soldier") continue;
+        if (unit.side !== "cpu" || !militaryKind(unit.kind)) continue;
         if (unit.state !== "idle" && unit.state !== "back") continue;
         unit.stance = "attack";
         if (Math.hypot(unit.x - home.x, unit.z - home.z) > 70) movers.push(unit);
@@ -3498,7 +4081,7 @@ function wake(unit) {
 function sendSleepers(side) {
     for (let i = 0; i < units.length; i++) {
         const unit = units[i];
-        if (unit.side !== side || unit.kind !== "worker" || unit.hp <= 0 || unit.dying > 0) continue;
+        if (unit.side !== side || !workerKind(unit.kind) || unit.hp <= 0 || unit.dying > 0) continue;
         if (unit.state === "inside" || unit.state === "home") continue;
         const house = nearestBed(unit);
         if (!house) continue;
@@ -3581,7 +4164,7 @@ function stepSide(side) {
     const held = [];
     for (let i = 0; i < units.length; i++) {
         const unit = units[i];
-        if (unit.side !== side || unit.kind !== "worker" || unit === pilot || unit.orders) continue;
+        if (unit.side !== side || !workerKind(unit.kind) || unit === pilot || unit.orders) continue;
         if (unit.state === "inside" || unit.state === "home") continue;
         if (unit.state === "move" || unit.state === "return" || unit.state === "goto" || unit.state === "gather") held.push(unit);
         else open.push(unit);
@@ -3615,7 +4198,7 @@ function stepSide(side) {
         if (!placed && ownedCount(built, "farm", side) + ownedCount(sites, "farm", side) < 1 && canPay(side, buildingBill("farm")) && workers >= 4) placed = sidePlace(side, "farm");
         if (!placed && ownedCount(built, "salt", side) + ownedCount(sites, "salt", side) < 1 && canPay(side, buildingBill("salt")) && workers >= 4) placed = sidePlace(side, "salt");
     }
-    if (!placed && canPay(side, unitBill("worker")) && sideKind(side, "worker") < kindCap(side, "worker")) trainFor(side, "worker", true);
+    if (!placed && canPay(side, unitBill("worker")) && housed(side, "worker")) trainFor(side, "worker", true);
 }
 
 function stepCpu(dt) {
@@ -3850,7 +4433,7 @@ function stepUnits(dt) {
             unit.yaw = lookYaw;
             unit.group.rotation.y = lookYaw;
             const moving = !!(keys.w || keys.a || keys.s || keys.d || keys.arrowup || keys.arrowdown || keys.arrowleft || keys.arrowright);
-            unit.group.position.y = feetAt(unit.x, unit.z);
+            unit.group.position.y = feetAt(unit.x, unit.z) + (unit.hop || 0);
             unit.anim += dt;
             if (unit.mixer) stepArcher(unit, dt, moving);
             else if (unit.body.geometry && unit.actor) {
@@ -3890,7 +4473,7 @@ function stepUnits(dt) {
                     unit.state = "chase";
                 } else {
                     unit.state = "idle";
-                    if (unit.kind === "soldier" && unit.stance === "guard" && unit.goal) {
+                    if (militaryKind(unit.kind) && unit.stance === "guard" && unit.goal) {
                         unit.post = { x: unit.goal.x, z: unit.goal.z };
                     }
                 }
@@ -3906,9 +4489,14 @@ function stepUnits(dt) {
         unit.group.position.y = feetAt(unit.x, unit.z);
         unit.anim += dt;
         if (unit.mixer) {
-            holdArcher(unit, dt);
+            if (unit.idleClip || unit.walkClip) {
+                const name = moving && unit.walkClip ? unit.walkClip : (unit.idleClip || unit.walkClip);
+                if (name && unit.pose !== name) playArcher(unit, name, false);
+                unit.mixer.update(dt);
+            } else holdArcher(unit, dt);
             continue;
         }
+        if (!unit.actor || !unit.actor.frames || !unit.body) continue;
         const punch = unit.state === "strike" && unit.actor.frames.punch && unit.actor.frames.punch.length;
         const frames = punch ? unit.actor.frames.punch : moving ? unit.actor.frames.walk : unit.actor.frames.idle;
         const frame = punch
@@ -3970,7 +4558,7 @@ function pickHouse(event) {
     raycaster.setFromCamera(ndc(event), camera);
     const groups = [];
     for (let i = 0; i < built.length; i++) {
-        if ((built[i].kind === "house" || built[i].kind === "barracks" || built[i].kind === "smith") && built[i].group) groups.push(built[i].group);
+        if (built[i].group) groups.push(built[i].group);
     }
     const hit = groups.length ? raycaster.intersectObjects(groups, true)[0] : null;
     if (hit) {
@@ -3981,12 +4569,12 @@ function pickHouse(event) {
     const point = groundAt(event);
     if (!point) return null;
     let best = null;
-    let bestD = 10;
+    let bestD = Infinity;
     for (let i = 0; i < built.length; i++) {
         const house = built[i];
-        if (house.kind !== "house" && house.kind !== "barracks" && house.kind !== "smith") continue;
+        if (Math.abs(point.x - house.x) > house.hx + 1.2 || Math.abs(point.z - house.z) > house.hz + 1.2) continue;
         const d = Math.hypot(point.x - house.x, point.z - house.z);
-        if (d < bestD && Math.abs(point.x - house.x) <= house.hx + 1.5 && Math.abs(point.z - house.z) <= house.hz + 1.5) {
+        if (d < bestD) {
             bestD = d;
             best = house;
         }
@@ -4108,9 +4696,9 @@ function commandAt(point) {
     const farmHands = [];
     selected.forEach((unit) => {
         if ((unit.side !== "you" && unit.side !== "cpu") || unit.state === "inside" || unit.state === "home") return;
-        if (farm && unit.kind === "worker") {
+        if (farm && workerKind(unit.kind)) {
             farmHands.push(unit);
-        } else if (node && unit.kind === "worker") {
+        } else if (node && workerKind(unit.kind)) {
             unit.job = node.kind;
             unit.jobNode = node;
             if (unit.carry >= CARRY_MAX) {
@@ -4120,7 +4708,7 @@ function commandAt(point) {
                 unit.goal = standAt(node, unit);
                 unit.state = "goto";
             }
-        } else if (unit.kind === "soldier") {
+        } else if (militaryKind(unit.kind)) {
             soldiers.push(unit);
         } else {
             unit.job = null;
@@ -4175,24 +4763,29 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     panY = event.clientY;
     boxMoved = false;
     mapMoved = false;
-    if (event.button === 0) {
-        if (placing) return;
+        if (event.button === 0) {
+        if (placing || placingUnit) return;
         const finger = event.pointerType === "touch" && document.body.classList.contains("handheld");
         if (finger && !document.body.classList.contains("selecting")) mapDrag = true;
         else boxDrag = true;
     }
-    if (event.button === 2 && !placing) mapDrag = true;
+    if (event.button === 2 && !placing && !placingUnit) mapDrag = true;
 });
 window.addEventListener("pointerup", (event) => {
     if (lookTouch && event.pointerId === lookTouch.id) lookTouch = null;
     if (pilot) return;
-    if (placing && event.button === 2) {
+    if ((placing || placingUnit) && event.button === 2) {
         cancelPlace();
         return;
     }
     if (placing && event.button === 0) {
         const point = groundAt(event);
         if (point) tryPlace(point.x, point.z);
+        return;
+    }
+    if (placingUnit && event.button === 0) {
+        const point = groundAt(event);
+        if (point) putDownUnit(point.x, point.z);
         return;
     }
     if (event.button === 2) {
@@ -4470,8 +5063,8 @@ function guardOf(target) {
     let value = 0;
     if (target.side === "self") value = playerRow().defence;
     else if (target.haul) {
-        const sheet = window.AoeSheet && window.AoeSheet.creatures ? window.AoeSheet.creatures() : null;
-        value = sheet && sheet.horse ? sheet.horse.defence : 0;
+        const horse = horseRow();
+        value = horse ? horse.defence : 0;
     } else if (target.kind) value = unitRow(target.kind).defence;
     const n = Number(value);
     return Number.isFinite(n) && n > 0 ? n : 0;
@@ -4912,6 +5505,9 @@ function leaveBody() {
     camera.fov = 42;
     camera.near = 0.3;
     camera.updateProjectionMatrix();
+    wantJump = false;
+    unit.hop = 0;
+    unit.vy = 0;
     document.body.classList.remove("walking");
     paintSelf();
     if (document.pointerLockElement) document.exitPointerLock();
@@ -4940,6 +5536,8 @@ function canPass(nx, nz) {
     return wallRay.intersectObjects(walls, true).length === 0;
 }
 
+let wantJump = false;
+
 function walkBody(dt) {
     if (!pilot) return;
     let forward = 0;
@@ -4949,32 +5547,50 @@ function walkBody(dt) {
     if (keys.a || keys.arrowleft) strafe += 1;
     if (keys.d || keys.arrowright) strafe -= 1;
     const len = Math.hypot(forward, strafe);
-    if (!len) return;
-    const step = playerRow().move * dt / len;
-    const fx = Math.sin(lookYaw);
-    const fz = Math.cos(lookYaw);
-    const rx = Math.cos(lookYaw);
-    const rz = -Math.sin(lookYaw);
-    const nx = Math.max(mapBox.min.x, Math.min(mapBox.max.x, pilot.x + (fx * forward + rx * strafe) * step));
-    const nz = Math.max(mapBox.min.z, Math.min(mapBox.max.z, pilot.z + (fz * forward + rz * strafe) * step));
-    if (canPass(nx, nz)) {
-        pilot.x = nx;
-        pilot.z = nz;
-    } else if (canPass(nx, pilot.z)) {
-        pilot.x = nx;
-    } else if (canPass(pilot.x, nz)) {
-        pilot.z = nz;
+    if (len) {
+        const step = playerRow().move * dt / len;
+        const fx = Math.sin(lookYaw);
+        const fz = Math.cos(lookYaw);
+        const rx = Math.cos(lookYaw);
+        const rz = -Math.sin(lookYaw);
+        const nx = Math.max(mapBox.min.x, Math.min(mapBox.max.x, pilot.x + (fx * forward + rx * strafe) * step));
+        const nz = Math.max(mapBox.min.z, Math.min(mapBox.max.z, pilot.z + (fz * forward + rz * strafe) * step));
+        if (canPass(nx, nz)) {
+            pilot.x = nx;
+            pilot.z = nz;
+        } else if (canPass(nx, pilot.z)) {
+            pilot.x = nx;
+        } else if (canPass(pilot.x, nz)) {
+            pilot.z = nz;
+        }
+        pilot.group.position.x = pilot.x;
+        pilot.group.position.z = pilot.z;
     }
+    let hop = pilot.hop || 0;
+    let vy = pilot.vy || 0;
+    const grounded = hop <= 0.02 && vy <= 0;
+    if (grounded && wantJump) {
+        vy = 6.4;
+        wantJump = false;
+    }
+    if (hop > 0 || vy > 0) {
+        vy -= 22 * dt;
+        hop = Math.max(0, hop + vy * dt);
+        if (hop === 0) vy = 0;
+    } else vy = 0;
+    pilot.hop = hop;
+    pilot.vy = vy;
     pilot.yaw = lookYaw;
-    pilot.group.position.x = pilot.x;
-    pilot.group.position.z = pilot.z;
+    pilot.group.position.y = feetAt(pilot.x, pilot.z) + hop;
     pilot.group.rotation.y = lookYaw;
 }
 
 window.addEventListener("keydown", (event) => {
     const key = event.key.toLowerCase();
     keys[key] = true;
+    if (pilot && event.code === "Space") event.preventDefault();
     if (event.repeat) return;
+    if (pilot && event.code === "Space") wantJump = true;
     if (key === "escape" && !event.repeat) {
         const packPanel = document.getElementById("pack-panel");
         if (packPanel && !packPanel.hidden) {
@@ -5091,7 +5707,7 @@ function crowded(unit, x, z) {
     const need = BODY * 2;
     for (let i = 0; i < units.length; i++) {
         const other = units[i];
-        if (other === unit || other.kind !== "soldier" || other.side !== unit.side || other.hp <= 0) continue;
+        if (other === unit || !militaryKind(other.kind) || other.side !== unit.side || other.hp <= 0) continue;
         if (Math.hypot(other.x - x, other.z - z) < need) return true;
     }
     return false;
@@ -5101,7 +5717,7 @@ function shareRing(foe) {
     const mates = [];
     for (let i = 0; i < units.length; i++) {
         const unit = units[i];
-        if (unit.kind !== "soldier" || unit.hp <= 0 || unit.targetId !== foe.id) continue;
+        if (!militaryKind(unit.kind) || unit.hp <= 0 || unit.targetId !== foe.id) continue;
         if (unit.state === "move" || unit === pilot) continue;
         mates.push(unit);
     }
@@ -5155,7 +5771,7 @@ function stepFight(dt) {
     const rings = [];
     for (let i = 0; i < units.length; i++) {
         const unit = units[i];
-        if (unit.side === "self" || unit.kind !== "soldier" || unit === pilot || unit.state === "move" || unit.hp <= 0) continue;
+        if (unit.side === "self" || !militaryKind(unit.kind) || unit === pilot || unit.state === "move" || unit.hp <= 0) continue;
         let foe = living(unit.targetId);
         if (foe && !hostile(unit, foe)) foe = null;
         if (foe && unit.stance === "guard" && tooFar(unit, foe)) foe = null;
@@ -5182,7 +5798,7 @@ function stepFight(dt) {
     }
     for (let i = 0; i < units.length; i++) {
         const unit = units[i];
-        if (!unit.targetId || unit.kind !== "soldier" || unit.hp <= 0 || unit.state === "move" || unit === pilot) continue;
+        if (!unit.targetId || !militaryKind(unit.kind) || unit.hp <= 0 || unit.state === "move" || unit === pilot) continue;
         const foe = living(unit.targetId);
         if (!foe) continue;
         unit.yaw = Math.atan2(foe.x - unit.x, foe.z - unit.z);
@@ -5220,10 +5836,10 @@ function slide(dt) {
 }
 
 const miniMap = document.getElementById("minimap");
-const miniX0 = -3800;
-const miniX1 = 3700;
-const miniZ0 = -3400;
-const miniZ1 = 3600;
+let miniX0 = -3800;
+let miniX1 = 3700;
+let miniZ0 = -3400;
+let miniZ1 = 3600;
 let miniBake = null;
 
 function miniColor(h, wet) {
@@ -5236,9 +5852,56 @@ function miniColor(h, wet) {
     return [70, 124, 58];
 }
 
+function bakeBoardMini() {
+    const n = board.n;
+    const cols = 256;
+    const rows = 256;
+    miniX0 = board.minX;
+    miniX1 = board.minX + board.span;
+    miniZ0 = board.minZ;
+    miniZ1 = board.minZ + board.span;
+    const scratch = document.createElement("canvas");
+    scratch.width = cols;
+    scratch.height = rows;
+    const image = scratch.getContext("2d").createImageData(cols, rows);
+    const data = image.data;
+    const sea = board.sea;
+    for (let row = 0; row < rows; row++) {
+        const gz = Math.min(n - 1, Math.round(row / (rows - 1) * (n - 1)));
+        for (let col = 0; col < cols; col++) {
+            const gx = Math.min(n - 1, Math.round(col / (cols - 1) * (n - 1)));
+            const src = gz * n + gx;
+            const h = board.heights[src];
+            const i = (row * cols + col) * 4;
+            if (h < sea) {
+                data[i] = 42;
+                data[i + 1] = 109;
+                data[i + 2] = 134;
+            } else if (board.colors) {
+                data[i] = Math.round(board.colors[src * 3] * 255);
+                data[i + 1] = Math.round(board.colors[src * 3 + 1] * 255);
+                data[i + 2] = Math.round(board.colors[src * 3 + 2] * 255);
+            } else {
+                const lift = Math.max(0, Math.min(1, (h - sea) / 180));
+                data[i] = Math.round(86 + lift * 90);
+                data[i + 1] = Math.round(122 - lift * 20);
+                data[i + 2] = Math.round(64 - lift * 20);
+            }
+            data[i + 3] = 255;
+        }
+    }
+    scratch.getContext("2d").putImageData(image, 0, 0);
+    miniBake = scratch;
+}
+
 function bakeMini() {
+    if (!miniMap || miniBake) return;
+    if (BOARD_URL) {
+        if (board) bakeBoardMini();
+        return;
+    }
     const world = window.World;
-    if (!miniMap || !world || miniBake) return;
+    if (!world) return;
     const cols = 300;
     const rows = 280;
     const scratch = document.createElement("canvas");
@@ -5335,7 +5998,7 @@ function paintMini() {
     const bodyX = pilot ? pilot.x : look.x;
     const bodyZ = pilot ? pilot.z : look.z;
     const face = pilot ? lookYaw + Math.PI : yaw;
-    const span = 5000;
+    const span = board ? (pilot ? board.span * 0.42 : board.span * 1.08) : 5000;
     const scale = w / span;
     ctx.clearRect(0, 0, w, h);
     ctx.save();
@@ -5421,19 +6084,26 @@ function pumpSim() {
 function noteSimTime(now) {
     const gap = Math.max(0, (now - then) / 1000);
     then = now;
-    simBacklog = Math.min(90, simBacklog + gap);
+    simBacklog = Math.min(0.5, simBacklog + Math.min(gap, 0.25));
 }
 
 function frame(now) {
-    noteSimTime(now);
-    if (!document.hidden) pumpSim();
-    stepBoardView();
-    placeCamera();
-    stepRooms();
-    refreshWoods();
-    paintMini();
-    renderer.render(scene, camera);
     requestAnimationFrame(frame);
+    try {
+        noteSimTime(now);
+        if (!document.hidden) pumpSim();
+        stepBoardView();
+        placeCamera();
+        stepRooms();
+        refreshWoods();
+        paintMini();
+        renderer.render(scene, camera);
+    } catch (err) {
+        if (!frame.noted) {
+            frame.noted = true;
+            console.error(err);
+        }
+    }
 }
 requestAnimationFrame(frame);
 setInterval(() => {
