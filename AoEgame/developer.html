@@ -1,0 +1,1425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Developer page</title>
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: #d8d8d8;
+            color: #111;
+            font: 22px/1.35 Georgia, "Times New Roman", serif;
+        }
+        .page {
+            padding: 22px 28px 36px;
+        }
+        nav {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            width: fit-content;
+            margin: 0 0 16px;
+            padding: 8px 12px;
+            background: #fff;
+            border: 3px solid #111;
+        }
+        nav h1 { margin: 0; font-size: 22px; font-weight: 500; }
+        .dev-menu { position: relative; }
+        #dev-menu-toggle {
+            min-width: 12rem;
+            padding: 4px 28px 4px 10px;
+            border: 2px solid #111;
+            background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23111' stroke-width='1.6'/%3E%3C/svg%3E") no-repeat right 10px center;
+            color: #111;
+            font: inherit;
+            text-align: left;
+            cursor: pointer;
+        }
+        #dev-menu-list {
+            position: absolute;
+            z-index: 5;
+            top: calc(100% + 8px);
+            left: 0;
+            min-width: 100%;
+            margin: 0;
+            padding: 4px 0;
+            background: #fff;
+            border: 3px solid #111;
+            box-shadow: 4px 4px 0 #111;
+        }
+        #dev-menu-list[hidden] { display: none; }
+        #dev-menu-list button, #dev-menu-list span {
+            display: block;
+            width: 100%;
+            padding: 6px 14px;
+            border: none;
+            background: none;
+            color: #111;
+            text-align: left;
+            font: inherit;
+        }
+        #dev-menu-list button { cursor: pointer; }
+        #dev-menu-list button:hover { background: #eee; }
+        #dev-menu-list button.on { text-decoration: underline; }
+        #dev-menu-list span { color: #888; }
+        #look {
+            border: 3px solid #111;
+            padding: 18px 22px 22px;
+            background: #fff;
+            color: #111;
+        }
+        #look h2 { margin: 0 0 12px; font: 28px Georgia, "Times New Roman", serif; font-weight: 500; }
+        #look img, #look canvas {
+            display: block;
+            width: 640px;
+            height: 480px;
+            background: #c8d0c0;
+            object-fit: contain;
+        }
+        #look img[hidden], #look canvas[hidden] { display: none; }
+        #look p { min-height: 1.2em; margin: 10px 0; }
+        #look button { font: 18px Georgia, "Times New Roman", serif; }
+        #look-zoom { display: flex; gap: 8px; margin: 10px 0 0; }
+        #look-zoom[hidden] { display: none; }
+        .panel { flex: 1; min-width: 0; overflow-x: auto; }
+        .panel h2 { margin: 0 0 14px; text-align: center; font-size: 26px; font-weight: 500; }
+        table { width: 100%; border-collapse: collapse; background: #fff; font-size: 16px; }
+        th, td { border: 2px solid #111; padding: 8px 10px; text-align: center; vertical-align: middle; }
+        th { font-weight: 500; }
+        label { display: inline-flex; align-items: center; gap: 4px; margin: 0 6px; }
+        input {
+            width: 4.2rem;
+            padding: 2px 4px;
+            border: 1px solid #111;
+            font: inherit;
+            text-align: right;
+        }
+        input[type="checkbox"] { width: 1.15rem; height: 1.15rem; }
+        input[type="text"] { width: 7.5rem; text-align: left; }
+        button.tiny, .bar button {
+            font: 14px/1.2 system-ui, sans-serif;
+            margin: 0 4px;
+            cursor: pointer;
+        }
+        .bar { margin: 8px 0 0; }
+        .hint { max-width: 52rem; margin: 14px auto 0; font: 15px/1.4 system-ui, sans-serif; }
+        .note { min-height: 1.2em; }
+        .faction { background: #fff; border: 3px solid #111; padding: 16px 18px 18px; margin: 0 0 18px; }
+        .faction h3 { display: flex; align-items: center; gap: 12px; margin: 0 0 8px; font-size: 22px; font-weight: 500; }
+        .faction h3 input { width: 14rem; }
+        .faction h4 { margin: 14px 0 8px; font-size: 18px; font-weight: 500; }
+        .faction select { font: 16px/1.2 system-ui, sans-serif; }
+        td.graphic input[type="checkbox"] { margin-left: 8px; }
+        th .col-kind { display: block; width: 8.6rem; margin-top: 4px; font: 13px/1.2 system-ui, sans-serif; }
+        .col-options { margin-top: 4px; }
+        .col-option { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
+        .col-option input { width: 6.2rem; font: 13px/1.2 system-ui, sans-serif; }
+        td.cost, td.made, td.purpose { text-align: left; }
+        td.purpose label { display: flex; justify-content: flex-start; margin: 2px 0; }
+        .cost-line, .made-line { display: flex; align-items: center; justify-content: center; gap: 4px; margin: 3px 0; }
+        td.cost select, td.made select, td.figure select { font: 14px/1.2 system-ui, sans-serif; max-width: 220px; }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <nav>
+            <h1>Developer page</h1>
+            <div class="dev-menu">
+                <button id="dev-menu-toggle" type="button" aria-expanded="false" aria-controls="dev-menu-list">Units</button>
+                <div id="dev-menu-list" hidden>
+                    <button id="open-units" type="button">Units</button>
+                    <button id="open-player" type="button">Player</button>
+                    <button id="open-buildings" type="button">Buildings</button>
+                    <button id="open-creatures" type="button">Creatures</button>
+                    <button id="open-weapons" type="button">Weapons</button>
+                    <button id="open-campaign" type="button">Campaign</button>
+                    <span>Map</span>
+                    <span>Play test</span>
+                    <span>build editor</span>
+                    <span>town editor</span>
+                    <span>terrain editor</span>
+                </div>
+            </div>
+        </nav>
+        <section id="units" class="panel" hidden>
+            <h2>Units</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Unit</th>
+                        <th>In Game use</th>
+                        <th>Graphic model used</th>
+                        <th>Stats</th>
+                        <th>Animations</th>
+                        <th>Cost</th>
+                        <th>Base size</th>
+                        <th>In use</th>
+                        <th>Look</th>
+                    </tr>
+                </thead>
+                <tbody id="unit-rows"></tbody>
+            </table>
+            <p class="bar"></p>
+            <p class="hint note" id="unit-note"></p>
+            <p class="hint">These are the soldier and the worker already in the match. Health, attack, move, and cost are kept in this browser. Reload the match after a change. Health and cost apply to the next unit trained. Move and attack apply to units already on the map. Attack is the damage a soldier deals. Defence is taken off that hit: attack 8 against defence 2 deals 6. It applies to units already on the map, and a worker’s defence counts when they are hit. Workers do not fight yet, so a worker’s attack is kept for later. Base size is the footprint on the map, width by depth in metres. It starts as the size of that person. Change it and reload the match, and the person changes with it. Tick In use yourself once you have seen that one placed and are happy with it. In Game use is military, economical, or NPC. Food is the cost the match charges. + resource adds another, such as gold, and the match charges that too. A column named Created at lists the buildings, and a unit can tick more than one, such as Barracks and Manor. A building trains the units listed on its row. The manor starts with the worker, and the barracks with the soldier. The match can field the soldier and the worker. Graphic model lists the animated characters and animals. Pick one for a unit, such as Blacksmith, and See shows that model. The match still uses the soldier and the worker until you ask for another unit to be placed. On a column you add, Dropdown still picks one. Multi choice uses that same list, and a row can tick as many as it needs. A row or column you add is kept here too. It does not change the match until it is linked up.</p>
+        </section>
+        <section id="buildings" class="panel" hidden>
+            <h2>Buildings</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Building</th>
+                        <th>Graphic model (map view)</th>
+                        <th>Graphic model</th>
+                        <th>Unit production</th>
+                        <th>Time to build</th>
+                        <th>Cost</th>
+                        <th>Footprint size</th>
+                        <th>In use</th>
+                        <th>Look</th>
+                    </tr>
+                </thead>
+                <tbody id="building-rows"></tbody>
+            </table>
+            <p class="bar"></p>
+            <p class="hint note" id="building-note"></p>
+            <p class="hint">Cost, build time, and footprint are kept in this browser. Reload the match after a change. They apply the next time that building is placed. The manor is already standing, so a footprint change shows after a reload. The blacksmith is the preview on the map and is not on the build bar yet. Time is in real seconds. Footprint is the width and depth of that building on the map, in metres. It starts as the size of the picture already in the match. Change it and reload, and the building changes with it. Tick In use yourself once you have seen that building placed and are happy with it. Graphic model (map view) lists House 1 to House 20 from the free pack, and keeps the picture already on that row. Pick a house, then reload the match. The map shows that house, sized to the footprint on this row. The other graphic stays the first-person picture. The ticks beside the graphics are kept here and do not change the match. Unit production can list more than one military or economical unit. + unit adds another. A building trains the units listed on its row. Wood is the cost the match charges. + resource adds another, such as gold, and the match charges that too. Purpose can be more than one of military, defence, store resources, and other. On a column you add, Dropdown still picks one. Multi choice uses that same list, and a row can tick as many as it needs. A row or column you add is kept here too. It does not change the match until it is linked up.</p>
+        </section>
+        <section id="creatures" class="panel" hidden>
+            <h2>Creatures</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Creature</th>
+                        <th>In Game use</th>
+                        <th>Graphic model used</th>
+                        <th>Stats</th>
+                        <th>Animations</th>
+                        <th>Cost</th>
+                        <th>Base size</th>
+                        <th>In use</th>
+                        <th>Look</th>
+                    </tr>
+                </thead>
+                <tbody id="creature-rows"></tbody>
+            </table>
+            <p class="bar"></p>
+            <p class="hint note" id="creature-note"></p>
+            <p class="hint">These are the animals that already have a walk or a trot, plus the zombie. The blob is gone. Brute was the old faction name. The zombie is the woods figure, and See shows it. Horse is the one already in the match. Horse 2 walks and runs. Cart horse and the wooden cart are from last night, and Horse with cart is those two in one picture. Pick the horse on the Horse+Cart row. None of that is in the match yet. The horse in the match uses the Horse row. Defence on that row is taken off a hit, the same way as a unit. Change its base size and reload the match, and that horse changes with it. Base size is width by depth in metres. The other animals are not on the map, so their size is kept until one is placed. Tick In use yourself once you have seen that one placed and are happy with it. Food is the cost the match charges for the horse. + resource adds another, such as gold, and the match charges that too. Type is a dropdown. Add the choices in that column’s heading. Dropdown picks one of them. Multi choice uses the same list and a row can tick as many as it needs. A column named Created at ticks buildings, and a row can tick more than one. None of that changes the match yet. A row or column you add is kept here too. It does not change the match until it is linked up.</p>
+        </section>
+        <section id="weapons" class="panel" hidden>
+            <h2>Weapons</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Weapon</th>
+                        <th>Damage</th>
+                        <th>Cost</th>
+                        <th>Graphic model</th>
+                        <th>Look</th>
+                    </tr>
+                </thead>
+                <tbody id="weapon-rows"></tbody>
+            </table>
+            <p class="bar"></p>
+            <p class="hint note" id="weapon-note"></p>
+            <p class="hint">These are the 25 weapons extracted into the AoE folder, plus the five Meshy weapons in the tools folder: crossbow, spear, mace, musket, and halberd. Damage and cost are made up and are kept in this browser. The graphic is the file. The match does not use any of this yet. Cost can take another resource, such as gold, the same way as a unit. A row or column you add is kept here too.</p>
+        </section>
+        <section id="player" class="panel" hidden>
+            <h2>Player</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Player</th>
+                        <th>In Game use</th>
+                        <th>Graphic model used</th>
+                        <th>Stats</th>
+                        <th>Animations</th>
+                        <th>Cost</th>
+                        <th>Base size</th>
+                        <th>In use</th>
+                    </tr>
+                </thead>
+                <tbody id="player-rows"></tbody>
+            </table>
+            <p class="bar"></p>
+            <p class="hint note" id="player-note"></p>
+            <p class="hint">This is the person you walk as in first person. Health, sword damage, bow damage, and move speed are kept in this browser. Reload the match after a change. Health is the full bar, and what you return with after you fall. Sword damage is a swing. Bow damage is a shot. Defence is taken off a hit before it reaches you, and your shot is reduced by the target’s defence. Move is how fast you walk. Base size is the width and depth of the person you walk as, in metres. Change it and reload the match. In use is kept here and does not change the match yet. A column you add is kept here too, until you say what it is for.</p>
+        </section>
+        <section id="campaign" class="panel" hidden>
+            <h2>Campaign</h2>
+            <div id="faction-list"></div>
+            <p class="bar"></p>
+            <p class="hint note" id="campaign-note"></p>
+            <p class="hint">Each faction keeps its own starting resources, units, and buildings. Team A and Team B are the two sides already on the map. Rename either one here. A faction you add is kept in this browser. A new match starts with that side’s resources, units, and any extra buildings. The two manors are already on the map. Rename a side here and the match uses that name. A faction you add is kept here until it has a side on the map.</p>
+        </section>
+    </div>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script src="dev-sheet.js?v=sheet24"></script>
+    <script type="module" src="preview.js?v=look8"></script>
+    <dialog id="look">
+        <h2 id="look-title">Graphic</h2>
+        <img id="look-img" alt="" hidden>
+        <canvas id="look-canvas" width="640" height="480" hidden></canvas>
+        <p id="look-zoom" hidden>
+            <button id="look-out" type="button">Zoom out</button>
+            <button id="look-in" type="button">Zoom in</button>
+        </p>
+        <p id="look-note"></p>
+        <form method="dialog"><button type="submit">Close</button></form>
+    </dialog>
+    <script>
+        function textField(id, key, value, label) {
+            const input = document.createElement("input");
+            input.type = "text";
+            input.value = value || "";
+            input.dataset.id = id;
+            input.dataset.key = key;
+            input.setAttribute("aria-label", label);
+            return input;
+        }
+
+        function numField(id, key, value, label, step) {
+            const input = document.createElement("input");
+            input.type = "number";
+            input.min = "0";
+            input.step = step || "1";
+            input.value = String(value);
+            input.dataset.id = id;
+            input.dataset.key = key;
+            input.setAttribute("aria-label", label);
+            return input;
+        }
+
+        function statLabel(text, input) {
+            const wrap = document.createElement("label");
+            if (text) wrap.append(text);
+            wrap.append(input);
+            return wrap;
+        }
+
+        function sizeCell(id, row) {
+            const td = document.createElement("td");
+            td.append(
+                statLabel("W", numField(id, "width", row.w, row.name + " width", "0.1")),
+                statLabel("D", numField(id, "depth", row.d, row.name + " depth", "0.1"))
+            );
+            return td;
+        }
+
+        function mapChoice(id, value, label, checked) {
+            const td = document.createElement("td");
+            td.className = "graphic";
+            const select = document.createElement("select");
+            select.dataset.id = id;
+            select.dataset.key = "map";
+            select.setAttribute("aria-label", label);
+            const houses = window.AoeSheet.mapHouses();
+            const listed = houses.some((item) => item.model === value);
+            if (!listed) {
+                const current = document.createElement("option");
+                current.value = value || "";
+                current.textContent = value ? "Keep the one already there" : "None";
+                select.append(current);
+            }
+            houses.forEach((item) => {
+                const option = document.createElement("option");
+                option.value = item.model;
+                option.textContent = item.name;
+                select.append(option);
+            });
+            select.value = value || "";
+            td.append(select);
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.checked = !!checked;
+            input.dataset.id = id;
+            input.dataset.key = "mapInUse";
+            input.setAttribute("aria-label", label + " in use");
+            td.append(input);
+            return td;
+        }
+
+        function graphicCell(id, key, value, label, useKey, checked, editable) {
+            const td = document.createElement("td");
+            td.className = "graphic";
+            if (editable) td.append(textField(id, key, value, label));
+            else td.append(document.createTextNode(value || ""));
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.checked = !!checked;
+            input.dataset.id = id;
+            input.dataset.key = useKey;
+            input.setAttribute("aria-label", label + " in use");
+            td.append(input);
+            return td;
+        }
+
+        function useCell(id, row) {
+            const td = document.createElement("td");
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.checked = !!row.inUse;
+            input.dataset.id = id;
+            input.dataset.key = "inUse";
+            input.setAttribute("aria-label", row.name + " in use");
+            td.append(input);
+            return td;
+        }
+
+        const GOODS = [
+            ["food", "Food"],
+            ["wood", "Wood"],
+            ["gold", "Gold"],
+            ["stone", "Stone"],
+            ["iron", "Iron"],
+            ["salt", "Salt"],
+            ["fabric", "Fabric"]
+        ];
+
+        function readActorInputs(selector, source) {
+            const patch = {};
+            function row(id) {
+                if (!patch[id]) {
+                    const prior = source()[id] || {};
+                    patch[id] = Object.assign({}, prior);
+                    patch[id].extra = Object.assign({}, prior.extra);
+                    patch[id].costs = {};
+                    patch[id].madeAt = [];
+                }
+                return patch[id];
+            }
+            document.querySelectorAll(selector).forEach((input) => {
+                const id = input.dataset.id;
+                if (!id) return;
+                const current = row(id);
+                if (input.dataset.costAmount || input.dataset.choice) return;
+                if (input.dataset.extra) current.extra[input.dataset.extra] = input.value;
+                else if (input.type === "checkbox") current.inUse = input.checked;
+                else if (input.dataset.key === "width") current.w = Number(input.value);
+                else if (input.dataset.key === "depth") current.d = Number(input.value);
+                else if (input.dataset.key) current[input.dataset.key] = input.value;
+            });
+            const scope = document.querySelector(selector.split(" ")[0]);
+            scope.querySelectorAll("[data-cost-line]").forEach((line) => {
+                const kind = line.querySelector("select").value;
+                if (!kind) return;
+                row(line.dataset.id).costs[kind] = line.querySelector("[data-cost-amount]").value;
+            });
+            scope.querySelectorAll("select[data-extra]").forEach((select) => {
+                row(select.dataset.id).extra[select.dataset.extra] = select.value;
+            });
+            scope.querySelectorAll("select[data-key]").forEach((select) => {
+                if (!select.dataset.key) return;
+                const current = row(select.dataset.id);
+                current[select.dataset.key] = select.value;
+                if (select.dataset.figure && select.dataset.pickedAnims != null) current.anims = select.dataset.pickedAnims;
+            });
+            applyChoices(scope, row);
+            return patch;
+        }
+
+        function applyChoices(scope, row) {
+            const chosen = {};
+            scope.querySelectorAll("input[data-choice]").forEach((input) => {
+                const id = input.dataset.id;
+                const col = input.dataset.extra;
+                if (!id || !col) return;
+                const key = id + "\0" + col;
+                if (!chosen[key]) {
+                    chosen[key] = [];
+                    row(id).extra[col] = "";
+                }
+                if (input.checked) chosen[key].push(input.dataset.choice);
+            });
+            Object.keys(chosen).forEach((key) => {
+                const split = key.split("\0");
+                row(split[0]).extra[split[1]] = chosen[key].join(", ");
+            });
+        }
+
+        function tickedChoices(saved) {
+            return new Set(String(saved || "").split(",").map((part) => part.trim()).filter(Boolean));
+        }
+
+        function tickCell(id, colId, rowName, choices, picked) {
+            const td = document.createElement("td");
+            td.className = "purpose";
+            choices.forEach((choice) => {
+                const box = document.createElement("input");
+                box.type = "checkbox";
+                box.checked = picked.has(choice.id);
+                box.dataset.id = id;
+                box.dataset.extra = colId;
+                box.dataset.choice = choice.id;
+                box.setAttribute("aria-label", (rowName || "Row") + " " + choice.name);
+                const label = document.createElement("label");
+                label.append(box, document.createTextNode(" " + choice.name));
+                td.append(label);
+            });
+            return td;
+        }
+
+        const ROW_BODY = { units: "unit-rows", buildings: "building-rows", creatures: "creature-rows", weapons: "weapon-rows" };
+
+        function resourceSelect(current, primary, used) {
+            const select = document.createElement("select");
+            GOODS.forEach((pair) => {
+                if (pair[0] === primary || (used.has(pair[0]) && pair[0] !== current)) return;
+                const option = document.createElement("option");
+                option.value = pair[0];
+                option.textContent = pair[1];
+                select.append(option);
+            });
+            select.value = current;
+            select.setAttribute("aria-label", "Cost resource");
+            return select;
+        }
+
+        function readRows(source) {
+            if (source === "buildings") return readBuildingPatch();
+            return readActorInputs("#" + ROW_BODY[source] + " input", window.AoeSheet[source]);
+        }
+
+        function costCell(id, row, primaryKey, primaryValue, primaryLabel, source, write, redraw) {
+            const td = document.createElement("td");
+            td.className = "cost";
+            const primary = primaryKey === "wood" ? "wood" : "food";
+            if (primaryValue != null) td.append(statLabel(primaryLabel, numField(id, primaryKey, primaryValue, row.name + " " + primaryLabel)));
+            const used = new Set(Object.keys(row.costs || {}));
+            Object.keys(row.costs || {}).forEach((key) => {
+                const line = document.createElement("div");
+                line.className = "cost-line";
+                line.dataset.costLine = key;
+                line.dataset.id = id;
+                const amount = numField(id, "", row.costs[key], row.name + " extra cost");
+                amount.dataset.costAmount = key;
+                const remove = document.createElement("button");
+                remove.type = "button";
+                remove.className = "tiny";
+                remove.textContent = "×";
+                remove.setAttribute("aria-label", "Remove resource");
+                remove.addEventListener("click", () => {
+                    const kind = line.querySelector("select").value;
+                    const patch = readRows(source);
+                    delete patch[id].costs[kind];
+                    write(patch);
+                    redraw();
+                });
+                line.append(resourceSelect(key, primary, used), amount, remove);
+                td.append(line);
+            });
+            const add = document.createElement("button");
+            add.type = "button";
+            add.className = "tiny";
+            add.textContent = "+ resource";
+            add.addEventListener("click", () => {
+                const patch = readRows(source);
+                const next = GOODS.map((pair) => pair[0]).find((key) => key !== primary && patch[id].costs[key] == null);
+                if (!next) return;
+                patch[id].costs[next] = 0;
+                write(patch);
+                redraw();
+            });
+            td.append(add);
+            return td;
+        }
+
+        function paintColumns(table, redraw) {
+            const head = document.querySelector("#" + table + " thead tr");
+            head.querySelectorAll("[data-col]").forEach((cell) => cell.remove());
+            const cols = window.AoeSheet.columns(table);
+            cols.forEach((col) => {
+                const th = document.createElement("th");
+                th.dataset.col = col.id;
+                const input = document.createElement("input");
+                input.type = "text";
+                input.value = col.name;
+                input.setAttribute("aria-label", "Column name");
+                input.addEventListener("change", () => {
+                    window.AoeSheet.renameColumn(table, col.id, input.value);
+                    redraw();
+                });
+                const remove = document.createElement("button");
+                remove.type = "button";
+                remove.className = "tiny";
+                remove.textContent = "×";
+                remove.setAttribute("aria-label", "Remove column " + col.name);
+                remove.addEventListener("click", () => {
+                    window.AoeSheet.removeColumn(table, col.id);
+                    redraw();
+                });
+                th.append(input, remove);
+                const special = /^(purpose|created at)$/i.test(col.name.trim());
+                if (!special) {
+                    const kind = document.createElement("select");
+                    kind.className = "col-kind";
+                    kind.setAttribute("aria-label", col.name + " column kind");
+                    [["text", "Text"], ["dropdown", "Dropdown"], ["multi", "Multi choice"]].forEach((pair) => {
+                        const option = document.createElement("option");
+                        option.value = pair[0];
+                        option.textContent = pair[1];
+                        kind.append(option);
+                    });
+                    kind.value = col.kind === "dropdown" || col.kind === "multi" ? col.kind : "text";
+                    kind.addEventListener("change", () => {
+                        window.AoeSheet.setColumn(table, col.id, { kind: kind.value });
+                        redraw();
+                    });
+                    th.append(kind);
+                }
+                if (!special && (col.kind === "dropdown" || col.kind === "multi")) {
+                    const options = document.createElement("div");
+                    options.className = "col-options";
+                    (col.options || []).forEach((label, index) => {
+                        const line = document.createElement("div");
+                        line.className = "col-option";
+                        const field = document.createElement("input");
+                        field.type = "text";
+                        field.value = label;
+                        field.setAttribute("aria-label", col.name + " choice " + (index + 1));
+                        field.addEventListener("change", () => {
+                            const next = (col.options || []).slice();
+                            next[index] = field.value;
+                            window.AoeSheet.setColumn(table, col.id, { options: next });
+                            redraw();
+                        });
+                        const drop = document.createElement("button");
+                        drop.type = "button";
+                        drop.className = "tiny";
+                        drop.textContent = "×";
+                        drop.setAttribute("aria-label", "Remove choice " + label);
+                        drop.addEventListener("click", () => {
+                            const next = (col.options || []).filter((item, itemIndex) => itemIndex !== index);
+                            window.AoeSheet.setColumn(table, col.id, { options: next });
+                            redraw();
+                        });
+                        line.append(field, drop);
+                        options.append(line);
+                    });
+                    const add = document.createElement("button");
+                    add.type = "button";
+                    add.className = "tiny";
+                    add.textContent = "+ choice";
+                    add.addEventListener("click", () => {
+                        const next = (col.options || []).slice();
+                        let n = next.length + 1;
+                        let label = "Choice " + n;
+                        const have = next.map((item) => item.toLowerCase());
+                        while (have.indexOf(label.toLowerCase()) >= 0) {
+                            n += 1;
+                            label = "Choice " + n;
+                        }
+                        next.push(label);
+                        window.AoeSheet.setColumn(table, col.id, { options: next });
+                        redraw();
+                        const fields = document.querySelectorAll("#" + table + " [data-col='" + col.id + "'] .col-option input");
+                        const last = fields[fields.length - 1];
+                        if (last) {
+                            last.focus();
+                            last.select();
+                        }
+                    });
+                    options.append(add);
+                    th.append(options);
+                }
+                head.append(th);
+            });
+            return cols;
+        }
+
+        function extraCells(id, row, cols) {
+            const buildings = window.AoeSheet.buildings();
+            return cols.map((col) => {
+                const td = document.createElement("td");
+                const saved = (row.extra && row.extra[col.id]) || "";
+                if (col.name.trim().toLowerCase() === "purpose") {
+                    td.className = "purpose";
+                    const picked = new Set(String(saved).split(",").map((part) => part.trim()));
+                    ["military", "defence", "store resources", "other"].forEach((purpose) => {
+                        const box = document.createElement("input");
+                        box.type = "checkbox";
+                        box.checked = picked.has(purpose);
+                        box.dataset.id = id;
+                        box.dataset.extra = col.id;
+                        box.dataset.choice = purpose;
+                        box.setAttribute("aria-label", (row.name || "Row") + " " + purpose);
+                        const label = document.createElement("label");
+                        label.append(box, purpose);
+                        td.append(label);
+                    });
+                    return td;
+                }
+                if (col.name.trim().toLowerCase() === "created at") {
+                    const picked = tickedChoices(saved);
+                    if (!picked.size && id === "soldier") picked.add("barracks");
+                    if (!picked.size && id === "worker") picked.add("manor");
+                    const choices = Object.keys(buildings).map((bid) => ({ id: bid, name: buildings[bid].name || bid }));
+                    picked.forEach((bid) => {
+                        if (!buildings[bid]) choices.push({ id: bid, name: bid });
+                    });
+                    return tickCell(id, col.id, row.name, choices, picked);
+                }
+                if (col.kind === "multi") {
+                    const picked = tickedChoices(saved);
+                    const choices = (col.options || []).map((label) => ({ id: label, name: label }));
+                    picked.forEach((label) => {
+                        if (!choices.some((choice) => choice.id === label)) choices.push({ id: label, name: label });
+                    });
+                    return tickCell(id, col.id, row.name, choices, picked);
+                }
+                if (col.kind === "dropdown") {
+                    const select = document.createElement("select");
+                    select.dataset.id = id;
+                    select.dataset.extra = col.id;
+                    select.setAttribute("aria-label", (row.name || "Row") + " " + col.name);
+                    const none = document.createElement("option");
+                    none.value = "";
+                    none.textContent = "—";
+                    select.append(none);
+                    (col.options || []).forEach((label) => {
+                        const option = document.createElement("option");
+                        option.value = label;
+                        option.textContent = label;
+                        select.append(option);
+                    });
+                    if (saved && (col.options || []).indexOf(saved) < 0) {
+                        const option = document.createElement("option");
+                        option.value = saved;
+                        option.textContent = saved;
+                        select.append(option);
+                    }
+                    select.value = saved;
+                    td.append(select);
+                    return td;
+                }
+                const input = document.createElement("input");
+                input.type = "text";
+                input.value = saved;
+                input.dataset.id = id;
+                input.dataset.extra = col.id;
+                input.setAttribute("aria-label", (row.name || "Row") + " " + col.name);
+                td.append(input);
+                return td;
+            });
+        }
+
+        function removeButton(table, id, redraw) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "tiny";
+            button.textContent = "Remove";
+            button.addEventListener("click", () => {
+                window.AoeSheet.removeRow(table, id);
+                redraw();
+            });
+            return button;
+        }
+
+        function addBar(table, redraw) {
+            const bar = document.querySelector("#" + table + " .bar");
+            bar.replaceChildren();
+            const rowBtn = document.createElement("button");
+            rowBtn.type = "button";
+            rowBtn.textContent = "+ row";
+            rowBtn.addEventListener("click", () => {
+                window.AoeSheet.addRow(table);
+                redraw();
+            });
+            const colBtn = document.createElement("button");
+            colBtn.type = "button";
+            colBtn.textContent = "+ column";
+            colBtn.addEventListener("click", () => {
+                const id = window.AoeSheet.addColumn(table);
+                redraw();
+                const input = document.querySelector("#" + table + " [data-col='" + id + "'] input");
+                if (input) {
+                    input.focus();
+                    input.select();
+                }
+            });
+            bar.append(rowBtn, colBtn);
+        }
+
+        const ROLES = ["military", "economical", "NPC"];
+
+        function roleSelect(id, value, label) {
+            const select = document.createElement("select");
+            select.dataset.id = id;
+            select.dataset.key = "use";
+            select.setAttribute("aria-label", label);
+            ROLES.forEach((role) => {
+                const option = document.createElement("option");
+                option.value = role;
+                option.textContent = role;
+                select.append(option);
+            });
+            select.value = ROLES.indexOf(value) >= 0 ? value : "military";
+            return select;
+        }
+
+        function productionSelect(id, value, label, taken) {
+            const select = document.createElement("select");
+            select.dataset.id = id;
+            select.dataset.makes = "1";
+            select.setAttribute("aria-label", label);
+            const none = document.createElement("option");
+            none.value = "";
+            none.textContent = "None";
+            select.append(none);
+            const rows = window.AoeSheet.units();
+            const used = taken || [];
+            Object.keys(rows).forEach((unitId) => {
+                const unit = rows[unitId];
+                if (unit.use !== "military" && unit.use !== "economical") return;
+                if (unitId !== value && used.indexOf(unitId) >= 0) return;
+                const option = document.createElement("option");
+                option.value = unitId;
+                option.textContent = unit.name;
+                select.append(option);
+            });
+            select.value = value && rows[value] && (rows[value].use === "military" || rows[value].use === "economical") ? value : "";
+            return select;
+        }
+
+        function productionCell(id, list, name, redraw) {
+            const td = document.createElement("td");
+            td.className = "made";
+            td.dataset.id = id;
+            const chosen = list || [];
+            chosen.forEach((unitId, index) => {
+                const line = document.createElement("div");
+                line.className = "made-line";
+                const select = productionSelect(id, unitId, name + " unit " + (index + 1), chosen);
+                select.addEventListener("change", () => {
+                    window.AoeSheet.writeBuildings(readBuildingPatch());
+                    redraw();
+                });
+                const remove = document.createElement("button");
+                remove.type = "button";
+                remove.className = "tiny";
+                remove.textContent = "×";
+                remove.setAttribute("aria-label", "Remove " + name + " unit " + (index + 1));
+                remove.addEventListener("click", () => {
+                    const patch = readBuildingPatch();
+                    patch[id].makesList = (patch[id].makesList || []).filter((item, itemIndex) => itemIndex !== index);
+                    window.AoeSheet.writeBuildings(patch);
+                    redraw();
+                });
+                line.append(select, remove);
+                td.append(line);
+            });
+            const add = document.createElement("button");
+            add.type = "button";
+            add.className = "tiny";
+            add.textContent = "+ unit";
+            add.addEventListener("click", () => {
+                const patch = readBuildingPatch();
+                const have = patch[id].makesList || [];
+                const rows = window.AoeSheet.units();
+                const next = Object.keys(rows).find((unitId) => {
+                    const unit = rows[unitId];
+                    return (unit.use === "military" || unit.use === "economical") && have.indexOf(unitId) < 0;
+                });
+                if (!next) return;
+                patch[id].makesList = have.concat(next);
+                window.AoeSheet.writeBuildings(patch);
+                redraw();
+            });
+            td.append(add);
+            return td;
+        }
+
+        function lookButton(name, model) {
+            const td = document.createElement("td");
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "tiny";
+            button.textContent = "See";
+            button.addEventListener("click", () => {
+                if (window.AoeLook) window.AoeLook.open(name, model, name);
+            });
+            td.append(button);
+            return td;
+        }
+
+        function textCell(id, key, value, label) {
+            const td = document.createElement("td");
+            td.append(textField(id, key, value, label));
+            return td;
+        }
+
+        function figureSelect(id, value, label) {
+            const td = document.createElement("td");
+            td.className = "figure";
+            const select = document.createElement("select");
+            select.dataset.id = id;
+            select.dataset.key = "model";
+            select.dataset.figure = "1";
+            select.setAttribute("aria-label", label);
+            const none = document.createElement("option");
+            none.value = "";
+            none.dataset.anims = "";
+            none.textContent = "—";
+            select.append(none);
+            const groups = {};
+            window.AoeSheet.figures().forEach((figure) => {
+                if (!groups[figure.group]) {
+                    groups[figure.group] = document.createElement("optgroup");
+                    groups[figure.group].label = figure.group;
+                    select.append(groups[figure.group]);
+                }
+                const option = document.createElement("option");
+                option.value = figure.model;
+                option.dataset.anims = figure.anims;
+                option.textContent = figure.name;
+                groups[figure.group].append(option);
+            });
+            const known = window.AoeSheet.figures().some((figure) => figure.model === value);
+            if (value && !known) {
+                const option = document.createElement("option");
+                option.value = value;
+                option.textContent = value;
+                select.append(option);
+            }
+            select.value = value || "";
+            td.append(select);
+            return td;
+        }
+
+        function drawUnits() {
+            const cols = paintColumns("units", drawUnits);
+            const body = document.getElementById("unit-rows");
+            const rows = window.AoeSheet.units();
+            body.replaceChildren();
+            Object.keys(rows).forEach((id) => {
+                const row = rows[id];
+                const tr = document.createElement("tr");
+                const role = document.createElement("td");
+                role.append(roleSelect(id, row.use, row.name + " in game use"));
+                if (row.added) {
+                    const name = textCell(id, "name", row.name, "New unit name");
+                    name.append(removeButton("units", id, drawUnits));
+                    tr.append(name, role, figureSelect(id, row.model, row.name + " graphic"));
+                } else {
+                    const name = document.createElement("td");
+                    name.textContent = row.name;
+                    tr.append(name, role, figureSelect(id, row.model, row.name + " graphic"));
+                }
+                const stats = document.createElement("td");
+                stats.append(
+                    statLabel("H", numField(id, "hp", row.hp, row.name + " health")),
+                    statLabel("A", numField(id, "attack", row.attack, row.name + " attack")),
+                    statLabel("Def", numField(id, "defence", row.defence, row.name + " defence")),
+                    statLabel("M", numField(id, "move", row.move, row.name + " move", "0.1"))
+                );
+                const anims = document.createElement("td");
+                if (row.added) anims.append(textField(id, "anims", row.anims, row.name + " animations"));
+                else anims.textContent = row.anims;
+                tr.append(
+                    stats,
+                    anims,
+                    costCell(id, row, "cost", row.cost, "Food", "units", window.AoeSheet.writeUnits, drawUnits),
+                    sizeCell(id, row),
+                    useCell(id, row),
+                    lookButton(row.name, row.model),
+                    ...extraCells(id, row, cols)
+                );
+                tr.querySelectorAll("input, select").forEach((input) => input.addEventListener("change", () => {
+                    if (input.dataset.figure) {
+                        const picked = input.selectedOptions[0];
+                        input.dataset.pickedAnims = picked && picked.dataset.anims != null ? picked.dataset.anims : "";
+                    }
+                    saveUnits();
+                    if (input.dataset.figure) drawUnits();
+                }));
+                body.append(tr);
+            });
+            addBar("units", drawUnits);
+        }
+
+        function saveUnits() {
+            window.AoeSheet.writeUnits(readActorInputs("#unit-rows input", window.AoeSheet.units));
+            document.getElementById("unit-note").textContent = "Saved. Reload the match to use it.";
+        }
+
+        function drawBuildings() {
+            const cols = paintColumns("buildings", drawBuildings);
+            const body = document.getElementById("building-rows");
+            const rows = window.AoeSheet.buildings();
+            body.replaceChildren();
+            Object.keys(rows).forEach((id) => {
+                const row = rows[id];
+                const tr = document.createElement("tr");
+                const mapCell = mapChoice(id, row.map, row.name + " map view", row.mapInUse);
+                const modelCell = graphicCell(id, "model", row.model, row.name + " graphic", "modelInUse", row.modelInUse, row.added);
+                const makes = productionCell(id, row.makesList || (row.makes ? [row.makes] : []), row.name, drawBuildings);
+                if (row.added) {
+                    const name = textCell(id, "name", row.name, "New building name");
+                    name.append(removeButton("buildings", id, drawBuildings));
+                    tr.append(name, mapCell, modelCell, makes);
+                } else {
+                    const name = document.createElement("td");
+                    name.textContent = row.name;
+                    tr.append(name, mapCell, modelCell, makes);
+                }
+                const time = document.createElement("td");
+                if (row.placed) time.append(statLabel("", numField(id, "time", row.time, row.name + " build time")), " sec");
+                else time.textContent = id === "manor" ? "Already there" : "Not built";
+                const cost = costCell(id, row, "wood", row.placed ? row.wood : null, "Wood", "buildings", window.AoeSheet.writeBuildings, drawBuildings);
+                if (!row.placed) cost.insertBefore(document.createTextNode("None"), cost.firstChild);
+                const foot = document.createElement("td");
+                foot.append(
+                    statLabel("W", numField(id, "width", row.hx * 2, row.name + " width", "0.5")),
+                    statLabel("D", numField(id, "depth", row.hz * 2, row.name + " depth", "0.5"))
+                );
+                const shown = /\.fbx$/i.test(row.map || "") ? row.map : (row.model || row.map);
+                tr.append(time, cost, foot, useCell(id, row), lookButton(row.name, shown), ...extraCells(id, row, cols));
+                tr.querySelectorAll("input, select").forEach((input) => {
+                    if (input.dataset.makes) return;
+                    input.addEventListener("change", () => {
+                        saveBuildings();
+                        if (input.dataset.key === "map") drawBuildings();
+                    });
+                });
+                body.append(tr);
+            });
+            addBar("buildings", drawBuildings);
+        }
+
+        function readBuildingPatch() {
+            const patch = {};
+            function row(id) {
+                if (!patch[id]) {
+                    const prior = window.AoeSheet.buildings()[id] || {};
+                    patch[id] = Object.assign({}, prior);
+                    patch[id].extra = Object.assign({}, prior.extra);
+                    patch[id].costs = {};
+                }
+                return patch[id];
+            }
+            document.querySelectorAll("#building-rows input, #building-rows select[data-key='map']").forEach((input) => {
+                const id = input.dataset.id;
+                if (!id) return;
+                const current = row(id);
+                if (input.dataset.costAmount || input.dataset.choice) return;
+                if (input.dataset.extra) current.extra[input.dataset.extra] = input.value;
+                else if (input.type === "checkbox") current[input.dataset.key] = input.checked;
+                else if (input.dataset.key === "width") current.hx = Number(input.value) / 2;
+                else if (input.dataset.key === "depth") current.hz = Number(input.value) / 2;
+                else if (input.dataset.key) current[input.dataset.key] = input.value;
+            });
+            const chosen = {};
+            document.querySelectorAll("#building-rows input[data-choice]").forEach((input) => {
+                const id = input.dataset.id;
+                const col = input.dataset.extra;
+                const key = id + "\0" + col;
+                if (!chosen[key]) {
+                    chosen[key] = [];
+                    row(id).extra[col] = "";
+                }
+                if (input.checked) chosen[key].push(input.dataset.choice);
+            });
+            Object.keys(chosen).forEach((key) => {
+                const split = key.split("\0");
+                patch[split[0]].extra[split[1]] = chosen[key].join(", ");
+            });
+            document.querySelectorAll("#building-rows [data-cost-line]").forEach((line) => {
+                const kind = line.querySelector("select").value;
+                if (!kind) return;
+                row(line.dataset.id).costs[kind] = line.querySelector("[data-cost-amount]").value;
+            });
+            document.querySelectorAll("#building-rows td.made").forEach((cell) => {
+                const id = cell.dataset.id;
+                const picked = [];
+                cell.querySelectorAll("select[data-makes]").forEach((select) => {
+                    if (select.value && picked.indexOf(select.value) < 0) picked.push(select.value);
+                });
+                row(id).makesList = picked;
+                row(id).makes = picked[0] || "";
+            });
+            return patch;
+        }
+
+        function saveBuildings() {
+            window.AoeSheet.writeBuildings(readBuildingPatch());
+            document.getElementById("building-note").textContent = "Saved. Reload the match to use it.";
+        }
+
+        function drawCreatures() {
+            const cols = paintColumns("creatures", drawCreatures);
+            const body = document.getElementById("creature-rows");
+            const rows = window.AoeSheet.creatures();
+            body.replaceChildren();
+            Object.keys(rows).forEach((id) => {
+                const row = rows[id];
+                const tr = document.createElement("tr");
+                if (row.added) {
+                    const name = textCell(id, "name", row.name, "New creature name");
+                    name.append(removeButton("creatures", id, drawCreatures));
+                    tr.append(name, textCell(id, "use", row.use, "New creature use"), textCell(id, "model", row.model, "New creature model"));
+                } else {
+                    [row.name, row.use, row.model].forEach((text) => {
+                        const td = document.createElement("td");
+                        td.textContent = text;
+                        tr.append(td);
+                    });
+                }
+                const stats = document.createElement("td");
+                stats.append(
+                    statLabel("H", numField(id, "hp", row.hp, row.name + " health")),
+                    statLabel("A", numField(id, "attack", row.attack, row.name + " attack")),
+                    statLabel("Def", numField(id, "defence", row.defence, row.name + " defence")),
+                    statLabel("M", numField(id, "move", row.move, row.name + " move", "0.1"))
+                );
+                const anims = document.createElement("td");
+                if (row.added) anims.append(textField(id, "anims", row.anims, row.name + " animations"));
+                else anims.textContent = row.anims;
+                tr.append(
+                    stats,
+                    anims,
+                    costCell(id, row, "cost", row.cost, "Food", "creatures", window.AoeSheet.writeCreatures, drawCreatures),
+                    sizeCell(id, row),
+                    useCell(id, row),
+                    lookButton(row.name, row.model),
+                    ...extraCells(id, row, cols)
+                );
+                tr.querySelectorAll("input, select").forEach((input) => input.addEventListener("change", saveCreatures));
+                body.append(tr);
+            });
+            addBar("creatures", drawCreatures);
+        }
+
+        function saveCreatures() {
+            window.AoeSheet.writeCreatures(readActorInputs("#creature-rows input", window.AoeSheet.creatures));
+            document.getElementById("creature-note").textContent = "Saved. The match does not use these numbers yet.";
+        }
+
+        function drawPlayer() {
+            const cols = paintColumns("player", drawPlayer);
+            const body = document.getElementById("player-rows");
+            const row = window.AoeSheet.player();
+            const id = "player";
+            body.replaceChildren();
+            const tr = document.createElement("tr");
+            [row.name, row.use, row.model].forEach((text) => {
+                const td = document.createElement("td");
+                td.textContent = text;
+                tr.append(td);
+            });
+            const stats = document.createElement("td");
+            stats.append(
+                statLabel("H", numField(id, "hp", row.hp, "Player health")),
+                statLabel("A", numField(id, "attack", row.attack, "Player sword damage")),
+                statLabel("Bow", numField(id, "shot", row.shot, "Player bow damage")),
+                statLabel("Def", numField(id, "defence", row.defence, "Player defence")),
+                statLabel("M", numField(id, "move", row.move, "Player move", "0.1"))
+            );
+            const anims = document.createElement("td");
+            anims.textContent = row.anims;
+            const cost = document.createElement("td");
+            cost.textContent = "None";
+            tr.append(stats, anims, cost, sizeCell(id, row), useCell(id, row), ...extraCells(id, row, cols));
+            tr.querySelectorAll("input, select").forEach((input) => input.addEventListener("change", savePlayer));
+            body.append(tr);
+            const bar = document.querySelector("#player .bar");
+            bar.replaceChildren();
+            const colBtn = document.createElement("button");
+            colBtn.type = "button";
+            colBtn.textContent = "+ column";
+            colBtn.addEventListener("click", () => {
+                const colId = window.AoeSheet.addColumn("player");
+                drawPlayer();
+                const input = document.querySelector("#player [data-col='" + colId + "'] input");
+                if (input) {
+                    input.focus();
+                    input.select();
+                }
+            });
+            bar.append(colBtn);
+        }
+
+        function savePlayer() {
+            const patch = Object.assign({}, window.AoeSheet.player());
+            patch.extra = Object.assign({}, patch.extra);
+            document.querySelectorAll("#player-rows input, #player-rows select").forEach((input) => {
+                if (input.dataset.choice) return;
+                if (input.dataset.extra) patch.extra[input.dataset.extra] = input.value;
+                else if (input.type === "checkbox") patch.inUse = input.checked;
+                else if (input.dataset.key === "width") patch.w = Number(input.value);
+                else if (input.dataset.key === "depth") patch.d = Number(input.value);
+                else if (input.dataset.key) patch[input.dataset.key] = input.value;
+            });
+            applyChoices(document.getElementById("player-rows"), () => patch);
+            window.AoeSheet.writePlayer(patch);
+            document.getElementById("player-note").textContent = "Saved. Reload the match to use it.";
+        }
+
+        function choiceOptions(source, current) {
+            const options = [];
+            const seen = {};
+            Object.keys(source()).forEach((id) => {
+                const row = source()[id];
+                seen[id] = true;
+                options.push({ id: id, name: row.name || id });
+            });
+            if (current && !seen[current]) options.push({ id: current, name: current });
+            return options;
+        }
+
+        function lineSelect(kind, current, label) {
+            const select = document.createElement("select");
+            select.setAttribute("aria-label", label);
+            const source = kind === "units" ? window.AoeSheet.units : window.AoeSheet.buildings;
+            choiceOptions(source, current).forEach((option) => {
+                const item = document.createElement("option");
+                item.value = option.id;
+                item.textContent = option.name;
+                if (option.id === current) item.selected = true;
+                select.append(item);
+            });
+            return select;
+        }
+
+        function readCampaign() {
+            return Array.from(document.querySelectorAll("#faction-list [data-faction]")).map((card) => {
+                const row = {
+                    id: card.dataset.faction,
+                    name: card.querySelector("[data-key='name']").value,
+                    units: [],
+                    buildings: []
+                };
+                GOODS.forEach((pair) => {
+                    row[pair[0]] = card.querySelector("[data-good='" + pair[0] + "']").value;
+                });
+                ["units", "buildings"].forEach((kind) => {
+                    card.querySelectorAll("[data-line='" + kind + "']").forEach((line) => {
+                        row[kind].push({
+                            id: line.querySelector("select").value,
+                            count: line.querySelector("input").value
+                        });
+                    });
+                });
+                return row;
+            });
+        }
+
+        function saveCampaign() {
+            window.AoeSheet.writeFactions(readCampaign());
+            document.getElementById("campaign-note").textContent = "Saved. The match does not use this yet.";
+        }
+
+        function drawLines(card, faction, kind) {
+            const block = document.createElement("div");
+            faction[kind].forEach((line, index) => {
+                const row = document.createElement("p");
+                row.dataset.line = kind;
+                const count = document.createElement("input");
+                count.type = "number";
+                count.min = "0";
+                count.max = "999";
+                count.step = "1";
+                count.value = line.count;
+                count.setAttribute("aria-label", faction.name + " " + kind + " count");
+                count.addEventListener("change", saveCampaign);
+                const select = lineSelect(kind, line.id, faction.name + " " + kind);
+                select.addEventListener("change", saveCampaign);
+                const remove = document.createElement("button");
+                remove.type = "button";
+                remove.className = "tiny";
+                remove.textContent = "Remove";
+                remove.addEventListener("click", () => {
+                    const list = readCampaign();
+                    const found = list.find((item) => item.id === faction.id);
+                    found[kind].splice(index, 1);
+                    window.AoeSheet.writeFactions(list);
+                    drawCampaign();
+                });
+                row.append(select, " ", count, remove);
+                block.append(row);
+            });
+            const add = document.createElement("button");
+            add.type = "button";
+            add.className = "tiny";
+            add.textContent = kind === "units" ? "+ unit" : "+ building";
+            add.addEventListener("click", () => {
+                const list = readCampaign();
+                const found = list.find((item) => item.id === faction.id);
+                found[kind].push({ id: kind === "units" ? "worker" : "house", count: 1 });
+                window.AoeSheet.writeFactions(list);
+                drawCampaign();
+            });
+            block.append(add);
+            return block;
+        }
+
+        function drawCampaign() {
+            const list = document.getElementById("faction-list");
+            list.replaceChildren();
+            window.AoeSheet.factions().forEach((faction) => {
+                const card = document.createElement("article");
+                card.className = "faction";
+                card.dataset.faction = faction.id;
+                const title = document.createElement("h3");
+                const name = document.createElement("input");
+                name.type = "text";
+                name.value = faction.name;
+                name.dataset.key = "name";
+                name.setAttribute("aria-label", "Faction name");
+                name.addEventListener("change", saveCampaign);
+                title.append(name);
+                if (!faction.base) {
+                    const remove = document.createElement("button");
+                    remove.type = "button";
+                    remove.className = "tiny";
+                    remove.textContent = "Remove faction";
+                    remove.addEventListener("click", () => {
+                        window.AoeSheet.removeFaction(faction.id);
+                        drawCampaign();
+                    });
+                    title.append(remove);
+                }
+                const goodsTitle = document.createElement("h4");
+                goodsTitle.textContent = "Starting resources";
+                const goods = document.createElement("p");
+                GOODS.forEach((pair) => {
+                    const input = document.createElement("input");
+                    input.type = "number";
+                    input.min = "0";
+                    input.max = "999999";
+                    input.step = "1";
+                    input.value = faction[pair[0]];
+                    input.dataset.good = pair[0];
+                    input.setAttribute("aria-label", faction.name + " " + pair[1]);
+                    input.addEventListener("change", saveCampaign);
+                    const label = document.createElement("label");
+                    label.append(pair[1], input);
+                    goods.append(label);
+                });
+                const unitTitle = document.createElement("h4");
+                unitTitle.textContent = "Starting units";
+                const buildingTitle = document.createElement("h4");
+                buildingTitle.textContent = "Starting buildings";
+                card.append(
+                    title,
+                    goodsTitle,
+                    goods,
+                    unitTitle,
+                    drawLines(card, faction, "units"),
+                    buildingTitle,
+                    drawLines(card, faction, "buildings")
+                );
+                list.append(card);
+            });
+            const bar = document.querySelector("#campaign .bar");
+            bar.replaceChildren();
+            const add = document.createElement("button");
+            add.type = "button";
+            add.textContent = "+ faction";
+            add.addEventListener("click", () => {
+                const id = window.AoeSheet.addFaction();
+                drawCampaign();
+                const input = document.querySelector("#faction-list [data-faction='" + id + "'] input");
+                if (input) {
+                    input.focus();
+                    input.select();
+                }
+            });
+            bar.append(add);
+        }
+
+        function drawWeapons() {
+            const cols = paintColumns("weapons", drawWeapons);
+            const body = document.getElementById("weapon-rows");
+            const rows = window.AoeSheet.weapons();
+            body.replaceChildren();
+            Object.keys(rows).forEach((id) => {
+                const row = rows[id];
+                const tr = document.createElement("tr");
+                const damage = document.createElement("td");
+                damage.append(numField(id, "damage", row.damage, row.name + " damage"));
+                const model = document.createElement("td");
+                if (row.added) {
+                    const name = textCell(id, "name", row.name, "Weapon name");
+                    name.append(removeButton("weapons", id, drawWeapons));
+                    model.append(textField(id, "model", row.model, row.name + " graphic model"));
+                    tr.append(name);
+                } else {
+                    const name = document.createElement("td");
+                    name.textContent = row.name;
+                    model.textContent = row.model.split("/").pop();
+                    tr.append(name);
+                }
+                tr.append(
+                    damage,
+                    costCell(id, row, "cost", row.cost, "Cost", "weapons", window.AoeSheet.writeWeapons, drawWeapons),
+                    model,
+                    lookButton(row.name, row.model),
+                    ...extraCells(id, row, cols)
+                );
+                tr.querySelectorAll("input, select").forEach((input) => input.addEventListener("change", saveWeapons));
+                body.append(tr);
+            });
+            addBar("weapons", drawWeapons);
+        }
+
+        function saveWeapons() {
+            window.AoeSheet.writeWeapons(readActorInputs("#weapon-rows input", window.AoeSheet.weapons));
+            document.getElementById("weapon-note").textContent = "Saved.";
+        }
+
+        function closeMenu() {
+            document.getElementById("dev-menu-list").hidden = true;
+            document.getElementById("dev-menu-toggle").setAttribute("aria-expanded", "false");
+        }
+
+        function show(name) {
+            ["units", "buildings", "creatures", "weapons", "player", "campaign"].forEach((id) => {
+                const open = id === name;
+                document.getElementById(id).hidden = !open;
+                const choice = document.getElementById("open-" + id);
+                choice.classList.toggle("on", open);
+                if (open) document.getElementById("dev-menu-toggle").textContent = choice.textContent;
+            });
+            closeMenu();
+        }
+
+        document.getElementById("dev-menu-toggle").addEventListener("click", () => {
+            const list = document.getElementById("dev-menu-list");
+            const open = list.hidden;
+            list.hidden = !open;
+            document.getElementById("dev-menu-toggle").setAttribute("aria-expanded", open ? "true" : "false");
+        });
+        document.addEventListener("click", (event) => {
+            if (!event.target.closest("nav")) closeMenu();
+        });
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape") closeMenu();
+        });
+
+        document.getElementById("open-units").addEventListener("click", () => show("units"));
+        document.getElementById("open-player").addEventListener("click", () => show("player"));
+        document.getElementById("open-buildings").addEventListener("click", () => show("buildings"));
+        document.getElementById("open-creatures").addEventListener("click", () => show("creatures"));
+        document.getElementById("open-weapons").addEventListener("click", () => show("weapons"));
+        document.getElementById("open-campaign").addEventListener("click", () => show("campaign"));
+        drawUnits();
+        drawBuildings();
+        drawCreatures();
+        drawWeapons();
+        drawPlayer();
+        drawCampaign();
+        show("units");
+    </script>
+</body>
+</html>

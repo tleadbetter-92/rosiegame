@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { natureData } from "./generated_terrain%20Big%20map.js?v=map3";
 import { loadPerson, personMesh } from "./people.js?v=play43";
@@ -37,6 +38,12 @@ scene.add(sun);
 
 const terrain = new THREE.Group();
 scene.add(terrain);
+
+// The mountain range saved from the terrain studio. A new match does not resume the old island.
+const BOARD_URL = "terrain.glb?v=range1";
+const BOARD_SEA = 106;
+let board = null;
+let viewFar = 220;
 
 // Faction markers in the editor file are editor steps. One step is 16 m on the real island.
 const MAP_ACROSS = 16;
@@ -92,23 +99,28 @@ const wallRay = new THREE.Raycaster();
 
 function placeCamera() {
     if (pilot) {
-        const y = pilot.group.position.y + eye;
+        const fx = Math.sin(lookYaw);
+        const fz = Math.cos(lookYaw);
+        const headY = pilot.group.position.y + eye;
+        const back = 2.3;
+        camera.position.set(pilot.x - fx * back, headY + 0.42, pilot.z - fz * back);
+        const aim = 5;
         const cp = Math.cos(lookPitch);
-        camera.position.set(pilot.x, y, pilot.z);
         camera.lookAt(
-            pilot.x + Math.sin(lookYaw) * cp,
-            y + Math.sin(lookPitch),
-            pilot.z + Math.cos(lookYaw) * cp
+            pilot.x + fx * cp * aim,
+            headY + Math.sin(lookPitch) * aim,
+            pilot.z + fz * cp * aim
         );
         return;
     }
     const cp = Math.cos(pitch);
+    const aimY = board ? heightAt(look.x, look.z) + 8 : look.y;
     camera.position.set(
         look.x + Math.sin(yaw) * cp * dist,
-        look.y + Math.sin(pitch) * dist,
+        aimY + Math.sin(pitch) * dist,
         look.z + Math.cos(yaw) * cp * dist
     );
-    camera.lookAt(look);
+    camera.lookAt(look.x, aimY, look.z);
 }
 
 function mapScale() {
@@ -126,7 +138,28 @@ function panBy(dx, dy, scale) {
     look.z = Math.max(mapBox.min.z, Math.min(mapBox.max.z, look.z + (-dx * rightZ + dy * foreZ) * scale));
 }
 
+function boardHeight(x, z) {
+    const u = (x - board.minX) / board.span;
+    const v = (z - board.minZ) / board.span;
+    if (u < 0 || v < 0 || u > 1 || v > 1) return BOARD_SEA - 8;
+    const n = board.n;
+    const fx = u * (n - 1);
+    const fz = v * (n - 1);
+    const i = Math.min(n - 2, Math.max(0, Math.floor(fx)));
+    const j = Math.min(n - 2, Math.max(0, Math.floor(fz)));
+    const tx = fx - i;
+    const tz = fz - j;
+    const h = board.heights;
+    const i00 = j * n + i;
+    const h00 = h[i00];
+    const h10 = h[i00 + 1];
+    const h01 = h[i00 + n];
+    const h11 = h[i00 + n + 1];
+    return (h00 * (1 - tx) + h10 * tx) * (1 - tz) + (h01 * (1 - tx) + h11 * tx) * tz;
+}
+
 function heightAt(x, z) {
+    if (board) return boardHeight(x, z);
     const world = window.World;
     return world ? world.heightAt(x, z) : 0;
 }
@@ -139,6 +172,7 @@ function groundStep(x, z) {
 }
 
 function latticeHeight(x, z) {
+    if (board) return boardHeight(x, z);
     const step = groundStep(x, z);
     const x0 = Math.floor(x / step) * step;
     const z0 = Math.floor(z / step) * step;
@@ -171,6 +205,7 @@ function feetAt(x, z) {
 }
 
 function inWater(x, z) {
+    if (board) return boardHeight(x, z) < BOARD_SEA;
     const world = window.World;
     if (!world || !world.wet) return false;
     if (world.bridgeDeck && world.bridgeDeck(x, z) != null) return false;
@@ -224,7 +259,7 @@ function natureMesh(item) {
     return mesh;
 }
 
-natureData.forEach((item) => {
+if (!BOARD_URL) natureData.forEach((item) => {
     const mesh = natureMesh(item);
     if (mesh) scene.add(mesh);
 });
@@ -274,10 +309,10 @@ function placeTrees() {
         }).catch(() => {});
     });
 }
-placeTrees();
+if (!BOARD_URL) placeTrees();
 
 const rockFiles = ["Rock_Medium_1", "Rock_Medium_2", "Rock_Medium_3"];
-Promise.all(rockFiles.map((id) => loadTree("../models/nature-megakit/glTF/" + encodeURIComponent(id) + ".gltf"))).then((models) => {
+if (!BOARD_URL) Promise.all(rockFiles.map((id) => loadTree("../models/nature-megakit/glTF/" + encodeURIComponent(id) + ".gltf"))).then((models) => {
     natureData.forEach((item, index) => {
         if (item.type !== "cylinder") return;
         for (let k = 0; k < 4; k++) {
@@ -320,6 +355,7 @@ function loadWoodModels() {
 }
 
 function refreshWoods() {
+    if (board || BOARD_URL) return;
     const world = window.World;
     if (!world || !world.trees) return;
     const x = pilot ? pilot.x : look.x;
@@ -521,7 +557,193 @@ let landMarkX = Infinity;
 let landMarkZ = Infinity;
 let landStep = 0;
 
+function loadBoard() {
+    return new Promise((resolve, reject) => {
+        new GLTFLoader().load(BOARD_URL, (gltf) => {
+            let surface = null;
+            gltf.scene.traverse((child) => {
+                if (child.isMesh && child.geometry && child.geometry.attributes.position && (!surface || child.geometry.attributes.position.count > surface.geometry.attributes.position.count)) surface = child;
+            });
+            const pos = surface.geometry.attributes.position;
+            const n = Math.round(Math.sqrt(pos.count));
+            const heights = new Float32Array(n * n);
+            let minX = Infinity;
+            let minZ = Infinity;
+            let maxX = -Infinity;
+            let maxZ = -Infinity;
+            for (let i = 0; i < pos.count; i++) {
+                heights[i] = pos.getY(i);
+                const x = pos.getX(i);
+                const z = pos.getZ(i);
+                if (x < minX) minX = x;
+                if (z < minZ) minZ = z;
+                if (x > maxX) maxX = x;
+                if (z > maxZ) maxZ = z;
+            }
+            const tint = surface.geometry.getAttribute("color");
+            const colors = tint ? new Float32Array(tint.count * 3) : null;
+            if (tint) {
+                for (let i = 0; i < tint.count; i++) {
+                    colors[i * 3] = tint.getX(i);
+                    colors[i * 3 + 1] = tint.getY(i);
+                    colors[i * 3 + 2] = tint.getZ(i);
+                }
+            }
+            board = { heights: heights, colors: colors, n: n, minX: minX, minZ: minZ, span: maxX - minX, sea: BOARD_SEA, walkAt: null };
+            mapBox.min.set(minX, -40, minZ);
+            mapBox.max.set(maxX, 420, maxZ);
+            board.mapMesh = buildBoardGrid(0, 0, n - 1, n - 1, 4);
+            terrain.add(board.mapMesh);
+            const sea = new THREE.Mesh(
+                new THREE.PlaneGeometry(maxX - minX, maxZ - minZ),
+                new THREE.MeshStandardMaterial({ color: 0x2a6d86, transparent: true, opacity: 0.62, roughness: 0.2, depthWrite: false })
+            );
+            sea.rotation.x = -Math.PI / 2;
+            sea.position.set((minX + maxX) / 2, BOARD_SEA, (minZ + maxZ) / 2);
+            terrain.add(sea);
+            viewFar = 1600;
+            resolve();
+        }, undefined, reject);
+    });
+}
+
+const boardMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
+const walkFog = new THREE.Fog(0x8ec8ee, 80, 210);
+
+function buildBoardGrid(i0, j0, i1, j1, step) {
+    const n = board.n;
+    const jump = Math.max(1, step);
+    const cols = Math.max(1, Math.floor((i1 - i0) / jump));
+    const rows = Math.max(1, Math.floor((j1 - j0) / jump));
+    const across = cols + 1;
+    const down = rows + 1;
+    const pos = new Float32Array(across * down * 3);
+    const col = new Float32Array(across * down * 3);
+    for (let row = 0; row < down; row++) {
+        const gz = Math.min(n - 1, j0 + row * jump);
+        for (let column = 0; column < across; column++) {
+            const gx = Math.min(n - 1, i0 + column * jump);
+            const src = gz * n + gx;
+            const o = (row * across + column) * 3;
+            pos[o] = board.minX + (gx / (n - 1)) * board.span;
+            pos[o + 1] = board.heights[src];
+            pos[o + 2] = board.minZ + (gz / (n - 1)) * board.span;
+            if (board.colors) {
+                col[o] = board.colors[src * 3];
+                col[o + 1] = board.colors[src * 3 + 1];
+                col[o + 2] = board.colors[src * 3 + 2];
+            } else {
+                col[o] = 0.42;
+                col[o + 1] = 0.55;
+                col[o + 2] = 0.28;
+            }
+        }
+    }
+    const idx = new Uint32Array(cols * rows * 6);
+    let t = 0;
+    for (let row = 0; row < rows; row++) {
+        for (let column = 0; column < cols; column++) {
+            const a = row * across + column;
+            idx[t++] = a;
+            idx[t++] = a + across;
+            idx[t++] = a + 1;
+            idx[t++] = a + 1;
+            idx[t++] = a + across;
+            idx[t++] = a + across + 1;
+        }
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    geom.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    geom.setIndex(new THREE.BufferAttribute(idx, 1));
+    geom.computeVertexNormals();
+    const mesh = new THREE.Mesh(geom, boardMat);
+    mesh.receiveShadow = true;
+    return mesh;
+}
+
+function stepBoardView() {
+    if (!board || !board.mapMesh) return;
+    board.mapMesh.visible = !pilot;
+    if (!pilot) {
+        if (board.walkMesh) board.walkMesh.visible = false;
+        if (scene.fog === walkFog) scene.fog = null;
+        if (camera.far !== 9000) {
+            camera.far = 9000;
+            camera.updateProjectionMatrix();
+        }
+        return;
+    }
+    if (scene.fog !== walkFog) scene.fog = walkFog;
+    if (camera.far !== 260) {
+        camera.far = 260;
+        camera.updateProjectionMatrix();
+    }
+    const moved = !board.walkAt || Math.hypot(pilot.x - board.walkAt.x, pilot.z - board.walkAt.z) > 36;
+    if (!moved && board.walkMesh) {
+        board.walkMesh.visible = true;
+        return;
+    }
+    const n = board.n;
+    const metres = board.span / (n - 1);
+    const reach = Math.ceil(220 / metres);
+    const cx = Math.round(((pilot.x - board.minX) / board.span) * (n - 1));
+    const cz = Math.round(((pilot.z - board.minZ) / board.span) * (n - 1));
+    const next = buildBoardGrid(
+        Math.max(0, cx - reach),
+        Math.max(0, cz - reach),
+        Math.min(n - 1, cx + reach),
+        Math.min(n - 1, cz + reach),
+        1
+    );
+    if (board.walkMesh) {
+        terrain.remove(board.walkMesh);
+        board.walkMesh.geometry.dispose();
+    }
+    board.walkMesh = next;
+    terrain.add(next);
+    board.walkAt = { x: pilot.x, z: pilot.z };
+}
+
+function dryHomes() {
+    const spots = [];
+    const n = board.n;
+    const step = 8;
+    for (let j = step; j < n - step; j += step) {
+        for (let i = step; i < n - step; i += step) {
+            const y = board.heights[j * n + i];
+            if (y < BOARD_SEA + 4 || y > BOARD_SEA + 90) continue;
+            const rise = Math.max(
+                Math.abs(board.heights[j * n + i + 2] - y),
+                Math.abs(board.heights[(j + 2) * n + i] - y)
+            );
+            if (rise > 4) continue;
+            spots.push({
+                x: board.minX + (i / (n - 1)) * board.span,
+                z: board.minZ + (j / (n - 1)) * board.span
+            });
+        }
+    }
+    for (let i = spots.length - 1; i > 0; i--) {
+        const k = Math.floor(Math.random() * (i + 1));
+        const swap = spots[i];
+        spots[i] = spots[k];
+        spots[k] = swap;
+    }
+    const east = spots[0] || { x: 180, z: 40 };
+    let west = null;
+    for (let i = 1; i < spots.length; i++) {
+        if (Math.hypot(spots[i].x - east.x, spots[i].z - east.z) > 480) {
+            west = spots[i];
+            break;
+        }
+    }
+    if (!west) west = spots[1] || { x: -180, z: -40 };
+    return [east, west].sort((a, b) => b.x - a.x);
+}
+
 function refreshLand(force) {
+    if (BOARD_URL) return;
     const world = window.World;
     const meshLib = window.LandMesh;
     if (!world || !meshLib) return;
@@ -651,6 +873,7 @@ function appendBridges() {
 }
 
 async function placeManors() {
+    if (BOARD_URL) await loadBoard();
     const meta = await fetch("../models/kitbuild/" + MANOR + ".meta.json").then((res) => {
         if (!res.ok) throw new Error("manor description missing");
         return res.json();
@@ -677,22 +900,42 @@ async function placeManors() {
         parts.push({ geom: geom, mat: mat });
     }
     const houses = [];
-    teams.forEach((team, index) => {
+    const homes = board ? dryHomes() : teams.map((team) => ({ x: team.px, z: team.pz }));
+    const manorMap = mapGraphic("manor");
+    const pad = manorPad();
+    homes.forEach((team, index) => {
         const group = new THREE.Group();
-        const y = heightAt(team.px, team.pz);
-        group.position.set(team.px, y, team.pz);
+        const y = heightAt(team.x, team.z);
+        group.position.set(team.x, y, team.z);
         group.name = index === 0 ? "you" : "other";
-        parts.forEach((part) => group.add(new THREE.Mesh(part.geom, part.mat)));
+        const shell = new THREE.Group();
+        parts.forEach((part) => shell.add(new THREE.Mesh(part.geom, part.mat)));
+        group.add(shell);
         scene.add(group);
         manors.push(group);
-        houses.push({ x: team.px, z: team.pz, y: y, group: group, player: index === 0, hx: MANOR_HX, hz: MANOR_HZ, kitId: MANOR });
-        attachRooms(houses[houses.length - 1], MANOR);
+        const hx = pad.hx;
+        const hz = pad.hz;
+        fitMapModel(shell, hx, hz);
+        const home = { x: team.x, z: team.z, y: y, group: group, player: index === 0, hx: hx, hz: hz, kitId: MANOR, fpModel: shell };
+        shell.visible = !manorMap;
+        houses.push(home);
+        if (manorMap) {
+            attachMapModel(group, manorMap, hx, hz, home).catch(() => {
+                shell.visible = true;
+                seatFloors();
+            });
+        }
+        attachRooms(home, MANOR);
     });
     const playerHome = houses[0];
-    look.set(playerHome.x + 2, 2, playerHome.z + 14);
-    dist = 58;
+    look.set(playerHome.x + 2, playerHome.y, playerHome.z + 14);
+    dist = 110;
     await startMatch(playerHome, houses[1] || null);
-    note.textContent = "You are the eastern side. Both manors keep adding houses, workers, and stores. You can still give orders. The two sides are at peace. Forest is wood, water is food, ore is gold, and the rock piles are stone.";
+    if (board) {
+        look.set(playerHome.x + 2, playerHome.y, playerHome.z + 14);
+        dist = 110;
+    }
+    note.textContent = (board ? "This is the mountain range. The two manors are on dry ground, and this match starts new. " : "") + "You are the eastern side. Both manors keep adding houses, workers, and stores. You can still give orders. The two sides are at peace. Forest is wood, water is food, ore is gold, and the rock piles are stone.";
     return playerHome;
 }
 
@@ -701,6 +944,130 @@ placeManors().catch((err) => {
 });
 
 const COST = 50;
+function unitRow(kind) {
+    const base = {
+        hp: kind === "soldier" ? 40 : 20,
+        attack: HIT,
+        defence: 0,
+        move: SPEED,
+        cost: COST,
+        w: kind === "soldier" ? 1.1 : 0.62,
+        d: kind === "soldier" ? 0.63 : 0.4
+    };
+    const sheet = window.AoeSheet && window.AoeSheet.read ? window.AoeSheet.read() : null;
+    return (sheet && sheet[kind]) || base;
+}
+function unitCost(kind) {
+    return unitRow(kind).cost;
+}
+function playerRow() {
+    const row = window.AoeSheet && window.AoeSheet.player ? window.AoeSheet.player() : null;
+    return row || { hp: 40, attack: 12, shot: 8, defence: 0, move: SPEED * 2, w: 1.1, d: 0.63 };
+}
+function tuned(kind) {
+    const spec = BUILDINGS[kind];
+    if (!spec) return null;
+    const next = Object.assign({ time: HOUSE_TIME }, spec);
+    const row = window.AoeSheet && window.AoeSheet.buildings ? window.AoeSheet.buildings()[kind] : null;
+    if (!row) return next;
+    next.wood = row.wood;
+    next.hx = row.hx;
+    next.hz = row.hz;
+    if (row.time > 0) next.time = row.time;
+    return next;
+}
+function manorPad() {
+    const row = window.AoeSheet && window.AoeSheet.buildings ? window.AoeSheet.buildings().manor : null;
+    return {
+        hx: row ? row.hx : MANOR_HX,
+        hz: row ? row.hz : MANOR_HZ
+    };
+}
+function mapGraphic(kind) {
+    const row = window.AoeSheet && window.AoeSheet.buildings ? window.AoeSheet.buildings()[kind] : null;
+    const map = row && row.map;
+    return typeof map === "string" && /\.fbx$/i.test(map) ? map : "";
+}
+const mapLoads = {};
+function houseLoader() {
+    const manager = new THREE.LoadingManager();
+    manager.setURLModifier((url) => {
+        if (/House_texture_atlas\.png/i.test(url)) return "../models/houses/House_texture_atlas.png?v=atlas1";
+        return url;
+    });
+    return new FBXLoader(manager);
+}
+function loadMapModel(url) {
+    if (!mapLoads[url]) {
+        mapLoads[url] = new Promise((resolve, reject) => {
+            houseLoader().load(encodeURI(url), resolve, undefined, reject);
+        });
+    }
+    return mapLoads[url];
+}
+function fitMapModel(object, hx, hz) {
+    object.matrixAutoUpdate = true;
+    object.position.set(0, 0, 0);
+    object.scale.set(1, 1, 1);
+    object.updateMatrix();
+    const parent = object.parent;
+    if (parent) parent.updateWorldMatrix(true, false);
+    object.updateMatrixWorld(true);
+    const origin = parent ? parent.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3();
+    const box = new THREE.Box3().setFromObject(object);
+    const wide = Math.max(0.01, box.max.x - box.min.x);
+    const deep = Math.max(0.01, box.max.z - box.min.z);
+    const sx = (hx * 2) / wide;
+    const sz = (hz * 2) / deep;
+    object.scale.set(sx, Math.min(sx, sz), sz);
+    object.updateMatrix();
+    object.updateMatrixWorld(true);
+    let fitted = new THREE.Box3().setFromObject(object);
+    const wantW = Math.max(0.01, hx * 2);
+    const gotW = Math.max(0.01, fitted.max.x - fitted.min.x);
+    if (gotW > wantW * 1.35 || gotW < wantW * 0.65) {
+        object.scale.multiplyScalar(wantW / gotW);
+        object.updateMatrix();
+        object.updateMatrixWorld(true);
+        fitted = new THREE.Box3().setFromObject(object);
+    }
+    object.position.set(
+        origin.x - (fitted.min.x + fitted.max.x) / 2,
+        origin.y - fitted.min.y,
+        origin.z - (fitted.min.z + fitted.max.z) / 2
+    );
+    object.updateMatrix();
+}
+function addKitShell(group, parts, entry) {
+    const shell = new THREE.Group();
+    for (let i = 0; i < parts.length; i++) {
+        const mesh = new THREE.Mesh(parts[i].geom, parts[i].mat);
+        if (entry) mesh.userData.building = entry;
+        shell.add(mesh);
+    }
+    group.add(shell);
+    return shell;
+}
+function attachMapModel(group, url, hx, hz, entry) {
+    return loadMapModel(url).then((src) => {
+        if (!group.parent) return;
+        const model = src.clone(true);
+        group.add(model);
+        fitMapModel(model, hx, hz);
+        model.traverse((mesh) => {
+            if (!mesh.isMesh) return;
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            if (entry) mesh.userData.building = entry;
+        });
+        model.visible = !pilot;
+        if (entry) {
+            entry.mapModel = model;
+            if (entry.fpModel) entry.fpModel.visible = !!pilot;
+        }
+        seatFloors();
+    });
+}
 const CARRY_MAX = 10;
 const CARRY_TIME = 60;
 const POP_MAX = 30;
@@ -721,11 +1088,11 @@ const DAY_MINUTES = 24 * 60;
 const HOUSE_BEDS = 20;
 const TOWN_RANGE = 140;
 const BUILDINGS = {
-    house: { id: "small-house1", label: "Small house", wood: 20, hx: 4, hz: 5.5, workers: 5, soldiers: 0, town: true },
-    barracks: { id: "barracks", label: "Barracks", wood: 100, hx: 15.5, hz: 10, workers: 0, soldiers: 15 },
-    farm: { id: "farm", label: "Farm", wood: 100, hx: 9.75, hz: 18.75, workers: 0, soldiers: 0 },
-    salt: { id: "salt-works-ex", label: "Salt works", wood: 100, hx: 12, hz: 15.25, workers: 0, soldiers: 0 },
-    store: { id: "storehouse", label: "Storehouse", wood: 100, hx: 9.5, hz: 9.5, workers: 0, soldiers: 0 },
+    house: { id: "small-house1", label: "Small house", wood: 20, hx: 3.28, hz: 4.29, workers: 5, soldiers: 0, town: true },
+    barracks: { id: "barracks", label: "Barracks", wood: 100, hx: 14.26, hz: 9.09, workers: 0, soldiers: 15 },
+    farm: { id: "farm", label: "Farm", wood: 100, hx: 8.81, hz: 18.43, workers: 0, soldiers: 0 },
+    salt: { id: "salt-works-ex", label: "Salt works", wood: 100, hx: 11.06, hz: 14.33, workers: 0, soldiers: 0 },
+    store: { id: "storehouse", label: "Storehouse", wood: 100, hx: 16.08, hz: 11.12, workers: 0, soldiers: 0 },
     smith: { id: "blacksmith", label: "Blacksmith", wood: 100, hx: 5, hz: 5, workers: 0, soldiers: 0, mesh: true }
 };
 const FARM_SLOTS = [
@@ -736,8 +1103,8 @@ const FARM_SLOTS = [
     { x: 2.5, z: 8 }
 ];
 const FARM_DROP = { x: -0.25, z: -5.5 };
-const MANOR_HX = 16.5;
-const MANOR_HZ = 12;
+const MANOR_HX = 16.19;
+const MANOR_HZ = 11.27;
 const nodes = [];
 natureData.forEach((item) => {
     if (item.type === "forest") nodes.push({ kind: "wood", x: item.px, z: item.pz, r: 3 * (item.s || 1) });
@@ -763,6 +1130,7 @@ let cpuStone = 0;
 let cpuFabric = 0;
 let home = null;
 let cpuHome = null;
+let led = "you";
 let actors = null;
 const kits = {};
 let placing = null;
@@ -884,25 +1252,39 @@ function showButton(button, visible) {
 }
 
 function paintCommands() {
-    const yourWorkers = selected.some((unit) => unit.side === "you" && unit.kind === "worker");
-    const barracks = selectedHouse && selectedHouse.kind === "barracks" ? selectedHouse : null;
+    const yourWorkers = selected.some((unit) => unit.side === led && unit.kind === "worker");
     const depot = selectedHouse && DEPOTS[selectedHouse.kind] ? selectedHouse : null;
-    const trainSide = barracks ? (barracks.side || "you") : "you";
-    const trainFood = trainSide === "cpu" ? cpuFood : food;
-    showButton(workerBtn, !pilot && !placing && manorSelected);
-    showButton(soldierBtn, !pilot && !placing && !!barracks);
+    const making = manorSelected ? madeBy("manor") : (selectedHouse ? madeBy(selectedHouse.kind) : []);
+    const trainSide = manorSelected ? led : (selectedHouse ? (selectedHouse.side || "you") : led);
+    showButton(workerBtn, !pilot && !placing && making.indexOf("worker") >= 0);
+    showButton(soldierBtn, !pilot && !placing && making.indexOf("soldier") >= 0);
     showButton(horseBtn, !pilot && !placing && !!depot);
-    workerBtn.disabled = !(manorSelected && food >= COST && sideKind("you", "worker") + kindQueued("you", "worker") < kindCap("you", "worker"));
-    soldierBtn.disabled = !(barracks && trainFood >= COST && sideKind(trainSide, "soldier") + kindQueued(trainSide, "soldier") < kindCap(trainSide, "soldier"));
+    const workerName = workerBtn.querySelector("b");
+    const soldierName = soldierBtn.querySelector("b");
+    if (workerName) workerName.textContent = unitRow("worker").name || "Worker";
+    if (soldierName) soldierName.textContent = unitRow("soldier").name || "Soldier";
+    const workerPrice = workerBtn.querySelector("small");
+    if (workerPrice) workerPrice.textContent = billText(unitBill("worker"));
+    const soldierPrice = soldierBtn.querySelector("small");
+    if (soldierPrice) soldierPrice.textContent = billText(unitBill("soldier"));
+    workerBtn.disabled = !(making.indexOf("worker") >= 0 && canPay(trainSide, unitBill("worker")) && sideKind(trainSide, "worker") + kindQueued(trainSide, "worker") < kindCap(trainSide, "worker"));
+    soldierBtn.disabled = !(making.indexOf("soldier") >= 0 && canPay(trainSide, unitBill("soldier")) && sideKind(trainSide, "soldier") + kindQueued(trainSide, "soldier") < kindCap(trainSide, "soldier"));
     if (horseBtn) {
         const lost = depot && depot.lostHorse && !(depot.horse && depot.horse.alive) && !(depot.horseLeft > 0);
-        horseBtn.disabled = !lost || sideFood((depot && depot.side) || "you") < HORSE_COST;
+        const horsePrice = horseBtn.querySelector("small");
+        if (horsePrice) horsePrice.textContent = billText(horseBill());
+        horseBtn.disabled = !lost || !canPay((depot && depot.side) || "you", horseBill());
     }
     const showBuild = !pilot && (yourWorkers || !!placing);
     Object.keys(buildBtns).forEach((key) => {
-        const spec = BUILDINGS[key];
+        const spec = tuned(key);
+        const row = window.AoeSheet && window.AoeSheet.buildings ? window.AoeSheet.buildings()[key] : null;
+        const title = buildBtns[key].querySelector("b");
+        if (title && row && row.name) title.textContent = row.name;
+        const price = buildBtns[key].querySelector("small");
+        if (price && spec) price.textContent = billText(buildingBill(key));
         buildBtns[key].hidden = !showBuild;
-        buildBtns[key].disabled = !showBuild || !!placing || !kits[key] || wood < spec.wood;
+        buildBtns[key].disabled = !showBuild || !!placing || !kits[key] || !spec || !canPay(led, buildingBill(key));
     });
     const soldierPick = selected.filter((unit) => (unit.side === "you" || unit.side === "cpu") && unit.kind === "soldier");
     showButton(guardBtn, !pilot && !placing && soldierPick.length > 0);
@@ -922,14 +1304,132 @@ function paintCommands() {
     if (title) title.textContent = people && !people.hidden ? "Train" : build && !build.hidden ? "Build" : "Orders";
 }
 
+function stockBag(side) {
+    if (side === "cpu") return { food: cpuFood, wood: cpuWood, gold: cpuGold, iron: cpuIron, salt: cpuSalt, stone: cpuStone, fabric: cpuFabric };
+    return { food: food, wood: wood, gold: gold, iron: iron, salt: salt, stone: stone, fabric: fabric };
+}
+
+function writeBag(side, bag) {
+    if (side === "cpu") {
+        cpuFood = bag.food;
+        cpuWood = bag.wood;
+        cpuGold = bag.gold;
+        cpuIron = bag.iron;
+        cpuSalt = bag.salt;
+        cpuStone = bag.stone;
+        cpuFabric = bag.fabric;
+        return;
+    }
+    food = bag.food;
+    wood = bag.wood;
+    gold = bag.gold;
+    iron = bag.iron;
+    salt = bag.salt;
+    stone = bag.stone;
+    fabric = bag.fabric;
+}
+
+const PAY = ["food", "wood", "gold", "stone", "iron", "salt", "fabric"];
+
+function factionRow(side) {
+    const rows = window.AoeSheet && window.AoeSheet.factions ? window.AoeSheet.factions() : null;
+    if (!rows) return null;
+    for (let i = 0; i < rows.length; i++) if (rows[i].id === side) return rows[i];
+    return null;
+}
+
+function teamName(side) {
+    const row = factionRow(side === "cpu" ? "cpu" : "you");
+    if (row && row.name) return row.name;
+    return side === "cpu" ? "Team B" : "Team A";
+}
+
+function withExtra(bill, costs) {
+    if (!costs) return bill;
+    Object.keys(costs).forEach((key) => {
+        const n = Number(costs[key]);
+        if (n > 0) bill[key] = (bill[key] || 0) + n;
+    });
+    return bill;
+}
+
+function canPay(side, bill) {
+    const bag = stockBag(side);
+    for (let i = 0; i < PAY.length; i++) {
+        const key = PAY[i];
+        if ((bill[key] || 0) > (bag[key] || 0)) return false;
+    }
+    return true;
+}
+
+function spend(side, bill) {
+    const bag = stockBag(side);
+    for (let i = 0; i < PAY.length; i++) {
+        const key = PAY[i];
+        if ((bill[key] || 0) > 0) bag[key] = Math.max(0, (bag[key] || 0) - bill[key]);
+    }
+    writeBag(side, bag);
+}
+
+function billText(bill) {
+    const parts = [];
+    for (let i = 0; i < PAY.length; i++) {
+        if ((bill[PAY[i]] || 0) > 0) parts.push(bill[PAY[i]] + " " + PAY[i]);
+    }
+    return parts.join(", ") || "0";
+}
+
+function unitBill(kind) {
+    const row = unitRow(kind);
+    return withExtra({ food: Math.max(0, Number(row.cost) || 0) }, row.costs);
+}
+
+function buildingBill(kind) {
+    const spec = tuned(kind);
+    const row = window.AoeSheet && window.AoeSheet.buildings ? window.AoeSheet.buildings()[kind] : null;
+    return withExtra({ wood: spec ? Math.max(0, Number(spec.wood) || 0) : 0 }, row && row.costs);
+}
+
+function horseRow() {
+    return window.AoeSheet && window.AoeSheet.creatures ? window.AoeSheet.creatures().horse : null;
+}
+
+function horseBill() {
+    const row = horseRow();
+    const foodCost = row && Number.isFinite(Number(row.cost)) ? Number(row.cost) : HORSE_COST;
+    return withExtra({ food: Math.max(0, foodCost) }, row && row.costs);
+}
+
+function madeBy(buildingId) {
+    const rows = window.AoeSheet && window.AoeSheet.buildings ? window.AoeSheet.buildings() : null;
+    const row = rows && rows[buildingId];
+    let list = row && Array.isArray(row.makesList) && row.makesList.length ? row.makesList : null;
+    if (!list) {
+        if (buildingId === "manor") list = ["worker"];
+        else if (buildingId === "barracks") list = ["soldier"];
+        else list = [];
+    }
+    const out = [];
+    for (let i = 0; i < list.length; i++) {
+        if ((list[i] === "worker" || list[i] === "soldier") && out.indexOf(list[i]) < 0) out.push(list[i]);
+    }
+    return out;
+}
+
 function refreshHud() {
-    if (document.activeElement !== foodEl) foodEl.value = String(Math.floor(food));
-    if (document.activeElement !== woodEl) woodEl.value = String(Math.floor(wood));
-    if (document.activeElement !== goldEl) goldEl.value = String(Math.floor(gold));
-    if (ironEl && document.activeElement !== ironEl) ironEl.value = String(Math.floor(iron));
-    if (saltEl && document.activeElement !== saltEl) saltEl.value = String(Math.floor(salt));
-    if (stoneEl && document.activeElement !== stoneEl) stoneEl.value = String(Math.floor(stone));
-    if (fabricEl && document.activeElement !== fabricEl) fabricEl.value = String(Math.floor(fabric));
+    const bag = stockBag(led);
+    const youTitle = document.getElementById("you-title");
+    if (youTitle) youTitle.textContent = teamName(led);
+    document.querySelectorAll("#menu-list [data-menu]").forEach((button) => {
+        button.classList.toggle("led", button.dataset.menu === led);
+    });
+    if (document.activeElement !== foodEl) foodEl.value = String(Math.floor(bag.food));
+    if (document.activeElement !== woodEl) woodEl.value = String(Math.floor(bag.wood));
+    if (document.activeElement !== goldEl) goldEl.value = String(Math.floor(bag.gold));
+    if (ironEl && document.activeElement !== ironEl) ironEl.value = String(Math.floor(bag.iron));
+    if (saltEl && document.activeElement !== saltEl) saltEl.value = String(Math.floor(bag.salt));
+    if (stoneEl && document.activeElement !== stoneEl) stoneEl.value = String(Math.floor(bag.stone));
+    if (fabricEl && document.activeElement !== fabricEl) fabricEl.value = String(Math.floor(bag.fabric));
     if (cpuFoodEl && document.activeElement !== cpuFoodEl) cpuFoodEl.value = String(Math.floor(cpuFood));
     if (cpuWoodEl && document.activeElement !== cpuWoodEl) cpuWoodEl.value = String(Math.floor(cpuWood));
     if (cpuGoldEl && document.activeElement !== cpuGoldEl) cpuGoldEl.value = String(Math.floor(cpuGold));
@@ -937,12 +1437,12 @@ function refreshHud() {
     if (cpuSaltEl && document.activeElement !== cpuSaltEl) cpuSaltEl.value = String(Math.floor(cpuSalt));
     if (cpuStoneEl && document.activeElement !== cpuStoneEl) cpuStoneEl.value = String(Math.floor(cpuStone));
     if (cpuFabricEl && document.activeElement !== cpuFabricEl) cpuFabricEl.value = String(Math.floor(cpuFabric));
-    popEl.textContent = "Workers " + sideKind("you", "worker") + " / " + kindCap("you", "worker");
-    if (soldierEl) soldierEl.textContent = "Soldiers " + sideKind("you", "soldier") + " / " + kindCap("you", "soldier");
+    popEl.textContent = "Workers " + sideKind(led, "worker") + " / " + kindCap(led, "worker");
+    if (soldierEl) soldierEl.textContent = "Soldiers " + sideKind(led, "soldier") + " / " + kindCap(led, "soldier");
     if (cpuPopEl) cpuPopEl.textContent = "Other workers " + sideKind("cpu", "worker") + " / " + kindCap("cpu", "worker");
     if (cpuSoldierEl) cpuSoldierEl.textContent = "Other soldiers " + sideKind("cpu", "soldier") + " / " + kindCap("cpu", "soldier");
     if (trainNote) {
-        const mine = trains.filter((job) => job.side === "you");
+        const mine = trains.filter((job) => job.side === led);
         if (!mine.length) trainNote.textContent = "";
         else {
             const secs = Math.max(0, Math.ceil(mine[0].left));
@@ -954,8 +1454,8 @@ function refreshHud() {
     paintCommands();
     if (pilot) {
         selEl.textContent = document.body.classList.contains("handheld")
-            ? "Drag the view to look. The pad walks. Campaign takes you back."
-            : "You. WASD walks, mouse looks. F or Esc returns to the map.";
+            ? "Drag the view to look. The pad walks. Shoot looses the bow. Open the menu, then Pack, and choose Campaign."
+            : "You. WASD walks, mouse looks. Left-click draws the bow and looses an arrow. Open the menu, then Pack, for the sword.";
         return;
     }
     if (placing) {
@@ -963,12 +1463,17 @@ function refreshHud() {
         return;
     }
     if (selected.length) {
+        if (selected.length === 1 && selected[0].side === "self") {
+            selEl.textContent = "You. Right-click the ground to put yourself there.";
+            return;
+        }
         let workers = 0;
         let soldiers = 0;
         let soldierHp = null;
         let workerHp = null;
         for (let i = 0; i < selected.length; i++) {
             const unit = selected[i];
+            if (unit.side === "self") continue;
             if (unit.kind === "soldier") {
                 soldiers += 1;
                 soldierHp = soldierHp == null ? unit.hp : Math.min(soldierHp, unit.hp);
@@ -978,7 +1483,8 @@ function refreshHud() {
             }
         }
         const lines = [];
-        if (selected[0].side === "cpu") lines.push("Other side");
+        const lead = selected.find((unit) => unit.side === "you" || unit.side === "cpu");
+        if (lead && lead.side !== led) lines.push(teamName(lead.side));
         if (workers) lines.push(workers + (workers === 1 ? " worker" : " workers"));
         if (soldiers) lines.push(soldiers + (soldiers === 1 ? " soldier" : " soldiers"));
         if (soldiers) lines.push("soldier\nhealth " + Math.max(0, Math.ceil(soldierHp)));
@@ -988,16 +1494,16 @@ function refreshHud() {
         const house = selectedHouse;
         const label = manorSelected ? "Manor" : (BUILDINGS[house.kind] ? BUILDINGS[house.kind].label : house.kind);
         const lines = ["Building", label];
-        const side = manorSelected ? "you" : (house.side || "you");
-        if (side === "cpu") lines.push("Other side");
-        const queued = manorSelected ? kindQueued("you", "worker") : house && house.kind === "barracks" ? kindQueued(side, "soldier") : 0;
+        const side = manorSelected ? led : (house.side || "you");
+        if (side !== led) lines.push(teamName(side));
+        const queued = manorSelected ? kindQueued(led, "worker") : house && house.kind === "barracks" ? kindQueued(side, "soldier") : 0;
         const who = manorSelected ? "worker" : "soldier";
         if (queued) lines.push("training " + queued + " " + who + (queued === 1 ? "" : "s"));
         if (house && DEPOTS[house.kind]) {
             lines.push(holdLine(house.hold));
             lines.push(horseLine(house));
         }
-        const inside = houseMates(manorSelected ? home : house);
+        const inside = houseMates(manorSelected ? sideBase(led) : house);
         if (inside) lines.push(inside + " garrisoned inside");
         selEl.textContent = lines.join("\n");
     } else {
@@ -1008,7 +1514,8 @@ function refreshHud() {
 function showRing(unit) {
     const picked = selected.indexOf(unit) >= 0;
     unit.ring.visible = picked || unit.side === "cpu" || unit.side === "self";
-    unit.ring.scale.setScalar(picked ? 1.65 : 1);
+    const base = unit.ringScale || 1;
+    unit.ring.scale.setScalar(picked ? base * 1.65 : base);
     if (picked) unit.ring.material = pickMat;
     else unit.ring.material = unit.side === "cpu" ? foeMat : unit.side === "self" ? selfMat : ringMat;
 }
@@ -1033,6 +1540,8 @@ function spawn(kind, x, z, side) {
     group.add(ring);
     group.position.set(x, heightAt(x, z), z);
     scene.add(group);
+    const row = unitRow(kind);
+    fitMapModel(body, row.w / 2, row.d / 2);
     const unit = {
         id: nextId++,
         side: side,
@@ -1046,29 +1555,217 @@ function spawn(kind, x, z, side) {
         goal: null,
         carry: 0,
         anim: 0,
-        hp: kind === "soldier" ? 40 : 20,
+        hp: unitRow(kind).hp,
+        speed: unitRow(kind).move,
+        attack: unitRow(kind).attack,
+        defence: unitRow(kind).defence,
         stance: "guard",
         post: kind === "soldier" ? { x: x, z: z } : null,
         targetId: null,
         orders: false,
         body: body,
         ring: ring,
+        ringScale: Math.max(row.w, row.d) / 1.24,
         group: group,
         actor: actor
     };
+    ring.scale.setScalar(unit.ringScale);
     body.userData.unit = unit;
     units.push(unit);
     return unit;
 }
 
+let archerGltf = null;
+const armGltf = {};
+const ARMS = {
+    sword: { name: "Sword", hand: "right", attack: "slash", file: "weapons pack/3D_fantasy_weapons_pack/models/knights_longsword.glb", scale: 0.55, pos: [0.3, 0.02, 0], rot: [0, 0, 0] },
+    axe: { name: "Axe", hand: "right", attack: "slash", file: "weapons pack/3D_fantasy_weapons_pack/models/dwarven_war_axe.glb", scale: 0.5, pos: [0.22, 0.02, 0], rot: [0, 0, 0] },
+    halberd: { name: "Halberd", hand: "right", attack: "slash", file: "weapons pack/3D_fantasy_weapons_pack/models/halberd.glb", scale: 0.85, pos: [0.18, 0, -0.12], rot: [0, 0, 0] },
+    mace: { name: "Mace", hand: "right", attack: "slash", file: "weapons pack/3D_fantasy_weapons_pack/models/spiked_mace.glb", scale: 0.42, pos: [0.05, 0.12, 0], rot: [0, 0, -1.57] },
+    bow: { name: "Bow", hand: "left", attack: "arrow", file: "../models/meshy/medieval-wooden-bow.glb", scale: 1, pos: [0, 0, 0], rot: [Math.PI / 2, Math.PI, 0] },
+    crossbow: { name: "Crossbow", hand: "left", attack: "crossbow", file: "../tools/Meshy_AI_lowpoly_medieval_crossbow_20261102_texture_a0475ada/Meshy_AI_model.glb", scale: 0.5, pos: [0.12, 0, 0.04], rot: [0, 3.14, 1.57] }
+};
+const ARM_ORDER = ["sword", "axe", "halberd", "mace", "bow", "crossbow"];
+const ATTACK_POSES = { Right_Hand_Sword_Slash: true, Archery_Shot_1: true, Draw_and_Shoot_from_Back: true };
+
+function loadArcher() {
+    const loader = new GLTFLoader();
+    const body = new Promise((resolve) => {
+        loader.load("../models/meshy/harlequin-man-at-arms.glb", (gltf) => {
+            archerGltf = gltf;
+            resolve(gltf);
+        }, undefined, () => resolve(null));
+    });
+    const props = ARM_ORDER.map((id) => new Promise((resolve) => {
+        loader.load(encodeURI(ARMS[id].file), (gltf) => {
+            if (id === "bow") {
+                const wood = new THREE.MeshStandardMaterial({ color: 0x8a5a32, roughness: 0.72 });
+                gltf.scene.traverse((obj) => {
+                    if (!obj.isMesh) return;
+                    if (obj.geometry && !obj.geometry.getAttribute("normal")) obj.geometry.computeVertexNormals();
+                    obj.material = wood;
+                });
+            }
+            armGltf[id] = gltf;
+            resolve(gltf);
+        }, undefined, () => resolve(null));
+    }));
+    return Promise.all([body].concat(props));
+}
+
+function fitArcher(model, group, row) {
+    model.position.set(0, 0, 0);
+    model.scale.set(1, 1, 1);
+    model.updateMatrixWorld(true);
+    let head = null;
+    let foot = null;
+    model.traverse((obj) => {
+        if (obj.name === "mixamorigHead") head = obj;
+        if (obj.name === "mixamorigLeftFoot") foot = obj;
+    });
+    if (!head || !foot) return 1.5;
+    const headY = head.getWorldPosition(new THREE.Vector3()).y;
+    const footY = foot.getWorldPosition(new THREE.Vector3()).y;
+    const tall = 1.8 * ((row && row.w) || 1.1) / 1.1;
+    model.scale.setScalar(tall / Math.max(0.4, headY - footY + 0.18));
+    model.updateMatrixWorld(true);
+    const origin = group.getWorldPosition(new THREE.Vector3());
+    const sole = foot.getWorldPosition(new THREE.Vector3());
+    const top = head.getWorldPosition(new THREE.Vector3());
+    model.position.x += origin.x - (sole.x + top.x) / 2;
+    model.position.z += origin.z - (sole.z + top.z) / 2;
+    model.position.y += origin.y - sole.y;
+    model.updateMatrixWorld(true);
+    return head.getWorldPosition(new THREE.Vector3()).y - origin.y;
+}
+
+function dressArcher(unit) {
+    if (!archerGltf || unit.archer) return;
+    const model = cloneSkinned(archerGltf.scene);
+    let right = null;
+    let left = null;
+    model.traverse((obj) => {
+        if (obj.isMesh) {
+            obj.castShadow = true;
+            obj.frustumCulled = false;
+        }
+        if (obj.name === "mixamorigRightHand") right = obj;
+        if (obj.name === "mixamorigLeftHand") left = obj;
+    });
+    unit.props = {};
+    ARM_ORDER.forEach((id) => {
+        const spec = ARMS[id];
+        const source = armGltf[id];
+        if (!source) return;
+        const prop = source.scene.clone(true);
+        prop.scale.setScalar(spec.scale);
+        prop.position.set(spec.pos[0], spec.pos[1], spec.pos[2]);
+        prop.rotation.set(spec.rot[0], spec.rot[1], spec.rot[2]);
+        prop.visible = id === arm;
+        prop.traverse((mesh) => {
+            if (!mesh.isMesh) return;
+            mesh.castShadow = true;
+            mesh.frustumCulled = false;
+        });
+        const hand = spec.hand === "left" ? left : right;
+        if (hand) hand.add(prop);
+        unit.props[id] = prop;
+    });
+    unit.group.remove(unit.body);
+    unit.group.add(model);
+    model.userData.unit = unit;
+    unit.body = model;
+    const mixer = new THREE.AnimationMixer(model);
+    const clips = {};
+    for (let i = 0; i < archerGltf.animations.length; i++) {
+        const clip = archerGltf.animations[i];
+        clips[clip.name] = mixer.clipAction(clip);
+    }
+    unit.mixer = mixer;
+    unit.clips = clips;
+    unit.archer = true;
+    unit.pose = "";
+    unit.rightHand = right;
+    unit.leftHand = left;
+    unit.bowHand = left;
+    playArcher(unit, "Idle_02", false);
+    mixer.update(0);
+    unit.eyeHeight = fitArcher(model, unit.group, playerRow()) * 0.92;
+}
+
+function showArm(unit) {
+    if (!unit || !unit.props) return;
+    ARM_ORDER.forEach((id) => {
+        if (unit.props[id]) unit.props[id].visible = id === arm;
+    });
+    unit.bowHand = arm === "bow" || arm === "crossbow" ? unit.leftHand : unit.rightHand;
+}
+
+function playArcher(unit, name, once) {
+    const action = unit.clips && unit.clips[name];
+    if (!action) return null;
+    if (unit.pose === name && !once) return action;
+    Object.keys(unit.clips).forEach((key) => {
+        if (key !== name) unit.clips[key].stop();
+    });
+    action.reset();
+    action.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, once ? 1 : Infinity);
+    action.clampWhenFinished = !!once;
+    action.timeScale = name === "Archery_Shot_1" ? 1.15 : name === "Draw_and_Shoot_from_Back" ? 1.8 : name === "Right_Hand_Sword_Slash" ? 1.35 : 1;
+    action.play();
+    unit.pose = name;
+    return action;
+}
+
+function holdArcher(unit, dt) {
+    if (unit.pose !== "Idle_02") playArcher(unit, "Idle_02", false);
+    unit.mixer.update(dt);
+}
+
+function stepArcher(unit, dt, moving) {
+    const action = unit.pose && unit.clips ? unit.clips[unit.pose] : null;
+    const busy = !!(action && ATTACK_POSES[unit.pose] && action.isRunning());
+    if (!busy) playArcher(unit, moving ? "Walking" : "Idle_02", false);
+    unit.mixer.update(dt);
+    if (!busy || !action) return;
+    if (unit.pose === "Archery_Shot_1" || unit.pose === "Draw_and_Shoot_from_Back") {
+        if (!unit.released && action.time >= (unit.releaseAt || 0.7)) {
+            unit.released = true;
+            looseArrow();
+        }
+        if (unit.pose === "Draw_and_Shoot_from_Back" && unit.released && action.time > unit.releaseAt + 0.45) action.stop();
+    }
+    if (!action.isRunning()) unit.pose = "";
+}
+
 function ensureSelf() {
-    for (let i = 0; i < units.length; i++) if (units[i].side === "self") return units[i];
-    if (!home || !actors) return null;
-    const unit = spawn("soldier", home.x - 8, home.z + 16, "self");
-    unit.state = "idle";
-    unit.job = null;
-    unit.jobNode = null;
-    unit.goal = null;
+    let unit = null;
+    let fresh = false;
+    for (let i = 0; i < units.length; i++) {
+        if (units[i].side === "self") {
+            unit = units[i];
+            break;
+        }
+    }
+    if (!unit) {
+        if (!home || !actors) return null;
+        unit = spawn("soldier", home.x - 8, home.z + 16, "self");
+        unit.state = "idle";
+        unit.job = null;
+        unit.jobNode = null;
+        unit.goal = null;
+        fresh = true;
+    }
+    const row = playerRow();
+    if (archerGltf) dressArcher(unit);
+    else fitMapModel(unit.body, row.w / 2, row.d / 2);
+    unit.ringScale = Math.max(row.w, row.d) / 1.24;
+    eye = unit.eyeHeight || 1.2 * (unit.body.scale.y || 1);
+    showRing(unit);
+    unit.speed = row.move;
+    unit.maxHp = row.hp;
+    if (fresh) unit.hp = row.hp;
+    else if (unit.hp > row.hp) unit.hp = row.hp;
     return unit;
 }
 
@@ -1104,20 +1801,20 @@ function sideQueued(side) {
     return n;
 }
 
-function deliverTrain(side, kind) {
+function trainSpot(side, kind) {
     const base = side === "cpu" ? cpuHome : home;
-    let place = base;
-    if (kind === "soldier") {
-        if (side === "you" && selectedHouse && selectedHouse.kind === "barracks" && (selectedHouse.side || "you") === "you") place = selectedHouse;
-        else {
-            for (let i = 0; i < built.length; i++) {
-                if (built[i].kind === "barracks" && (built[i].side || "you") === side) {
-                    place = built[i];
-                    break;
-                }
-            }
-        }
+    let fallback = base && madeBy("manor").indexOf(kind) >= 0 ? base : null;
+    for (let i = 0; i < built.length; i++) {
+        if ((built[i].side || "you") !== side) continue;
+        if (madeBy(built[i].kind).indexOf(kind) < 0) continue;
+        if (built[i].kind === "barracks") return built[i];
+        if (!fallback) fallback = built[i];
     }
+    return fallback || base;
+}
+
+function deliverTrain(side, kind) {
+    const place = trainSpot(side, kind);
     if (!place || sideKind(side, kind) >= kindCap(side, kind)) return false;
     const ang = Math.PI * 0.5 + sideKind(side, kind) * 0.32;
     const reach = kind === "soldier" && place.hx ? Math.max(place.hx, place.hz) + 3 : 22;
@@ -1139,16 +1836,17 @@ function deliverTrain(side, kind) {
 function trainFor(side, kind, auto) {
     const base = side === "cpu" ? cpuHome : home;
     if (!auto) {
-        if (kind === "soldier") {
-            if (!selectedHouse || selectedHouse.kind !== "barracks" || (selectedHouse.side || "you") !== side) return;
-        } else if (!manorSelected || side !== "you") return;
-    }
+        const from = manorSelected ? "manor" : (selectedHouse && selectedHouse.kind);
+        if (!from || madeBy(from).indexOf(kind) < 0) return;
+        if (manorSelected && side !== led) return;
+        if (!manorSelected && selectedHouse && (selectedHouse.side || "you") !== side) return;
+    } else if (madeBy("manor").indexOf(kind) < 0) return;
     if (!actors || !base) return;
     if (auto && sideQueued(side) > 0) return;
-    if (side === "cpu" ? cpuFood < COST : food < COST) return;
+    const bill = unitBill(kind);
+    if (!canPay(side, bill)) return;
     if (sideKind(side, kind) + kindQueued(side, kind) >= kindCap(side, kind)) return;
-    if (side === "cpu") cpuFood -= COST;
-    else food -= COST;
+    spend(side, bill);
     trains.push({ side: side, kind: kind, left: TRAIN_TIME });
     refreshHud();
     writeSave();
@@ -1178,7 +1876,7 @@ function stepTrains(dt) {
 }
 
 function train(kind) {
-    const side = kind === "soldier" && selectedHouse ? (selectedHouse.side || "you") : "you";
+    const side = manorSelected ? led : (selectedHouse ? (selectedHouse.side || "you") : led);
     trainFor(side, kind);
 }
 
@@ -1189,14 +1887,15 @@ if (horseBtn) horseBtn.addEventListener("click", () => {
     trainHorse(selectedHouse);
 });
 function beginPlace(kind) {
-    const spec = BUILDINGS[kind];
+    const spec = tuned(kind);
     if (!spec || !kits[kind] || buildBtns[kind].disabled) return;
     placing = kind;
     ghost.geometry.dispose();
     ghost.geometry = new THREE.BoxGeometry(spec.hx * 2, 0.18, spec.hz * 2);
     ghost.visible = false;
-    if (spec.town && home) {
-        townRing.position.set(home.x, heightAt(home.x, home.z) + 0.25, home.z);
+    const base = sideBase(led);
+    if (spec.town && base) {
+        townRing.position.set(base.x, heightAt(base.x, base.z) + 0.25, base.z);
         townRing.visible = true;
     } else townRing.visible = false;
     refreshHud();
@@ -1212,13 +1911,15 @@ function applyStock() {
     const nextFabric = Math.floor(Number(fabricEl.value));
     if (!Number.isFinite(nextFood) || !Number.isFinite(nextWood) || !Number.isFinite(nextGold)) return;
     if (!Number.isFinite(nextIron) || !Number.isFinite(nextSalt) || !Number.isFinite(nextStone) || !Number.isFinite(nextFabric)) return;
-    food = Math.max(0, nextFood);
-    wood = Math.max(0, nextWood);
-    gold = Math.max(0, nextGold);
-    iron = Math.max(0, nextIron);
-    salt = Math.max(0, nextSalt);
-    stone = Math.max(0, nextStone);
-    fabric = Math.max(0, nextFabric);
+    writeBag(led, {
+        food: Math.max(0, nextFood),
+        wood: Math.max(0, nextWood),
+        gold: Math.max(0, nextGold),
+        iron: Math.max(0, nextIron),
+        salt: Math.max(0, nextSalt),
+        stone: Math.max(0, nextStone),
+        fabric: Math.max(0, nextFabric)
+    });
     refreshHud();
     writeSave();
 }
@@ -1244,7 +1945,7 @@ function setStance(stance) {
 guardBtn.addEventListener("click", () => setStance("guard"));
 attackBtn.addEventListener("click", () => setStance("attack"));
 
-const SAVE_KEY = "aoe-save";
+const SAVE_KEY = BOARD_URL ? "aoe-board-save" : "aoe-save";
 let aGift = false;
 
 function dryNear(x, z) {
@@ -1275,7 +1976,7 @@ function readSave() {
     try {
         const raw = localStorage.getItem(SAVE_KEY);
         const data = raw ? JSON.parse(raw) : null;
-        if (!data || data.map !== "island" || !Array.isArray(data.units) || !data.units.length) return null;
+        if (!data || data.map !== "range" || !Array.isArray(data.units) || !data.units.length) return null;
         return data;
     } catch (err) {
         return null;
@@ -1285,7 +1986,7 @@ function readSave() {
 function writeSave() {
     if (!actors || !home || !units.length) return;
     const data = {
-        map: "island",
+        map: "range",
         food: food,
         wood: wood,
         gold: gold,
@@ -1416,7 +2117,7 @@ function restoreMatch(save) {
         look.x = Math.max(mapBox.min.x, Math.min(mapBox.max.x, save.look.x));
         look.z = Math.max(mapBox.min.z, Math.min(mapBox.max.z, save.look.z));
         yaw = Number(save.look.yaw) || 0;
-        dist = Math.max(16, Math.min(220, Number(save.look.dist) || 58));
+        dist = Math.max(16, Math.min(viewFar, Number(save.look.dist) || 58));
     }
     if (save.rally && Number.isFinite(Number(save.rally.x)) && Number.isFinite(Number(save.rally.z))) {
         rally = { x: Number(save.rally.x), z: Number(save.rally.z) };
@@ -1440,52 +2141,42 @@ function restoreMatch(save) {
 }
 
 const floorPads = [];
-const porchMat = new THREE.MeshStandardMaterial({ color: 0x6e5840, roughness: 1 });
 
-function fitPorch(group, hx, hz, drop) {
-    const depth = Math.max(0.25, Math.min(2.6, drop));
-    let mesh = group.userData.porch;
-    if (!mesh) {
-        mesh = new THREE.Mesh(new THREE.BoxGeometry(hx * 2 + 0.6, 1, hz * 2 + 0.6), porchMat);
-        mesh.receiveShadow = true;
-        group.add(mesh);
-        group.userData.porch = mesh;
-    }
-    mesh.scale.y = depth;
-    mesh.position.y = -depth / 2;
+function dropPorch(group) {
+    const mesh = group && group.userData && group.userData.porch;
+    if (!mesh) return;
+    group.remove(mesh);
+    if (mesh.geometry) mesh.geometry.dispose();
+    group.userData.porch = null;
 }
 
 function seatFloors() {
     const world = window.World;
-    if (!world || !world.bareHeight) return;
-    if (world.setLevelPads) world.setLevelPads([]);
+    if (!board && (!world || !world.bareHeight)) return;
     floorPads.length = 0;
     const seat = (x, z, hx, hz, group, record) => {
-        if (world.wet && world.wet(x, z)) return 0;
-        if (world.tooSteep && world.tooSteep(x, z)) return 0;
+        if (!board && world && world.wet && world.wet(x, z)) return 0;
+        if (!board && world && world.tooSteep && world.tooSteep(x, z)) return 0;
         const corners = [
             heightAt(x - hx, z - hz),
             heightAt(x + hx, z - hz),
             heightAt(x - hx, z + hz),
-            heightAt(x + hx, z + hz),
-            heightAt(x, z)
+            heightAt(x + hx, z + hz)
         ];
-        let y = 0.2;
-        let low = corners[0];
-        for (let i = 0; i < corners.length; i++) {
-            if (corners[i] > y) y = corners[i];
-            if (corners[i] < low) low = corners[i];
-        }
+        let y = 0;
+        for (let i = 0; i < corners.length; i++) y += corners[i];
+        y /= corners.length;
         if (group) {
             group.position.y = y;
-            fitPorch(group, hx, hz, y - low + 0.2);
+            dropPorch(group);
         }
         if (record) record.y = y;
+        shapeGround(x, z, y, hx, hz);
         floorPads.push({ minX: x - hx, minZ: z - hz, w: hx * 2, d: hz * 2, y: y });
         return y;
     };
-    if (home && home.group) seat(home.x, home.z, MANOR_HX, MANOR_HZ, home.group, home);
-    if (cpuHome && cpuHome.group) seat(cpuHome.x, cpuHome.z, MANOR_HX, MANOR_HZ, cpuHome.group, cpuHome);
+    if (home && home.group) seat(home.x, home.z, home.hx || manorPad().hx, home.hz || manorPad().hz, home.group, home);
+    if (cpuHome && cpuHome.group) seat(cpuHome.x, cpuHome.z, cpuHome.hx || manorPad().hx, cpuHome.hz || manorPad().hz, cpuHome.group, cpuHome);
     for (let i = 0; i < built.length; i++) {
         const entry = built[i];
         seat(entry.x, entry.z, entry.hx, entry.hz, entry.group, entry);
@@ -1495,6 +2186,7 @@ function seatFloors() {
         const y = seat(site.x, site.z, site.hx, site.hz, null, site);
         if (site.mark) site.mark.position.y = y + 0.1;
     }
+    if (!board && world && world.setLevelPads) world.setLevelPads(floorPads.slice());
 }
 
 async function startMatch(playerHome, otherHome) {
@@ -1509,14 +2201,14 @@ async function startMatch(playerHome, otherHome) {
         worker: await loadPerson("../models/meshy/villager.skin.bin", "../models/meshy/villager.skin.png"),
         soldier: await loadPerson("../models/meshy/militia.skin.bin", "../models/meshy/militia.skin.png")
     };
+    await loadArcher();
     const save = readSave();
     if (save) restoreMatch(save);
     else {
         aGift = true;
-        spawn("worker", home.x + 4, home.z + 24, "you");
-        if (cpuHome) spawn("worker", cpuHome.x + 4, cpuHome.z + 24, "cpu");
+        startFromSheet();
     }
-    if (!units.some((unit) => unit.side === "you")) spawn("worker", home.x + 4, home.z + 24, "you");
+    if (!window.AoeSheet && !units.some((unit) => unit.side === "you")) spawn("worker", home.x + 4, home.z + 24, "you");
     await loadHorse();
     bootHaulers();
     await showBlacksmith();
@@ -1533,6 +2225,41 @@ document.getElementById("restart").addEventListener("click", () => {
     location.reload();
 });
 window.addEventListener("pagehide", writeSave);
+
+function startFromSheet() {
+    ["you", "cpu"].forEach((side) => {
+        if (side === "cpu" && !cpuHome) return;
+        const row = factionRow(side);
+        const base = side === "cpu" ? cpuHome : home;
+        if (row) {
+            const bag = stockBag(side);
+            for (let i = 0; i < PAY.length; i++) {
+                const key = PAY[i];
+                if (Number.isFinite(Number(row[key]))) bag[key] = Number(row[key]);
+            }
+            writeBag(side, bag);
+        }
+        const lines = row && row.units && row.units.length ? row.units : [{ id: "worker", count: 1 }];
+        let n = 0;
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (line.id !== "worker" && line.id !== "soldier") continue;
+            const count = Math.max(0, Math.min(24, Number(line.count) || 0));
+            for (let c = 0; c < count; c++) {
+                const ang = n * 0.7;
+                spawn(line.id, base.x + 6 + Math.cos(ang) * 4, base.z + 18 + Math.sin(ang) * 4, side);
+                n++;
+            }
+        }
+        const builds = row && row.buildings ? row.buildings : [];
+        for (let i = 0; i < builds.length; i++) {
+            const line = builds[i];
+            if (!line.id || line.id === "manor" || !BUILDINGS[line.id]) continue;
+            const count = Math.max(0, Math.min(4, Number(line.count) || 0));
+            for (let c = 0; c < count; c++) sidePlace(side, line.id);
+        }
+    });
+}
 
 function standAt(node, unit) {
     if (node && node.kind === "farm" && node.farm) return farmStand(node.farm, unit);
@@ -1683,7 +2410,7 @@ function depositCarry(unit) {
 function manorGate(yard) {
     const base = sideBase(yard.side || "you");
     if (!base) return { x: yard.x, z: yard.z + yard.hz + 4 };
-    return edgeOf(base.x, base.z, MANOR_HX, MANOR_HZ, yard.x, yard.z);
+    return edgeOf(base.x, base.z, base.hx || manorPad().hx, base.hz || manorPad().hz, yard.x, yard.z);
 }
 
 function yardGate(yard) {
@@ -1747,11 +2474,15 @@ function spawnHorse(yard, saved) {
     if (idle) idle.play();
     const group = new THREE.Group();
     group.add(model);
+    const sized = window.AoeSheet && window.AoeSheet.creatures ? window.AoeSheet.creatures().horse : null;
+    const horseWide = sized && Number.isFinite(sized.w) ? sized.w : 0.63;
+    const horseDeep = sized && Number.isFinite(sized.d) ? sized.d : 3.21;
     const gate = yardGate(yard);
     const x = saved && Number.isFinite(Number(saved.hx)) ? Number(saved.hx) : gate.x;
     const z = saved && Number.isFinite(Number(saved.hz)) ? Number(saved.hz) : gate.z;
     group.position.set(x, feetAt(x, z), z);
     scene.add(group);
+    fitMapModel(model, horseWide / 2, horseDeep / 2);
     const phase = saved && (saved.phase === "out" || saved.phase === "back") ? saved.phase : "wait";
     const horse = {
         haul: true,
@@ -1760,7 +2491,7 @@ function spawnHorse(yard, saved) {
         x: x,
         z: z,
         yaw: saved ? Number(saved.yaw) || 0 : 0,
-        hp: saved && Number(saved.hp) > 0 ? Number(saved.hp) : HORSE_HP,
+        hp: saved && Number(saved.hp) > 0 ? Number(saved.hp) : (sized && Number(sized.hp) > 0 ? Number(sized.hp) : HORSE_HP),
         alive: true,
         phase: phase,
         cargo: copyHold(saved && saved.cargo),
@@ -1908,8 +2639,9 @@ function trainHorse(yard) {
     if (yard.horse && yard.horse.alive) return;
     if (yard.horseLeft > 0) return;
     const side = yard.side || "you";
-    if (sideFood(side) < HORSE_COST) return;
-    takeFood(side, HORSE_COST);
+    const bill = horseBill();
+    if (!canPay(side, bill)) return;
+    spend(side, bill);
     yard.horseLeft = HORSE_TIME;
     yard.lostHorse = true;
     refreshHud();
@@ -1927,7 +2659,7 @@ function retrainHorses(side) {
             spawnHorse(yard);
             continue;
         }
-        if (sideFood(side) < HORSE_COST) continue;
+        if (!canPay(side, horseBill())) continue;
         trainHorse(yard);
     }
 }
@@ -1989,7 +2721,6 @@ async function loadKits() {
     }));
 }
 
-const SMITH_SCALE = 10;
 let smithGltf = null;
 
 function loadSmith() {
@@ -2005,7 +2736,7 @@ async function showBlacksmith() {
     if (!home) return;
     await loadSmith();
     if (!smithGltf) return;
-    const spec = BUILDINGS.smith;
+    const spec = tuned("smith") || BUILDINGS.smith;
     let spot = null;
     for (let ring = 0; ring < 6 && !spot; ring++) {
         const dist = 34 + ring * 8;
@@ -2021,8 +2752,6 @@ async function showBlacksmith() {
     }
     if (!spot) return;
     const model = smithGltf.scene.clone(true);
-    model.scale.setScalar(SMITH_SCALE);
-    model.position.y = 0.29 * SMITH_SCALE;
     model.traverse((mesh) => {
         if (!mesh.isMesh) return;
         mesh.castShadow = true;
@@ -2033,6 +2762,7 @@ async function showBlacksmith() {
     const y = heightAt(spot.x, spot.z);
     group.position.set(spot.x, y, spot.z);
     scene.add(group);
+    fitMapModel(model, spec.hx, spec.hz);
     const entry = { kind: "smith", side: "you", x: spot.x, z: spot.z, y: y, hx: spec.hx, hz: spec.hz, group: group, preview: true };
     group.userData.building = entry;
     model.traverse((mesh) => {
@@ -2043,21 +2773,25 @@ async function showBlacksmith() {
 
 function shapeGround(cx, cz, targetY, hx, hz) {
     const skirt = 2.2;
+    const blend = (x, z, hy) => {
+        const dx = Math.abs(x - cx);
+        const dz = Math.abs(z - cz);
+        if (dx > hx + skirt || dz > hz + skirt) return hy;
+        const ox = Math.max(0, dx - hx);
+        const oz = Math.max(0, dz - hz);
+        const t = 1 - Math.min(1, Math.hypot(ox, oz) / skirt);
+        if (t <= 0) return hy;
+        return hy + (targetY - hy) * t;
+    };
     terrain.traverse((mesh) => {
         if (!mesh.isMesh || !mesh.geometry || !mesh.geometry.attributes.position) return;
         const pos = mesh.geometry.attributes.position;
         if (pos.count < 80) return;
         let changed = false;
         for (let i = 0; i < pos.count; i++) {
-            const dx = Math.abs(pos.getX(i) - cx);
-            const dz = Math.abs(pos.getZ(i) - cz);
-            if (dx > hx + skirt || dz > hz + skirt) continue;
-            const ox = Math.max(0, dx - hx);
-            const oz = Math.max(0, dz - hz);
-            const t = 1 - Math.min(1, Math.hypot(ox, oz) / skirt);
-            if (t <= 0) continue;
-            const hy = pos.getY(i);
-            pos.setY(i, hy + (targetY - hy) * t);
+            const next = blend(pos.getX(i), pos.getZ(i), pos.getY(i));
+            if (next === pos.getY(i)) continue;
+            pos.setY(i, next);
             changed = true;
         }
         if (!changed) return;
@@ -2066,6 +2800,21 @@ function shapeGround(cx, cz, targetY, hx, hz) {
         mesh.geometry.computeBoundingBox();
         mesh.geometry.computeBoundingSphere();
     });
+    if (!board) return;
+    const n = board.n;
+    const h = board.heights;
+    const i0 = Math.max(0, Math.floor(((cx - hx - skirt) - board.minX) / board.span * (n - 1)));
+    const i1 = Math.min(n - 1, Math.ceil(((cx + hx + skirt) - board.minX) / board.span * (n - 1)));
+    const j0 = Math.max(0, Math.floor(((cz - hz - skirt) - board.minZ) / board.span * (n - 1)));
+    const j1 = Math.min(n - 1, Math.ceil(((cz + hz + skirt) - board.minZ) / board.span * (n - 1)));
+    for (let j = j0; j <= j1; j++) {
+        for (let i = i0; i <= i1; i++) {
+            const x = board.minX + (i / (n - 1)) * board.span;
+            const z = board.minZ + (j / (n - 1)) * board.span;
+            const idx = j * n + i;
+            h[idx] = blend(x, z, h[idx]);
+        }
+    }
 }
 
 function hitsWater(x, z, hx, hz) {
@@ -2091,7 +2840,7 @@ function spotOk(x, z, spec, anchor) {
     if (home) pads.push(home);
     if (cpuHome) pads.push(cpuHome);
     for (let i = 0; i < pads.length; i++) {
-        if (overlaps(x, z, spec.hx, spec.hz, pads[i].x, pads[i].z, MANOR_HX, MANOR_HZ)) return "busy";
+        if (overlaps(x, z, spec.hx, spec.hz, pads[i].x, pads[i].z, pads[i].hx || manorPad().hx, pads[i].hz || manorPad().hz)) return "busy";
     }
     for (let i = 0; i < built.length; i++) {
         if (overlaps(x, z, spec.hx, spec.hz, built[i].x, built[i].z, built[i].hx, built[i].hz)) return "busy";
@@ -2104,16 +2853,25 @@ function spotOk(x, z, spec, anchor) {
 
 function placeBuilding(kind, x, y, z, side) {
     const parts = kits[kind];
-    const spec = BUILDINGS[kind];
+    const spec = tuned(kind) || BUILDINGS[kind];
     if (!parts || !spec) return;
+    const mapUrl = mapGraphic(kind);
     const group = new THREE.Group();
     group.position.set(x, y, z);
-    for (let i = 0; i < parts.length; i++) group.add(new THREE.Mesh(parts[i].geom, parts[i].mat));
     scene.add(group);
     manors.push(group);
     const entry = { kind: kind, side: side === "cpu" ? "cpu" : "you", x: x, z: z, y: y, hx: spec.hx, hz: spec.hz, group: group, kitId: spec.id };
     group.userData.building = entry;
-    for (let i = 0; i < group.children.length; i++) group.children[i].userData.building = entry;
+    const shell = addKitShell(group, parts, entry);
+    fitMapModel(shell, spec.hx, spec.hz);
+    entry.fpModel = shell;
+    shell.visible = !mapUrl;
+    if (mapUrl) {
+        attachMapModel(group, mapUrl, spec.hx, spec.hz, entry).catch(() => {
+            shell.visible = true;
+            seatFloors();
+        });
+    }
     if (kind === "farm") entry.node = { kind: "farm", x: x, z: z, farm: entry };
     if (DEPOTS[kind]) {
         entry.hold = emptyHold();
@@ -2314,6 +3072,8 @@ function stepRooms() {
     if (cpuHome) list.push(cpuHome);
     for (let i = 0; i < list.length; i++) {
         const entry = list[i];
+        if (entry.mapModel) entry.mapModel.visible = !pilot;
+        if (entry.fpModel) entry.fpModel.visible = !!pilot || !entry.mapModel;
         if (!entry.rooms) continue;
         const inside = !!(pilot && buildingInside(entry, pilot.x, pilot.z));
         let show = inside;
@@ -2410,8 +3170,8 @@ function bankCarry(unit) {
 }
 
 function nearestBuilder(x, z) {
-    const picked = selected.filter((unit) => unit.side === "you" && unit.kind === "worker" && unit !== pilot);
-    const pool = picked.length ? picked : units.filter((unit) => unit.side === "you" && unit.kind === "worker" && unit !== pilot);
+    const picked = selected.filter((unit) => unit.side === led && unit.kind === "worker" && unit !== pilot);
+    const pool = picked.length ? picked : units.filter((unit) => unit.side === led && unit.kind === "worker" && unit !== pilot);
     let best = null;
     let bestD = Infinity;
     for (let i = 0; i < pool.length; i++) {
@@ -2425,12 +3185,13 @@ function nearestBuilder(x, z) {
 }
 
 function tryPlace(x, z) {
-    const spec = BUILDINGS[placing];
-    if (!spec || !kits[placing] || wood < spec.wood) {
-        selEl.textContent = (spec ? spec.label : "That building") + " needs " + (spec ? spec.wood : 0) + " wood.";
+    const spec = tuned(placing);
+    const bill = buildingBill(placing);
+    if (!spec || !kits[placing] || !canPay(led, bill)) {
+        selEl.textContent = (spec ? spec.label : "That building") + " needs " + billText(bill) + ".";
         return;
     }
-    const why = spotOk(x, z, spec);
+    const why = spotOk(x, z, spec, sideBase(led));
     if (why === "water") {
         selEl.textContent = "Not on water.";
         return;
@@ -2444,8 +3205,8 @@ function tryPlace(x, z) {
         return;
     }
     const y = heightAt(x, z);
-    wood -= spec.wood;
-    const site = { kind: placing, side: "you", x: x, z: z, y: y, hx: spec.hx, hz: spec.hz, left: HOUSE_TIME, mark: null };
+    spend(led, bill);
+    const site = { kind: placing, side: led, x: x, z: z, y: y, hx: spec.hx, hz: spec.hz, left: spec.time, mark: null };
     addFoundation(site);
     sites.push(site);
     seatFloors();
@@ -2463,7 +3224,7 @@ function tryPlace(x, z) {
 
 function moveGhost(event) {
     if (!placing) return;
-    const spec = BUILDINGS[placing];
+    const spec = tuned(placing);
     const point = groundAt(event);
     if (!point || !spec) {
         ghost.visible = false;
@@ -2471,7 +3232,7 @@ function moveGhost(event) {
     }
     ghost.visible = true;
     ghost.position.set(point.x, heightAt(point.x, point.z) + 0.16, point.z);
-    ghost.material.color.setHex(wood >= spec.wood && spotOk(point.x, point.z, spec) === "" ? 0x6dbf4a : 0xc4513a);
+    ghost.material.color.setHex(canPay(led, buildingBill(placing)) && spotOk(point.x, point.z, spec) === "" ? 0x6dbf4a : 0xc4513a);
 }
 
 function nearestOfKind(x, z, kind) {
@@ -2527,9 +3288,10 @@ function sideBusy(side) {
 }
 
 function sidePlace(side, kind) {
-    const spec = BUILDINGS[kind];
+    const spec = tuned(kind);
     const base = sideBase(side);
-    if (!spec || !kits[kind] || !base || sideWood(side) < spec.wood) return false;
+    const bill = buildingBill(kind);
+    if (!spec || !kits[kind] || !base || !canPay(side, bill)) return false;
     if (side === "you" && placing) return false;
     let spot = null;
     if (kind === "salt") {
@@ -2560,9 +3322,9 @@ function sidePlace(side, kind) {
         }
     }
     if (!spot) return false;
-    takeWood(side, spec.wood);
+    spend(side, bill);
     const y = heightAt(spot.x, spot.z);
-    const site = { kind: kind, side: side, x: spot.x, z: spot.z, y: y, hx: spec.hx, hz: spec.hz, left: HOUSE_TIME, mark: null };
+    const site = { kind: kind, side: side, x: spot.x, z: spot.z, y: y, hx: spec.hx, hz: spec.hz, left: spec.time, mark: null };
     addFoundation(site);
     sites.push(site);
     seatFloors();
@@ -2849,12 +3611,11 @@ function stepSide(side) {
     for (let i = 0; i < jobs.length && i < spare.length; i++) sendSideWork(spare[i], jobs[i], yard, base);
     let placed = false;
     if (!sideBusy(side)) {
-        if (sideWood(side) >= 20) placed = sidePlace(side, "house");
-        if (!placed && ownedCount(built, "farm", side) + ownedCount(sites, "farm", side) < 1 && sideWood(side) >= 100 && workers >= 4) placed = sidePlace(side, "farm");
-        if (!placed && ownedCount(built, "salt", side) + ownedCount(sites, "salt", side) < 1 && sideWood(side) >= 100 && workers >= 4) placed = sidePlace(side, "salt");
+        if (canPay(side, buildingBill("house"))) placed = sidePlace(side, "house");
+        if (!placed && ownedCount(built, "farm", side) + ownedCount(sites, "farm", side) < 1 && canPay(side, buildingBill("farm")) && workers >= 4) placed = sidePlace(side, "farm");
+        if (!placed && ownedCount(built, "salt", side) + ownedCount(sites, "salt", side) < 1 && canPay(side, buildingBill("salt")) && workers >= 4) placed = sidePlace(side, "salt");
     }
-    const foodStock = side === "cpu" ? cpuFood : food;
-    if (!placed && foodStock >= COST && sideKind(side, "worker") < kindCap(side, "worker")) trainFor(side, "worker", true);
+    if (!placed && canPay(side, unitBill("worker")) && sideKind(side, "worker") < kindCap(side, "worker")) trainFor(side, "worker", true);
 }
 
 function stepCpu(dt) {
@@ -3077,18 +3838,26 @@ function stepUnits(dt) {
             unit.group.visible = !!pilot;
             unit.group.position.y = feetAt(unit.x, unit.z);
             unit.anim += dt;
-            const idle = unit.actor.frames.idle;
-            const frame = idle[Math.floor(unit.anim) % idle.length];
-            if (unit.body.geometry !== frame) unit.body.geometry = frame;
+            if (unit.mixer) holdArcher(unit, dt);
+            else if (unit.body.geometry && unit.actor) {
+                const idle = unit.actor.frames.idle;
+                const frame = idle[Math.floor(unit.anim) % idle.length];
+                if (unit.body.geometry !== frame) unit.body.geometry = frame;
+            }
             continue;
         }
         if (unit === pilot) {
+            unit.yaw = lookYaw;
+            unit.group.rotation.y = lookYaw;
             const moving = !!(keys.w || keys.a || keys.s || keys.d || keys.arrowup || keys.arrowdown || keys.arrowleft || keys.arrowright);
             unit.group.position.y = feetAt(unit.x, unit.z);
             unit.anim += dt;
-            const frames = moving ? unit.actor.frames.walk : unit.actor.frames.idle;
-            const frame = frames[Math.floor(unit.anim * (moving ? 12 : 1)) % frames.length];
-            if (unit.body.geometry !== frame) unit.body.geometry = frame;
+            if (unit.mixer) stepArcher(unit, dt, moving);
+            else if (unit.body.geometry && unit.actor) {
+                const frames = moving ? unit.actor.frames.walk : unit.actor.frames.idle;
+                const frame = frames[Math.floor(unit.anim * (moving ? 12 : 1)) % frames.length];
+                if (unit.body.geometry !== frame) unit.body.geometry = frame;
+            }
             continue;
         }
         if (unit.side === "self") unit.state = "idle";
@@ -3136,6 +3905,10 @@ function stepUnits(dt) {
         }
         unit.group.position.y = feetAt(unit.x, unit.z);
         unit.anim += dt;
+        if (unit.mixer) {
+            holdArcher(unit, dt);
+            continue;
+        }
         const punch = unit.state === "strike" && unit.actor.frames.punch && unit.actor.frames.punch.length;
         const frames = punch ? unit.actor.frames.punch : moving ? unit.actor.frames.walk : unit.actor.frames.idle;
         const frame = punch
@@ -3167,15 +3940,21 @@ function pickUnit(event) {
         if (units[i].state === "inside" && !pilot) continue;
         bodies.push(units[i].body);
     }
-    const hit = raycaster.intersectObjects(bodies, false)[0];
-    if (hit && hit.object.userData.unit && (hit.object.userData.unit.side === "you" || hit.object.userData.unit.side === "cpu") && hit.object.userData.unit.state !== "inside") return hit.object.userData.unit;
+    const hit = raycaster.intersectObjects(bodies, true)[0];
+    let picked = hit ? hit.object : null;
+    while (picked && !picked.userData.unit) picked = picked.parent;
+    if (picked && picked.userData.unit && picked.userData.unit.state !== "inside") {
+        const side = picked.userData.unit.side;
+        if (side === "you" || side === "cpu" || side === "self") return picked.userData.unit;
+    }
     let best = null;
     let bestD = 28;
     const rect = renderer.domElement.getBoundingClientRect();
     for (let i = 0; i < units.length; i++) {
         if (units[i].state === "inside") continue;
         const spot = new THREE.Vector3(units[i].x, units[i].group.position.y + 0.7, units[i].z).project(camera);
-        if ((units[i].side !== "you" && units[i].side !== "cpu") || spot.z > 1) continue;
+        if (units[i].side !== "you" && units[i].side !== "cpu" && units[i].side !== "self") continue;
+        if (spot.z > 1) continue;
         const sx = (spot.x * 0.5 + 0.5) * rect.width + rect.left;
         const sy = (-spot.y * 0.5 + 0.5) * rect.height + rect.top;
         const d = Math.hypot(event.clientX - sx, event.clientY - sy);
@@ -3238,11 +4017,12 @@ function chooseClick(event) {
 }
 
 function pickManor(event) {
-    if (!home) return false;
+    const base = sideBase(led);
+    if (!base || !base.group) return false;
     raycaster.setFromCamera(ndc(event), camera);
-    if (raycaster.intersectObject(home.group, true).length > 0) return true;
+    if (raycaster.intersectObject(base.group, true).length > 0) return true;
     const point = groundAt(event);
-    return !!point && Math.hypot(point.x - home.x, point.z - home.z) < 12;
+    return !!point && Math.hypot(point.x - base.x, point.z - base.z) < 12;
 }
 
 function formationGoals(movers, point) {
@@ -3291,12 +4071,37 @@ function formationGoals(movers, point) {
     return goals;
 }
 
+function placeSelf(unit, point) {
+    unit.x = point.x;
+    unit.z = point.z;
+    unit.goal = null;
+    unit.job = null;
+    unit.jobNode = null;
+    unit.targetId = null;
+    unit.orders = false;
+    unit.shelter = null;
+    unit.state = "idle";
+    unit.group.visible = true;
+    unit.group.position.set(point.x, feetAt(point.x, point.z), point.z);
+}
+
 function commandAt(point) {
     if (!selected.length) return;
+    let yours = false;
     selected.forEach((unit) => {
+        if (unit.side === "self") {
+            placeSelf(unit, point);
+            return;
+        }
         if ((unit.side !== "you" && unit.side !== "cpu") || unit.state === "inside" || unit.state === "home") return;
         unit.orders = true;
+        yours = true;
     });
+    if (!yours) {
+        refreshHud();
+        writeSave();
+        return;
+    }
     const farm = farmAt(point.x, point.z);
     const node = farm ? null : nearestNode(point.x, point.z);
     const soldiers = [];
@@ -3360,7 +4165,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
             return;
         }
         if (event.button !== 0 || pilot.hp <= 0) return;
-        if (arm === "bow") playerShot();
+        if (ARMS[arm] && ARMS[arm].attack !== "slash") playerShot();
         else playerSwing("thrust");
         return;
     }
@@ -3482,7 +4287,7 @@ window.addEventListener("pointermove", (event) => {
 });
 renderer.domElement.addEventListener("wheel", (event) => {
     if (pilot) return;
-    dist = Math.max(16, Math.min(220, dist + event.deltaY * 0.08));
+    dist = Math.max(16, Math.min(viewFar, dist + event.deltaY * 0.08));
     event.preventDefault();
 }, { passive: false });
 
@@ -3495,7 +4300,7 @@ const swings = {
     "slash-right": { reach: 2.25, radius: 0.9, side: 0.55 }
 };
 let arm = "sword";
-let packWeapons = ["bow"];
+let packWeapons = ARM_ORDER.slice();
 let nextSwing = 0;
 let strikeTimer = 0;
 
@@ -3510,32 +4315,35 @@ function paintSelf() {
     const bar = document.getElementById("self-health");
     const fill = document.getElementById("self-health-fill");
     bar.hidden = !pilot;
-    if (pilot) fill.style.width = Math.max(0, pilot.hp / 40 * 100) + "%";
-    document.getElementById("pack-hands").textContent = arm === "bow" ? "Bow" : "Sword";
-    document.body.classList.toggle("armed-bow", !!pilot && arm === "bow");
-    document.body.classList.toggle("armed-sword", !!pilot && arm !== "bow");
+    if (pilot) fill.style.width = Math.max(0, pilot.hp / playerRow().hp * 100) + "%";
+    const held = ARMS[arm] || ARMS.sword;
+    document.getElementById("pack-hands").textContent = held.name;
+    document.body.classList.toggle("armed-bow", !!pilot && held.attack !== "slash");
+    document.body.classList.toggle("armed-sword", !!pilot && held.attack === "slash");
     const playBtn = document.getElementById("play-self");
     if (playBtn) playBtn.textContent = pilot ? "Campaign" : "Become player";
     const swingBtn = document.getElementById("swing");
-    if (swingBtn) swingBtn.textContent = arm === "bow" ? "Shoot" : "Swing";
+    if (swingBtn) swingBtn.textContent = held.attack === "slash" ? "Swing" : "Shoot";
     const list = document.getElementById("pack-list");
     list.textContent = "";
     packWeapons.forEach((id) => {
+        const spec = ARMS[id];
+        if (!spec) return;
         const button = document.createElement("button");
         button.type = "button";
-        button.textContent = id === "bow" ? "Bow" : "Sword";
+        button.textContent = id === arm ? spec.name + " (held)" : spec.name;
         button.addEventListener("click", () => equip(id));
         list.appendChild(button);
     });
 }
 
 function equip(id) {
-    if (id === arm) return;
-    packWeapons = packWeapons.filter((item) => item !== id);
-    packWeapons.push(arm);
+    if (!ARMS[id] || id === arm) return;
     arm = id;
+    const mine = pilot || units.find((unit) => unit.side === "self");
+    if (mine) showArm(mine);
     paintSelf();
-    showStrike(id === "bow" ? "Bow" : "Sword");
+    showStrike(ARMS[id].name);
 }
 
 function togglePack() {
@@ -3544,18 +4352,49 @@ function togglePack() {
     if (!panel.hidden && document.pointerLockElement) document.exitPointerLock();
     paintSelf();
 }
-function foldCard(cardId, buttonId, showLabel) {
-    const card = document.getElementById(cardId);
-    const button = document.getElementById(buttonId);
-    card.classList.toggle("folded");
-    button.textContent = card.classList.contains("folded") ? showLabel : "Hide";
+function leadTeam(side) {
+    if (pilot) leaveBody();
+    led = side === "cpu" ? "cpu" : "you";
+    const base = sideBase(led);
+    setSelected([]);
+    manorSelected = true;
+    if (base) {
+        look.set(base.x + 2, heightAt(base.x, base.z), base.z + 14);
+        dist = 110;
+    }
+    refreshHud();
 }
-document.getElementById("bar-min").addEventListener("click", () => foldCard("bar", "bar-min", "Notes"));
-document.getElementById("dock-min").addEventListener("click", () => foldCard("dock", "dock-min", "Orders"));
-document.getElementById("stock-min").addEventListener("click", () => foldCard("stock", "stock-min", "Stock"));
-document.getElementById("pack").addEventListener("click", togglePack);
+
+function toggleNotes() {
+    const bar = document.getElementById("bar");
+    bar.hidden = !bar.hidden;
+}
+
+document.getElementById("menu-btn").addEventListener("click", () => {
+    const list = document.getElementById("menu-list");
+    list.hidden = !list.hidden;
+});
+document.getElementById("menu-list").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-menu]");
+    document.getElementById("menu-list").hidden = true;
+    if (!button) return;
+    const pick = button.dataset.menu;
+    if (pick === "notes") toggleNotes();
+    else if (pick === "pack") togglePack();
+    else if (pick === "walk") {
+        if (pilot) leaveBody();
+        else {
+            const mine = units.find((unit) => unit.side === "self");
+            if (mine) enterBody(mine);
+        }
+    } else if (pick === "you" || pick === "cpu") leadTeam(pick);
+});
 document.getElementById("pack-close").addEventListener("click", () => {
     document.getElementById("pack-panel").hidden = true;
+});
+document.getElementById("pack-campaign").addEventListener("click", () => {
+    document.getElementById("pack-panel").hidden = true;
+    if (pilot) leaveBody();
 });
 
 const handheldQuery = window.matchMedia("(max-width: 900px)");
@@ -3602,7 +4441,7 @@ document.querySelectorAll("#move-pad button").forEach((button) => holdKey(button
 document.getElementById("swing").addEventListener("pointerdown", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    if (arm === "bow") playerShot();
+    if (ARMS[arm] && ARMS[arm].attack !== "slash") playerShot();
     else playerSwing("thrust");
 });
 document.getElementById("play-self").addEventListener("click", () => {
@@ -3616,19 +4455,35 @@ document.getElementById("select-mode").addEventListener("click", () => {
     document.body.classList.toggle("selecting");
 });
 document.getElementById("zoom-in").addEventListener("click", () => { dist = Math.max(16, dist - 18); });
-document.getElementById("zoom-out").addEventListener("click", () => { dist = Math.min(220, dist + 18); });
+document.getElementById("zoom-out").addEventListener("click", () => { dist = Math.min(viewFar, dist + 18); });
 
 function downSelf() {
     foes.clear();
     if (!pilot) return;
-    pilot.hp = 40;
+    pilot.hp = playerRow().hp;
     showStrike("You are slain. They leave you be.");
     leaveBody();
 }
 
+function guardOf(target) {
+    if (!target) return 0;
+    let value = 0;
+    if (target.side === "self") value = playerRow().defence;
+    else if (target.haul) {
+        const sheet = window.AoeSheet && window.AoeSheet.creatures ? window.AoeSheet.creatures() : null;
+        value = sheet && sheet.horse ? sheet.horse.defence : 0;
+    } else if (target.kind) value = unitRow(target.kind).defence;
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function soaked(target, amount) {
+    return Math.max(0, (Number(amount) || 0) - guardOf(target));
+}
+
 function strikeUnit(unit, amount, label) {
     if (!unit || unit.side === "self" || unit.hp <= 0) return;
-    unit.hp -= amount;
+    unit.hp -= soaked(unit, amount);
     if (unit.side === "you" || unit.side === "cpu") foes.add(unit.side);
     showStrike(label);
     paintSelf();
@@ -3684,18 +4539,19 @@ function reachHit(profile) {
 }
 
 function playerSwing(kind) {
-    if (!pilot || pilot.hp <= 0 || arm !== "sword") return;
+    if (!pilot || pilot.hp <= 0 || !ARMS[arm] || ARMS[arm].attack !== "slash") return;
     const now = performance.now();
     if (now < nextSwing) return;
     const profile = swings[kind];
     if (!profile) return;
-    nextSwing = now + 480;
+    nextSwing = now + 700;
+    if (pilot.clips && pilot.clips.Right_Hand_Sword_Slash) playArcher(pilot, "Right_Hand_Sword_Slash", true);
     const names = { thrust: "Thrust", chop: "Chop", "slash-left": "Slash", "slash-right": "Slash" };
     const view = document.getElementById("weapon");
     view.classList.remove("swing-thrust");
     void view.offsetWidth;
     view.classList.add("swing-thrust");
-    strikeUnit(reachHit(profile), 12, names[kind]);
+    strikeUnit(reachHit(profile), playerRow().attack, names[kind]);
 }
 
 const shotArrows = [];
@@ -3720,8 +4576,16 @@ function looseArrow() {
     const fz = Math.cos(lookYaw) * cp;
     const speed = 36;
     const mesh = arrowMesh();
-    const y = pilot.group.position.y + eye - 0.05;
-    mesh.position.set(pilot.x + fx * 0.7, y + fy * 0.7, pilot.z + fz * 0.7);
+    let x = pilot.x + fx * 0.7;
+    let y = pilot.group.position.y + eye - 0.05;
+    let z = pilot.z + fz * 0.7;
+    if (pilot.bowHand) {
+        const hand = pilot.bowHand.getWorldPosition(new THREE.Vector3());
+        x = hand.x + fx * 0.45;
+        y = hand.y;
+        z = hand.z + fz * 0.45;
+    }
+    mesh.position.set(x, y + fy * 0.2, z);
     scene.add(mesh);
     shotArrows.push({
         x: mesh.position.x,
@@ -3784,22 +4648,228 @@ function stepArrows(dt) {
         }
         const ground = feetAt(arrow.x, arrow.z);
         if (!hit && arrow.age < 0.9 && arrow.y > ground + 0.15) continue;
-        if (hit) strikeUnit(hit, 8, "Shot");
+        if (hit) strikeUnit(hit, playerRow().shot, "Shot");
         scene.remove(arrow.mesh);
         shotArrows.splice(i, 1);
     }
 }
 
 function playerShot() {
-    if (!pilot || pilot.hp <= 0 || arm !== "bow") return;
+    const spec = ARMS[arm];
+    if (!pilot || pilot.hp <= 0 || !spec || (spec.attack !== "arrow" && spec.attack !== "crossbow")) return;
     const now = performance.now();
     if (now < nextSwing) return;
-    nextSwing = now + 700;
-    const view = document.getElementById("viewbow");
-    view.classList.remove("loose");
-    void view.offsetWidth;
-    view.classList.add("loose");
+    nextSwing = now + (spec.attack === "crossbow" ? 1600 : 1000);
+    const name = spec.attack === "crossbow" ? "Draw_and_Shoot_from_Back" : "Archery_Shot_1";
+    if (pilot.clips && pilot.clips[name]) {
+        const action = playArcher(pilot, name, true);
+        if (spec.attack === "crossbow") {
+            action.time = 3.2;
+            pilot.releaseAt = 4.5;
+        } else {
+            action.time = 0.12;
+            pilot.releaseAt = 0.68;
+        }
+        pilot.released = false;
+        return;
+    }
     looseArrow();
+}
+
+const CREATURE_SHOW = [
+    ["Bear", "../models/creatures/_glb/bear-idle.glb"],
+    ["Wolf", "../models/creatures/_glb/wolf-idle.glb"],
+    ["Warg", "../models/creatures/_glb/warg-idle.glb"],
+    ["Fox", "../models/fox full.glb"],
+    ["Deer", "../models/creatures/_glb/deer-idle.glb"],
+    ["Rat", "../models/creatures/_glb/rat-idle.glb"],
+    ["Snake", "../models/snake.glb"],
+    ["Eagle", "../models/egle.glb"],
+    ["Spider", "../models/creatures/_glb/spider-idle.glb"],
+    ["Wasp", "../models/creatures/_glb/wasp-idle.glb"],
+    ["Centipede", "../models/creatures/_glb/centipede-idle.glb"],
+    ["Ooze", "../models/creatures/_glb/ooze-idle.glb"],
+    ["Rhino", "../models/creatures/_glb/rhino-idle.glb"],
+    ["Mammoth", "../models/creatures/_glb/mammoth-idle.glb"],
+    ["Cow", "../models/cow/cow.glb"],
+    ["Dragon", "../models/dragon/dragon.glb"],
+    ["Horse", "../models/horse/horse.glb"]
+];
+const WEAPON_SHOW = {
+    crossbow: "../tools/Meshy_AI_lowpoly_medieval_crossbow_20261102_texture_a0475ada/Meshy_AI_model.glb",
+    spear: "../tools/Meshy_AI_lowpoly_medieval_spear_20261102_texture_f72770c0/Meshy_AI_model.glb",
+    mace: "../tools/Meshy_AI_lowpoly_medieval_mace_20261102_texture_5d63fe2a/Meshy_AI_model.glb",
+    musket: "../tools/Meshy_AI_lowpoly_medieval_musket_20261102_texture_b96c6c21/Meshy_AI_model.glb",
+    halberd: "../tools/Meshy_AI_lowpoly_medieval_halberd_20261102_texture_dd7a42bb/Meshy_AI_model.glb"
+};
+let showRoot = null;
+const showMixers = [];
+const showLoads = {};
+
+function showcaseList() {
+    const list = CREATURE_SHOW.map((pair) => ({ name: pair[0], file: pair[1] }));
+    const seen = {};
+    for (let i = 0; i < list.length; i++) seen[list[i].file] = true;
+    const sheet = window.AoeSheet && window.AoeSheet.weapons ? window.AoeSheet.weapons() : null;
+    if (!sheet) return list;
+    Object.keys(sheet).forEach((id) => {
+        const row = sheet[id];
+        const model = String(row.model || "").trim();
+        const called = String(row.name || "").trim().toLowerCase();
+        let file = "";
+        if (/\.(glb|gltf)$/i.test(model)) file = model;
+        else if (WEAPON_SHOW[model.toLowerCase()]) file = WEAPON_SHOW[model.toLowerCase()];
+        else if (WEAPON_SHOW[called]) file = WEAPON_SHOW[called];
+        if (!file || seen[file]) return;
+        seen[file] = true;
+        list.push({ name: row.name || "Weapon", file: file });
+    });
+    return list;
+}
+
+function loadShowcase(url) {
+    if (!showLoads[url]) {
+        showLoads[url] = new Promise((resolve) => {
+            new GLTFLoader().load(encodeURI(url), (gltf) => resolve(gltf), undefined, () => resolve(null));
+        });
+    }
+    return showLoads[url];
+}
+
+function showLabel(name) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 320;
+    canvas.height = 64;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "rgba(20, 16, 12, 0.78)";
+    ctx.fillRect(0, 10, 320, 44);
+    ctx.fillStyle = "#f4ead8";
+    ctx.font = "22px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(name || "").slice(0, 24), 160, 32);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+    sprite.scale.set(2.4, 0.48, 1);
+    sprite.position.y = 2.2;
+    return sprite;
+}
+
+function modelBounds(model) {
+    const box = new THREE.Box3();
+    model.updateMatrixWorld(true);
+    model.traverse((mesh) => {
+        if (!mesh.isMesh || !mesh.geometry) return;
+        if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+        box.union(mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld));
+    });
+    return box;
+}
+
+function standShowcase(gltf) {
+    const model = cloneSkinned(gltf.scene);
+    model.traverse((mesh) => {
+        if (mesh.isMesh) {
+            mesh.castShadow = true;
+            mesh.frustumCulled = false;
+        }
+    });
+    const size = modelBounds(model).getSize(new THREE.Vector3());
+    const max = Math.max(size.x, size.y, size.z);
+    if (max > 2.2) model.scale.multiplyScalar(2.2 / max);
+    const fitted = modelBounds(model);
+    if (Number.isFinite(fitted.min.y)) model.position.y -= fitted.min.y;
+    const shown = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
+    const shownMax = Math.max(shown.x, shown.y, shown.z);
+    if (shownMax > 3 && shownMax < 1000) {
+        model.scale.multiplyScalar(2.2 / shownMax);
+        model.position.y = 0;
+        const again = modelBounds(model);
+        if (Number.isFinite(again.min.y)) model.position.y -= again.min.y;
+    }
+    const clips = gltf.animations || [];
+    let clip = null;
+    for (let i = 0; i < clips.length; i++) {
+        if (/idle/i.test(clips[i].name)) {
+            clip = clips[i];
+            break;
+        }
+    }
+    const mixer = clip ? new THREE.AnimationMixer(model) : null;
+    if (mixer) {
+        mixer.clipAction(clip).play();
+        showMixers.push(mixer);
+    }
+    return model;
+}
+
+function placeShowLine(items, aside, jobs) {
+    const fx = Math.sin(lookYaw);
+    const fz = Math.cos(lookYaw);
+    const rightX = -Math.cos(lookYaw);
+    const rightZ = Math.sin(lookYaw);
+    for (let i = 0; i < items.length; i++) {
+        const along = 5 + i * 3.6;
+        const x = pilot.x + fx * along + rightX * aside;
+        const z = pilot.z + fz * along + rightZ * aside;
+        const holder = new THREE.Group();
+        holder.position.set(x, feetAt(x, z), z);
+        holder.rotation.y = lookYaw + Math.PI * 0.5;
+        holder.add(showLabel(items[i].name));
+        showRoot.add(holder);
+        const file = items[i].file;
+        jobs.push(() => loadShowcase(file).then((gltf) => {
+            if (!gltf || !holder.parent) return;
+            const model = standShowcase(gltf);
+            holder.add(model);
+            const top = modelBounds(model).max.y - holder.position.y;
+            holder.children[0].position.y = Math.max(1.5, top + 0.35);
+        }));
+    }
+}
+
+function openShowcase() {
+    if (!pilot) return;
+    const creatures = CREATURE_SHOW.map((pair) => ({ name: pair[0], file: pair[1] }));
+    const all = showcaseList();
+    const weapons = all.slice(creatures.length);
+    if (!showRoot) {
+        showRoot = new THREE.Group();
+        scene.add(showRoot);
+    }
+    while (showRoot.children.length) showRoot.remove(showRoot.children[0]);
+    showMixers.length = 0;
+    showRoot.visible = true;
+    const creatureJobs = [];
+    const weaponJobs = [];
+    placeShowLine(creatures, 3.2, creatureJobs);
+    placeShowLine(weapons, 7.2, weaponJobs);
+    const jobs = [];
+    const rows = Math.max(creatureJobs.length, weaponJobs.length);
+    for (let i = 0; i < rows; i++) {
+        if (creatureJobs[i]) jobs.push(creatureJobs[i]);
+        if (weaponJobs[i]) jobs.push(weaponJobs[i]);
+    }
+    let cursor = 0;
+    function nextJob() {
+        if (cursor >= jobs.length) return;
+        const job = jobs[cursor++];
+        job().then(nextJob, nextJob);
+    }
+    nextJob();
+    nextJob();
+    nextJob();
+}
+
+function closeShowcase() {
+    if (showRoot) showRoot.visible = false;
+    showMixers.length = 0;
+}
+
+function stepShowcase(dt) {
+    if (!showRoot || !showRoot.visible) return;
+    for (let i = 0; i < showMixers.length; i++) showMixers[i].update(dt);
 }
 
 function enterBody(unit) {
@@ -3807,14 +4877,19 @@ function enterBody(unit) {
     pilot = unit;
     lookYaw = home ? Math.atan2(home.x - unit.x, home.z - unit.z) : unit.yaw;
     lookPitch = 0;
-    unit.body.visible = false;
+    unit.body.visible = true;
+    unit.group.rotation.y = lookYaw;
     unit.ring.visible = false;
     unit.state = "idle";
     unit.job = null;
     unit.jobNode = null;
     unit.goal = null;
-    unit.body.geometry.computeBoundingBox();
-    eye = Math.max(0.9, unit.body.geometry.boundingBox.max.y * 0.9);
+    showArm(unit);
+    if (unit.eyeHeight) eye = unit.eyeHeight;
+    else if (unit.body.geometry) {
+        unit.body.geometry.computeBoundingBox();
+        eye = Math.max(0.9, unit.body.geometry.boundingBox.max.y * 0.9 * (unit.body.scale.y || 1));
+    }
     document.body.classList.add("walking");
     paintSelf();
     camera.fov = 72;
@@ -3822,10 +4897,12 @@ function enterBody(unit) {
     camera.updateProjectionMatrix();
     if (!document.body.classList.contains("handheld")) renderer.domElement.requestPointerLock();
     refreshHud();
+    openShowcase();
 }
 
 function leaveBody() {
     if (!pilot) return;
+    closeShowcase();
     const unit = pilot;
     pilot = null;
     unit.body.visible = true;
@@ -3873,7 +4950,7 @@ function walkBody(dt) {
     if (keys.d || keys.arrowright) strafe -= 1;
     const len = Math.hypot(forward, strafe);
     if (!len) return;
-    const step = SPEED * 2 * dt / len;
+    const step = playerRow().move * dt / len;
     const fx = Math.sin(lookYaw);
     const fz = Math.cos(lookYaw);
     const rx = Math.cos(lookYaw);
@@ -4060,12 +5137,13 @@ function shareRing(foe) {
 
 function landSwing(unit, foe) {
     if (foe.hp <= 0) return;
+    const blow = soaked(foe, unit.attack != null ? unit.attack : HIT);
     if (foe.haul) {
-        foe.hp -= HIT;
+        foe.hp -= blow;
         if (foe.hp <= 0) loseHorse(foe);
         return;
     }
-    foe.hp -= HIT;
+    foe.hp -= blow;
     if (foe.side === "self") paintSelf();
     if (foe.hp <= 0) {
         if (foe.side === "self") downSelf();
@@ -4320,6 +5398,7 @@ function stepMatch(dt) {
     stepSites(dt);
     stepTrains(dt);
     stepArrows(dt);
+    stepShowcase(dt);
     saveAcc += dt;
     if (saveAcc > 2) {
         saveAcc = 0;
@@ -4348,6 +5427,7 @@ function noteSimTime(now) {
 function frame(now) {
     noteSimTime(now);
     if (!document.hidden) pumpSim();
+    stepBoardView();
     placeCamera();
     stepRooms();
     refreshWoods();
