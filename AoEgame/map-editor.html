@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Map editor</title>
+    <style>
+        html, body { margin: 0; height: 100%; background: #8ec8ee; overflow: hidden; }
+        canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+        #panel {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            width: 280px;
+            max-height: calc(100% - 24px);
+            overflow: auto;
+            color: #1c140c;
+            background: rgba(255, 248, 236, 0.94);
+            border: 1px solid #c4a574;
+            border-radius: 8px;
+            padding: 12px 14px;
+            font: 14px/1.4 system-ui, sans-serif;
+        }
+        #panel h1 { font-size: 16px; margin: 0 0 6px; }
+        #panel h2 { font-size: 13px; margin: 8px 0 4px; }
+        #panel p { margin: 0 0 8px; }
+        #trees, #buildings, #kinds, #copies, #paths { display: flex; flex-direction: column; gap: 4px; margin: 0 0 10px; }
+        #trees { max-height: 22vh; overflow: auto; }
+        #buildings, #copies { max-height: 18vh; overflow: auto; }
+        #keep-row { display: flex; gap: 6px; margin: 0 0 8px; }
+        #copy-name { flex: 1; min-width: 0; font: inherit; padding: 4px 8px; border: 1px solid #8a6840; border-radius: 6px; background: #fffdf8; color: #1c140c; }
+        #brush-label { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
+        #brush { flex: 1; min-width: 0; }
+        #trees button, #paths button, #buildings button, #kinds button, #copies button, #tools button, #keep-row button, #save {
+            font: inherit;
+            text-align: left;
+            padding: 4px 8px;
+            border: 1px solid #8a6840;
+            border-radius: 6px;
+            background: #efe2cc;
+            color: #1c140c;
+            cursor: pointer;
+        }
+        #trees button, #paths button { display: flex; align-items: center; gap: 8px; }
+        #trees button img, #paths button img { width: 36px; height: 36px; background: #8ec8ee; }
+        #trees button img { object-fit: contain; }
+        #paths button img { object-fit: cover; }
+        #trees button.on, #paths button.on, #buildings button.on, #kinds button.on, #copies button.on, #tools button.on { background: #1c140c; color: #f6efe2; }
+        #tools { display: flex; gap: 6px; margin: 0 0 8px; }
+        #tools button, #save { text-align: center; }
+        #save { width: 100%; }
+        #box {
+            position: fixed;
+            border: 1px solid #f0d080;
+            background: rgba(240, 208, 128, 0.18);
+            pointer-events: none;
+            z-index: 4;
+        }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <div id="panel">
+        <h1>Map editor</h1>
+        <p id="note">Loading the map…</p>
+        <h2>Paths</h2>
+        <div id="paths"></div>
+        <label id="brush-label">Brush <input id="brush" type="range" min="2" max="18" step="0.5" value="5"> <span id="brush-read">5 m</span></label>
+        <h2>Trees</h2>
+        <div id="trees"></div>
+        <div id="tools">
+            <button id="copy" type="button">Copy</button>
+            <button id="paste" type="button">Paste</button>
+            <button id="erase" type="button">Erase</button>
+        </div>
+        <div id="keep-row">
+            <input id="copy-name" type="text" maxlength="40" placeholder="Oak forest">
+            <button id="keep" type="button">Keep</button>
+            <button id="drop" type="button">Drop</button>
+        </div>
+        <h2>Saved copies</h2>
+        <div id="copies"></div>
+        <h2>Buildings</h2>
+        <div id="buildings"></div>
+        <h2>Rocks and mines</h2>
+        <div id="rocks"></div>
+        <h2>Other</h2>
+        <div id="kinds"></div>
+        <button id="save" type="button">Save</button>
+        <p>Click the ground to plant the chosen tree or building. Drag a box to highlight several. Copy, type a name, and Keep stores that group. Click the name, then Q and E turn it, then click the ground. Erase removes the highlight, and while it is on a click or a box removes what is under it. Pick a path and drag to paint it. Lift rubs that paint back to grass. Save writes the objects and any path you painted.</p>
+    </div>
+    <div id="box" hidden></div>
+    <script type="module" src="map-editor.js?v=obj14"></script>
+</body>
+</html>

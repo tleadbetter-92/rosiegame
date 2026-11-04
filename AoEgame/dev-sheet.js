@@ -1,5 +1,11 @@
 (function () {
-    const KEY = "aoe-dev-sheet";
+    const LIVE = "aoe-dev-sheet";
+    const DRAFT = "aoe-dev-draft";
+    const onDev = /developer\.html/.test(location.pathname);
+    if (onDev && localStorage.getItem(DRAFT) == null) {
+        localStorage.setItem(DRAFT, localStorage.getItem(LIVE) || "{}");
+    }
+    const KEY = onDev ? DRAFT : LIVE;
     const UNITS = {
         soldier: { name: "Soldier", use: "military", model: "militia", anims: "Idle, Walk", hp: 40, attack: 8, move: 3.4, cost: 50, w: 1.1, d: 0.63 },
         worker: { name: "Worker", use: "economical", model: "villager", anims: "Idle, Walk", hp: 20, attack: 8, move: 3.4, cost: 50, w: 0.62, d: 0.4 }
@@ -156,7 +162,7 @@
     function columnRecord(col, patch) {
         const name = patch && patch.name != null ? (text(patch.name, "Column", 40) || "Column") : (text(col.name, "Column", 40) || "Column");
         const asked = patch && patch.kind != null ? patch.kind : col.kind;
-        const kind = asked === "dropdown" || asked === "multi" ? asked : "text";
+        const kind = asked === "dropdown" || asked === "multi" || asked === "number" ? asked : "text";
         const source = patch && patch.options != null ? patch.options : col.options;
         return { id: col.id, name: name, kind: kind, options: optionList(source) };
     }
@@ -412,6 +418,7 @@
             shot: num(row.shot, 8, 0, 9999),
             defence: num(row.defence, 0, 0, 9999),
             move: num(row.move, 6.8, 0.1, 99),
+            jump: row.jump === "" || row.jump == null ? 6.4 : num(row.jump, 6.4, 0, 40),
             w: num(row.w, 1.1, 0.1, 40),
             d: num(row.d, 0.63, 0.1, 40),
             inUse: ticked(row.inUse),
@@ -428,6 +435,7 @@
             shot: num(patch.shot, current.shot, 0, 9999),
             defence: num(patch.defence, current.defence, 0, 9999),
             move: num(patch.move, current.move, 0.1, 99),
+            jump: patch.jump === "" || patch.jump == null ? current.jump : num(patch.jump, current.jump, 0, 40),
             w: num(patch.w, current.w, 0.1, 40),
             d: num(patch.d, current.d, 0.1, 40),
             inUse: ticked(patch.inUse),
@@ -512,6 +520,21 @@
     function removeFaction(id) {
         if (BASE_FACTIONS[id]) return;
         writeFactions(factions().filter((row) => row.id !== id));
+    }
+
+    function commit() {
+        if (!onDev) return;
+        localStorage.setItem(LIVE, localStorage.getItem(DRAFT) || "{}");
+    }
+
+    function undo() {
+        if (!onDev) return;
+        localStorage.setItem(DRAFT, localStorage.getItem(LIVE) || "{}");
+    }
+
+    function dirty() {
+        if (!onDev) return false;
+        return (localStorage.getItem(DRAFT) || "") !== (localStorage.getItem(LIVE) || "");
     }
 
     function columns(table) {
@@ -643,6 +666,8 @@
         all.added[table] = addedRaw(all, table);
         if (table === "buildings") all.added[table][id] = blankBuilding();
         else if (table === "weapons") all.added[table][id] = blankWeapon();
+        else if (table === "resources") all.added[table][id] = blankResource();
+        else if (table === "finds") all.added[table][id] = blankFind();
         else all.added[table][id] = blankActor(table === "creatures" ? "New creature" : "New unit");
         saveAll(all);
         return id;
@@ -653,12 +678,95 @@
         if (table === "buildings" && BUILDINGS[id]) return;
         if (table === "creatures" && CREATURES[id]) return;
         if (table === "weapons" && WEAPONS[id]) return;
+        if (table === "resources" && RESOURCE_BASE[id]) return;
+        if (table === "finds" && FIND_BASE[id]) return;
         const all = loadAll();
         const rows = addedRaw(all, table);
         delete rows[id];
         all.added = all.added || {};
         all.added[table] = rows;
         saveAll(all);
+    }
+
+    const RESOURCE_BASE = {
+        birch: { name: "Birch tree", kind: "Tree", gives: "Wood", amount: 500 },
+        oak: { name: "Oak tree", kind: "Tree", gives: "Wood", amount: 800 },
+        pine: { name: "Pine tree", kind: "Tree", gives: "Wood", amount: 400 },
+        dead: { name: "Dead tree", kind: "Tree", gives: "Wood", amount: 150 },
+        gold: { name: "Gold mine", kind: "Mine", gives: "Gold", amount: 800 },
+        stone: { name: "Stone quarry", kind: "Mine", gives: "Stone", amount: 600 },
+        bush: { name: "Berry bush", kind: "Plant", gives: "Food", amount: 80 }
+    };
+    const FIND_BASE = {
+        apple: { name: "Apple", kind: "Food", note: "A piece of fruit" },
+        bread: { name: "Bread", kind: "Food", note: "A loaf" },
+        candle: { name: "Candle", kind: "Household", note: "A tallow candle" },
+        cloak: { name: "Cloak", kind: "Clothing", note: "A wool cloak" },
+        boots: { name: "Boots", kind: "Clothing", note: "A pair of boots" },
+        rope: { name: "Rope", kind: "Tool", note: "A coil of rope" }
+    };
+
+    function blankResource() {
+        return { name: "New resource", kind: "Tree", gives: "Wood", amount: 0 };
+    }
+
+    function blankFind() {
+        return { name: "New find", kind: "Food", note: "" };
+    }
+
+    function catalogFrom(base, row, cols, added) {
+        const src = row && typeof row === "object" ? row : {};
+        const out = {
+            name: text(src.name, base.name, 48) || base.name,
+            kind: text(src.kind, base.kind, 24) || base.kind,
+            extra: extraMap(src, cols),
+            added: !!added
+        };
+        if (base.gives != null) out.gives = text(src.gives, base.gives, 24) || base.gives;
+        if (base.amount != null) out.amount = num(src.amount != null && src.amount !== "" ? src.amount : base.amount, base.amount, 0, 99999);
+        if (base.note != null) out.note = text(src.note, base.note, 80);
+        return out;
+    }
+
+    function catalogRows(table, base, blank) {
+        const all = loadAll();
+        const cols = columnsOf(all, table);
+        const saved = all[table] && typeof all[table] === "object" ? all[table] : {};
+        const out = {};
+        Object.keys(base).forEach((id) => {
+            out[id] = catalogFrom(base[id], saved[id], cols, false);
+        });
+        const raw = addedRaw(all, table);
+        Object.keys(raw).forEach((id) => {
+            if (base[id]) return;
+            out[id] = catalogFrom(blank(), raw[id], cols, true);
+        });
+        return out;
+    }
+
+    function writeCatalog(table, base, blank, patch) {
+        const all = loadAll();
+        const cols = columnsOf(all, table);
+        const next = catalogRows(table, base, blank);
+        const known = {};
+        const added = {};
+        Object.keys(next).forEach((id) => {
+            const row = catalogFrom(base[id] || blank(), patch && patch[id] ? patch[id] : next[id], cols, !base[id]);
+            if (base[id]) known[id] = row;
+            else added[id] = row;
+        });
+        all[table] = known;
+        all.added = all.added || {};
+        all.added[table] = added;
+        saveAll(all);
+    }
+
+    function resources() {
+        return catalogRows("resources", RESOURCE_BASE, blankResource);
+    }
+
+    function finds() {
+        return catalogRows("finds", FIND_BASE, blankFind);
     }
 
     window.AoeSheet = {
@@ -674,6 +782,10 @@
         writeCreatures: writeCreatures,
         weapons: weapons,
         writeWeapons: writeWeapons,
+        resources: resources,
+        writeResources: function (patch) { writeCatalog("resources", RESOURCE_BASE, blankResource, patch); },
+        finds: finds,
+        writeFinds: function (patch) { writeCatalog("finds", FIND_BASE, blankFind, patch); },
         player: player,
         writePlayer: writePlayer,
         factions: factions,
@@ -686,6 +798,9 @@
         setColumn: setColumn,
         removeColumn: removeColumn,
         addRow: addRow,
-        removeRow: removeRow
+        removeRow: removeRow,
+        commit: commit,
+        undo: undo,
+        dirty: dirty
     };
 })();

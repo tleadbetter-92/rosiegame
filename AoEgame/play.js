@@ -4,6 +4,9 @@ import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { natureData } from "./generated_terrain%20Big%20map.js?v=map3";
 import { loadPerson, personMesh } from "./people.js?v=play43";
+import { kindById, loadKitShell, makeMapShape, makeStandIn, plantModel } from "./map-props.js?v=obj5";
+import { loadPathPaint, makeGroundMaterial, setPathFrame } from "./ground-look.js?v=look2";
+import { loadPackTrees, packTree, treeRoll } from "./pack-trees.js?v=trees1";
 
 const MANOR = "lorsmanor-courtyard";
 const SHELL = [
@@ -39,9 +42,9 @@ scene.add(sun);
 const terrain = new THREE.Group();
 scene.add(terrain);
 
-// The mountain range saved from the terrain studio. A new match does not resume the old island.
-const BOARD_URL = "terrain.glb?v=range1";
-const BOARD_SEA = 106;
+// The island exported in newmapfromex. The flat plateau save is left alone.
+const BOARD_URL = "newmapfromex/manual.glb?v=1";
+const BOARD_SEA = 141;
 const playTest = new URLSearchParams(location.search).get("playtest") === "1";
 if (playTest) {
     document.title = "Play test";
@@ -101,17 +104,46 @@ let pilot = null;
 let lookYaw = 0;
 let lookPitch = 0;
 let eye = 1.2;
+let inHead = false;
+const eyeScratch = new THREE.Vector3();
 const wallRay = new THREE.Raycaster();
+
+function walkerHead() {
+    if (!pilot || !pilot.body) return null;
+    if (pilot.headBone) return pilot.headBone;
+    let head = null;
+    pilot.body.traverse((obj) => {
+        if (obj.name === "mixamorigHead") head = obj;
+    });
+    if (head) pilot.headBone = head;
+    return head;
+}
 
 function placeCamera() {
     if (pilot) {
         const fx = Math.sin(lookYaw);
         const fz = Math.cos(lookYaw);
+        const cp = Math.cos(lookPitch);
+        const aim = 8;
+        if (inHead) {
+            const head = walkerHead();
+            const ahead = 0.36;
+            let x = pilot.x + fx * ahead;
+            let y = pilot.group.position.y + eye;
+            let z = pilot.z + fz * ahead;
+            if (head) {
+                head.getWorldPosition(eyeScratch);
+                x = eyeScratch.x + fx * ahead;
+                y = eyeScratch.y + 0.02;
+                z = eyeScratch.z + fz * ahead;
+            }
+            camera.position.set(x, y, z);
+            camera.lookAt(x + fx * cp * aim, y + Math.sin(lookPitch) * aim, z + fz * cp * aim);
+            return;
+        }
         const headY = pilot.group.position.y + eye;
         const back = 2.3;
         camera.position.set(pilot.x - fx * back, headY + 0.42, pilot.z - fz * back);
-        const aim = 5;
-        const cp = Math.cos(lookPitch);
         camera.lookAt(
             pilot.x + fx * cp * aim,
             headY + Math.sin(lookPitch) * aim,
@@ -210,6 +242,33 @@ function feetAt(x, z) {
     return deck == null ? ground : Math.max(ground, deck);
 }
 
+function stairAt(x, z, feet) {
+    let best = null;
+    const list = [];
+    if (home && home.rooms && home.rooms.floors) list.push(home);
+    if (cpuHome && cpuHome.rooms && cpuHome.rooms.floors) list.push(cpuHome);
+    for (let i = 0; i < built.length; i++) {
+        if (built[i].rooms && built[i].rooms.floors) list.push(built[i]);
+    }
+    for (let i = 0; i < list.length; i++) {
+        const entry = list[i];
+        const floors = entry.rooms.floors;
+        const lx = x - entry.x;
+        const lz = z - entry.z;
+        const reach = Math.max(entry.hx || MANOR_HX, entry.hz || MANOR_HZ) + 3;
+        if (Math.abs(lx) > reach || Math.abs(lz) > reach) continue;
+        const base = entry.group ? entry.group.position.y : (entry.y || 0);
+        for (let s = 0; s < floors.length; s++) {
+            const sol = floors[s];
+            if (lx < sol.x - 0.12 || lx > sol.x + sol.w + 0.12 || lz < sol.z - 0.12 || lz > sol.z + sol.d + 0.12) continue;
+            const y = base + sol.y;
+            if (y > feet + 0.5) continue;
+            if (best == null || y > best) best = y;
+        }
+    }
+    return best;
+}
+
 function inWater(x, z) {
     if (board) return boardHeight(x, z) < BOARD_SEA;
     const world = window.World;
@@ -218,9 +277,25 @@ function inWater(x, z) {
     return world.wet(x, z);
 }
 
+function coverAt(x, z) {
+    if (!board || !board.cover) return inWater(x, z) ? 0 : 1;
+    const u = (x - board.minX) / board.span;
+    const v = (z - board.minZ) / board.span;
+    if (u < 0 || v < 0 || u > 1 || v > 1) return 0;
+    if (boardHeight(x, z) < BOARD_SEA) return 0;
+    const n = board.n;
+    const i = Math.min(n - 1, Math.max(0, Math.round(u * (n - 1))));
+    const j = Math.min(n - 1, Math.max(0, Math.round(v * (n - 1))));
+    return board.cover[j * n + i];
+}
+
+function closedGround(x, z) {
+    return inWater(x, z) || coverAt(x, z) === 3;
+}
+
 function canStep(x, z, nx, nz) {
-    if (!inWater(nx, nz)) return true;
-    if (!inWater(x, z)) return false;
+    if (!closedGround(nx, nz)) return true;
+    if (!closedGround(x, z)) return false;
     return heightAt(nx, nz) >= heightAt(x, z) - 0.05;
 }
 
@@ -563,58 +638,165 @@ let landMarkX = Infinity;
 let landMarkZ = Infinity;
 let landStep = 0;
 
+function srgbByte(value) {
+    const c = value / 255;
+    return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
+function coverByte(r, g, b) {
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    if (min >= 200 && max - min <= 40) return 3;
+    if (max - min <= 32 && min >= 70 && max < 200 && Math.abs(r - g) <= 22 && Math.abs(g - b) <= 28) return 2;
+    return 1;
+}
+
+function sampleSurfaceColors(surface) {
+    const uv = surface.geometry && surface.geometry.getAttribute("uv");
+    const material = Array.isArray(surface.material) ? surface.material[0] : surface.material;
+    const image = material && material.map && material.map.image;
+    if (!uv || !image || !image.width) return null;
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(image, 0, 0);
+    const data = ctx.getImageData(0, 0, image.width, image.height).data;
+    const colors = new Float32Array(uv.count * 3);
+    const cover = new Uint8Array(uv.count);
+    const w = image.width;
+    const h = image.height;
+    for (let i = 0; i < uv.count; i++) {
+        const u = uv.getX(i) - Math.floor(uv.getX(i));
+        const v = uv.getY(i) - Math.floor(uv.getY(i));
+        const x = Math.min(w - 1, Math.max(0, Math.round(u * (w - 1))));
+        const y = Math.min(h - 1, Math.max(0, Math.round((1 - v) * (h - 1))));
+        const p = (y * w + x) * 4;
+        colors[i * 3] = srgbByte(data[p]);
+        colors[i * 3 + 1] = srgbByte(data[p + 1]);
+        colors[i * 3 + 2] = srgbByte(data[p + 2]);
+        cover[i] = coverByte(data[p], data[p + 1], data[p + 2]);
+    }
+    return { colors: colors, cover: cover };
+}
+
+function packedFloats(buffer, binAt, json, acc) {
+    const view = json.bufferViews[acc.bufferView];
+    const start = binAt + (view.byteOffset || 0) + (acc.byteOffset || 0);
+    return new Float32Array(buffer, start, acc.count * 3);
+}
+
+function readIsland(buffer) {
+    const view = new DataView(buffer);
+    if (view.getUint32(0, true) !== 0x46546c67) throw new Error("map file");
+    const jsonLen = view.getUint32(12, true);
+    const json = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, 20, jsonLen)));
+    const binAt = 28 + jsonLen;
+    const prim = json.meshes[0].primitives[0];
+    const posAcc = json.accessors[prim.attributes.POSITION];
+    if (!posAcc || posAcc.componentType !== 5126 || posAcc.type !== "VEC3") throw new Error("map positions");
+    const n = Math.round(Math.sqrt(posAcc.count));
+    if (n * n !== posAcc.count) throw new Error("map grid");
+    const pos = packedFloats(buffer, binAt, json, posAcc);
+    const heights = new Float32Array(posAcc.count);
+    let minX = Infinity;
+    let minZ = Infinity;
+    let maxX = -Infinity;
+    let maxZ = -Infinity;
+    for (let i = 0; i < posAcc.count; i++) {
+        const o = i * 3;
+        const x = pos[o];
+        heights[i] = pos[o + 1];
+        const z = pos[o + 2];
+        if (x < minX) minX = x;
+        if (z < minZ) minZ = z;
+        if (x > maxX) maxX = x;
+        if (z > maxZ) maxZ = z;
+    }
+    let colors = null;
+    let cover = null;
+    const colAcc = prim.attributes.COLOR_0 != null ? json.accessors[prim.attributes.COLOR_0] : null;
+    if (colAcc && colAcc.componentType === 5126 && colAcc.type === "VEC3" && colAcc.count === posAcc.count) {
+        const col = packedFloats(buffer, binAt, json, colAcc);
+        colors = new Float32Array(colAcc.count * 3);
+        cover = new Uint8Array(colAcc.count);
+        for (let i = 0; i < colAcc.count; i++) {
+            const o = i * 3;
+            colors[o] = col[o];
+            colors[o + 1] = col[o + 1];
+            colors[o + 2] = col[o + 2];
+            cover[i] = coverByte(col[o] * 255, col[o + 1] * 255, col[o + 2] * 255);
+        }
+    }
+    return { heights: heights, colors: colors, cover: cover, n: n, minX: minX, minZ: minZ, maxX: maxX, maxZ: maxZ, span: maxX - minX };
+}
+
+function finishBoard(island) {
+    board = {
+        heights: island.heights,
+        colors: island.colors,
+        cover: island.cover,
+        n: island.n,
+        minX: island.minX,
+        minZ: island.minZ,
+        span: island.span,
+        sea: BOARD_SEA,
+        walkAt: null
+    };
+    mapBox.min.set(island.minX, -40, island.minZ);
+    mapBox.max.set(island.maxX, 420, island.maxZ);
+    board.mapMesh = buildBoardGrid(0, 0, island.n - 1, island.n - 1, 4);
+    terrain.add(board.mapMesh);
+    setPathFrame(island.minX, island.minZ, island.maxX - island.minX, island.maxZ - island.minZ);
+    addShoreFood();
+    loadPathPaint();
+    const sea = new THREE.Mesh(
+        new THREE.PlaneGeometry(island.maxX - island.minX, island.maxZ - island.minZ),
+        new THREE.MeshStandardMaterial({ color: 0x2a6d86, transparent: true, opacity: 0.62, roughness: 0.2, depthWrite: false })
+    );
+    sea.rotation.x = -Math.PI / 2;
+    sea.position.set((island.minX + island.maxX) / 2, BOARD_SEA, (island.minZ + island.maxZ) / 2);
+    terrain.add(sea);
+    viewFar = 1600;
+}
+
 function loadBoard() {
-    return new Promise((resolve, reject) => {
-        new GLTFLoader().load(BOARD_URL, (gltf) => {
-            let surface = null;
-            gltf.scene.traverse((child) => {
-                if (child.isMesh && child.geometry && child.geometry.attributes.position && (!surface || child.geometry.attributes.position.count > surface.geometry.attributes.position.count)) surface = child;
-            });
-            const pos = surface.geometry.attributes.position;
-            const n = Math.round(Math.sqrt(pos.count));
-            const heights = new Float32Array(n * n);
-            let minX = Infinity;
-            let minZ = Infinity;
-            let maxX = -Infinity;
-            let maxZ = -Infinity;
-            for (let i = 0; i < pos.count; i++) {
-                heights[i] = pos.getY(i);
-                const x = pos.getX(i);
-                const z = pos.getZ(i);
-                if (x < minX) minX = x;
-                if (z < minZ) minZ = z;
-                if (x > maxX) maxX = x;
-                if (z > maxZ) maxZ = z;
-            }
-            const tint = surface.geometry.getAttribute("color");
-            const colors = tint ? new Float32Array(tint.count * 3) : null;
-            if (tint) {
-                for (let i = 0; i < tint.count; i++) {
-                    colors[i * 3] = tint.getX(i);
-                    colors[i * 3 + 1] = tint.getY(i);
-                    colors[i * 3 + 2] = tint.getZ(i);
-                }
-            }
-            board = { heights: heights, colors: colors, n: n, minX: minX, minZ: minZ, span: maxX - minX, sea: BOARD_SEA, walkAt: null };
-            mapBox.min.set(minX, -40, minZ);
-            mapBox.max.set(maxX, 420, maxZ);
-            board.mapMesh = buildBoardGrid(0, 0, n - 1, n - 1, 4);
-            terrain.add(board.mapMesh);
-            const sea = new THREE.Mesh(
-                new THREE.PlaneGeometry(maxX - minX, maxZ - minZ),
-                new THREE.MeshStandardMaterial({ color: 0x2a6d86, transparent: true, opacity: 0.62, roughness: 0.2, depthWrite: false })
-            );
-            sea.rotation.x = -Math.PI / 2;
-            sea.position.set((minX + maxX) / 2, BOARD_SEA, (minZ + maxZ) / 2);
-            terrain.add(sea);
-            viewFar = 1600;
-            resolve();
-        }, undefined, reject);
+    return fetch(BOARD_URL).then((res) => {
+        if (!res.ok) throw new Error("map missing");
+        return res.arrayBuffer();
+    }).then((buffer) => {
+        finishBoard(readIsland(buffer));
     });
 }
 
-const boardMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
+const boardMat = makeGroundMaterial();
 const walkFog = new THREE.Fog(0x8ec8ee, 80, 210);
+const backdropMap = new THREE.TextureLoader().load("fp-backdrop.png");
+backdropMap.colorSpace = THREE.SRGBColorSpace;
+backdropMap.wrapS = THREE.ClampToEdgeWrapping;
+backdropMap.wrapT = THREE.ClampToEdgeWrapping;
+backdropMap.offset.y = -0.12;
+const backdrop = new THREE.Mesh(
+    new THREE.CylinderGeometry(220, 220, 340, 64, 1, true),
+    new THREE.MeshBasicMaterial({
+        map: backdropMap,
+        side: THREE.BackSide,
+        fog: false,
+        depthWrite: false
+    })
+);
+backdrop.renderOrder = -1;
+backdrop.visible = false;
+scene.add(backdrop);
+
+function placeBackdrop() {
+    if (!pilot) {
+        backdrop.visible = false;
+        return;
+    }
+    backdrop.visible = true;
+    backdrop.position.set(camera.position.x, camera.position.y, camera.position.z);
+}
 
 function buildBoardGrid(i0, j0, i1, j1, step) {
     const n = board.n;
@@ -625,6 +807,7 @@ function buildBoardGrid(i0, j0, i1, j1, step) {
     const down = rows + 1;
     const pos = new Float32Array(across * down * 3);
     const col = new Float32Array(across * down * 3);
+    const uv = new Float32Array(across * down * 2);
     for (let row = 0; row < down; row++) {
         const gz = Math.min(n - 1, j0 + row * jump);
         for (let column = 0; column < across; column++) {
@@ -634,6 +817,9 @@ function buildBoardGrid(i0, j0, i1, j1, step) {
             pos[o] = board.minX + (gx / (n - 1)) * board.span;
             pos[o + 1] = board.heights[src];
             pos[o + 2] = board.minZ + (gz / (n - 1)) * board.span;
+            const uo = (row * across + column) * 2;
+            uv[uo] = pos[o] / 3.5;
+            uv[uo + 1] = pos[o + 2] / 3.5;
             if (board.colors) {
                 col[o] = board.colors[src * 3];
                 col[o + 1] = board.colors[src * 3 + 1];
@@ -661,6 +847,7 @@ function buildBoardGrid(i0, j0, i1, j1, step) {
     const geom = new THREE.BufferGeometry();
     geom.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     geom.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    geom.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
     geom.setIndex(new THREE.BufferAttribute(idx, 1));
     geom.computeVertexNormals();
     const mesh = new THREE.Mesh(geom, boardMat);
@@ -681,8 +868,8 @@ function stepBoardView() {
         return;
     }
     if (scene.fog !== walkFog) scene.fog = walkFog;
-    if (camera.far !== 260) {
-        camera.far = 260;
+    if (camera.far !== 480) {
+        camera.far = 480;
         camera.updateProjectionMatrix();
     }
     const moved = !board.walkAt || Math.hypot(pilot.x - board.walkAt.x, pilot.z - board.walkAt.z) > 36;
@@ -719,6 +906,7 @@ function dryHomes() {
         for (let i = step; i < n - step; i += step) {
             const y = board.heights[j * n + i];
             if (y < BOARD_SEA + 4 || y > BOARD_SEA + 90) continue;
+            if (board.cover && board.cover[j * n + i] !== 1) continue;
             const rise = Math.max(
                 Math.abs(board.heights[j * n + i + 2] - y),
                 Math.abs(board.heights[(j + 2) * n + i] - y)
@@ -736,16 +924,19 @@ function dryHomes() {
         spots[i] = spots[k];
         spots[k] = swap;
     }
-    const east = spots[0] || { x: 180, z: 40 };
-    let west = null;
+    const first = spots[0] || { x: 40, z: 40 };
+    let second = null;
+    let spare = null;
     for (let i = 1; i < spots.length; i++) {
-        if (Math.hypot(spots[i].x - east.x, spots[i].z - east.z) > 480) {
-            west = spots[i];
+        const gap = Math.hypot(spots[i].x - first.x, spots[i].z - first.z);
+        if (gap > 140 && !spare) spare = spots[i];
+        if (gap > 140 && gap < 420) {
+            second = spots[i];
             break;
         }
     }
-    if (!west) west = spots[1] || { x: -180, z: -40 };
-    return [east, west].sort((a, b) => b.x - a.x);
+    if (!second) second = spare || spots[1] || { x: first.x + 180, z: first.z + 40 };
+    return [first, second];
 }
 
 function refreshLand(force) {
@@ -943,7 +1134,7 @@ async function placeManors() {
     }
     note.textContent = playTest
         ? "Play test. This is not the saved match. Choose Team A or Team B in the menu, then a building or a person, and click the ground. Right-click stops. Become player to walk up to them."
-        : (board ? "This is the mountain range. The two manors are on dry ground, and this match starts new. " : "") + "You are the eastern side. Both manors keep adding houses, workers, and stores. You can still give orders. The two sides are at peace. Forest is wood, water is food, ore is gold, and the rock piles are stone.";
+        : (board ? "The two manors are on flat ground, and this match starts new. Buildings stay off the grey rock and off the trees. Units can cross that rock and walk through trees, and they stop at the snow. " : "") + "Both manors keep adding houses, workers, and stores. You can still give orders. The two sides are at peace. Trees are wood, the shore is food, a farm is food, ore is gold, and the rock piles are stone.";
     return playerHome;
 }
 
@@ -1004,7 +1195,11 @@ function workerKind(kind) {
 }
 function playerRow() {
     const row = sheetTables().player;
-    return row || { hp: 40, attack: 12, shot: 8, defence: 0, move: SPEED * 2, w: 1.1, d: 0.63 };
+    return row || { hp: 40, attack: 12, shot: 8, defence: 0, move: SPEED * 2, w: 1.1, d: 0.63, jump: 6.4 };
+}
+function jumpPower() {
+    const n = Number(playerRow().jump);
+    return Number.isFinite(n) ? Math.min(40, Math.max(0, n)) : 6.4;
 }
 function tuned(kind) {
     const spec = BUILDINGS[kind];
@@ -1230,6 +1425,7 @@ const guardBtn = document.getElementById("stance-guard");
 const attackBtn = document.getElementById("stance-attack");
 const horseBtn = document.getElementById("make-horse");
 const boxEl = document.getElementById("box");
+const MAP_FIGURE = 2.5;
 const ringGeom = new THREE.RingGeometry(0.42, 0.62, 18);
 ringGeom.rotateX(-Math.PI / 2);
 const ringMat = new THREE.MeshBasicMaterial({ color: 0xf4e2a0, side: THREE.DoubleSide, depthTest: false });
@@ -1611,7 +1807,7 @@ function refreshHud() {
     if (pilot) {
         selEl.textContent = document.body.classList.contains("handheld")
             ? "Drag the view to look. The pad walks. Shoot looses the bow. Open the menu, then Pack, and choose Campaign."
-            : "You. WASD walks, mouse looks. Left-click draws the bow and looses an arrow. Open the menu, then Pack, for the sword.";
+            : "You. WASD walks, mouse looks. T is first person. Left-click draws the bow and looses an arrow. Open the menu, then Pack, for the sword.";
         return;
     }
     if (placing) {
@@ -1650,6 +1846,8 @@ function refreshHud() {
             if (soldiers) lines.push("soldier\nhealth " + Math.max(0, Math.ceil(soldierHp)));
             else lines.push("health " + Math.max(0, Math.ceil(workerHp)));
         }
+        const carried = carrySummary(selected);
+        if (carried) lines.push(carried);
         selEl.textContent = lines.join("\n");
     } else if (selectedHouse || manorSelected) {
         const house = selectedHouse;
@@ -1705,6 +1903,7 @@ function bodyFor(kind) {
 const roster = {};
 const rosterQueue = [];
 let rosterBusy = false;
+let rosterOpen = false;
 
 function rosterFile(model) {
     const raw = String(model || "").trim();
@@ -1712,16 +1911,17 @@ function rosterFile(model) {
     return "";
 }
 
+function wantRoster(file) {
+    if (!file || roster[file]) return;
+    roster[file] = { pending: true };
+    rosterQueue.push(file);
+    if (rosterOpen) pumpRoster();
+}
+
 function queueRoster() {
-    const rows = sheetTables().units || {};
-    Object.keys(rows).forEach((id) => {
-        const row = rows[id];
-        if (!row || (row.use !== "military" && row.use !== "economical")) return;
-        const file = rosterFile(row.model);
-        if (!file || roster[file]) return;
-        roster[file] = { pending: true };
-        rosterQueue.push(file);
-    });
+    rosterOpen = true;
+    for (let i = 0; i < units.length; i++) wantRoster(units[i].pendingModel);
+    for (let i = 0; i < trains.length; i++) wantRoster(rosterFile(unitRow(trains[i].kind).model));
     pumpRoster();
 }
 
@@ -1729,7 +1929,7 @@ function pumpRoster() {
     if (rosterBusy || !rosterQueue.length) return;
     rosterBusy = true;
     const file = rosterQueue.shift();
-    setTimeout(() => beginRosterLoad(file), 40);
+    setTimeout(() => beginRosterLoad(file), 800);
 }
 
 function beginRosterLoad(file) {
@@ -1755,15 +1955,23 @@ function beginRosterLoad(file) {
 function dressWaiting(file) {
     const packed = roster[file];
     if (!packed || !packed.gltf) return;
+    const waiting = [];
     for (let i = 0; i < units.length; i++) {
-        const unit = units[i];
-        if (unit.pendingModel !== file) continue;
-        try {
-            attachFigure(unit, packed);
-        } catch (err) {
-            unit.pendingModel = "";
-        }
+        if (units[i].side !== "self" && units[i].pendingModel === file) waiting.push(units[i]);
     }
+    const step = () => {
+        const unit = waiting.shift();
+        if (!unit) return;
+        if (unit.pendingModel === file) {
+            try {
+                attachFigure(unit, packed);
+            } catch (err) {
+                unit.pendingModel = "";
+            }
+        }
+        if (waiting.length) setTimeout(step, 0);
+    };
+    setTimeout(step, 0);
 }
 
 function clipNamed(clips, pattern) {
@@ -1796,6 +2004,23 @@ function boneSpan(model) {
     return { low: low, high: high };
 }
 
+function ensureLook(unit) {
+    if (unit.look) return unit.look;
+    const look = new THREE.Group();
+    unit.group.add(look);
+    unit.look = look;
+    return look;
+}
+
+function applyLook(unit) {
+    if (!unit.look) return;
+    unit.look.scale.setScalar(pilot ? 1 : MAP_FIGURE);
+}
+
+function applyAllLooks() {
+    for (let i = 0; i < units.length; i++) applyLook(units[i]);
+}
+
 function plantFigure(model, group) {
     const yaw = group.rotation.y;
     group.rotation.y = 0;
@@ -1824,13 +2049,15 @@ function attachFigure(unit, packed) {
     const posed = figurePose(model, packed.gltf);
     model.traverse((mesh) => {
         if (!mesh.isMesh) return;
-        mesh.castShadow = true;
+        mesh.castShadow = false;
         mesh.frustumCulled = false;
         mesh.userData.pick = true;
         mesh.userData.unit = unit;
     });
     if (unit.body && unit.body.parent) unit.body.parent.remove(unit.body);
-    unit.group.add(model);
+    const look = ensureLook(unit);
+    look.scale.setScalar(1);
+    look.add(model);
     model.userData.unit = unit;
     unit.body = model;
     unit.actor = null;
@@ -1843,6 +2070,7 @@ function attachFigure(unit, packed) {
     if (posed.idleClip) playArcher(unit, posed.idleClip, false);
     posed.mixer.update(0);
     plantFigure(model, unit.group);
+    applyLook(unit);
 }
 
 function spawnFigure(kind, x, z, side, packed, row) {
@@ -1877,6 +2105,7 @@ function spawnFigure(kind, x, z, side, packed, row) {
         body: null,
         ring: ring,
         ringScale: Math.max(row.w || 1, row.d || 0.6) / 1.24,
+        foot: Math.max(row.w || 0.6, row.d || 0.4) / 2,
         group: group,
         actor: null,
         mixer: null,
@@ -1889,6 +2118,7 @@ function spawnFigure(kind, x, z, side, packed, row) {
     ring.scale.setScalar(unit.ringScale);
     units.push(unit);
     attachFigure(unit, packed);
+    applyLook(unit);
     return unit;
 }
 
@@ -1905,7 +2135,9 @@ function spawn(kind, x, z, side) {
     ring.position.y = 0.06;
     ring.visible = side === "cpu" || side === "self";
     const group = new THREE.Group();
-    group.add(body);
+    const look = new THREE.Group();
+    group.add(look);
+    look.add(body);
     group.add(ring);
     group.position.set(x, heightAt(x, z), z);
     scene.add(group);
@@ -1934,13 +2166,19 @@ function spawn(kind, x, z, side) {
         body: body,
         ring: ring,
         ringScale: Math.max(row.w, row.d) / 1.24,
+        foot: Math.max(row.w || 0.6, row.d || 0.4) / 2,
         group: group,
+        look: look,
         actor: actor
     };
     ring.scale.setScalar(unit.ringScale);
     body.userData.unit = unit;
     units.push(unit);
-    if (file && (!packed || packed.pending)) unit.pendingModel = file;
+    applyLook(unit);
+    if (file && (!packed || packed.pending)) {
+        unit.pendingModel = file;
+        if (rosterOpen) wantRoster(file);
+    }
     return unit;
 }
 
@@ -1957,29 +2195,79 @@ const ARMS = {
 const ARM_ORDER = ["sword", "axe", "halberd", "mace", "bow", "crossbow"];
 const ATTACK_POSES = { Right_Hand_Sword_Slash: true, Archery_Shot_1: true, Draw_and_Shoot_from_Back: true };
 
-function loadArcher() {
-    const loader = new GLTFLoader();
-    const body = new Promise((resolve) => {
-        loader.load("../models/meshy/harlequin-man-at-arms.glb", (gltf) => {
-            archerGltf = gltf;
-            resolve(gltf);
-        }, undefined, () => resolve(null));
+function loadGltf(url) {
+    return new Promise((resolve) => {
+        new GLTFLoader().load(encodeURI(url), (gltf) => resolve(gltf), undefined, () => resolve(null));
     });
-    const props = ARM_ORDER.map((id) => new Promise((resolve) => {
-        loader.load(encodeURI(ARMS[id].file), (gltf) => {
-            if (id === "bow") {
-                const wood = new THREE.MeshStandardMaterial({ color: 0x8a5a32, roughness: 0.72 });
-                gltf.scene.traverse((obj) => {
-                    if (!obj.isMesh) return;
-                    if (obj.geometry && !obj.geometry.getAttribute("normal")) obj.geometry.computeVertexNormals();
-                    obj.material = wood;
+}
+
+function addArmProp(unit, id) {
+    const spec = ARMS[id];
+    const source = armGltf[id];
+    if (!spec || !source || !unit || !unit.props || unit.props[id]) return;
+    const prop = source.scene.clone(true);
+    prop.scale.setScalar(spec.scale);
+    prop.position.set(spec.pos[0], spec.pos[1], spec.pos[2]);
+    prop.rotation.set(spec.rot[0], spec.rot[1], spec.rot[2]);
+    prop.visible = id === arm;
+    prop.traverse((mesh) => {
+        if (!mesh.isMesh) return;
+        mesh.castShadow = false;
+        mesh.frustumCulled = false;
+    });
+    const hand = spec.hand === "left" ? unit.leftHand : unit.rightHand;
+    if (hand) hand.add(prop);
+    unit.props[id] = prop;
+}
+
+let walkerJob = null;
+function ensureWalker() {
+    if (walkerJob) return walkerJob;
+    walkerJob = loadGltf("../models/meshy/harlequin-player.glb").then((gltf) => {
+        return loadGltf("../models/meshy/harlequin-man-at-arms.glb").then((older) => {
+            const keep = ["Idle_02", "Archery_Shot_1", "Draw_and_Shoot_from_Back"];
+            if (older) {
+                keep.forEach((name) => {
+                    if (gltf.animations.some((clip) => clip.name === name)) return;
+                    const clip = older.animations.find((item) => item.name === name);
+                    if (clip) gltf.animations.push(clip);
                 });
             }
-            armGltf[id] = gltf;
-            resolve(gltf);
-        }, undefined, () => resolve(null));
-    }));
-    return Promise.all([body].concat(props));
+            return loadGltf("../models/meshy/harlequin-steps.glb").then((steps) => {
+                if (steps) {
+                    steps.animations.forEach((clip) => {
+                        if (gltf.animations.some((item) => item.name === clip.name)) return;
+                        gltf.animations.push(clip);
+                    });
+                }
+                archerGltf = gltf;
+            });
+        });
+    }).then(() => loadGltf(ARMS.sword.file)).then((sword) => {
+        if (sword) armGltf.sword = sword;
+        for (let i = 0; i < units.length; i++) {
+            if (units[i].side === "self") dressArcher(units[i]);
+        }
+        let chain = Promise.resolve();
+        ARM_ORDER.forEach((id) => {
+            if (id === "sword") return;
+            chain = chain.then(() => new Promise((resolve) => setTimeout(resolve, 700))).then(() => loadGltf(ARMS[id].file)).then((prop) => {
+                if (!prop) return;
+                if (id === "bow") {
+                    const wood = new THREE.MeshStandardMaterial({ color: 0x8a5a32, roughness: 0.72 });
+                    prop.scene.traverse((obj) => {
+                        if (!obj.isMesh) return;
+                        if (obj.geometry && !obj.geometry.getAttribute("normal")) obj.geometry.computeVertexNormals();
+                        obj.material = wood;
+                    });
+                }
+                armGltf[id] = prop;
+                for (let i = 0; i < units.length; i++) addArmProp(units[i], id);
+            });
+        });
+        return chain;
+    });
+    return walkerJob;
 }
 
 function fitArcher(model, group, row) {
@@ -2003,7 +2291,16 @@ function fitArcher(model, group, row) {
     const top = head.getWorldPosition(new THREE.Vector3());
     model.position.x += origin.x - (sole.x + top.x) / 2;
     model.position.z += origin.z - (sole.z + top.z) / 2;
-    model.position.y += origin.y - sole.y;
+    model.updateMatrixWorld(true);
+    let lowest = sole.y;
+    model.traverse((obj) => {
+        if (!obj.isMesh || !obj.geometry) return;
+        if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox();
+        const point = obj.geometry.boundingBox.min.clone();
+        obj.localToWorld(point);
+        if (point.y < lowest) lowest = point.y;
+    });
+    model.position.y += origin.y - lowest;
     model.updateMatrixWorld(true);
     return head.getWorldPosition(new THREE.Vector3()).y - origin.y;
 }
@@ -2022,28 +2319,16 @@ function dressArcher(unit) {
         if (obj.name === "mixamorigLeftHand") left = obj;
     });
     unit.props = {};
-    ARM_ORDER.forEach((id) => {
-        const spec = ARMS[id];
-        const source = armGltf[id];
-        if (!source) return;
-        const prop = source.scene.clone(true);
-        prop.scale.setScalar(spec.scale);
-        prop.position.set(spec.pos[0], spec.pos[1], spec.pos[2]);
-        prop.rotation.set(spec.rot[0], spec.rot[1], spec.rot[2]);
-        prop.visible = id === arm;
-        prop.traverse((mesh) => {
-            if (!mesh.isMesh) return;
-            mesh.castShadow = true;
-            mesh.frustumCulled = false;
-        });
-        const hand = spec.hand === "left" ? left : right;
-        if (hand) hand.add(prop);
-        unit.props[id] = prop;
-    });
-    unit.group.remove(unit.body);
-    unit.group.add(model);
+    unit.rightHand = right;
+    unit.leftHand = left;
+    ARM_ORDER.forEach((id) => addArmProp(unit, id));
+    if (unit.body && unit.body.parent) unit.body.parent.remove(unit.body);
+    const look = ensureLook(unit);
+    look.scale.setScalar(1);
+    look.add(model);
     model.userData.unit = unit;
     unit.body = model;
+    unit.headBone = null;
     const mixer = new THREE.AnimationMixer(model);
     const clips = {};
     for (let i = 0; i < archerGltf.animations.length; i++) {
@@ -2054,12 +2339,11 @@ function dressArcher(unit) {
     unit.clips = clips;
     unit.archer = true;
     unit.pose = "";
-    unit.rightHand = right;
-    unit.leftHand = left;
     unit.bowHand = left;
     playArcher(unit, "Idle_02", false);
     mixer.update(0);
     unit.eyeHeight = fitArcher(model, unit.group, playerRow()) * 0.92;
+    applyLook(unit);
 }
 
 function showArm(unit) {
@@ -2080,7 +2364,8 @@ function playArcher(unit, name, once) {
     action.reset();
     action.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, once ? 1 : Infinity);
     action.clampWhenFinished = !!once;
-    action.timeScale = name === "Archery_Shot_1" ? 1.15 : name === "Draw_and_Shoot_from_Back" ? 1.8 : name === "Right_Hand_Sword_Slash" ? 1.35 : 1;
+    const pace = { Archery_Shot_1: 1.15, Draw_and_Shoot_from_Back: 1.8, Right_Hand_Sword_Slash: 1.35, Regular_Jump: 2.6 };
+    action.timeScale = pace[name] || 1;
     action.play();
     unit.pose = name;
     return action;
@@ -2091,10 +2376,30 @@ function holdArcher(unit, dt) {
     unit.mixer.update(dt);
 }
 
+function playerPose(unit) {
+    if ((unit.hop || 0) > 0.04 || (unit.vy || 0) > 0.2) return "Regular_Jump";
+    const forward = (keys.w || keys.arrowup ? 1 : 0) - (keys.s || keys.arrowdown ? 1 : 0);
+    const strafe = (keys.a || keys.arrowleft ? 1 : 0) - (keys.d || keys.arrowright ? 1 : 0);
+    if (forward > 0) return "Walking";
+    if (forward < 0) return "Walk_Backward_inplace";
+    if (strafe > 0) return "Strafe_left_RT";
+    if (strafe < 0) return "Strafe_right_RT";
+    let gap = lookYaw - (unit.bodyYaw == null ? lookYaw : unit.bodyYaw);
+    while (gap > Math.PI) gap -= Math.PI * 2;
+    while (gap < -Math.PI) gap += Math.PI * 2;
+    if (gap > 0.5) return "Idle_Step_Turn_Left";
+    if (gap < -0.5) return "Idle_Turn_Right";
+    return "Idle_02";
+}
+
 function stepArcher(unit, dt, moving) {
     const action = unit.pose && unit.clips ? unit.clips[unit.pose] : null;
-    const busy = !!(action && ATTACK_POSES[unit.pose] && action.isRunning());
-    if (!busy) playArcher(unit, moving ? "Walking" : "Idle_02", false);
+    const jumping = unit.pose === "Regular_Jump" && action && action.isRunning() && ((unit.hop || 0) > 0.02 || (unit.vy || 0) > 0);
+    const busy = jumping || !!(action && ATTACK_POSES[unit.pose] && action.isRunning());
+    if (!busy) {
+        const name = unit === pilot ? playerPose(unit) : (moving ? "Walking" : "Idle_02");
+        playArcher(unit, name, name === "Regular_Jump");
+    }
     unit.mixer.update(dt);
     if (!busy || !action) return;
     if (unit.pose === "Archery_Shot_1" || unit.pose === "Draw_and_Shoot_from_Back") {
@@ -2126,9 +2431,12 @@ function ensureSelf() {
         fresh = true;
     }
     const row = playerRow();
+    if (unit.look) unit.look.scale.setScalar(1);
     if (archerGltf) dressArcher(unit);
     else fitMapModel(unit.body, row.w / 2, row.d / 2);
     unit.ringScale = Math.max(row.w, row.d) / 1.24;
+    unit.foot = Math.max(row.w || 0.6, row.d || 0.4) / 2;
+    applyLook(unit);
     eye = unit.eyeHeight || 1.2 * (unit.body.scale.y || 1);
     showRing(unit);
     unit.speed = row.move;
@@ -2210,14 +2518,17 @@ function trainFor(side, kind, auto) {
         if (!from || madeBy(from).indexOf(kind) < 0) return;
         if (manorSelected && side !== led) return;
         if (!manorSelected && selectedHouse && (selectedHouse.side || "you") !== side) return;
-    } else if (madeBy("manor").indexOf(kind) < 0) return;
+    } else if (madeBy("manor").indexOf(kind) < 0) {
+        const fromBarracks = militaryKind(kind) && ownedCount(built, "barracks", side) > 0 && madeBy("barracks").indexOf(kind) >= 0;
+        if (!fromBarracks) return;
+    }
     if (!actors || !base) return;
     if (auto && sideQueued(side) > 0) return;
     const bill = unitBill(kind);
     if (!canPay(side, bill)) return;
     if (!housed(side, kind)) return;
     spend(side, bill);
-    trains.push({ side: side, kind: kind, left: TRAIN_TIME });
+    trains.push({ side: side, kind: kind, left: trainSeconds(kind) });
     refreshHud();
     writeSave();
 }
@@ -2243,6 +2554,20 @@ function stepTrains(dt) {
         trainClock = 0;
         refreshHud();
     }
+}
+
+function trainSeconds(kind) {
+    const row = unitRow(kind);
+    const cols = window.AoeSheet && window.AoeSheet.columns ? window.AoeSheet.columns("units") : [];
+    let col = null;
+    for (let i = 0; i < cols.length; i++) {
+        if (String(cols[i].name || "").trim().toLowerCase() === "training time") col = cols[i];
+    }
+    const raw = col && row && row.extra ? row.extra[col.id] : "";
+    if (raw === "" || raw == null) return TRAIN_TIME;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return TRAIN_TIME;
+    return Math.max(0, Math.min(3600, n));
 }
 
 function train(kind) {
@@ -2333,6 +2658,60 @@ attackBtn.addEventListener("click", () => setStance("attack"));
 const SAVE_KEY = playTest ? "aoe-playtest-save" : (BOARD_URL ? "aoe-board-save" : "aoe-save");
 let aGift = false;
 
+let lined = false;
+
+function musterAt(base, index, count, rowShift) {
+    const hx = base.hx || MANOR_HX;
+    const hz = base.hz || MANOR_HZ;
+    const gap = 1.7;
+    const n = Math.max(1, count);
+    const cols = Math.min(n, 10);
+    const span = (cols - 1) * gap;
+    const col = index % cols;
+    const row = Math.floor(index / cols) + (rowShift || 0);
+    let x = base.x - span / 2 + col * gap;
+    let z = base.z - hz - 4 - row * 1.8;
+    const ground = base.y != null ? base.y : heightAt(base.x, base.z);
+    for (let i = 0; i < 8; i++) {
+        if (!inWater(x, z) && !closedGround(x, z) && Math.abs(heightAt(x, z) - ground) < 2) break;
+        z -= 1.2;
+    }
+    if (inWater(x, z) || closedGround(x, z)) {
+        const dry = dryNear(base.x, base.z + hz);
+        return { x: dry.x + (col - (cols - 1) / 2) * gap, z: dry.z };
+    }
+    return { x: x, z: z };
+}
+
+function standUnit(unit, x, z) {
+    unit.x = x;
+    unit.z = z;
+    unit.yaw = 0;
+    unit.group.position.set(x, heightAt(x, z), z);
+    unit.group.rotation.y = unit.yaw;
+    unit.job = null;
+    unit.jobNode = null;
+    unit.goal = null;
+    unit.state = "idle";
+    unit.carry = unit.carry || 0;
+}
+
+function lineUpSide(side) {
+    const base = sideBase(side);
+    if (!base) return;
+    const list = [];
+    for (let i = 0; i < units.length; i++) {
+        const unit = units[i];
+        if (unit.side !== side || unit.hp <= 0 || unit === pilot) continue;
+        if (!workerKind(unit.kind) || unit.orders) continue;
+        list.push(unit);
+    }
+    for (let i = 0; i < list.length; i++) {
+        const spot = musterAt(base, i, list.length, 0);
+        standUnit(list[i], spot.x, spot.z);
+    }
+}
+
 function dryNear(x, z) {
     if (!inWater(x, z)) return { x: x, z: z };
     for (let ring = 6; ring <= 48; ring += 4) {
@@ -2361,7 +2740,7 @@ function readSave() {
     try {
         const raw = localStorage.getItem(SAVE_KEY);
         const data = raw ? JSON.parse(raw) : null;
-        if (!data || data.map !== "range" || !Array.isArray(data.units) || !data.units.length) return null;
+        if (!data || data.map !== "manual" || !Array.isArray(data.units) || !data.units.length) return null;
         return data;
     } catch (err) {
         return null;
@@ -2371,7 +2750,7 @@ function readSave() {
 function writeSave() {
     if (!actors || !home || !units.length) return;
     const data = {
-        map: "range",
+        map: "manual",
         food: food,
         wood: wood,
         gold: gold,
@@ -2392,6 +2771,7 @@ function writeSave() {
         houses: Object.keys(kits).some((key) => kits[key]) ? built.filter((house) => !house.preview).map((house) => ({ kind: house.kind, side: house.side || "you", x: house.x, z: house.z, y: house.y })) : ((readSave() || {}).houses || []),
         pending: Object.keys(kits).some((key) => kits[key]) ? sites.map((site) => ({ kind: site.kind, side: site.side || "you", x: site.x, z: site.z, y: site.y, left: site.left })) : ((readSave() || {}).pending || []),
         aGift: aGift,
+        lined: lined,
         campaignMark: appliedCampaign,
         clock: dayMin,
         depots: depotRows(),
@@ -2441,6 +2821,7 @@ function matchNode(saved) {
 
 function restoreMatch(save) {
     haulSave = save;
+    lined = !!save.lined;
     food = Number(save.food) || 0;
     wood = Number(save.wood) || 0;
     gold = Number(save.gold) || 0;
@@ -2587,21 +2968,282 @@ async function startMatch(playerHome, otherHome) {
         worker: await loadPerson("../models/meshy/villager.skin.bin", "../models/meshy/villager.skin.png"),
         soldier: await loadPerson("../models/meshy/militia.skin.bin", "../models/meshy/militia.skin.png")
     };
-    await loadArcher();
     const save = readSave();
     if (save) restoreMatch(save);
     else aGift = true;
     if (!playTest || !save) applyCampaign(save && save.campaignMark);
     if (!window.AoeSheet && !units.some((unit) => unit.side === "you")) spawn("worker", home.x + 4, home.z + 24, "you");
-    await loadHorse();
+    if (!lined) {
+        lineUpSide("you");
+        lineUpSide("cpu");
+        lined = true;
+        cpuThink = -8;
+    }
     bootHaulers();
-    await showBlacksmith();
     ensureSelf();
     seatFloors();
     refreshLand(true);
     refreshHud();
     writeSave();
-    setTimeout(queueRoster, 60);
+    setTimeout(warmMatch, 1500);
+}
+
+let mapTrees = null;
+let mapCards = null;
+const treeSpots = [];
+const MAP_TREE_FILES = [
+    "2d TREES/isometric tiles/bigtree01.png",
+    "2d TREES/isometric tiles/bigtree02.png",
+    "2d TREES/isometric tiles/bigtree03.png",
+    "2d TREES/isometric tiles/pine-none02.png",
+    "2d TREES/isometric tiles/pine-none05.png",
+    "2d TREES/isometric tiles/pine-none08.png"
+];
+
+function grassHere(x, z) {
+    if (!board || !board.colors || coverAt(x, z) !== 1) return false;
+    const u = (x - board.minX) / board.span;
+    const v = (z - board.minZ) / board.span;
+    const n = board.n;
+    const i = Math.min(n - 1, Math.max(0, Math.round(u * (n - 1))));
+    const j = Math.min(n - 1, Math.max(0, Math.round(v * (n - 1))));
+    const o = (j * n + i) * 3;
+    const r = board.colors[o];
+    const g = board.colors[o + 1];
+    const b = board.colors[o + 2];
+    return g - Math.max(r, b) > 0.02;
+}
+
+function clearOfManor(x, z) {
+    for (let i = 0; i < manors.length; i++) {
+        const spot = manors[i].position;
+        if (Math.hypot(x - spot.x, z - spot.z) < 46) return false;
+    }
+    return true;
+}
+
+function loadTreeCard(url) {
+    return new Promise((resolve) => {
+        new THREE.TextureLoader().load(encodeURI(url), (texture) => {
+            texture.colorSpace = THREE.SRGBColorSpace;
+            const image = texture.image;
+            const canvas = document.createElement("canvas");
+            canvas.width = image.width;
+            canvas.height = image.height;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(image, 0, 0);
+            const data = ctx.getImageData(0, 0, image.width, image.height).data;
+            let bottom = image.height - 1;
+            for (let y = image.height - 1; y >= 0; y--) {
+                let hit = false;
+                for (let x = 0; x < image.width; x += 2) {
+                    if (data[(y * image.width + x) * 4 + 3] > 24) {
+                        hit = true;
+                        break;
+                    }
+                }
+                if (hit) {
+                    bottom = y;
+                    break;
+                }
+            }
+            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+                map: texture,
+                color: new THREE.Color(6.5, 6.5, 6.5),
+                transparent: true,
+                alphaTest: 0.2,
+                depthWrite: true
+            }));
+            const tall = 14 * 1.3;
+            sprite.scale.set(tall, tall * image.height / image.width, 1);
+            sprite.center.set(0.5, (image.height - 1 - bottom) / image.height);
+            resolve(sprite);
+        }, undefined, () => resolve(null));
+    });
+}
+
+function showMapTrees() {
+    if (!board || mapTrees) return;
+    const group = new THREE.Group();
+    group.name = "map-trees";
+    group.visible = !pilot;
+    mapTrees = group;
+    scene.add(group);
+    Promise.all(MAP_TREE_FILES.map(loadTreeCard)).then((cards) => {
+        const ready = cards.filter(Boolean);
+        if (!ready.length || mapTrees !== group) return;
+        const spots = [];
+        function addTree(x, z, roll) {
+            if (!grassHere(x, z) || !clearOfManor(x, z)) return;
+            for (let i = 0; i < spots.length; i++) {
+                if (Math.hypot(x - spots[i].x, z - spots[i].z) < 6) return;
+            }
+            const card = ready[Math.floor(roll * ready.length) % ready.length];
+            const tree = card.clone();
+            tree.position.set(x, heightAt(x, z), z);
+            tree.userData.mark = { x: x, z: z };
+            group.add(tree);
+            spots.push({ x: x, z: z });
+            treeSpots.push({ x: x, z: z, yaw: roll * Math.PI * 2, scale: 1, wood: true });
+            addWoodSpot(x, z, 1);
+        }
+        const span = board.span;
+        const seeds = [];
+        for (let z = board.minZ + 40; z < board.minZ + span - 40; z += 78) {
+            for (let x = board.minX + 40; x < board.minX + span - 40; x += 78) {
+                if (treeRoll(x, z) > 0.55) continue;
+                if (!grassHere(x, z) || !clearOfManor(x, z)) continue;
+                seeds.push({ x: x, z: z });
+            }
+        }
+        if (home) {
+            const roll = treeRoll(home.x, home.z);
+            seeds.push({
+                x: home.x + Math.cos(roll * 6.28) * 72,
+                z: home.z + Math.sin(roll * 6.28) * 72
+            });
+        }
+        seeds.forEach((seed) => {
+            const count = 6 + Math.floor(treeRoll(seed.x + 9, seed.z) * 5);
+            for (let n = 0; n < count && spots.length < 240; n++) {
+                const spin = treeRoll(seed.x + n * 13, seed.z - n * 7);
+                const reach = 5 + treeRoll(seed.x - n, seed.z + n * 3) * 16;
+                addTree(seed.x + Math.cos(spin * 6.28) * reach, seed.z + Math.sin(spin * 6.28) * reach, spin);
+            }
+        });
+        if (pilot) {
+            walkMarkX = 1e9;
+            walkMarkZ = 1e9;
+        }
+    });
+}
+
+let walkTrees = null;
+let walkToken = 0;
+let walkBusy = false;
+let walkMarkX = 1e9;
+let walkMarkZ = 1e9;
+
+function clearWalkTrees() {
+    walkToken += 1;
+    walkBusy = false;
+    if (walkTrees) {
+        scene.remove(walkTrees);
+        walkTrees = null;
+    }
+    walkMarkX = 1e9;
+    walkMarkZ = 1e9;
+}
+
+function refreshWalkTrees() {
+    if (!pilot || !treeSpots.length) return;
+    if ((walkTrees || walkBusy) && Math.hypot(pilot.x - walkMarkX, pilot.z - walkMarkZ) < 40) return;
+    const x = pilot.x;
+    const z = pilot.z;
+    walkMarkX = x;
+    walkMarkZ = z;
+    const token = walkToken + 1;
+    walkToken = token;
+    walkBusy = true;
+    loadPackTrees().then((models) => {
+        if (token !== walkToken || !pilot || !models.length) {
+            if (token === walkToken) walkBusy = false;
+            return;
+        }
+        if (walkTrees) scene.remove(walkTrees);
+        const group = new THREE.Group();
+        group.name = "walk-trees";
+        for (let i = 0; i < treeSpots.length; i++) {
+            const spot = treeSpots[i];
+            if (Math.hypot(spot.x - x, spot.z - z) > 230) continue;
+            const tree = packTree(models, spot.x, spot.z).clone(true);
+            tree.position.set(spot.x, heightAt(spot.x, spot.z), spot.z);
+            tree.rotation.y = spot.yaw || 0;
+            tree.scale.multiplyScalar(spot.scale || 1);
+            group.add(tree);
+        }
+        walkTrees = group;
+        walkBusy = false;
+        scene.add(group);
+    });
+}
+
+function showMapObjects() {
+    if (!board) return;
+    fetch("map-objects.json", { cache: "no-store" }).then((res) => res.ok ? res.json() : null).then(async (data) => {
+        if (!data || data.map !== "newmap" || !Array.isArray(data.objects) || !data.objects.length) return;
+        const templates = {};
+        const group = new THREE.Group();
+        group.name = "map-objects";
+        scene.add(group);
+        mapCards = new THREE.Group();
+        mapCards.name = "map-cards";
+        mapCards.visible = !pilot;
+        scene.add(mapCards);
+        for (let i = 0; i < data.objects.length; i++) {
+            const item = data.objects[i];
+            const kind = kindById(item.kind);
+            if (!kind) continue;
+            if (kind.kit) {
+                if (!templates[kind.id]) templates[kind.id] = await loadKitShell(kind.kit);
+                const shell = templates[kind.id].clone(true);
+                shell.scale.multiplyScalar(Number(item.scale) || 1);
+                shell.position.set(item.x, heightAt(item.x, item.z), item.z);
+                shell.rotation.y = Number(item.yaw) || 0;
+                group.add(shell);
+                continue;
+            }
+            if (kind.shape) {
+                if (!templates[kind.id]) templates[kind.id] = makeMapShape(kind);
+                const mesh = templates[kind.id].clone(true);
+                mesh.scale.multiplyScalar(Number(item.scale) || 1);
+                mesh.position.set(item.x, heightAt(item.x, item.z), item.z);
+                mesh.rotation.y = Number(item.yaw) || 0;
+                group.add(mesh);
+                continue;
+            }
+            if (kind.card) {
+                if (!templates[kind.id]) templates[kind.id] = await loadTreeCard(kind.file);
+                if (!templates[kind.id]) continue;
+                const tree = templates[kind.id].clone();
+                tree.scale.multiplyScalar(Number(item.scale) || 1);
+                tree.position.set(item.x, heightAt(item.x, item.z), item.z);
+                tree.userData.mark = { x: item.x, z: item.z };
+                mapCards.add(tree);
+                const wood = /tree|pine|palm|bamboo|tropical/.test(kind.id);
+                const scale = Number(item.scale) || 1;
+                treeSpots.push({
+                    x: item.x,
+                    z: item.z,
+                    yaw: Number(item.yaw) || 0,
+                    scale: scale,
+                    wood: wood
+                });
+                if (wood) addWoodSpot(item.x, item.z, scale);
+                continue;
+            }
+            if (!templates[kind.id]) {
+                const gltf = kind.file ? await loadGltf(kind.file) : null;
+                templates[kind.id] = gltf ? plantModel(gltf.scene) : makeStandIn(kind);
+            }
+            const mesh = templates[kind.id].clone(true);
+            mesh.scale.multiplyScalar(Number(item.scale) || 1);
+            mesh.position.set(item.x, heightAt(item.x, item.z), item.z);
+            mesh.rotation.y = Number(item.yaw) || 0;
+            group.add(mesh);
+        }
+    }).catch(() => {});
+}
+
+function warmMatch() {
+    showMapObjects();
+    showMapTrees();
+    loadHorse().then(() => {
+        bootHaulers();
+        setTimeout(() => {
+            showBlacksmith().then(() => setTimeout(queueRoster, 800));
+        }, 800);
+    });
 }
 
 document.getElementById("restart").addEventListener("click", () => {
@@ -2706,8 +3348,8 @@ function syncSideUnits(side, lines) {
             if (units[i].side === side && units[i].kind === kind && units[i].hp > 0) got++;
         }
         for (let n = got; n < want[kind]; n++) {
-            const ang = n * 0.7;
-            spawn(kind, base.x + 6 + Math.cos(ang) * 4, base.z + 18 + Math.sin(ang) * 4, side);
+            const spot = musterAt(base, n, want[kind], workerKind(kind) ? 0 : 1);
+            spawn(kind, spot.x, spot.z, side);
         }
     });
 }
@@ -2768,7 +3410,7 @@ window.addEventListener("storage", (event) => {
 function standAt(node, unit) {
     if (node && node.kind === "farm" && node.farm) return farmStand(node.farm, unit);
     const ang = unit.id * 1.3;
-    let r = node.r + 1.2;
+    let r = (node.stand > 0 ? node.stand : node.r) + 1.2;
     let x = node.x + Math.cos(ang) * r;
     let z = node.z + Math.sin(ang) * r;
     if (node.kind === "food") {
@@ -2849,6 +3491,22 @@ function holdSum(hold) {
 }
 
 const GOOD_LABEL = { food: "food", wood: "wood", gold: "gold", stone: "stone", iron: "iron", salt: "salt", fabric: "fabrics" };
+
+function carrySummary(list) {
+    const totals = {};
+    for (let i = 0; i < list.length; i++) {
+        const unit = list[i];
+        const n = Math.floor(unit.carry || 0);
+        if (n < 1 || !unit.job || !GOOD_LABEL[unit.job]) continue;
+        totals[unit.job] = (totals[unit.job] || 0) + n;
+    }
+    const bits = [];
+    for (let i = 0; i < GOODS.length; i++) {
+        const key = GOODS[i];
+        if (totals[key]) bits.push(totals[key] + " " + GOOD_LABEL[key]);
+    }
+    return bits.length ? "carrying " + bits.join(", ") : "";
+}
 
 function holdLine(hold) {
     const bits = [];
@@ -3001,6 +3659,7 @@ function spawnHorse(yard, saved) {
         cargo: copyHold(saved && saved.cargo),
         stuck: 0,
         speed: 6.4,
+        foot: Math.max(horseWide, horseDeep) / 2,
         id: nextId++,
         group: group,
         mixer: mixer,
@@ -3322,6 +3981,7 @@ function shapeGround(cx, cz, targetY, hx, hz) {
 }
 
 function hitsWater(x, z, hx, hz) {
+    if (board) return false;
     for (let i = 0; i < nodes.length; i++) {
         const node = nodes[i];
         if (node.kind !== "food") continue;
@@ -3336,9 +3996,28 @@ function overlaps(ax, az, ahx, ahz, bx, bz, bhx, bhz) {
     return Math.abs(ax - bx) < ahx + bhx + 0.4 && Math.abs(az - bz) < ahz + bhz + 0.4;
 }
 
+function footGround(x, z, hx, hz) {
+    const spots = [[0, 0], [hx, 0], [-hx, 0], [0, hz], [0, -hz], [hx, hz], [-hx, hz], [hx, -hz], [-hx, -hz]];
+    let worst = 1;
+    for (let i = 0; i < spots.length; i++) {
+        const kind = coverAt(x + spots[i][0], z + spots[i][1]);
+        if (kind === 0) return 0;
+        if (kind === 3) worst = 3;
+        else if (kind === 2 && worst === 1) worst = 2;
+    }
+    return worst;
+}
+
 function spotOk(x, z, spec, anchor) {
     const base = anchor || home;
     if (hitsWater(x, z, spec.hx + 2.2, spec.hz + 2.2)) return "water";
+    if (hitsTree(x, z, spec.hx, spec.hz)) return "tree";
+    if (board) {
+        const ground = footGround(x, z, spec.hx, spec.hz);
+        if (ground === 0) return "water";
+        if (ground === 2) return "rock";
+        if (ground === 3) return "snow";
+    }
     if (!playTest && spec.town && base && Math.hypot(x - base.x, z - base.z) > TOWN_RANGE) return "far";
     const pads = [];
     if (home) pads.push(home);
@@ -3401,60 +4080,38 @@ function doorMaterial() {
     return doorMat;
 }
 
-function outerDoors(physics) {
-    if (!physics) return [];
+let doorLeafJob = null;
+function ensureDoorLeaves() {
+    if (!doorLeafJob) {
+        doorLeafJob = Promise.all([
+            loadGltf("../models/village-megakit/glTF/Door_1_Round.gltf"),
+            loadGltf("../models/village-megakit/glTF/Door_1_Flat.gltf")
+        ]).then((pair) => ({ round: pair[0], flat: pair[1] }));
+    }
+    return doorLeafJob;
+}
+
+function placedDoors(physics) {
+    if (!physics || !physics.doors) return [];
     const cx = physics.cx;
     const cz = physics.cz;
-    const walls = (physics.solids || []).filter((sol) => !sol.stair && sol.y0 < 1.1 && sol.y1 > 1.6 && Math.min(sol.w, sol.d) < 0.8);
-    const lines = [];
-    walls.forEach((sol) => {
-        const alongX = sol.w >= sol.d;
-        const fixed = alongX ? sol.z + sol.d / 2 : sol.x + sol.w / 2;
-        const key = (alongX ? "z:" : "x:") + Math.round(fixed * 2);
-        let line = null;
-        for (let i = 0; i < lines.length; i++) if (lines[i].key === key) line = lines[i];
-        if (!line) {
-            line = { key: key, alongX: alongX, fixed: fixed, spans: [] };
-            lines.push(line);
-        }
-        line.spans.push(alongX ? [sol.x, sol.x + sol.w] : [sol.z, sol.z + sol.d]);
+    return physics.doors.map((raw) => {
+        const yaw = raw.yaw || 0;
+        const c = Math.cos(yaw);
+        const s = Math.sin(yaw);
+        return {
+            hingeX: (raw.x - cx) - 0.51 * c,
+            hingeZ: (raw.z - cz) + 0.51 * s,
+            x: raw.x - cx,
+            z: raw.z - cz,
+            y: raw.y || 0,
+            yaw: yaw,
+            wide: 1.2,
+            shape: raw.shape === "round" ? "round" : "flat",
+            open: 0,
+            want: false
+        };
     });
-    const extreme = (alongX) => {
-        let lo = Infinity;
-        let hi = -Infinity;
-        for (let i = 0; i < lines.length; i++) {
-            if (lines[i].alongX !== alongX) continue;
-            lo = Math.min(lo, lines[i].fixed);
-            hi = Math.max(hi, lines[i].fixed);
-        }
-        return { lo: lo, hi: hi };
-    };
-    const xEdge = extreme(false);
-    const zEdge = extreme(true);
-    const doors = [];
-    lines.forEach((line) => {
-        const edge = line.alongX ? zEdge : xEdge;
-        if (Math.min(Math.abs(line.fixed - edge.lo), Math.abs(line.fixed - edge.hi)) > 1) return;
-        const spans = line.spans.slice().sort((a, b) => a[0] - b[0]);
-        const merged = [];
-        for (let i = 0; i < spans.length; i++) {
-            const span = spans[i];
-            const last = merged[merged.length - 1];
-            if (last && span[0] <= last[1] + 0.15) last[1] = Math.max(last[1], span[1]);
-            else merged.push([span[0], span[1]]);
-        }
-        for (let i = 0; i < merged.length - 1; i++) {
-            const from = merged[i][1];
-            const to = merged[i + 1][0];
-            const gap = to - from;
-            if (gap < 0.7 || gap > 2.6) continue;
-            const mid = (from + to) / 2;
-            const wide = Math.min(1.3, gap);
-            if (line.alongX) doors.push({ hingeX: from - cx, hingeZ: line.fixed - cz, x: mid - cx, z: line.fixed - cz, yaw: 0, wide: wide });
-            else doors.push({ hingeX: line.fixed - cx, hingeZ: from - cz, x: line.fixed - cx, z: mid - cz, yaw: -Math.PI / 2, wide: wide });
-        }
-    });
-    return doors;
 }
 
 function localSolids(physics) {
@@ -3469,16 +4126,49 @@ function localSolids(physics) {
     }));
 }
 
-function addDoorLeaf(group, door) {
-    const leaf = new THREE.Mesh(new THREE.BoxGeometry(door.wide, 2.15, 0.08), doorMaterial());
-    leaf.position.set(door.wide / 2, 1.08, 0);
+function placeFloors(physics, shell) {
+    if (!physics || !physics.floors) return [];
+    const cx = physics.cx || 0;
+    const cz = physics.cz || 0;
+    const sy = shell ? shell.scale.y : 1;
+    const lift = shell ? shell.position.y : 0;
+    return physics.floors.filter((sol) => Number.isFinite(sol.y)).map((sol) => {
+        const x = sol.x - cx;
+        const z = sol.z - cz;
+        const at = kitToGroup(shell, x, z);
+        const far = kitToGroup(shell, x + sol.w, z + sol.d);
+        return {
+            x: Math.min(at.x, far.x),
+            z: Math.min(at.z, far.z),
+            w: Math.abs(far.x - at.x),
+            d: Math.abs(far.z - at.z),
+            y: lift + sol.y * sy
+        };
+    });
+}
+
+function addDoorLeaf(group, door, leaves) {
+    const src = leaves && (door.shape === "round" ? leaves.round : leaves.flat);
     const pivot = new THREE.Group();
-    pivot.position.set(door.hingeX, 0, door.hingeZ);
+    pivot.position.set(door.hingeX, door.y || 0, door.hingeZ);
     pivot.rotation.y = door.yaw;
-    pivot.add(leaf);
+    if (src && src.scene) {
+        const leaf = src.scene.clone(true);
+        leaf.traverse((mesh) => {
+            if (!mesh.isMesh) return;
+            mesh.castShadow = false;
+            mesh.frustumCulled = false;
+        });
+        pivot.add(leaf);
+    } else {
+        const leaf = new THREE.Mesh(new THREE.BoxGeometry(1.05, 2.15, 0.08), doorMaterial());
+        leaf.position.set(0.53, 1.08, 0);
+        pivot.add(leaf);
+    }
     group.add(pivot);
     door.pivot = pivot;
     door.open = 0;
+    door.want = false;
 }
 
 function readRooms(id) {
@@ -3504,25 +4194,28 @@ function attachRooms(entry, id) {
     readRooms(id).then((plan) => {
         if (!plan) return;
         const host = entry.fpModel || entry.group;
-        const doors = outerDoors(plan.physics);
+        const doors = placedDoors(plan.physics);
         const solids = localSolids(plan.physics).map((sol) => {
             const at = kitToGroup(entry.fpModel, sol.x, sol.z);
             const far = kitToGroup(entry.fpModel, sol.x + sol.w, sol.z + sol.d);
             return { x: Math.min(at.x, far.x), z: Math.min(at.z, far.z), w: Math.abs(far.x - at.x), d: Math.abs(far.z - at.z) };
         });
-        doors.forEach((door) => {
-            addDoorLeaf(host, door);
-            const at = kitToGroup(entry.fpModel, door.x, door.z);
-            door.x = at.x;
-            door.z = at.z;
+        return ensureDoorLeaves().then((leaves) => {
+            doors.forEach((door) => {
+                addDoorLeaf(host, door, leaves);
+                const at = kitToGroup(entry.fpModel, door.x, door.z);
+                door.x = at.x;
+                door.z = at.z;
+            });
+            entry.rooms = {
+                meta: plan.meta,
+                physics: plan.physics,
+                solids: solids,
+                floors: placeFloors(plan.physics, entry.fpModel),
+                doors: doors,
+                fit: entry.fpModel ? { x: entry.fpModel.position.x, z: entry.fpModel.position.z, sx: entry.fpModel.scale.x, sz: entry.fpModel.scale.z } : null
+            };
         });
-        entry.rooms = {
-            meta: plan.meta,
-            physics: plan.physics,
-            solids: solids,
-            doors: doors,
-            fit: entry.fpModel ? { x: entry.fpModel.position.x, z: entry.fpModel.position.z, sx: entry.fpModel.scale.x, sz: entry.fpModel.scale.z } : null
-        };
     }).catch(() => null);
 }
 
@@ -3603,6 +4296,29 @@ function ensureInterior(entry) {
     });
 }
 
+function activateDoor() {
+    if (!pilot) return;
+    const list = built.slice();
+    if (home && home.rooms) list.push(home);
+    if (cpuHome && cpuHome.rooms) list.push(cpuHome);
+    let best = null;
+    let bestD = 2.2;
+    for (let i = 0; i < list.length; i++) {
+        const entry = list[i];
+        if (!entry.rooms || !entry.rooms.doors) continue;
+        const doors = entry.rooms.doors;
+        for (let d = 0; d < doors.length; d++) {
+            const door = doors[d];
+            const dist = Math.hypot(pilot.x - (entry.x + door.x), pilot.z - (entry.z + door.z));
+            if (dist < bestD) {
+                bestD = dist;
+                best = door;
+            }
+        }
+    }
+    if (best) best.want = !best.want;
+}
+
 function stepRooms() {
     const list = built.slice();
     if (home) list.push(home);
@@ -3617,8 +4333,7 @@ function stepRooms() {
         const doors = entry.rooms.doors;
         for (let d = 0; d < doors.length; d++) {
             const door = doors[d];
-            const near = !!(pilot && Math.hypot(pilot.x - (entry.x + door.x), pilot.z - (entry.z + door.z)) < 1.4);
-            const target = pilot && (near || inside) ? 1 : 0;
+            const target = door.want ? 1 : 0;
             door.open += (target - door.open) * 0.25;
             if (door.pivot) door.pivot.rotation.y = door.yaw + door.open * 1.35;
             if (door.open > 0.35) show = true;
@@ -3730,6 +4445,18 @@ function tryPlace(x, z) {
             selEl.textContent = "Not on water.";
             return;
         }
+        if (why === "rock") {
+            selEl.textContent = "Buildings stay off the rock.";
+            return;
+        }
+        if (why === "tree") {
+            selEl.textContent = "Not on a tree.";
+            return;
+        }
+        if (why === "snow") {
+            selEl.textContent = "Not on the snow.";
+            return;
+        }
         if (why === "far") {
             selEl.textContent = "Too far from the manor.";
             return;
@@ -3753,6 +4480,18 @@ function tryPlace(x, z) {
     const why = spotOk(x, z, spec, sideBase(led));
     if (why === "water") {
         selEl.textContent = "Not on water.";
+        return;
+    }
+    if (why === "rock") {
+        selEl.textContent = "Buildings stay off the rock.";
+        return;
+    }
+    if (why === "tree") {
+        selEl.textContent = "Not on a tree.";
+        return;
+    }
+    if (why === "snow") {
+        selEl.textContent = "Not on the snow.";
         return;
     }
     if (why === "far") {
@@ -3818,12 +4557,21 @@ function moveGhost(event) {
     ghost.material.color.setHex(canPay(led, buildingBill(placing)) && spotOk(point.x, point.z, spec) === "" ? 0x6dbf4a : 0xc4513a);
 }
 
+function gatherNode(node) {
+    if (!node) return false;
+    if (!board) return true;
+    if (node.kind === "wood") return !!node.tree;
+    if (node.kind === "food") return !!node.shore;
+    if (node.kind === "gold" || node.kind === "stone") return !!node.mine;
+    return true;
+}
+
 function nearestOfKind(x, z, kind) {
     let best = null;
     let bestD = Infinity;
     for (let i = 0; i < nodes.length; i++) {
         const node = nodes[i];
-        if (node.kind !== kind) continue;
+        if (node.kind !== kind || !gatherNode(node)) continue;
         const d = Math.hypot(node.x - x, node.z - z);
         if (d < bestD) {
             bestD = d;
@@ -3870,23 +4618,81 @@ function sideBusy(side) {
     return false;
 }
 
-function sidePlace(side, kind) {
+function ringSpot(origin, spec, base, start, rings) {
+    const angles = 10;
+    for (let ring = 0; ring < rings; ring++) {
+        const dist = start + ring * 6;
+        for (let i = 0; i < angles; i++) {
+            const ang = i / angles * Math.PI * 2 + ring * 0.5;
+            const x = origin.x + Math.cos(ang) * dist;
+            const z = origin.z + Math.sin(ang) * dist;
+            if (spotOk(x, z, spec, base) === "") return { x: x, z: z };
+        }
+    }
+    return null;
+}
+
+function townEdge(base, anchor) {
+    const dx = anchor.x - base.x;
+    const dz = anchor.z - base.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const dist = Math.max(20, TOWN_RANGE - 12);
+    return { x: base.x + (dx / len) * dist, z: base.z + (dz / len) * dist };
+}
+
+function besideNode(base, node, spec) {
+    const dx = base.x - node.x;
+    const dz = base.z - node.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const gap = (node.r || 2) + Math.max(spec.hx, spec.hz) + 4;
+    const ang0 = Math.atan2(dz, dx);
+    for (let i = 0; i < 10; i++) {
+        const ang = ang0 + (i === 0 ? 0 : (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 0.35);
+        const x = node.x + Math.cos(ang) * gap;
+        const z = node.z + Math.sin(ang) * gap;
+        if (spotOk(x, z, spec, base) === "") return { x: x, z: z };
+    }
+    return null;
+}
+
+function farGather(base) {
+    let best = null;
+    let bestD = 48;
+    const kinds = ["wood", "food", "gold", "stone"];
+    for (let i = 0; i < kinds.length; i++) {
+        const node = nearestOfKind(base.x, base.z, kinds[i]);
+        if (!node) continue;
+        const d = Math.hypot(node.x - base.x, node.z - base.z);
+        if (d > bestD) {
+            bestD = d;
+            best = node;
+        }
+    }
+    return best;
+}
+
+function cpuWorks() {
+    for (let i = 0; i < built.length; i++) {
+        if (built[i].kind === "salt" && (built[i].side || "you") === "cpu") return built[i];
+    }
+    return null;
+}
+
+function sidePlace(side, kind, prefer) {
     const spec = tuned(kind);
     const base = sideBase(side);
     const bill = buildingBill(kind);
     if (!spec || !kits[kind] || !base || !canPay(side, bill)) return false;
     if (side === "you" && placing) return false;
     let spot = null;
-    if (kind === "salt") {
+    if (prefer) {
+        const gap = Math.max(spec.hx, spec.hz) + Math.max(prefer.hx || 0, prefer.hz || 0) + 4;
+        if (spotOk(prefer.x, prefer.z, spec, base) === "") spot = { x: prefer.x, z: prefer.z };
+        else spot = ringSpot(prefer, spec, base, gap, 8);
+        if (!spot && spec.town) spot = ringSpot(townEdge(base, prefer), spec, base, 8, 5);
+    } else if (kind === "salt") {
         const node = nearestOfKind(base.x, base.z, "wood") || nearestOfKind(base.x, base.z, "gold");
-        if (node) {
-            const dx = base.x - node.x;
-            const dz = base.z - node.z;
-            const len = Math.hypot(dx, dz) || 1;
-            const x = node.x + (dx / len) * (node.r + Math.max(spec.hx, spec.hz) + 3);
-            const z = node.z + (dz / len) * (node.r + Math.max(spec.hx, spec.hz) + 3);
-            if (spotOk(x, z, spec, base) === "") spot = { x: x, z: z };
-        }
+        if (node) spot = besideNode(base, node, spec);
     } else {
         const rings = kind === "house" ? Math.ceil((TOWN_RANGE - 24) / 8) + 1 : 4;
         const angles = kind === "house" ? 12 : 8;
@@ -4171,11 +4977,18 @@ function stepSide(side) {
     }
     const workers = open.length + held.length;
     const jobs = [];
-    const foodNeed = Math.max(2, Math.round(workers * 0.35));
-    const woodNeed = Math.max(2, Math.round(workers * 0.4));
+    let foodShare = 0.35;
+    let woodShare = 0.4;
+    if (side === "cpu") {
+        const bag = stockBag(side);
+        if ((bag.wood || 0) < 120) woodShare = 0.55;
+        if ((bag.food || 0) < 80) foodShare = 0.4;
+    }
+    const foodNeed = Math.max(2, Math.round(workers * foodShare));
+    const woodNeed = Math.max(2, Math.round(workers * woodShare));
     for (let i = 0; i < foodNeed; i++) jobs.push("food");
     for (let i = 0; i < woodNeed; i++) jobs.push("wood");
-    const hasStone = nodes.some((node) => node.kind === "stone");
+    const hasStone = nodes.some((node) => node.kind === "stone" && gatherNode(node));
     let spareJob = 0;
     while (jobs.length < workers) {
         jobs.push(hasStone && spareJob % 2 === 1 ? "stone" : "gold");
@@ -4192,6 +5005,10 @@ function stepSide(side) {
         else spare.push(open[i]);
     }
     for (let i = 0; i < jobs.length && i < spare.length; i++) sendSideWork(spare[i], jobs[i], yard, base);
+    if (side === "cpu") {
+        cpuBuild(base);
+        return;
+    }
     let placed = false;
     if (!sideBusy(side)) {
         if (canPay(side, buildingBill("house"))) placed = sidePlace(side, "house");
@@ -4201,6 +5018,37 @@ function stepSide(side) {
     if (!placed && canPay(side, unitBill("worker")) && housed(side, "worker")) trainFor(side, "worker", true);
 }
 
+function cpuBuild(base) {
+    const people = roleCount("cpu", false) + roleQueued("cpu", false);
+    const houses = ownedCount(built, "house", "cpu") + ownedCount(sites, "house", "cpu");
+    let wantHouses = Math.max(1, Math.ceil((people + 4) / HOUSE_BEDS));
+    if (people >= roomFor("cpu", "worker") - 1) wantHouses = Math.max(wantHouses, houses + 1);
+    wantHouses = Math.min(6, wantHouses);
+    let placed = false;
+    if (!sideBusy("cpu")) {
+        if (houses < wantHouses && canPay("cpu", buildingBill("house"))) {
+            const works = cpuWorks();
+            const camp = works && Math.hypot(works.x - base.x, works.z - base.z) > 36 ? works : null;
+            placed = sidePlace("cpu", "house", houses >= 1 && camp ? camp : null);
+        }
+        const far = farGather(base);
+        const salts = ownedCount(built, "salt", "cpu") + ownedCount(sites, "salt", "cpu");
+        if (!placed && far && salts < 1 && people >= 4 && canPay("cpu", buildingBill("salt"))) {
+            const spec = tuned("salt");
+            placed = sidePlace("cpu", "salt", spec ? besideNode(base, far, spec) : null);
+        }
+        const farms = ownedCount(built, "farm", "cpu") + ownedCount(sites, "farm", "cpu");
+        if (!placed && farms < 1 && people >= 4 && canPay("cpu", buildingBill("farm"))) placed = sidePlace("cpu", "farm");
+        const barracks = ownedCount(built, "barracks", "cpu") + ownedCount(sites, "barracks", "cpu");
+        if (!placed && barracks < 1 && people >= 8 && houses >= 1 && canPay("cpu", buildingBill("barracks"))) placed = sidePlace("cpu", "barracks");
+    }
+    const soldiers = roleCount("cpu", true) + roleQueued("cpu", true);
+    const barracksUp = ownedCount(built, "barracks", "cpu") > 0;
+    if (barracksUp && people >= 8 && soldiers < 8 && soldiers < Math.floor(people / 2) && housed("cpu", "soldier")) trainFor("cpu", "soldier", true);
+    else if (housed("cpu", "worker")) trainFor("cpu", "worker", true);
+    if (soldiers >= 6) cpuWar = true;
+}
+
 function stepCpu(dt) {
     if (!actors) return;
     cpuThink += dt;
@@ -4208,6 +5056,7 @@ function stepCpu(dt) {
     cpuThink = 0;
     stepSide("you");
     stepSide("cpu");
+    if (cpuWar) marchCpu();
     retrainHorses("cpu");
 }
 
@@ -4299,6 +5148,7 @@ function nearestNode(x, z) {
     let bestD = 3.5;
     for (let i = 0; i < nodes.length; i++) {
         const node = nodes[i];
+        if (!gatherNode(node)) continue;
         const d = Math.hypot(node.x - x, node.z - z) - node.r;
         if (d < bestD) {
             bestD = d;
@@ -4308,17 +5158,128 @@ function nearestNode(x, z) {
     return best;
 }
 
+function addWoodSpot(x, z, scale) {
+    nodes.push({
+        kind: "wood",
+        x: x,
+        z: z,
+        r: 8,
+        stand: 1.5 * (scale || 1),
+        tree: true
+    });
+}
+
+function hitsTree(x, z, hx, hz) {
+    for (let i = 0; i < treeSpots.length; i++) {
+        const tree = treeSpots[i];
+        if (!tree.wood) continue;
+        const reach = 2.2 * (tree.scale || 1);
+        const cx = Math.max(x - hx, Math.min(tree.x, x + hx));
+        const cz = Math.max(z - hz, Math.min(tree.z, z + hz));
+        if (Math.hypot(tree.x - cx, tree.z - cz) <= reach + 0.3) return true;
+    }
+    return false;
+}
+
+function addShoreFood() {
+    if (!board) return;
+    const n = board.n;
+    const step = 8;
+    const made = [];
+    for (let j = step; j < n - step; j += step) {
+        for (let i = step; i < n - step; i += step) {
+            if (board.heights[j * n + i] >= BOARD_SEA) continue;
+            let landI = -1;
+            let landJ = -1;
+            const near = [[step, 0], [-step, 0], [0, step], [0, -step]];
+            for (let k = 0; k < near.length; k++) {
+                const ii = i + near[k][0];
+                const jj = j + near[k][1];
+                if (ii < 0 || jj < 0 || ii >= n || jj >= n) continue;
+                if (board.heights[jj * n + ii] >= BOARD_SEA + 0.4) {
+                    landI = ii;
+                    landJ = jj;
+                    break;
+                }
+            }
+            if (landI < 0) continue;
+            const x = board.minX + (landI / (n - 1)) * board.span;
+            const z = board.minZ + (landJ / (n - 1)) * board.span;
+            let close = false;
+            for (let m = 0; m < made.length; m++) {
+                if (Math.hypot(made[m].x - x, made[m].z - z) < 22) {
+                    close = true;
+                    break;
+                }
+            }
+            if (close) continue;
+            const node = { kind: "food", x: x, z: z, r: 8, stand: 1.4, shore: true };
+            made.push(node);
+            nodes.push(node);
+        }
+    }
+}
+
+function shoreBeside(x, z) {
+    let best = null;
+    let bestD = Infinity;
+    for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+        if (!node.shore) continue;
+        const d = Math.hypot(node.x - x, node.z - z);
+        if (d < bestD) {
+            bestD = d;
+            best = node;
+        }
+    }
+    if (best && bestD < 80) return best;
+    let cx = x;
+    let cz = z;
+    for (let n = 0; n < 24; n++) {
+        let high = boardHeight(cx, cz);
+        let nx = cx;
+        let nz = cz;
+        let moved = false;
+        for (let a = 0; a < 8; a++) {
+            const ang = a * Math.PI / 4;
+            const tx = cx + Math.cos(ang) * 6;
+            const tz = cz + Math.sin(ang) * 6;
+            const h = boardHeight(tx, tz);
+            if (h > high) {
+                high = h;
+                nx = tx;
+                nz = tz;
+                moved = true;
+            }
+        }
+        cx = nx;
+        cz = nz;
+        if (!inWater(cx, cz)) {
+            const node = { kind: "food", x: cx, z: cz, r: 6, stand: 1.2, shore: true };
+            nodes.push(node);
+            return node;
+        }
+        if (!moved) break;
+    }
+    return best;
+}
+
+function footRadius(thing) {
+    if (thing && Number.isFinite(thing.foot) && thing.foot > 0) return thing.foot;
+    return 0.4;
+}
+
 function peopleBlock(unit, x, z) {
-    const need = (unit.stuck || 0) > 24 ? 0.42 : 0.8;
+    const need = footRadius(unit);
     for (let i = 0; i < units.length; i++) {
         const other = units[i];
         if (other === unit || other.hp <= 0 || other.state === "inside") continue;
-        if (Math.hypot(other.x - x, other.z - z) < need) return true;
+        if (Math.hypot(other.x - x, other.z - z) < need + footRadius(other)) return true;
     }
     for (let i = 0; i < haulers.length; i++) {
         const other = haulers[i];
         if (other === unit || !other.alive) continue;
-        if (Math.hypot(other.x - x, other.z - z) < need) return true;
+        if (Math.hypot(other.x - x, other.z - z) < need + footRadius(other)) return true;
     }
     return false;
 }
@@ -4430,8 +5391,8 @@ function stepUnits(dt) {
             continue;
         }
         if (unit === pilot) {
-            unit.yaw = lookYaw;
-            unit.group.rotation.y = lookYaw;
+            unit.yaw = unit.bodyYaw == null ? lookYaw : unit.bodyYaw;
+            unit.group.rotation.y = unit.yaw;
             const moving = !!(keys.w || keys.a || keys.s || keys.d || keys.arrowup || keys.arrowdown || keys.arrowleft || keys.arrowright);
             unit.group.position.y = feetAt(unit.x, unit.z) + (unit.hop || 0);
             unit.anim += dt;
@@ -4691,7 +5652,8 @@ function commandAt(point) {
         return;
     }
     const farm = farmAt(point.x, point.z);
-    const node = farm ? null : nearestNode(point.x, point.z);
+    let node = farm ? null : nearestNode(point.x, point.z);
+    if (!node && inWater(point.x, point.z)) node = shoreBeside(point.x, point.z);
     const soldiers = [];
     const farmHands = [];
     selected.forEach((unit) => {
@@ -4750,6 +5712,10 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
         }
         if (document.pointerLockElement !== renderer.domElement) {
             renderer.domElement.requestPointerLock();
+            return;
+        }
+        if (event.button === 2) {
+            activateDoor();
             return;
         }
         if (event.button !== 0 || pilot.hp <= 0) return;
@@ -5288,37 +6254,9 @@ const CREATURE_SHOW = [
     ["Dragon", "../models/dragon/dragon.glb"],
     ["Horse", "../models/horse/horse.glb"]
 ];
-const WEAPON_SHOW = {
-    crossbow: "../tools/Meshy_AI_lowpoly_medieval_crossbow_20261102_texture_a0475ada/Meshy_AI_model.glb",
-    spear: "../tools/Meshy_AI_lowpoly_medieval_spear_20261102_texture_f72770c0/Meshy_AI_model.glb",
-    mace: "../tools/Meshy_AI_lowpoly_medieval_mace_20261102_texture_5d63fe2a/Meshy_AI_model.glb",
-    musket: "../tools/Meshy_AI_lowpoly_medieval_musket_20261102_texture_b96c6c21/Meshy_AI_model.glb",
-    halberd: "../tools/Meshy_AI_lowpoly_medieval_halberd_20261102_texture_dd7a42bb/Meshy_AI_model.glb"
-};
 let showRoot = null;
 const showMixers = [];
 const showLoads = {};
-
-function showcaseList() {
-    const list = CREATURE_SHOW.map((pair) => ({ name: pair[0], file: pair[1] }));
-    const seen = {};
-    for (let i = 0; i < list.length; i++) seen[list[i].file] = true;
-    const sheet = window.AoeSheet && window.AoeSheet.weapons ? window.AoeSheet.weapons() : null;
-    if (!sheet) return list;
-    Object.keys(sheet).forEach((id) => {
-        const row = sheet[id];
-        const model = String(row.model || "").trim();
-        const called = String(row.name || "").trim().toLowerCase();
-        let file = "";
-        if (/\.(glb|gltf)$/i.test(model)) file = model;
-        else if (WEAPON_SHOW[model.toLowerCase()]) file = WEAPON_SHOW[model.toLowerCase()];
-        else if (WEAPON_SHOW[called]) file = WEAPON_SHOW[called];
-        if (!file || seen[file]) return;
-        seen[file] = true;
-        list.push({ name: row.name || "Weapon", file: file });
-    });
-    return list;
-}
 
 function loadShowcase(url) {
     if (!showLoads[url]) {
@@ -5360,7 +6298,8 @@ function modelBounds(model) {
     return box;
 }
 
-function standShowcase(gltf) {
+function standShowcase(gltf, name) {
+    const cap = name === "Horse" ? 3.6 : 2.2;
     const model = cloneSkinned(gltf.scene);
     model.traverse((mesh) => {
         if (mesh.isMesh) {
@@ -5370,13 +6309,13 @@ function standShowcase(gltf) {
     });
     const size = modelBounds(model).getSize(new THREE.Vector3());
     const max = Math.max(size.x, size.y, size.z);
-    if (max > 2.2) model.scale.multiplyScalar(2.2 / max);
+    if (max > cap) model.scale.multiplyScalar(cap / max);
     const fitted = modelBounds(model);
     if (Number.isFinite(fitted.min.y)) model.position.y -= fitted.min.y;
     const shown = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
     const shownMax = Math.max(shown.x, shown.y, shown.z);
-    if (shownMax > 3 && shownMax < 1000) {
-        model.scale.multiplyScalar(2.2 / shownMax);
+    if (shownMax > cap + 0.05 && shownMax < 1000) {
+        model.scale.multiplyScalar(cap / shownMax);
         model.position.y = 0;
         const again = modelBounds(model);
         if (Number.isFinite(again.min.y)) model.position.y -= again.min.y;
@@ -5403,7 +6342,7 @@ function placeShowLine(items, aside, jobs) {
     const rightX = -Math.cos(lookYaw);
     const rightZ = Math.sin(lookYaw);
     for (let i = 0; i < items.length; i++) {
-        const along = 5 + i * 3.6;
+        const along = 5 + i * 3.6 + (items[i].name === "Horse" ? 1.4 : 0);
         const x = pilot.x + fx * along + rightX * aside;
         const z = pilot.z + fz * along + rightZ * aside;
         const holder = new THREE.Group();
@@ -5414,7 +6353,7 @@ function placeShowLine(items, aside, jobs) {
         const file = items[i].file;
         jobs.push(() => loadShowcase(file).then((gltf) => {
             if (!gltf || !holder.parent) return;
-            const model = standShowcase(gltf);
+            const model = standShowcase(gltf, items[i].name);
             holder.add(model);
             const top = modelBounds(model).max.y - holder.position.y;
             holder.children[0].position.y = Math.max(1.5, top + 0.35);
@@ -5425,8 +6364,6 @@ function placeShowLine(items, aside, jobs) {
 function openShowcase() {
     if (!pilot) return;
     const creatures = CREATURE_SHOW.map((pair) => ({ name: pair[0], file: pair[1] }));
-    const all = showcaseList();
-    const weapons = all.slice(creatures.length);
     if (!showRoot) {
         showRoot = new THREE.Group();
         scene.add(showRoot);
@@ -5434,24 +6371,14 @@ function openShowcase() {
     while (showRoot.children.length) showRoot.remove(showRoot.children[0]);
     showMixers.length = 0;
     showRoot.visible = true;
-    const creatureJobs = [];
-    const weaponJobs = [];
-    placeShowLine(creatures, 3.2, creatureJobs);
-    placeShowLine(weapons, 7.2, weaponJobs);
     const jobs = [];
-    const rows = Math.max(creatureJobs.length, weaponJobs.length);
-    for (let i = 0; i < rows; i++) {
-        if (creatureJobs[i]) jobs.push(creatureJobs[i]);
-        if (weaponJobs[i]) jobs.push(weaponJobs[i]);
-    }
+    placeShowLine(creatures, 3.2, jobs);
     let cursor = 0;
     function nextJob() {
-        if (cursor >= jobs.length) return;
+        if (cursor >= jobs.length || !pilot) return;
         const job = jobs[cursor++];
-        job().then(nextJob, nextJob);
+        job().then(() => setTimeout(nextJob, 400), () => setTimeout(nextJob, 400));
     }
-    nextJob();
-    nextJob();
     nextJob();
 }
 
@@ -5484,6 +6411,10 @@ function enterBody(unit) {
         eye = Math.max(0.9, unit.body.geometry.boundingBox.max.y * 0.9 * (unit.body.scale.y || 1));
     }
     document.body.classList.add("walking");
+    applyAllLooks();
+    if (mapTrees) mapTrees.visible = false;
+    if (mapCards) mapCards.visible = false;
+    refreshWalkTrees();
     paintSelf();
     camera.fov = 72;
     camera.near = 0.06;
@@ -5491,6 +6422,9 @@ function enterBody(unit) {
     if (!document.body.classList.contains("handheld")) renderer.domElement.requestPointerLock();
     refreshHud();
     openShowcase();
+    ensureWalker().then(() => {
+        if (pilot === unit && unit.eyeHeight) eye = unit.eyeHeight;
+    });
 }
 
 function leaveBody() {
@@ -5498,6 +6432,10 @@ function leaveBody() {
     closeShowcase();
     const unit = pilot;
     pilot = null;
+    applyAllLooks();
+    clearWalkTrees();
+    if (mapTrees) mapTrees.visible = true;
+    if (mapCards) mapCards.visible = true;
     unit.body.visible = true;
     unit.state = "idle";
     look.set(unit.x, 2, unit.z);
@@ -5529,6 +6467,7 @@ function canPass(nx, nz) {
     if (!(home && home.rooms) && home && home.group) walls.push(home.group);
     if (!(cpuHome && cpuHome.rooms) && cpuHome && cpuHome.group) walls.push(cpuHome.group);
     if (blockedByBuilding(nx, nz)) return false;
+    if (peopleBlock(pilot, nx, nz)) return false;
     if (!walls.length) return true;
     dir.multiplyScalar(1 / span);
     wallRay.set(new THREE.Vector3(pilot.x, y, pilot.z), dir);
@@ -5570,7 +6509,7 @@ function walkBody(dt) {
     let vy = pilot.vy || 0;
     const grounded = hop <= 0.02 && vy <= 0;
     if (grounded && wantJump) {
-        vy = 6.4;
+        vy = jumpPower();
         wantJump = false;
     }
     if (hop > 0 || vy > 0) {
@@ -5580,9 +6519,33 @@ function walkBody(dt) {
     } else vy = 0;
     pilot.hop = hop;
     pilot.vy = vy;
-    pilot.yaw = lookYaw;
-    pilot.group.position.y = feetAt(pilot.x, pilot.z) + hop;
-    pilot.group.rotation.y = lookYaw;
+    const visual = pilot.group.position.y;
+    const porch = feetAt(pilot.x, pilot.z);
+    let ground = porch;
+    if (hop > 0.02) {
+        const stand = visual - hop;
+        const step = stairAt(pilot.x, pilot.z, stand + 0.05);
+        if (step != null && step >= stand - 0.2) ground = Math.max(porch, step);
+        else ground = Math.max(porch, stand);
+    } else {
+        const step = stairAt(pilot.x, pilot.z, visual);
+        if (step != null) ground = Math.max(porch, step);
+        if (visual - ground > 0.55 && visual - porch > 0.4) {
+            hop = visual - ground;
+            vy = 0;
+            pilot.hop = hop;
+            pilot.vy = vy;
+        }
+    }
+    const movingBody = !!(keys.w || keys.a || keys.s || keys.d || keys.arrowup || keys.arrowdown || keys.arrowleft || keys.arrowright);
+    let gap = lookYaw - (pilot.bodyYaw == null ? lookYaw : pilot.bodyYaw);
+    while (gap > Math.PI) gap -= Math.PI * 2;
+    while (gap < -Math.PI) gap += Math.PI * 2;
+    if (movingBody || Math.abs(gap) < 0.08) pilot.bodyYaw = lookYaw;
+    else pilot.bodyYaw += Math.max(-2.4 * dt, Math.min(2.4 * dt, gap));
+    pilot.yaw = pilot.bodyYaw;
+    pilot.group.position.y = ground + hop;
+    pilot.group.rotation.y = pilot.bodyYaw;
 }
 
 window.addEventListener("keydown", (event) => {
@@ -5612,6 +6575,13 @@ window.addEventListener("keydown", (event) => {
             }
         }
     if (pilot) {
+        if (key === "t") {
+            inHead = !inHead;
+            camera.near = inHead ? 0.1 : 0.06;
+            camera.updateProjectionMatrix();
+            refreshHud();
+            return;
+        }
         if (key === "p" || key === "c") togglePack();
         return;
     }
@@ -6093,7 +7063,9 @@ function frame(now) {
         noteSimTime(now);
         if (!document.hidden) pumpSim();
         stepBoardView();
+        refreshWalkTrees();
         placeCamera();
+        placeBackdrop();
         stepRooms();
         refreshWoods();
         paintMini();

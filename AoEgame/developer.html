@@ -86,22 +86,37 @@
         #look-zoom[hidden] { display: none; }
         .panel { flex: 1; min-width: 0; overflow-x: auto; }
         .panel h2 { margin: 0 0 14px; text-align: center; font-size: 26px; font-weight: 500; }
-        table { width: 100%; border-collapse: collapse; background: #fff; font-size: 16px; }
-        th, td { border: 2px solid #111; padding: 8px 10px; text-align: center; vertical-align: middle; }
-        th { font-weight: 500; }
-        label { display: inline-flex; align-items: center; gap: 4px; margin: 0 6px; }
+        .panel h3 { margin: 16px 0 8px; font-size: 18px; font-weight: 500; }
+        #objects .name input { width: 7rem; }
+        #objects .note input { width: 11rem; }
+        #commit-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0 0 14px;
+            padding: 8px 10px;
+            background: #fff;
+            border: 3px solid #111;
+            font: 15px/1.3 system-ui, sans-serif;
+        }
+        #commit-bar button { font: inherit; cursor: pointer; }
+        table { width: max-content; max-width: none; border-collapse: collapse; background: #fff; font-size: 15px; }
+        th, td { border: 2px solid #111; padding: 3px 4px; text-align: left; vertical-align: top; }
+        th { max-width: 6.4rem; font-weight: 500; line-height: 1.15; font-size: 14px; }
+        label { display: inline-flex; align-items: center; gap: 4px; margin: 0; }
         input {
-            width: 4.2rem;
-            padding: 2px 4px;
+            width: 3rem;
+            padding: 1px 3px;
             border: 1px solid #111;
             font: inherit;
             text-align: right;
         }
-        input[type="checkbox"] { width: 1.15rem; height: 1.15rem; }
-        input[type="text"] { width: 7.5rem; text-align: left; }
+        input[type="checkbox"] { width: 1.05rem; height: 1.05rem; }
+        input[type="text"] { width: 4.6rem; text-align: left; }
+        th input[type="text"] { width: 4.8rem; }
         button.tiny, .bar button {
-            font: 14px/1.2 system-ui, sans-serif;
-            margin: 0 4px;
+            font: 13px/1.2 system-ui, sans-serif;
+            margin: 0;
             cursor: pointer;
         }
         .bar { margin: 8px 0 0; }
@@ -113,14 +128,23 @@
         .faction h4 { margin: 14px 0 8px; font-size: 18px; font-weight: 500; }
         .faction select { font: 16px/1.2 system-ui, sans-serif; }
         td.graphic input[type="checkbox"] { margin-left: 8px; }
-        th .col-kind { display: block; width: 8.6rem; margin-top: 4px; font: 13px/1.2 system-ui, sans-serif; }
+        th .col-kind { display: block; width: 5.4rem; margin-top: 4px; font: 12px/1.2 system-ui, sans-serif; }
         .col-options { margin-top: 4px; }
         .col-option { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
-        .col-option input { width: 6.2rem; font: 13px/1.2 system-ui, sans-serif; }
-        td.cost, td.made, td.purpose { text-align: left; }
-        td.purpose label { display: flex; justify-content: flex-start; margin: 2px 0; }
-        .cost-line, .made-line { display: flex; align-items: center; justify-content: center; gap: 4px; margin: 3px 0; }
-        td.cost select, td.made select, td.figure select { font: 14px/1.2 system-ui, sans-serif; max-width: 220px; }
+        .col-option input { width: 4.8rem; font: 12px/1.2 system-ui, sans-serif; }
+        td.stats label, td.size label, td.cost > label, td.purpose label, .cost-line, .made-line {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 4px;
+            width: max-content;
+            margin: 2px 0;
+        }
+        td.cost > button, td.made > button { display: block; margin: 2px 0; }
+        td select, th select { max-width: 7.2rem; font: 13px/1.2 system-ui, sans-serif; }
+        td.file { max-width: 7.2rem; overflow-wrap: anywhere; }
+        td.anims { max-width: 5.6rem; }
+        .faction p { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
     </style>
 </head>
 <body>
@@ -135,15 +159,21 @@
                     <button id="open-buildings" type="button">Buildings</button>
                     <button id="open-creatures" type="button">Creatures</button>
                     <button id="open-weapons" type="button">Weapons</button>
+                    <button id="open-objects" type="button">Objects and resources</button>
                     <button id="open-campaign" type="button">Campaign</button>
-                    <span>Map</span>
+                    <a href="map-editor.html" target="_blank" rel="noopener">map editor</a>
                     <a href="index.html?playtest=1" target="_blank" rel="noopener">Play test</a>
-                    <span>build editor</span>
-                    <span>town editor</span>
-                    <span>terrain editor</span>
+                    <a href="../tools/building-editor/building-editor.html" target="_blank" rel="noopener">build editor</a>
+                    <a href="../tools/town-editor/town-editor.html" target="_blank" rel="noopener">town editor</a>
+                    <a href="http://localhost:6061/" target="_blank" rel="noopener">terrain editor</a>
                 </div>
             </div>
         </nav>
+        <div id="commit-bar">
+            <button id="commit-changes" type="button">Commit changes</button>
+            <button id="undo-changes" type="button">Undo</button>
+            <span id="commit-note">Committed.</span>
+        </div>
         <section id="units" class="panel" hidden>
             <h2>Units</h2>
             <table>
@@ -164,7 +194,7 @@
             </table>
             <p class="bar"></p>
             <p class="hint note" id="unit-note"></p>
-            <p class="hint">These are the soldier and the worker already in the match. Health, attack, move, and cost are kept in this browser. Reload the match after a change. Health and cost apply to the next unit trained. Move and attack apply to units already on the map. Attack is the damage a soldier deals. Defence is taken off that hit: attack 8 against defence 2 deals 6. It applies to units already on the map, and a worker’s defence counts when they are hit. Workers do not fight yet, so a worker’s attack is kept for later. Base size is the footprint on the map, width by depth in metres. It starts as the size of that person. Change it and reload the match, and the person changes with it. Tick In use yourself once you have seen that one placed and are happy with it. In Game use is military, economical, or NPC. Food is the cost the match charges. + resource adds another, such as gold, and the match charges that too. A column named Created at lists the buildings, and a unit can tick more than one, such as Barracks and Manor. A building trains the units listed on its row. The manor starts with the worker, and the barracks with the soldier. The match can field the soldier and the worker. Graphic model lists the animated characters and animals. Pick one for a unit, such as Blacksmith, and See shows that model. The match still uses the soldier and the worker until you ask for another unit to be placed. On a column you add, Dropdown still picks one. Multi choice uses that same list, and a row can tick as many as it needs. A row or column you add is kept here too. It does not change the match until it is linked up.</p>
+            <p class="hint">These are the soldier and the worker already in the match. Health, attack, move, and cost are kept in this browser. Reload the match after a change. Health and cost apply to the next unit trained. Move and attack apply to units already on the map. Attack is the damage a soldier deals. Defence is taken off that hit: attack 8 against defence 2 deals 6. It applies to units already on the map, and a worker’s defence counts when they are hit. Workers do not fight yet, so a worker’s attack is kept for later. Base size is the footprint on the map, width by depth in metres. It starts as the size of that person. Change it and reload the match, and the person changes with it. Tick In use yourself once you have seen that one placed and are happy with it. In Game use is military, economical, or NPC. Food is the cost the match charges. + resource adds another, such as gold, and the match charges that too. Training time is seconds. Set that column to Number, type the time, then Commit changes. The next unit trained uses it. A column named Created at lists the buildings, and a unit can tick more than one, such as Barracks and Manor. A building trains the units listed on its row. The manor starts with the worker, and the barracks with the soldier. The match can field the soldier and the worker. Graphic model lists the animated characters and animals. Pick one for a unit, such as Blacksmith, and See shows that model. The match still uses the soldier and the worker until you ask for another unit to be placed. On a column you add, Dropdown still picks one. Multi choice uses that same list, and a row can tick as many as it needs. A row or column you add is kept here too. It does not change the match until it is linked up.</p>
         </section>
         <section id="buildings" class="panel" hidden>
             <h2>Buildings</h2>
@@ -247,7 +277,41 @@
             </table>
             <p class="bar"></p>
             <p class="hint note" id="player-note"></p>
-            <p class="hint">This is the person you walk as in first person. Health, sword damage, bow damage, and move speed are kept in this browser. Reload the match after a change. Health is the full bar, and what you return with after you fall. Sword damage is a swing. Bow damage is a shot. Defence is taken off a hit before it reaches you, and your shot is reduced by the target’s defence. Move is how fast you walk. Base size is the width and depth of the person you walk as, in metres. Change it and reload the match. In use is kept here and does not change the match yet. A column you add is kept here too, until you say what it is for.</p>
+            <p class="hint">This is the person you walk as in first person. Health, sword damage, bow damage, and move speed are kept in this browser. Reload the match after a change. Health is the full bar, and what you return with after you fall. Sword damage is a swing. Bow damage is a shot. Defence is taken off a hit before it reaches you, and your shot is reduced by the target’s defence. Move is how fast you walk. Jump is how hard you leave the ground. It starts at the jump you have now. Change it, commit, and reload the match. Base size is the width and depth of the person you walk as, in metres. Change it and reload the match. In use is kept here and does not change the match yet. A column you add is kept here too, until you say what it is for.</p>
+        </section>
+        <section id="objects" class="panel" hidden>
+            <h2>Objects and resources</h2>
+            <div id="resources">
+                <h3>Trees, mines, and the like</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Kind</th>
+                            <th>Gives</th>
+                            <th>Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resource-rows"></tbody>
+                </table>
+                <p class="bar"></p>
+            </div>
+            <div id="finds">
+                <h3>Things you find</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Kind</th>
+                            <th>Note</th>
+                        </tr>
+                    </thead>
+                    <tbody id="find-rows"></tbody>
+                </table>
+                <p class="bar"></p>
+            </div>
+            <p class="hint note" id="object-note"></p>
+            <p class="hint">A sketch of what a tree, a mine, or a found thing might give. Birch might be 500 wood, an apple is something you pick up. Change the words and the numbers as you like. The match does not use this yet.</p>
         </section>
         <section id="campaign" class="panel" hidden>
             <h2>Campaign</h2>
@@ -265,7 +329,7 @@
         }
     }
     </script>
-    <script src="dev-sheet.js?v=sheet25"></script>
+    <script src="dev-sheet.js?v=sheet28"></script>
     <script type="module" src="preview.js?v=look8"></script>
     <dialog id="look">
         <h2 id="look-title">Graphic</h2>
@@ -310,6 +374,7 @@
 
         function sizeCell(id, row) {
             const td = document.createElement("td");
+            td.className = "size";
             td.append(
                 statLabel("W", numField(id, "width", row.w, row.name + " width", "0.1")),
                 statLabel("D", numField(id, "depth", row.d, row.name + " depth", "0.1"))
@@ -565,13 +630,13 @@
                     const kind = document.createElement("select");
                     kind.className = "col-kind";
                     kind.setAttribute("aria-label", col.name + " column kind");
-                    [["text", "Text"], ["dropdown", "Dropdown"], ["multi", "Multi choice"]].forEach((pair) => {
+                    [["text", "Text"], ["number", "Number"], ["dropdown", "Dropdown"], ["multi", "Multi choice"]].forEach((pair) => {
                         const option = document.createElement("option");
                         option.value = pair[0];
                         option.textContent = pair[1];
                         kind.append(option);
                     });
-                    kind.value = col.kind === "dropdown" || col.kind === "multi" ? col.kind : "text";
+                    kind.value = col.kind === "dropdown" || col.kind === "multi" || col.kind === "number" ? col.kind : "text";
                     kind.addEventListener("change", () => {
                         window.AoeSheet.setColumn(table, col.id, { kind: kind.value });
                         redraw();
@@ -704,7 +769,12 @@
                     return td;
                 }
                 const input = document.createElement("input");
-                input.type = "text";
+                const numeric = col.kind === "number" || col.name.trim().toLowerCase() === "training time";
+                input.type = numeric ? "number" : "text";
+                if (numeric) {
+                    input.min = "0";
+                    input.step = "any";
+                }
                 input.value = saved;
                 input.dataset.id = id;
                 input.dataset.extra = col.id;
@@ -917,6 +987,7 @@
                     tr.append(name, role, figureSelect(id, row.model, row.name + " graphic"));
                 }
                 const stats = document.createElement("td");
+                stats.className = "stats";
                 stats.append(
                     statLabel("H", numField(id, "hp", row.hp, row.name + " health")),
                     statLabel("A", numField(id, "attack", row.attack, row.name + " attack")),
@@ -924,6 +995,7 @@
                     statLabel("M", numField(id, "move", row.move, row.name + " move", "0.1"))
                 );
                 const anims = document.createElement("td");
+                anims.className = "anims";
                 if (row.added) anims.append(textField(id, "anims", row.anims, row.name + " animations"));
                 else anims.textContent = row.anims;
                 tr.append(
@@ -950,7 +1022,8 @@
 
         function saveUnits() {
             window.AoeSheet.writeUnits(readActorInputs("#unit-rows input", window.AoeSheet.units));
-            document.getElementById("unit-note").textContent = "Saved. Reload the match to use it.";
+            document.getElementById("unit-note").textContent = "Held here. Commit changes sends training time to the match.";
+            paintCommit();
         }
 
         function drawBuildings() {
@@ -974,11 +1047,15 @@
                     tr.append(name, mapCell, modelCell, makes);
                 }
                 const time = document.createElement("td");
-                if (row.placed) time.append(statLabel("", numField(id, "time", row.time, row.name + " build time")), " sec");
+                if (row.placed) {
+                    time.className = "stats";
+                    time.append(numField(id, "time", row.time, row.name + " build time"), document.createTextNode("sec"));
+                }
                 else time.textContent = id === "manor" ? "Already there" : "Not built";
                 const cost = costCell(id, row, "wood", row.placed ? row.wood : null, "Wood", "buildings", window.AoeSheet.writeBuildings, drawBuildings);
                 if (!row.placed) cost.insertBefore(document.createTextNode("None"), cost.firstChild);
                 const foot = document.createElement("td");
+                foot.className = "size";
                 foot.append(
                     statLabel("W", numField(id, "width", row.hx * 2, row.name + " width", "0.5")),
                     statLabel("D", numField(id, "depth", row.hz * 2, row.name + " depth", "0.5"))
@@ -1053,7 +1130,8 @@
 
         function saveBuildings() {
             window.AoeSheet.writeBuildings(readBuildingPatch());
-            document.getElementById("building-note").textContent = "Saved. Reload the match to use it.";
+            document.getElementById("building-note").textContent = "Held here. Commit changes when a linked column should reach the match.";
+            paintCommit();
         }
 
         function drawCreatures() {
@@ -1076,6 +1154,7 @@
                     });
                 }
                 const stats = document.createElement("td");
+                stats.className = "stats";
                 stats.append(
                     statLabel("H", numField(id, "hp", row.hp, row.name + " health")),
                     statLabel("A", numField(id, "attack", row.attack, row.name + " attack")),
@@ -1083,6 +1162,7 @@
                     statLabel("M", numField(id, "move", row.move, row.name + " move", "0.1"))
                 );
                 const anims = document.createElement("td");
+                anims.className = "anims";
                 if (row.added) anims.append(textField(id, "anims", row.anims, row.name + " animations"));
                 else anims.textContent = row.anims;
                 tr.append(
@@ -1102,7 +1182,8 @@
 
         function saveCreatures() {
             window.AoeSheet.writeCreatures(readActorInputs("#creature-rows input", window.AoeSheet.creatures));
-            document.getElementById("creature-note").textContent = "Saved. The match does not use these numbers yet.";
+            document.getElementById("creature-note").textContent = "Held here. Commit changes when a linked column should reach the match.";
+            paintCommit();
         }
 
         function drawPlayer() {
@@ -1118,14 +1199,17 @@
                 tr.append(td);
             });
             const stats = document.createElement("td");
+            stats.className = "stats";
             stats.append(
                 statLabel("H", numField(id, "hp", row.hp, "Player health")),
                 statLabel("A", numField(id, "attack", row.attack, "Player sword damage")),
                 statLabel("Bow", numField(id, "shot", row.shot, "Player bow damage")),
                 statLabel("Def", numField(id, "defence", row.defence, "Player defence")),
-                statLabel("M", numField(id, "move", row.move, "Player move", "0.1"))
+                statLabel("M", numField(id, "move", row.move, "Player move", "0.1")),
+                statLabel("Jump", numField(id, "jump", row.jump, "Player jump", "0.1"))
             );
             const anims = document.createElement("td");
+            anims.className = "anims";
             anims.textContent = row.anims;
             const cost = document.createElement("td");
             cost.textContent = "None";
@@ -1162,7 +1246,8 @@
             });
             applyChoices(document.getElementById("player-rows"), () => patch);
             window.AoeSheet.writePlayer(patch);
-            document.getElementById("player-note").textContent = "Saved. Reload the match to use it.";
+            document.getElementById("player-note").textContent = "Held here. Commit changes when a linked column should reach the match.";
+            paintCommit();
         }
 
         function choiceOptions(source, current) {
@@ -1216,7 +1301,8 @@
 
         function saveCampaign() {
             window.AoeSheet.writeFactions(readCampaign());
-            document.getElementById("campaign-note").textContent = "Saved. The match uses this.";
+            document.getElementById("campaign-note").textContent = "Held here. Commit changes when this should reach the match.";
+            paintCommit();
         }
 
         function drawLines(card, faction, kind) {
@@ -1357,6 +1443,7 @@
                 } else {
                     const name = document.createElement("td");
                     name.textContent = row.name;
+                    model.className = "file";
                     model.textContent = row.model.split("/").pop();
                     tr.append(name);
                 }
@@ -1375,7 +1462,57 @@
 
         function saveWeapons() {
             window.AoeSheet.writeWeapons(readActorInputs("#weapon-rows input", window.AoeSheet.weapons));
-            document.getElementById("weapon-note").textContent = "Saved.";
+            document.getElementById("weapon-note").textContent = "Held here.";
+            paintCommit();
+        }
+
+        function catalogName(id, row, label, table, redraw) {
+            const cell = document.createElement("td");
+            cell.className = "name";
+            cell.append(textField(id, "name", row.name, label));
+            if (row.added) cell.append(removeButton(table, id, redraw));
+            return cell;
+        }
+
+        function drawCatalog(table, bodyId, source, write, fields, redraw) {
+            const cols = paintColumns(table, redraw);
+            const body = document.getElementById(bodyId);
+            const rows = source();
+            body.replaceChildren();
+            Object.keys(rows).forEach((id) => {
+                const row = rows[id];
+                const tr = document.createElement("tr");
+                tr.append(catalogName(id, row, row.name, table, redraw));
+                fields.forEach((field) => {
+                    const td = document.createElement("td");
+                    if (field.key === "note") td.className = "note";
+                    const input = field.number
+                        ? numField(id, field.key, row[field.key], row.name + " " + field.key)
+                        : textField(id, field.key, row[field.key], row.name + " " + field.key);
+                    td.append(input);
+                    tr.append(td);
+                });
+                tr.append(...extraCells(id, row, cols));
+                tr.querySelectorAll("input, select").forEach((input) => input.addEventListener("change", () => {
+                    write(readActorInputs("#" + bodyId + " input", source));
+                    document.getElementById("object-note").textContent = "Held here. The match does not use this yet.";
+                    paintCommit();
+                }));
+                body.append(tr);
+            });
+            addBar(table, redraw);
+        }
+
+        function drawObjects() {
+            drawCatalog("resources", "resource-rows", window.AoeSheet.resources, window.AoeSheet.writeResources, [
+                { key: "kind" },
+                { key: "gives" },
+                { key: "amount", number: true }
+            ], drawObjects);
+            drawCatalog("finds", "find-rows", window.AoeSheet.finds, window.AoeSheet.writeFinds, [
+                { key: "kind" },
+                { key: "note" }
+            ], drawObjects);
         }
 
         function closeMenu() {
@@ -1384,7 +1521,7 @@
         }
 
         function show(name) {
-            ["units", "buildings", "creatures", "weapons", "player", "campaign"].forEach((id) => {
+            ["units", "buildings", "creatures", "weapons", "objects", "player", "campaign"].forEach((id) => {
                 const open = id === name;
                 document.getElementById(id).hidden = !open;
                 const choice = document.getElementById("open-" + id);
@@ -1412,14 +1549,50 @@
         document.getElementById("open-buildings").addEventListener("click", () => show("buildings"));
         document.getElementById("open-creatures").addEventListener("click", () => show("creatures"));
         document.getElementById("open-weapons").addEventListener("click", () => show("weapons"));
+        function paintCommit() {
+            const dirty = window.AoeSheet.dirty();
+            document.getElementById("commit-note").textContent = dirty
+                ? "Uncommitted changes. Commit sends them to the match, or Undo puts the table back."
+                : "Committed. Training time is the column the match uses.";
+        }
+
+        function redrawAll() {
+            drawUnits();
+            drawBuildings();
+            drawCreatures();
+            drawWeapons();
+            drawObjects();
+            drawPlayer();
+            drawCampaign();
+            paintCommit();
+        }
+
+        document.getElementById("commit-changes").addEventListener("click", () => {
+            window.AoeSheet.commit();
+            paintCommit();
+        });
+        document.getElementById("undo-changes").addEventListener("click", () => {
+            if (!window.AoeSheet.dirty()) return;
+            window.AoeSheet.undo();
+            redrawAll();
+        });
+        window.addEventListener("beforeunload", (event) => {
+            if (!window.AoeSheet.dirty()) return;
+            event.preventDefault();
+            event.returnValue = "";
+        });
+
+        document.getElementById("open-objects").addEventListener("click", () => show("objects"));
         document.getElementById("open-campaign").addEventListener("click", () => show("campaign"));
         drawUnits();
         drawBuildings();
         drawCreatures();
         drawWeapons();
+        drawObjects();
         drawPlayer();
         drawCampaign();
         show("units");
+        paintCommit();
     </script>
 </body>
 </html>
