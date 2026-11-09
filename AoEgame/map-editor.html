@@ -24,14 +24,18 @@
         #panel h1 { font-size: 16px; margin: 0 0 6px; }
         #panel h2 { font-size: 13px; margin: 8px 0 4px; }
         #panel p { margin: 0 0 8px; }
-        #trees, #buildings, #kinds, #copies, #paths { display: flex; flex-direction: column; gap: 4px; margin: 0 0 10px; }
+        #trees, #buildings, #team-buildings, #towns, #kinds, #copies, #paths, #rules { display: flex; flex-direction: column; gap: 4px; margin: 0 0 10px; }
+        #teams { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 10px; }
         #trees { max-height: 22vh; overflow: auto; }
-        #buildings, #copies { max-height: 18vh; overflow: auto; }
+        #buildings, #team-buildings, #towns, #copies { max-height: 18vh; overflow: auto; }
+        #team-buildings { padding: 4px; border-radius: 6px; background: rgba(47, 125, 70, 0.12); }
+        #team-buildings button { border-left: 6px solid #2f7d46; }
+        #buildings { padding: 4px; border-radius: 6px; background: rgba(140, 140, 140, 0.12); }
         #keep-row { display: flex; gap: 6px; margin: 0 0 8px; }
         #copy-name { flex: 1; min-width: 0; font: inherit; padding: 4px 8px; border: 1px solid #8a6840; border-radius: 6px; background: #fffdf8; color: #1c140c; }
         #brush-label { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
         #brush { flex: 1; min-width: 0; }
-        #trees button, #paths button, #buildings button, #kinds button, #copies button, #tools button, #keep-row button, #save {
+        #trees button, #paths button, #rules button, #buildings button, #team-buildings button, #towns button, #kinds button, #copies button, #tools button, #keep-row button, #teams button, #marks-eye, #save, #clear-all {
             font: inherit;
             text-align: left;
             padding: 4px 8px;
@@ -45,10 +49,13 @@
         #trees button img, #paths button img { width: 36px; height: 36px; background: #8ec8ee; }
         #trees button img { object-fit: contain; }
         #paths button img { object-fit: cover; }
-        #trees button.on, #paths button.on, #buildings button.on, #kinds button.on, #copies button.on, #tools button.on { background: #1c140c; color: #f6efe2; }
+        #trees button.on, #paths button.on, #rules button.on, #buildings button.on, #team-buildings button.on, #towns button.on, #kinds button.on, #copies button.on, #tools button.on, #teams button.on, #marks-eye.on { background: #1c140c; color: #f6efe2; }
+        #teams button { flex: 1 1 42%; text-align: center; }
+        #marks-eye { width: 100%; text-align: center; margin: 0 0 8px; }
         #tools { display: flex; gap: 6px; margin: 0 0 8px; }
-        #tools button, #save { text-align: center; }
-        #save { width: 100%; }
+        #tools button, #save, #clear-all { text-align: center; }
+        #save, #clear-all { width: 100%; }
+        #clear-all { margin: 0 0 6px; }
         #box {
             position: fixed;
             border: 1px solid #f0d080;
@@ -72,7 +79,10 @@
         <p id="note">Loading the map…</p>
         <h2>Paths</h2>
         <div id="paths"></div>
-        <label id="brush-label">Brush <input id="brush" type="range" min="2" max="18" step="0.5" value="5"> <span id="brush-read">5 m</span></label>
+        <h2>Marks</h2>
+        <div id="rules"></div>
+        <button id="marks-eye" type="button">Show marks</button>
+        <label id="brush-label">Brush <input id="brush" type="range" min="2" max="72" step="1" value="5"> <span id="brush-read">5 m</span></label>
         <h2>Trees</h2>
         <div id="trees"></div>
         <div id="tools">
@@ -87,16 +97,25 @@
         </div>
         <h2>Saved copies</h2>
         <div id="copies"></div>
+        <h2>Team</h2>
+        <div id="teams"></div>
+        <h2>Team buildings</h2>
+        <div id="team-buildings"></div>
         <h2>Buildings</h2>
         <div id="buildings"></div>
+        <h2>Towns</h2>
+        <div id="towns"></div>
         <h2>Rocks and mines</h2>
         <div id="rocks"></div>
         <h2>Other</h2>
         <div id="kinds"></div>
+        <button id="clear-all" type="button">Clear all</button>
         <button id="save" type="button">Save</button>
-        <p>Click the ground to plant the chosen tree or building. Drag a box to highlight several. Copy, type a name, and Keep stores that group. Click the name, then Q and E turn it, then click the ground. Erase removes the highlight, and while it is on a click or a box removes what is under it. Pick a path and drag to paint it. Lift rubs that paint back to grass. Save writes the objects and any path you painted.</p>
+        <p>Click the ground to plant the chosen tree or building. Team buildings are the real match buildings: Manor, Small house, Barracks, Farm, Salt works, Storehouse, and extras from the developer page. Pick a team, then one of those. They get that side's colour box and flag, and Save makes them that side's buildings in Game or Play test. Extra teams from the developer page are stored, but the live match still uses Team A and Team B. The Buildings list is scenery only, even if the model is the same. None keeps new Buildings-list kits as scenery. A building or a town shows under the cursor first. Q and E turn that preview a quarter turn: forward, right, back, left. A town is scenery, the same as a placed building. Drag a box to highlight several. Copy, type a name, and Keep stores that group. Click the name, then Q and E turn it, then click the ground. Erase removes the highlight, and while it is on a click or a box removes what is under it. Pick a path and drag to paint it. Lift rubs that paint back to grass. The brush goes up to 72 m. Show marks turns the colour on. Hide marks, or T, turns it off while you keep editing. Paint where units and buildings may go. Unmarked ground is closed. Red is units. Blue is buildings, and units can walk there too. Lift rubs a mark away. Clear all empties the objects on this map. Save writes the objects, the paths, and the marks, and the next Game or Play test starts a new match from only what you placed. No extra units or manors are added. The marks stay invisible in the match.</p>
     </div>
     <div id="box" hidden></div>
-    <script type="module" src="map-editor.js?v=obj14"></script>
+    <script src="dev-sheet.js?v=sheet33"></script>
+    <script type="module" src="map-editor.js?v=obj38"></script>
+    <script src="go-menu.js?v=1"></script>
 </body>
 </html>

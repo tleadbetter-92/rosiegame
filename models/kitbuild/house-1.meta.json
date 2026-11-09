@@ -1,24 +1,84 @@
 {
   "kind": "kitbuild",
   "name": "House 1",
-  "cx": 8.5,
-  "cz": 1.5,
+  "cx": 6,
+  "cz": 1,
   "materials": [
     {
       "mat": "wood",
-      "verts": 28932
+      "verts": 37122
     },
     {
       "mat": "plaster",
-      "verts": 1206
+      "verts": 1302
     },
     {
       "mat": "brick",
-      "verts": 1722
+      "verts": 1530
     },
     {
       "mat": "rock",
       "verts": 5640
+    },
+    {
+      "mat": "tiles",
+      "verts": 8340
+    },
+    {
+      "mat": "furniture",
+      "verts": 14868,
+      "tint": true
+    },
+    {
+      "mat": "propmetal",
+      "verts": 26916
+    },
+    {
+      "mat": "propcloth",
+      "verts": 2568
+    },
+    {
+      "mat": "proppack",
+      "verts": 8958,
+      "tint": true
+    },
+    {
+      "mat": "tvMetal013",
+      "verts": 6708
+    },
+    {
+      "mat": "tvWood006",
+      "verts": 468
+    },
+    {
+      "mat": "tvwalldecor",
+      "verts": 54
+    },
+    {
+      "mat": "tvWood032",
+      "verts": 336
+    },
+    {
+      "mat": "tvWood003",
+      "verts": 156
+    },
+    {
+      "mat": "tvfoods",
+      "verts": 102
+    },
+    {
+      "mat": "retroPlanks",
+      "verts": 516
+    },
+    {
+      "mat": "tvMetal042B",
+      "verts": 264
+    },
+    {
+      "mat": "tvMetal0132",
+      "verts": 372
     }
-  ]
+  ],
+  "hx": 4.84,
+  "hz": 4.12
 }

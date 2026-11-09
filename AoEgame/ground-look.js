@@ -42,6 +42,179 @@ pathTexture.needsUpdate = true;
 const pathFrame = new THREE.Vector4(-1024, -1024, 2048, 2048);
 let pathPending = false;
 
+const RULE_SIZE = 2048;
+const rulesData = new Uint8Array(RULE_SIZE * RULE_SIZE * 4);
+const rulesTexture = new THREE.DataTexture(rulesData, RULE_SIZE, RULE_SIZE);
+rulesTexture.format = THREE.RGBAFormat;
+rulesTexture.type = THREE.UnsignedByteType;
+rulesTexture.magFilter = THREE.NearestFilter;
+rulesTexture.minFilter = THREE.NearestFilter;
+rulesTexture.wrapS = THREE.ClampToEdgeWrapping;
+rulesTexture.wrapT = THREE.ClampToEdgeWrapping;
+rulesTexture.colorSpace = THREE.NoColorSpace;
+rulesTexture.flipY = false;
+rulesTexture.generateMipmaps = false;
+rulesTexture.needsUpdate = true;
+const rulesShow = { value: 0 };
+let rulesPending = false;
+let rulesActive = false;
+
+let rulesOverlay = null;
+
+const rulesMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+    uniforms: {
+        rulesMask: { value: rulesTexture },
+        rulesShow: rulesShow,
+        frame: { value: pathFrame }
+    },
+    vertexShader: [
+        "varying vec3 vPos;",
+        "void main() {",
+        "  vPos = position;",
+        "  gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );",
+        "}"
+    ].join("\n"),
+    fragmentShader: [
+        "uniform sampler2D rulesMask;",
+        "uniform float rulesShow;",
+        "uniform vec4 frame;",
+        "varying vec3 vPos;",
+        "void main() {",
+        "  vec2 uv = ( vPos.xz - frame.xy ) / frame.zw;",
+        "  if ( uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0 ) discard;",
+        "  if ( rulesShow < 0.5 ) discard;",
+        "  vec4 w = texture2D( rulesMask, uv );",
+        "  float r = step( 0.35, w.r );",
+        "  float g = step( 0.35, w.g );",
+        "  if ( r + g < 0.5 ) discard;",
+        "  vec3 col = ( vec3( 0.86, 0.18, 0.14 ) * r + vec3( 0.16, 0.38, 0.92 ) * g ) / max( r + g, 0.001 );",
+        "  gl_FragColor = vec4( col, 0.9 );",
+        "}"
+    ].join("\n")
+});
+
+export function setRulesShown(on) {
+    rulesShow.value = on ? 1 : 0;
+    if (rulesOverlay) rulesOverlay.visible = !!on;
+}
+
+export function addRulesOverlay(mesh) {
+    rulesOverlay = new THREE.Mesh(mesh.geometry, rulesMat);
+    rulesOverlay.frustumCulled = false;
+    rulesOverlay.renderOrder = 2;
+    rulesOverlay.visible = rulesShow.value > 0;
+    return rulesOverlay;
+}
+
+export function rulesAt(x, z) {
+    if (!rulesActive) return 3;
+    const spanX = pathFrame.z;
+    const spanZ = pathFrame.w;
+    const u = (x - pathFrame.x) / spanX;
+    const v = (z - pathFrame.y) / spanZ;
+    if (u < 0 || v < 0 || u > 1 || v > 1) return 0;
+    const px = Math.min(RULE_SIZE - 1, Math.max(0, Math.round(u * (RULE_SIZE - 1))));
+    const py = Math.min(RULE_SIZE - 1, Math.max(0, Math.round(v * (RULE_SIZE - 1))));
+    const o = (py * RULE_SIZE + px) * 4;
+    const walk = rulesData[o] > 96 ? 1 : 0;
+    const build = rulesData[o + 1] > 96 ? 2 : 0;
+    return walk + build;
+}
+
+export function paintRules(x, z, radius, channel) {
+    const spanX = pathFrame.z;
+    const spanZ = pathFrame.w;
+    const cx = ((x - pathFrame.x) / spanX) * (RULE_SIZE - 1);
+    const cz = ((z - pathFrame.y) / spanZ) * (RULE_SIZE - 1);
+    const rad = Math.max((radius / spanX) * (RULE_SIZE - 1), (radius / spanZ) * (RULE_SIZE - 1), 0.75);
+    const x0 = Math.max(0, Math.floor(cx - rad));
+    const x1 = Math.min(RULE_SIZE - 1, Math.ceil(cx + rad));
+    const z0 = Math.max(0, Math.floor(cz - rad));
+    const z1 = Math.min(RULE_SIZE - 1, Math.ceil(cz + rad));
+    const erase = channel < 0;
+    for (let py = z0; py <= z1; py++) {
+        const dz = (py - cz) / rad;
+        for (let px = x0; px <= x1; px++) {
+            const dx = (px - cx) / rad;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+            if (dist >= 1) continue;
+            const o = (py * RULE_SIZE + px) * 4;
+            if (erase) {
+                rulesData[o] = 0;
+                rulesData[o + 1] = 0;
+                continue;
+            }
+            rulesData[o + channel] = 255;
+            if (channel === 1) rulesData[o] = 255;
+        }
+    }
+    rulesActive = true;
+    rulesPending = true;
+    return true;
+}
+
+export function flushRulesPaint() {
+    if (!rulesPending) return;
+    rulesPending = false;
+    rulesTexture.needsUpdate = true;
+}
+
+export function loadRulesPaint() {
+    return fetch("map-rules.json", { cache: "no-store" }).then((res) => res.ok ? res.json() : null).then((meta) => {
+        if (!meta || meta.map !== "newmap") return false;
+        const same = Math.abs(meta.minX - pathFrame.x) < 2 && Math.abs(meta.minZ - pathFrame.y) < 2 && Math.abs(meta.spanX - pathFrame.z) < 2 && Math.abs(meta.spanZ - pathFrame.w) < 2;
+        if (!same) return false;
+        return new Promise((resolve) => {
+            const image = new Image();
+            image.onload = () => {
+                const canvas = document.createElement("canvas");
+                canvas.width = RULE_SIZE;
+                canvas.height = RULE_SIZE;
+                const ctx = canvas.getContext("2d", { willReadFrequently: true });
+                ctx.drawImage(image, 0, 0, RULE_SIZE, RULE_SIZE);
+                rulesData.set(ctx.getImageData(0, 0, RULE_SIZE, RULE_SIZE).data);
+                if (meta.mode !== "allow") invertBlockMarks();
+                rulesActive = true;
+                rulesTexture.needsUpdate = true;
+                resolve(true);
+            };
+            image.onerror = () => resolve(false);
+            image.src = "map-rules.png?v=" + Date.now();
+        });
+    }).catch(() => false);
+}
+
+export function rulesSaveBody() {
+    const canvas = document.createElement("canvas");
+    canvas.width = RULE_SIZE;
+    canvas.height = RULE_SIZE;
+    const ctx = canvas.getContext("2d");
+    ctx.putImageData(new ImageData(new Uint8ClampedArray(rulesData), RULE_SIZE, RULE_SIZE), 0, 0);
+    return {
+        map: "newmap",
+        mode: "allow",
+        minX: pathFrame.x,
+        minZ: pathFrame.y,
+        spanX: pathFrame.z,
+        spanZ: pathFrame.w,
+        png: canvas.toDataURL("image/png")
+    };
+}
+
+function invertBlockMarks() {
+    for (let i = 0; i < rulesData.length; i += 4) {
+        const unitOk = rulesData[i] <= 96;
+        const buildOk = rulesData[i + 1] <= 96;
+        rulesData[i] = unitOk || buildOk ? 255 : 0;
+        rulesData[i + 1] = buildOk ? 255 : 0;
+    }
+}
+
 export function setPathFrame(minX, minZ, spanX, spanZ) {
     pathFrame.set(minX, minZ, Math.max(1, spanX), Math.max(1, spanZ));
 }
@@ -235,10 +408,10 @@ export function makeGroundMaterial() {
                 "  float minC = min( vColor.r, min( vColor.g, vColor.b ) );",
                 "  float grassLead = vColor.g - max( vColor.r, vColor.b );",
                 "  float sandLead = vColor.r - max( vColor.g, vColor.b );",
-                "  float grassMix = smoothstep( 0.0, max( 0.0008, fwidth( grassLead ) * 1.25 ), grassLead );",
-                "  float sandMix = smoothstep( 0.0, max( 0.0008, fwidth( sandLead ) * 1.25 ), sandLead );",
+                "  float grassMix = smoothstep( 0.0, max( 0.16, fwidth( grassLead ) * 1.25 ), grassLead );",
+                "  float sandMix = smoothstep( 0.0, max( 0.07, fwidth( sandLead ) * 1.25 ), sandLead );",
                 "  float rockLead = min( 0.078 - ( maxC - minC ), min( 0.41 - maxC, minC - 0.08 ) );",
-                "  float rockMix = smoothstep( 0.0, max( 0.0008, fwidth( rockLead ) * 1.25 ), rockLead );",
+                "  float rockMix = smoothstep( 0.0, max( 0.01, fwidth( rockLead ) * 1.25 ), rockLead );",
                 "  vec3 tinted = mix( vColor, grassDetail, grassMix * 0.78 );",
                 "  tinted = mix( tinted, sandDetail, sandMix * 0.78 );",
                 "  tinted = mix( tinted, rockDetail, rockMix * 0.78 );",

@@ -1,0 +1,39 @@
+{
+  "kind": "kitbuild",
+  "name": "WALL 2",
+  "cx": 26,
+  "cz": -0.75,
+  "materials": [
+    {
+      "mat": "brick",
+      "verts": 1728
+    },
+    {
+      "mat": "rock",
+      "verts": 510
+    },
+    {
+      "mat": "retroCobble",
+      "verts": 2016
+    },
+    {
+      "mat": "retroCobbleAlt",
+      "verts": 672
+    },
+    {
+      "mat": "villagePalette",
+      "verts": 804
+    },
+    {
+      "mat": "furniture",
+      "verts": 1176,
+      "tint": true
+    },
+    {
+      "mat": "propmetal",
+      "verts": 1296
+    }
+  ],
+  "hx": 4,
+  "hz": 3.5
+}

@@ -1,12 +1,12 @@
 {
   "kind": "kitbuild",
   "name": "Salt works ex",
-  "cx": 12.5,
-  "cz": 24.25,
+  "cx": 13,
+  "cz": 13,
   "materials": [
     {
       "mat": "wood",
-      "verts": 13332
+      "verts": 6024
     },
     {
       "mat": "plaster",
@@ -26,5 +26,7 @@
       "verts": 98460,
       "tint": true
     }
-  ]
+  ],
+  "hx": 7.12,
+  "hz": 3.13
 }

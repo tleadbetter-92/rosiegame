@@ -1,16 +1,16 @@
 {
   "kind": "kitbuild",
   "name": "farm",
-  "cx": 9.25,
-  "cz": -0.75,
+  "cx": 14.25,
+  "cz": -13.25,
   "materials": [
     {
       "mat": "wood",
-      "verts": 25158
+      "verts": 21408
     },
     {
       "mat": "plaster",
-      "verts": 594
+      "verts": 1554
     },
     {
       "mat": "brick",
@@ -36,11 +36,13 @@
     },
     {
       "mat": "rock",
-      "verts": 36786
+      "verts": 36414
     },
     {
       "mat": "tiles",
-      "verts": 10188
+      "verts": 14100
     }
-  ]
+  ],
+  "hx": 8.84,
+  "hz": 5.93
 }

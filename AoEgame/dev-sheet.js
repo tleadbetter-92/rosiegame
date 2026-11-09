@@ -11,7 +11,7 @@
         worker: { name: "Worker", use: "economical", model: "villager", anims: "Idle, Walk", hp: 20, attack: 8, move: 3.4, cost: 50, w: 0.62, d: 0.4 }
     };
     const BUILDINGS = {
-        manor: { name: "Manor", map: "lorsmanor-courtyard", model: "lorsmanor-courtyard", makes: "worker", time: 0, wood: 0, hx: 16.19, hz: 11.27, placed: false },
+        manor: { name: "Manor", map: "lorsmanor-courtyard", model: "lorsmanor-courtyard", makes: "worker", time: 300, wood: 0, hx: 16.19, hz: 11.27, placed: true },
         house: { name: "Small house", map: "small-house1", model: "small-house1", makes: "", time: 300, wood: 20, hx: 3.28, hz: 4.29, placed: true },
         barracks: { name: "Barracks", map: "barracks", model: "barracks", makes: "soldier", time: 300, wood: 100, hx: 14.26, hz: 9.09, placed: true },
         farm: { name: "Farm", map: "farm", model: "farm", makes: "", time: 300, wood: 100, hx: 8.81, hz: 18.43, placed: true },
@@ -290,12 +290,23 @@
         return { name: label, use: "", model: "", anims: "", hp: 20, attack: 0, defence: 0, move: 3, cost: 0, w: 0.7, d: 0.7 };
     }
 
+    function kitIdOf(value) {
+        const raw = text(value, "", 240);
+        if (!raw || /[./]/.test(raw)) return "";
+        return raw;
+    }
+
+    function kitFromRow(row, fallback) {
+        return kitIdOf(row && row.model) || kitIdOf(row && row.map) || kitIdOf(fallback) || "";
+    }
+
     function buildingFrom(base, row, cols, added) {
         const made = productionList(row, added ? null : base);
+        const kit = kitFromRow(row, added ? "" : base.model);
         return {
             name: added ? text(row.name, base.name) : base.name,
-            map: text(row.map, "", 240) || base.map,
-            model: added ? text(row.model, base.model) : base.model,
+            map: kit,
+            model: kit,
             makes: made[0] || "",
             makesList: made,
             placed: added ? true : base.placed,
@@ -316,6 +327,95 @@
     for (let house = 1; house <= 20; house++) {
         const n = house < 10 ? "0" + house : String(house);
         MAP_HOUSES.push({ name: "House " + house, model: "../models/houses/house-" + n + ".fbx" });
+    }
+
+    const STOCK_KITS = [
+        { id: "lorsmanor-courtyard", name: "Manor", hx: 16.19, hz: 11.27 },
+        { id: "small-house1", name: "Small house", hx: 3.28, hz: 4.29 },
+        { id: "barracks", name: "Barracks", hx: 14.26, hz: 9.09 },
+        { id: "farm", name: "Farm", hx: 8.81, hz: 18.43 },
+        { id: "salt-works-ex", name: "Salt works", hx: 11.06, hz: 14.33 },
+        { id: "storehouse", name: "Storehouse", hx: 8.06, hz: 8.11 },
+        { id: "blacksmith", name: "Blacksmith", hx: 5, hz: 5 }
+    ];
+    let EDITOR_KITS = STOCK_KITS.slice();
+
+    function kitTitle(id, name) {
+        const raw = String(name || "").trim();
+        if (raw) return raw;
+        return String(id || "").replace(/-/g, " ");
+    }
+
+    function setEditorKits(list) {
+        const out = [];
+        const seen = {};
+        function add(item) {
+            const id = kitIdOf(item && item.id);
+            if (!id || seen[id]) return;
+            seen[id] = true;
+            const spanX = Number(item.spanX);
+            const spanZ = Number(item.spanZ);
+            const namedX = Number(item.hx);
+            const namedZ = Number(item.hz);
+            const hx = Number.isFinite(namedX) && namedX > 0 ? namedX : (Number.isFinite(spanX) && spanX > 0 ? spanX / 2 : 0);
+            const hz = Number.isFinite(namedZ) && namedZ > 0 ? namedZ : (Number.isFinite(spanZ) && spanZ > 0 ? spanZ / 2 : 0);
+            out.push({
+                id: id,
+                name: kitTitle(id, item.name),
+                hx: hx,
+                hz: hz
+            });
+        }
+        (list || []).forEach(add);
+        STOCK_KITS.forEach(add);
+        out.sort((a, b) => a.name.localeCompare(b.name));
+        EDITOR_KITS = out;
+        return EDITOR_KITS;
+    }
+
+    function editorKits() {
+        return EDITOR_KITS;
+    }
+
+    function kitPad(id) {
+        const item = EDITOR_KITS.find((row) => row.id === id);
+        if (!item || item.hx < 0.2 || item.hz < 0.2) return null;
+        return { hx: Math.min(80, item.hx), hz: Math.min(80, item.hz) };
+    }
+
+    function rememberKitPad(id, pad) {
+        if (!id || !pad) return pad;
+        const item = EDITOR_KITS.find((row) => row.id === id);
+        if (item) {
+            item.hx = pad.hx;
+            item.hz = pad.hz;
+        }
+        return pad;
+    }
+
+    function padFromMeta(meta) {
+        if (!meta) return null;
+        const hx = Number(meta.hx);
+        const hz = Number(meta.hz);
+        if (!(hx > 0.2) || !(hz > 0.2)) return null;
+        return { hx: Math.min(80, hx), hz: Math.min(80, hz) };
+    }
+
+    function loadKitPad(id) {
+        const kit = kitIdOf(id);
+        if (!kit) return Promise.resolve(null);
+        const cached = kitPad(kit);
+        return fetch("../models/kitbuild/" + encodeURIComponent(kit) + ".meta.json", { cache: "no-store" }).then((res) => {
+            return res.ok ? res.json() : null;
+        }).then((meta) => {
+            const pad = padFromMeta(meta);
+            if (pad) return rememberKitPad(kit, pad);
+            return cached;
+        }).catch(() => cached);
+    }
+
+    function loadEditorKitPads() {
+        return Promise.all(EDITOR_KITS.map((item) => loadKitPad(item.id))).then(() => EDITOR_KITS);
     }
 
     function blankBuilding() {
@@ -776,6 +876,11 @@
         writeUnits: writeUnits,
         figures: function () { return FIGURES; },
         mapHouses: function () { return MAP_HOUSES; },
+        editorKits: editorKits,
+        setEditorKits: setEditorKits,
+        kitPad: kitPad,
+        loadKitPad: loadKitPad,
+        loadEditorKitPads: loadEditorKitPads,
         buildings: buildings,
         writeBuildings: writeBuildings,
         creatures: creatures,

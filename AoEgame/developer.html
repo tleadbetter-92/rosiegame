@@ -127,7 +127,7 @@
         .faction h3 input { width: 14rem; }
         .faction h4 { margin: 14px 0 8px; font-size: 18px; font-weight: 500; }
         .faction select { font: 16px/1.2 system-ui, sans-serif; }
-        td.graphic input[type="checkbox"] { margin-left: 8px; }
+        td.graphic select { min-width: 13rem; max-width: 18rem; }
         th .col-kind { display: block; width: 5.4rem; margin-top: 4px; font: 12px/1.2 system-ui, sans-serif; }
         .col-options { margin-top: 4px; }
         .col-option { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
@@ -202,7 +202,6 @@
                 <thead>
                     <tr>
                         <th>Building</th>
-                        <th>Graphic model (map view)</th>
                         <th>Graphic model</th>
                         <th>Unit production</th>
                         <th>Time to build</th>
@@ -216,7 +215,7 @@
             </table>
             <p class="bar"></p>
             <p class="hint note" id="building-note"></p>
-            <p class="hint">Cost, build time, and footprint are kept in this browser. Reload the match after a change. They apply the next time that building is placed. The manor is already standing, so a footprint change shows after a reload. The blacksmith is the preview on the map and is not on the build bar yet. Time is in real seconds. Footprint is the width and depth of that building on the map, in metres. It starts as the size of the picture already in the match. Change it and reload, and the building changes with it. Tick In use yourself once you have seen that building placed and are happy with it. Graphic model (map view) lists House 1 to House 20 from the free pack, and keeps the picture already on that row. Pick a house, then reload the match. The map shows that house, sized to the footprint on this row. The other graphic stays the first-person picture. The ticks beside the graphics are kept here and do not change the match. Unit production can list more than one military or economical unit. + unit adds another. A building trains the units listed on its row. Wood is the cost the match charges. + resource adds another, such as gold, and the match charges that too. Purpose can be more than one of military, defence, store resources, and other. On a column you add, Dropdown still picks one. Multi choice uses that same list, and a row can tick as many as it needs. A row or column you add is kept here too. It does not change the match until it is linked up.</p>
+            <p class="hint">Cost, build time, and footprint are kept in this browser. Reload the match after a change. They apply the next time that building is placed. Graphic model is the building from the building editor, used on the map and in first person. Pick one and the footprint fills from that building’s size. Add a row, pick a graphic, set time and cost, then Commit. After a reload, that building is on the build bar like the others. Manor is on the build bar like the other buildings. The blacksmith is the preview on the map and is not on the build bar yet. Time is in real seconds. Footprint is the width and depth of that building on the map, in metres. Tick In use yourself once you have seen that building placed and are happy with it. Unit production can list more than one military or economical unit. + unit adds another. A building trains the units listed on its row. Wood is the cost the match charges. + resource adds another, such as gold, and the match charges that too. Purpose can be more than one of military, defence, store resources, and other. On a column you add, Dropdown still picks one. Multi choice uses that same list, and a row can tick as many as it needs. A row or column you add is kept here too. It does not change the match until it is linked up.</p>
         </section>
         <section id="creatures" class="panel" hidden>
             <h2>Creatures</h2>
@@ -267,6 +266,7 @@
                         <th>In Game use</th>
                         <th>Graphic model used</th>
                         <th>Stats</th>
+                        <th>Jump</th>
                         <th>Animations</th>
                         <th>Cost</th>
                         <th>Base size</th>
@@ -277,7 +277,7 @@
             </table>
             <p class="bar"></p>
             <p class="hint note" id="player-note"></p>
-            <p class="hint">This is the person you walk as in first person. Health, sword damage, bow damage, and move speed are kept in this browser. Reload the match after a change. Health is the full bar, and what you return with after you fall. Sword damage is a swing. Bow damage is a shot. Defence is taken off a hit before it reaches you, and your shot is reduced by the target’s defence. Move is how fast you walk. Jump is how hard you leave the ground. It starts at the jump you have now. Change it, commit, and reload the match. Base size is the width and depth of the person you walk as, in metres. Change it and reload the match. In use is kept here and does not change the match yet. A column you add is kept here too, until you say what it is for.</p>
+            <p class="hint">This is the person you walk as in first person. Health, sword damage, bow damage, move, and jump are kept in this browser. Reload the match after a change. Health is the full bar, and what you return with after you fall. Sword damage is a swing. Bow damage is a shot. Defence is taken off a hit before it reaches you, and your shot is reduced by the target’s defence. Move is how fast you walk. Jump is how hard Space lifts you. 6.4 is the jump you have now. 0 is no jump. A higher number is a stronger jump. Change it, commit, and reload the match. Base size is the width and depth of the person you walk as, in metres. Change it and reload the match. In use is kept here and does not change the match yet. A column you add is kept here too, until you say what it is for.</p>
         </section>
         <section id="objects" class="panel" hidden>
             <h2>Objects and resources</h2>
@@ -329,8 +329,8 @@
         }
     }
     </script>
-    <script src="dev-sheet.js?v=sheet28"></script>
-    <script type="module" src="preview.js?v=look8"></script>
+    <script src="dev-sheet.js?v=sheet33"></script>
+    <script type="module" src="preview.js?v=look9"></script>
     <dialog id="look">
         <h2 id="look-title">Graphic</h2>
         <img id="look-img" alt="" hidden>
@@ -382,51 +382,33 @@
             return td;
         }
 
-        function mapChoice(id, value, label, checked) {
+        function kitChoice(id, value, label) {
             const td = document.createElement("td");
             td.className = "graphic";
             const select = document.createElement("select");
             select.dataset.id = id;
-            select.dataset.key = "map";
+            select.dataset.key = "model";
             select.setAttribute("aria-label", label);
-            const houses = window.AoeSheet.mapHouses();
-            const listed = houses.some((item) => item.model === value);
-            if (!listed) {
+            const kits = window.AoeSheet.editorKits ? window.AoeSheet.editorKits() : [];
+            const listed = kits.some((item) => item.id === value);
+            const none = document.createElement("option");
+            none.value = "";
+            none.textContent = listed || value ? "None" : "Pick a building editor building";
+            select.append(none);
+            if (value && !listed) {
                 const current = document.createElement("option");
-                current.value = value || "";
-                current.textContent = value ? "Keep the one already there" : "None";
+                current.value = value;
+                current.textContent = value;
                 select.append(current);
             }
-            houses.forEach((item) => {
+            kits.forEach((item) => {
                 const option = document.createElement("option");
-                option.value = item.model;
+                option.value = item.id;
                 option.textContent = item.name;
                 select.append(option);
             });
             select.value = value || "";
             td.append(select);
-            const input = document.createElement("input");
-            input.type = "checkbox";
-            input.checked = !!checked;
-            input.dataset.id = id;
-            input.dataset.key = "mapInUse";
-            input.setAttribute("aria-label", label + " in use");
-            td.append(input);
-            return td;
-        }
-
-        function graphicCell(id, key, value, label, useKey, checked, editable) {
-            const td = document.createElement("td");
-            td.className = "graphic";
-            if (editable) td.append(textField(id, key, value, label));
-            else td.append(document.createTextNode(value || ""));
-            const input = document.createElement("input");
-            input.type = "checkbox";
-            input.checked = !!checked;
-            input.dataset.id = id;
-            input.dataset.key = useKey;
-            input.setAttribute("aria-label", label + " in use");
-            td.append(input);
             return td;
         }
 
@@ -1034,17 +1016,16 @@
             Object.keys(rows).forEach((id) => {
                 const row = rows[id];
                 const tr = document.createElement("tr");
-                const mapCell = mapChoice(id, row.map, row.name + " map view", row.mapInUse);
-                const modelCell = graphicCell(id, "model", row.model, row.name + " graphic", "modelInUse", row.modelInUse, row.added);
+                const modelCell = kitChoice(id, row.model, row.name + " graphic");
                 const makes = productionCell(id, row.makesList || (row.makes ? [row.makes] : []), row.name, drawBuildings);
                 if (row.added) {
                     const name = textCell(id, "name", row.name, "New building name");
                     name.append(removeButton("buildings", id, drawBuildings));
-                    tr.append(name, mapCell, modelCell, makes);
+                    tr.append(name, modelCell, makes);
                 } else {
                     const name = document.createElement("td");
                     name.textContent = row.name;
-                    tr.append(name, mapCell, modelCell, makes);
+                    tr.append(name, modelCell, makes);
                 }
                 const time = document.createElement("td");
                 if (row.placed) {
@@ -1060,13 +1041,43 @@
                     statLabel("W", numField(id, "width", row.hx * 2, row.name + " width", "0.5")),
                     statLabel("D", numField(id, "depth", row.hz * 2, row.name + " depth", "0.5"))
                 );
-                const shown = /\.fbx$/i.test(row.map || "") ? row.map : (row.model || row.map);
+                const shown = row.model || row.map;
                 tr.append(time, cost, foot, useCell(id, row), lookButton(row.name, shown), ...extraCells(id, row, cols));
                 tr.querySelectorAll("input, select").forEach((input) => {
                     if (input.dataset.makes) return;
                     input.addEventListener("change", () => {
-                        saveBuildings();
-                        if (input.dataset.key === "map") drawBuildings();
+                        if (input.dataset.key !== "model") {
+                            saveBuildings();
+                            return;
+                        }
+                        const applyPad = (pad) => {
+                            const rowEl = input.closest("tr");
+                            if (pad && rowEl) {
+                                const width = rowEl.querySelector("[data-key='width']");
+                                const depth = rowEl.querySelector("[data-key='depth']");
+                                if (width) width.value = String(Math.round(pad.hx * 20) / 10);
+                                if (depth) depth.value = String(Math.round(pad.hz * 20) / 10);
+                            }
+                            const patch = readBuildingPatch();
+                            const current = patch[id];
+                            if (current) {
+                                current.model = input.value;
+                                current.map = input.value;
+                                if (pad) {
+                                    current.hx = pad.hx;
+                                    current.hz = pad.hz;
+                                }
+                            }
+                            window.AoeSheet.writeBuildings(patch);
+                            document.getElementById("building-note").textContent = "Held here. Commit changes when a linked column should reach the match.";
+                            paintCommit();
+                            drawBuildings();
+                        };
+                        if (window.AoeSheet.loadKitPad) {
+                            window.AoeSheet.loadKitPad(input.value).then(applyPad);
+                            return;
+                        }
+                        applyPad(window.AoeSheet.kitPad && window.AoeSheet.kitPad(input.value));
                     });
                 });
                 body.append(tr);
@@ -1085,7 +1096,7 @@
                 }
                 return patch[id];
             }
-            document.querySelectorAll("#building-rows input, #building-rows select[data-key='map']").forEach((input) => {
+            document.querySelectorAll("#building-rows input, #building-rows select[data-key]").forEach((input) => {
                 const id = input.dataset.id;
                 if (!id) return;
                 const current = row(id);
@@ -1205,15 +1216,19 @@
                 statLabel("A", numField(id, "attack", row.attack, "Player sword damage")),
                 statLabel("Bow", numField(id, "shot", row.shot, "Player bow damage")),
                 statLabel("Def", numField(id, "defence", row.defence, "Player defence")),
-                statLabel("M", numField(id, "move", row.move, "Player move", "0.1")),
-                statLabel("Jump", numField(id, "jump", row.jump, "Player jump", "0.1"))
+                statLabel("M", numField(id, "move", row.move, "Player move", "0.1"))
             );
+            const jump = document.createElement("td");
+            jump.className = "size";
+            const jumpInput = numField(id, "jump", row.jump, "Player jump", "0.1");
+            jumpInput.max = "40";
+            jump.append(jumpInput);
             const anims = document.createElement("td");
             anims.className = "anims";
             anims.textContent = row.anims;
             const cost = document.createElement("td");
             cost.textContent = "None";
-            tr.append(stats, anims, cost, sizeCell(id, row), useCell(id, row), ...extraCells(id, row, cols));
+            tr.append(stats, jump, anims, cost, sizeCell(id, row), useCell(id, row), ...extraCells(id, row, cols));
             tr.querySelectorAll("input, select").forEach((input) => input.addEventListener("change", savePlayer));
             body.append(tr);
             const bar = document.querySelector("#player .bar");
@@ -1584,15 +1599,26 @@
 
         document.getElementById("open-objects").addEventListener("click", () => show("objects"));
         document.getElementById("open-campaign").addEventListener("click", () => show("campaign"));
-        drawUnits();
-        drawBuildings();
-        drawCreatures();
-        drawWeapons();
-        drawObjects();
-        drawPlayer();
-        drawCampaign();
-        show("units");
-        paintCommit();
+        function bootPage() {
+            drawUnits();
+            drawBuildings();
+            drawCreatures();
+            drawWeapons();
+            drawObjects();
+            drawPlayer();
+            drawCampaign();
+            show("units");
+            paintCommit();
+        }
+        fetch("../tools/building-editor/saves/index.json", { cache: "no-store" })
+            .then((res) => (res.ok ? res.json() : { buildings: [] }))
+            .then((data) => {
+                if (window.AoeSheet.setEditorKits) window.AoeSheet.setEditorKits(data.buildings || []);
+                if (window.AoeSheet.loadEditorKitPads) return window.AoeSheet.loadEditorKitPads();
+            })
+            .catch(() => {})
+            .then(bootPage);
     </script>
+    <script src="go-menu.js?v=1"></script>
 </body>
 </html>

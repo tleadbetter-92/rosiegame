@@ -8,5 +8,7 @@
       "mat": "tvwalldecor",
       "verts": 132
     }
-  ]
+  ],
+  "hx": 0.33,
+  "hz": 0.02
 }

@@ -275,8 +275,20 @@
         .cmd-group { display: grid; gap: 4px; align-content: start; }
         .cmd-group[hidden], #pane-commands[hidden], #commands button[hidden] { display: none; }
         #commands .cmd-group:not([hidden]) ~ .cmd-group:not([hidden]) { border-left: 1px solid #6d5338; margin-left: 8px; padding-left: 8px; }
-        #cmd-people, #cmd-stance { grid-template-columns: 84px; }
+        #cmd-people, #cmd-stance, #cmd-orders { grid-template-columns: 84px; }
         #cmd-build { grid-template-columns: repeat(3, 84px); }
+        body.playtest:not(.handheld) #pane-sel { flex: 0 1 240px; }
+        body.playtest:not(.handheld) #pane-commands { flex: 1 1 auto; min-width: 0; }
+        body.playtest:not(.handheld) #cmd-people,
+        body.playtest:not(.handheld) #cmd-build,
+        body.playtest:not(.handheld) #cmd-stance,
+        body.playtest:not(.handheld) #cmd-orders {
+            grid-template-columns: none;
+            grid-template-rows: repeat(3, 52px);
+            grid-auto-flow: column;
+            grid-auto-columns: 118px;
+        }
+        body.playtest:not(.handheld) #commands button { width: 118px; }
         #commands button {
             display: flex;
             flex-direction: column;
@@ -322,7 +334,7 @@
             pointer-events: none;
         }
         #menu, #strike { position: absolute; z-index: 6; font: 14px/1.3 system-ui, sans-serif; }
-        #menu { top: 6px; right: 12px; }
+        #menu { top: 6px; right: 46px; }
         #menu-btn {
             padding: 6px 14px;
             border: 1px solid #c4a574;
@@ -551,6 +563,7 @@
                     <button id="make-horse" type="button" disabled><b>Horse</b><small>50 food</small></button>
                 </div>
                 <div id="cmd-build" class="cmd-group">
+                    <button id="make-manor" type="button" disabled><b>Manor</b><small>0 wood</small></button>
                     <button id="make-house" type="button" disabled><b>House</b><small>20 wood</small></button>
                     <button id="make-barracks" type="button" disabled><b>Barracks</b><small>100 wood</small></button>
                     <button id="make-farm" type="button" disabled><b>Farm</b><small>100 wood</small></button>
@@ -560,6 +573,9 @@
                 <div id="cmd-stance" class="cmd-group">
                     <button id="stance-guard" type="button" disabled><b>Guard</b></button>
                     <button id="stance-attack" type="button" disabled><b>Attack</b></button>
+                </div>
+                <div id="cmd-orders" class="cmd-group">
+                    <button id="take-down" type="button" hidden><b>Deconstruct</b></button>
                 </div>
             </div>
         </section>
@@ -608,7 +624,8 @@
     <script src="../world.js?v=trees1"></script>
     <script src="../town.js"></script>
     <script src="../land-mesh.js?v=lip5"></script>
-    <script src="dev-sheet.js?v=sheet28"></script>
-    <script type="module" src="play.js?v=play169"></script>
+    <script src="dev-sheet.js?v=sheet33"></script>
+    <script src="go-menu.js?v=1"></script>
+    <script type="module" src="play.js?v=play235"></script>
 </body>
 </html>

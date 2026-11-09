@@ -24,5 +24,7 @@
       "mat": "tvwalldecor",
       "verts": 24
     }
-  ]
+  ],
+  "hx": 0.31,
+  "hz": 0.03
 }

@@ -6,11 +6,11 @@
   "materials": [
     {
       "mat": "wood",
-      "verts": 12456
+      "verts": 17640
     },
     {
       "mat": "plaster",
-      "verts": 1209
+      "verts": 1305
     },
     {
       "mat": "rock",
@@ -38,6 +38,12 @@
     {
       "mat": "brick",
       "verts": 192
+    },
+    {
+      "mat": "tiles",
+      "verts": 6684
     }
-  ]
+  ],
+  "hx": 4.02,
+  "hz": 4.12
 }

@@ -1,0 +1,48 @@
+{
+  "kind": "kitbuild",
+  "name": "GateHouse",
+  "cx": 13.5,
+  "cz": -1.5,
+  "materials": [
+    {
+      "mat": "brick",
+      "verts": 7968
+    },
+    {
+      "mat": "rock",
+      "verts": 24978
+    },
+    {
+      "mat": "propcloth",
+      "verts": 2082,
+      "tint": true
+    },
+    {
+      "mat": "furniture",
+      "verts": 4836,
+      "tint": true
+    },
+    {
+      "mat": "propmetal",
+      "verts": 3744
+    },
+    {
+      "mat": "tvWood006",
+      "verts": 144
+    },
+    {
+      "mat": "tvwalldecor",
+      "verts": 24
+    },
+    {
+      "mat": "tvWood032",
+      "verts": 168
+    },
+    {
+      "mat": "tvMetal013",
+      "verts": 144
+    }
+  ],
+  "hx": 24.1,
+  "hz": 5.18
+}

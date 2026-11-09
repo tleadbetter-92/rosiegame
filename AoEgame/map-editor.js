@@ -1,15 +1,19 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { MAP_BUILDINGS, MAP_KINDS, MAP_TOKEN, TREE_CARDS, kindById, loadKitShell, makeMapShape, makeStandIn, plantModel } from "./map-props.js?v=obj5";
-import { PATHS, flushPathPaint, loadPathPaint, paintPath, pathSaveBody, setPathFrame, useGroundLook } from "./ground-look.js?v=look2";
+import { MAP_BUILDINGS, MAP_KINDS, MAP_TOKEN, TREE_CARDS, kindById, loadKitShell, loadTownList, makeMapShape, makeStandIn, makeTownMesh, plantModel, playKindFromMap, setPlayKits, sheetPlayKits, teamBuildings } from "./map-props.js?v=obj11";
+import { PATHS, addRulesOverlay, flushPathPaint, flushRulesPaint, loadPathPaint, loadRulesPaint, paintPath, paintRules, pathSaveBody, rulesSaveBody, setPathFrame, setRulesShown, useGroundLook } from "./ground-look.js?v=look8";
 
-const SEA = 141;
+const SEA = 113;
 const note = document.getElementById("note");
 const list = document.getElementById("kinds");
 const rockList = document.getElementById("rocks");
 const treeList = document.getElementById("trees");
 const buildingList = document.getElementById("buildings");
+const teamBuildingList = document.getElementById("team-buildings");
+const teamList = document.getElementById("teams");
+const townList = document.getElementById("towns");
 const saveBtn = document.getElementById("save");
+const clearAllBtn = document.getElementById("clear-all");
 const copyBtn = document.getElementById("copy");
 const pasteBtn = document.getElementById("paste");
 const eraseBtn = document.getElementById("erase");
@@ -19,6 +23,8 @@ const nameInput = document.getElementById("copy-name");
 const copyList = document.getElementById("copies");
 const boxEl = document.getElementById("box");
 const pathList = document.getElementById("paths");
+const ruleList = document.getElementById("rules");
+const marksEye = document.getElementById("marks-eye");
 const brushInput = document.getElementById("brush");
 const brushRead = document.getElementById("brush-read");
 
@@ -40,10 +46,12 @@ const look = new THREE.Vector3(0, 120, 0);
 const pitch = 1.05;
 let yaw = 0;
 let dist = 220;
-const limit = 1024;
+let limit = 1024;
 
 const placed = new THREE.Group();
 scene.add(placed);
+const ghost = new THREE.Group();
+scene.add(ghost);
 const ring = new THREE.Mesh(
     new THREE.RingGeometry(1.6, 2.05, 28),
     new THREE.MeshBasicMaterial({ color: 0xf0d080, side: THREE.DoubleSide, depthTest: false })
@@ -67,6 +75,11 @@ const pointer = new THREE.Vector2();
 let surface = null;
 let sea = null;
 let kind = TREE_CARDS[0];
+let activeTown = null;
+let placeTeam = "";
+let teamPlace = false;
+let placeYaw = 0;
+let townListReady = [];
 let objects = [];
 let nextId = 1;
 let picked = [];
@@ -79,6 +92,9 @@ let erasing = false;
 let dirty = false;
 let pathDirty = false;
 let pathTool = null;
+let rulesOn = false;
+let rulesDirty = false;
+let ruleTool = null;
 let painting = false;
 let lastPaint = null;
 let mouseX = 0;
@@ -122,16 +138,225 @@ function clearErase() {
     eraseBtn.classList.remove("on");
 }
 
-function choose(item, button) {
-    kind = item;
-    stamp = null;
-    fromStamp = false;
-    clearErase();
-    [treeList, buildingList, list, copyList].forEach((box) => {
+function paletteBoxes() {
+    return [treeList, teamBuildingList, buildingList, townList, list, rockList, copyList];
+}
+
+function paintPalette(button) {
+    paletteBoxes().forEach((box) => {
+        if (!box) return;
         const buttons = box.querySelectorAll("button");
         for (let i = 0; i < buttons.length; i++) buttons[i].classList.toggle("on", buttons[i] === button);
     });
 }
+
+function choose(item, button, asTeam) {
+    teamPlace = !!asTeam;
+    kind = item;
+    activeTown = null;
+    stamp = null;
+    fromStamp = false;
+    placeYaw = 0;
+    clearErase();
+    paintPalette(button);
+    if (item.kit) say(kitBrushSay(item));
+    refreshGhost();
+}
+
+function chooseTeamBuilding(item, button) {
+    if (!placeTeam) chooseTeam("you");
+    choose(item, button, true);
+}
+
+function stampTeam() {
+    if (!teamPlace) return "";
+    if (placeTeam === "cpu") return "cpu";
+    if (placeTeam) return placeTeam;
+    return "you";
+}
+
+function teamRows() {
+    const rows = window.AoeSheet && AoeSheet.factions ? AoeSheet.factions() : [];
+    const list = [{ id: "", name: "None" }];
+    if (!rows.length) {
+        list.push({ id: "you", name: "Team A" }, { id: "cpu", name: "Team B" });
+        return list;
+    }
+    rows.forEach((row) => list.push({ id: row.id, name: row.name || row.id }));
+    return list;
+}
+
+function teamLabel(id) {
+    if (!id) return "None";
+    const row = teamRows().find((one) => one.id === id);
+    return row ? row.name : id;
+}
+
+function teamColor(id) {
+    if (id === "you") return 0x2f7d46;
+    if (id === "cpu") return 0xb43c32;
+    if (id) return 0x3a6ad2;
+    return 0xf0d080;
+}
+
+function kitBrushSay(itemKind) {
+    const who = teamLabel(stampTeam() || placeTeam);
+    const play = playKindFromMap({ kind: itemKind.id });
+    if (teamPlace) return itemKind.name + " for " + who + ". This is a real match building, not scenery. Q and E turn it.";
+    if (itemKind.kit) return itemKind.name + " is scenery. Use Team buildings to give a side a real building. Q and E turn it.";
+    return itemKind.name + " shows under the cursor. Q and E turn it.";
+}
+
+function placedKitSay(itemKind, team) {
+    const who = teamLabel(team);
+    if (team) return itemKind.name + " placed for " + who + ". Save makes it a real building in the match.";
+    if (itemKind.kit) return itemKind.name + " placed as scenery. Team buildings are the ones that belong to a side.";
+    return itemKind.name + " placed.";
+}
+
+function paintTeamButtons() {
+    if (!teamList) return;
+    teamList.querySelectorAll("button").forEach((button) => {
+        button.classList.toggle("on", (button.dataset.team || "") === placeTeam);
+    });
+}
+
+function meshBounds(mesh) {
+    mesh.updateWorldMatrix(true, true);
+    const box = new THREE.Box3().setFromObject(mesh);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    mesh.worldToLocal(center);
+    const scale = new THREE.Vector3();
+    mesh.getWorldScale(scale);
+    size.x /= Math.max(0.001, Math.abs(scale.x));
+    size.y /= Math.max(0.001, Math.abs(scale.y));
+    size.z /= Math.max(0.001, Math.abs(scale.z));
+    return { size: size, center: center };
+}
+
+function makeTeamWrap(hex, size, center) {
+    const group = new THREE.Group();
+    const sx = Math.max(3, size.x);
+    const sy = Math.max(3, size.y);
+    const sz = Math.max(3, size.z);
+    const geo = new THREE.BoxGeometry(sx, sy, sz);
+    const fill = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+        color: hex,
+        transparent: true,
+        opacity: 0.22,
+        depthWrite: false
+    }));
+    fill.position.copy(center);
+    const line = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({ color: hex, depthTest: false })
+    );
+    line.position.copy(center);
+    line.renderOrder = 4;
+    const flagH = Math.max(1.8, sy * 0.2);
+    const flagW = Math.max(2.6, sx * 0.22);
+    const flag = new THREE.Mesh(
+        new THREE.PlaneGeometry(flagW, flagH),
+        new THREE.MeshBasicMaterial({ color: hex, side: THREE.DoubleSide, depthTest: false })
+    );
+    flag.position.set(center.x, center.y + sy * 0.5 + flagH * 0.65, center.z);
+    flag.renderOrder = 5;
+    group.add(fill, line, flag);
+    group.traverse((child) => {
+        child.userData.placed = true;
+        child.userData.teamDecal = true;
+    });
+    return group;
+}
+
+function paintTeamMark(item) {
+    if (!item || !item.mesh) return;
+    if (item.teamMark) {
+        item.mesh.remove(item.teamMark);
+        item.teamMark = null;
+    }
+    const spec = kindById(item.kind);
+    if (!spec || !spec.kit || !item.team) return;
+    const bounds = meshBounds(item.mesh);
+    const wrap = makeTeamWrap(teamColor(item.team), bounds.size, bounds.center);
+    item.mesh.add(wrap);
+    item.teamMark = wrap;
+}
+
+function assignTeam(item, team) {
+    const spec = kindById(item && item.kind);
+    if (!item || !spec || !spec.kit) return false;
+    item.team = team || "";
+    paintTeamMark(item);
+    return true;
+}
+
+function chooseTeam(id) {
+    placeTeam = id || "";
+    if (!placeTeam) teamPlace = false;
+    paintTeamButtons();
+    let assigned = 0;
+    picked.forEach((item) => {
+        if (assignTeam(item, placeTeam)) assigned++;
+    });
+    if (assigned) markDirty();
+    const who = teamLabel(placeTeam);
+    if (assigned) say(assigned + " set to " + who + ".");
+    else if (!placeTeam) say("New buildings are scenery.");
+    else if (placeTeam !== "you" && placeTeam !== "cpu") say("New buildings go to " + who + ". The live match still uses Team A and Team B.");
+    else say("New buildings go to " + who + ".");
+    refreshGhost();
+}
+
+function fillTeams() {
+    if (!teamList) return;
+    teamRows().forEach((row) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.team = row.id;
+        button.textContent = row.name;
+        button.addEventListener("click", () => chooseTeam(row.id));
+        teamList.appendChild(button);
+    });
+    paintTeamButtons();
+}
+
+function syncTeamFromPicked() {
+    if (teamPlace) return;
+    const kits = picked.filter((item) => {
+        const spec = kindById(item.kind);
+        return spec && spec.kit;
+    });
+    if (!kits.length) return;
+    const team = kits[0].team || "";
+    if (!kits.every((item) => (item.team || "") === team)) return;
+    placeTeam = team;
+    paintTeamButtons();
+}
+
+function chooseTown(town, button) {
+    teamPlace = false;
+    activeTown = town;
+    stamp = null;
+    fromStamp = false;
+    placeYaw = 0;
+    clearErase();
+    paintPalette(button);
+    say(town.name + " shows under the cursor. Q and E turn it a quarter turn.");
+    refreshGhost();
+}
+
+fillTeams();
+setPlayKits(sheetPlayKits());
+
+teamBuildings().forEach((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = item.name;
+    button.addEventListener("click", () => chooseTeamBuilding(item, button));
+    teamBuildingList.appendChild(button);
+});
 
 MAP_BUILDINGS.forEach((item) => {
     const button = document.createElement("button");
@@ -139,6 +364,19 @@ MAP_BUILDINGS.forEach((item) => {
     button.textContent = item.name;
     button.addEventListener("click", () => choose(item, button));
     buildingList.appendChild(button);
+});
+
+loadTownList().then((towns) => {
+    townListReady = towns;
+    towns.forEach((town) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = town.name;
+        button.addEventListener("click", () => chooseTown(town, button));
+        townList.appendChild(button);
+    });
+}).catch(() => {
+    say("Towns did not load.");
 });
 
 TREE_CARDS.forEach((item) => {
@@ -180,6 +418,7 @@ function setPicked(items) {
         marks.add(mark);
     });
     ring.visible = false;
+    syncTeamFromPicked();
 }
 
 function copyPicked() {
@@ -197,6 +436,8 @@ function copyPicked() {
     cz /= picked.length;
     clip = picked.map((item) => ({
         kind: item.kind,
+        town: item.town || "",
+        team: item.team || "",
         dx: item.x - cx,
         dz: item.z - cz,
         yaw: item.yaw,
@@ -288,10 +529,11 @@ async function addObject(itemKind, x, z, y, yaw, scale, fromFile) {
     const item = { id: nextId++, kind: itemKind.id, x: x, z: z, yaw: yaw, scale: scale, mesh: mesh };
     mesh.userData.item = item;
     objects.push(item);
+    if (!fromFile && itemKind.kit && stampTeam()) assignTeam(item, stampTeam());
     if (!fromFile) {
         markDirty();
         setPicked([item]);
-        say(itemKind.name + " placed. Save writes it into the match.");
+        say(itemKind.kit ? placedKitSay(itemKind, item.team) : itemKind.name + " placed. Save writes it into the match.");
     }
     return item;
 }
@@ -306,13 +548,20 @@ async function pastePieces(pieces, x, z, spin) {
     const added = [];
     for (let i = 0; i < pieces.length; i++) {
         const item = pieces[i];
-        const itemKind = kindById(item.kind);
-        if (!itemKind) continue;
         const px = x + item.dx * c - item.dz * s;
         const pz = z + item.dx * s + item.dz * c;
         const py = groundY(px, pz);
         if (py < SEA + 0.4) continue;
-        added.push(await addObject(itemKind, px, pz, py, (Number(item.yaw) || 0) + (spin || 0), item.scale, true));
+        if (item.kind === "town" && item.town) {
+            const town = townListReady.find((one) => one.id === item.town) || { id: item.town, name: item.town };
+            added.push(await addTown(town, px, pz, py, (Number(item.yaw) || 0) + (spin || 0), true));
+            continue;
+        }
+        const itemKind = kindById(item.kind);
+        if (!itemKind) continue;
+        const placedItem = await addObject(itemKind, px, pz, py, (Number(item.yaw) || 0) + (spin || 0), item.scale, true);
+        if (item.team) assignTeam(placedItem, item.team);
+        added.push(placedItem);
     }
     if (!added.length) {
         say("That spot is in the water.");
@@ -350,16 +599,15 @@ function paintStamps(selectId) {
 
 function selectStamp(item, button) {
     stamp = item;
+    activeTown = null;
     stampYaw = 0;
     fromStamp = false;
     clearErase();
     setPicked([]);
-    [treeList, buildingList, list, copyList].forEach((box) => {
-        box.querySelectorAll("button").forEach((one) => one.classList.remove("on"));
-    });
-    button.classList.add("on");
+    paintPalette(button);
     nameInput.value = item.name;
     say(item.name + ". Q and E turn it, then click the ground.");
+    refreshGhost();
 }
 
 function loadStamps() {
@@ -436,6 +684,122 @@ function dropCopy() {
     });
 }
 
+function ghostArmed() {
+    if (erasing || stamp || pathTool !== null || ruleTool !== null) return false;
+    return !!(activeTown || (kind && kind.kit));
+}
+
+function clearGhost() {
+    const drop = [];
+    ghost.traverse((child) => {
+        if (!child.isMesh || !child.material) return;
+        const list = Array.isArray(child.material) ? child.material : [child.material];
+        for (let i = 0; i < list.length; i++) {
+            if (list[i] && list[i].userData && list[i].userData.fade) drop.push(list[i]);
+        }
+    });
+    ghost.clear();
+    ghost.visible = false;
+    for (let i = 0; i < drop.length; i++) drop[i].dispose();
+}
+
+function fadeCopy(source) {
+    const mesh = source.clone(true);
+    mesh.traverse((child) => {
+        if (!child.isMesh || !child.material) return;
+        const list = Array.isArray(child.material) ? child.material : [child.material];
+        const faded = list.map((material) => {
+            const copy = material.clone();
+            copy.transparent = true;
+            copy.opacity = 0.45;
+            copy.depthWrite = false;
+            copy.userData.fade = true;
+            return copy;
+        });
+        child.material = faded.length === 1 ? faded[0] : faded;
+    });
+    return mesh;
+}
+
+let ghostJob = 0;
+
+function refreshGhost() {
+    const job = ++ghostJob;
+    clearGhost();
+    if (!ghostArmed()) return;
+    const pending = activeTown
+        ? makeTownMesh(activeTown.id).then((master) => master ? fadeCopy(master) : null)
+        : templateFor(kind).then((master) => fadeCopy(master));
+    pending.then((mesh) => {
+        if (job !== ghostJob) {
+            if (mesh) {
+                ghost.add(mesh);
+                clearGhost();
+            }
+            return;
+        }
+        if (!mesh) {
+            say("That one did not load.");
+            return;
+        }
+        ghost.add(mesh);
+        const team = stampTeam();
+        if (team && kind && kind.kit && !activeTown) {
+            const bounds = meshBounds(mesh);
+            mesh.add(makeTeamWrap(teamColor(team), bounds.size, bounds.center));
+        }
+        ghost.rotation.y = placeYaw;
+        moveGhost(mouseX, mouseY);
+    }).catch(() => {
+        if (job === ghostJob) say("That one did not load.");
+    });
+}
+
+function moveGhost(clientX, clientY) {
+    if (!ghost.children.length || !ghostArmed()) {
+        ghost.visible = false;
+        return;
+    }
+    const point = groundAt(clientX, clientY);
+    if (!point || point.y < SEA + 0.4) {
+        ghost.visible = false;
+        return;
+    }
+    ghost.visible = true;
+    ghost.position.set(point.x, point.y, point.z);
+    ghost.rotation.y = placeYaw;
+}
+
+function quarterTurn(sign) {
+    let turns = Math.round(placeYaw / (Math.PI / 2)) + sign;
+    turns = ((turns % 4) + 4) % 4;
+    placeYaw = turns * Math.PI / 2;
+    ghost.rotation.y = placeYaw;
+    say("Facing " + (turns * 90) + "°. Click the ground.");
+}
+
+async function addTown(town, x, z, y, yaw, fromFile) {
+    const master = await makeTownMesh(town.id);
+    if (!master) throw new Error("missing town");
+    const mesh = master.clone(true);
+    mesh.position.set(x, y, z);
+    mesh.rotation.y = yaw;
+    mesh.userData.placed = true;
+    mesh.traverse((child) => {
+        child.userData.placed = true;
+    });
+    placed.add(mesh);
+    const item = { id: nextId++, kind: "town", town: town.id, x: x, z: z, yaw: yaw, scale: 1, mesh: mesh };
+    mesh.userData.item = item;
+    objects.push(item);
+    if (!fromFile) {
+        markDirty();
+        setPicked([item]);
+        say(town.name + " placed. It is scenery. Save writes it into the match.");
+    }
+    return item;
+}
+
 function groundAt(clientX, clientY) {
     if (!surface) return null;
     hitPoint({ clientX: clientX, clientY: clientY });
@@ -479,7 +843,10 @@ async function onClick(event) {
             if (event.shiftKey && picked.indexOf(item) >= 0) setPicked(picked.filter((one) => one !== item));
             else if (event.shiftKey) setPicked(picked.concat([item]));
             else setPicked([item]);
-            say(picked.length + " highlighted. Copy, then paste, repeats them.");
+            const spec = kindById(item.kind);
+            if (spec && spec.kit && picked.length === 1) {
+                say(spec.name + " · " + teamLabel(picked[0].team) + ". Pick a team to reassign it.");
+            } else say(picked.length + " highlighted. Copy, then paste, or pick a team to assign them.");
             return;
         }
     }
@@ -494,7 +861,15 @@ async function onClick(event) {
         await pasteAt(hit.point.x, hit.point.z);
         return;
     }
-    const spin = kind.kit ? 0 : Math.random() * Math.PI * 2;
+    if (activeTown) {
+        try {
+            await addTown(activeTown, hit.point.x, hit.point.z, hit.point.y, placeYaw, false);
+        } catch (err) {
+            say("That town did not load.");
+        }
+        return;
+    }
+    const spin = kind.kit ? placeYaw : Math.random() * Math.PI * 2;
     try {
         await addObject(kind, hit.point.x, hit.point.z, hit.point.y, spin, 1, false);
     } catch (err) {
@@ -556,7 +931,8 @@ function sizeSelected(factor) {
     if (!picked.length) return;
     picked.forEach((item) => {
         item.scale = Math.max(0.4, Math.min(3, item.scale * factor));
-        if (kindById(item.kind).card) {
+        const spec = kindById(item.kind);
+        if (spec && spec.card) {
             const base = templates[item.kind];
             item.mesh.scale.copy(base.scale).multiplyScalar(item.scale);
         } else item.mesh.scale.setScalar(item.scale);
@@ -576,11 +952,17 @@ function showPathButtons() {
 
 function choosePath(next) {
     pathTool = pathTool === next ? null : next;
+    if (pathTool !== null) {
+        ruleTool = null;
+        showRuleButtons();
+    }
     showPathButtons();
-    brushRing.visible = pathTool !== null;
+    brushRing.visible = pathTool !== null || ruleTool !== null;
+    brushRing.material.color.setHex(0xf0d080);
     if (pathTool === null) say("Path brush is off. Click the ground to place the chosen object.");
     else if (pathTool === "lift") say("Lift is on. Drag to rub a path back to grass.");
     else say(PATHS[pathTool].name + ". Drag on the ground. Save writes the path.");
+    refreshGhost();
 }
 
 PATHS.forEach((item, index) => {
@@ -600,9 +982,84 @@ liftButton.dataset.path = "lift";
 liftButton.textContent = "Lift";
 liftButton.addEventListener("click", () => choosePath("lift"));
 pathList.appendChild(liftButton);
+const RULES = [
+    { id: 0, name: "Units stop" },
+    { id: 1, name: "No building" },
+    { id: "lift", name: "Lift" }
+];
+
+function paintMarksEye() {
+    marksEye.textContent = rulesOn ? "Hide marks" : "Show marks";
+    marksEye.classList.toggle("on", rulesOn);
+}
+
+function toggleMarks() {
+    rulesOn = !rulesOn;
+    setRulesShown(rulesOn);
+    paintMarksEye();
+    say(rulesOn
+        ? "Marks are showing. Red is where units stop. Blue is where buildings cannot go."
+        : "Marks are hidden. Keep editing. Show marks brings the colour back.");
+}
+
+marksEye.addEventListener("click", toggleMarks);
+
+function showRuleButtons() {
+    ruleList.querySelectorAll("button").forEach((button) => {
+        button.classList.toggle("on", button.dataset.rule === String(ruleTool));
+    });
+}
+
+function chooseRule(next) {
+    ruleTool = ruleTool === next ? null : next;
+    if (ruleTool !== null) {
+        pathTool = null;
+        showPathButtons();
+        rulesOn = true;
+        setRulesShown(true);
+        paintMarksEye();
+    }
+    showRuleButtons();
+    brushRing.visible = pathTool !== null || ruleTool !== null;
+    brushRing.material.color.setHex(ruleTool === 0 ? 0xd24a3a : ruleTool === 1 ? 0x3a6ad2 : 0xf0d080);
+    if (ruleTool === null) say("Mark brush is off. Hide marks turns the colour off while you keep editing.");
+    else if (ruleTool === "lift") say("Lift is on. Drag to rub a mark away. Hide marks turns the colour off. The brush stays.");
+    else if (ruleTool === 0) say("Units stop. Drag where people cannot cross. The edge is solid.");
+    else say("No building. Drag where a building cannot go. Units can still walk there. The edge is solid.");
+    refreshGhost();
+}
+
+RULES.forEach((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.rule = String(item.id);
+    button.textContent = item.name;
+    button.addEventListener("click", () => chooseRule(item.id));
+    ruleList.appendChild(button);
+});
+
 brushInput.addEventListener("input", () => {
     brushRead.textContent = brushMetres() + " m";
 });
+
+function saveRules() {
+    if (!rulesDirty) return Promise.resolve(true);
+    return fetch("/api/map-rules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(rulesSaveBody())
+    }).then((res) => res.json().then((data) => ({ ok: res.ok, data: data }))).then((result) => {
+        if (!result.ok) {
+            say(result.data.error || "The marks did not save.");
+            return false;
+        }
+        rulesDirty = false;
+        return true;
+    }).catch(() => {
+        say("The marks did not save. The local server needs to be running.");
+        return false;
+    });
+}
 
 function savePaths() {
     if (!pathDirty) return Promise.resolve(true);
@@ -623,11 +1080,39 @@ function savePaths() {
     });
 }
 
+function wipeMatchSaves() {
+    try {
+        localStorage.removeItem("aoe-board-save");
+        localStorage.removeItem("aoe-playtest-save");
+    } catch (err) { /* the match still starts new if the browser will not store it */ }
+}
+
+function clearAll() {
+    if (!objects.length) {
+        say("The map is already empty.");
+        return;
+    }
+    if (!window.confirm("Clear every tree, building, and town on this map?")) return;
+    objects.forEach((item) => placed.remove(item.mesh));
+    objects = [];
+    setPicked([]);
+    markDirty();
+    say("Cleared. Place a new base, then Save to start a new match from it.");
+}
+
+clearAllBtn.addEventListener("click", clearAll);
+
 saveBtn.addEventListener("click", () => {
     saveBtn.disabled = true;
     const body = {
         map: MAP_TOKEN,
-        objects: objects.map((item) => ({ kind: item.kind, x: item.x, z: item.z, yaw: item.yaw, scale: item.scale }))
+        objects: objects.map((item) => {
+            const row = { kind: item.kind, x: item.x, z: item.z, yaw: item.yaw, scale: item.scale };
+            if (item.town) row.town = item.town;
+            if (item.team) row.team = item.team;
+            else if (playKindFromMap({ kind: item.kind })) row.team = "you";
+            return row;
+        })
     };
     fetch("/api/map-objects", {
         method: "POST",
@@ -641,9 +1126,16 @@ saveBtn.addEventListener("click", () => {
         }
         dirty = false;
         return savePaths().then((pathsOk) => {
-            saveBtn.disabled = false;
-            if (!pathsOk) return;
-            say("Saved " + result.data.count + " objects. Reload the match to see them.");
+            if (!pathsOk) {
+                saveBtn.disabled = false;
+                return;
+            }
+            return saveRules().then((rulesOk) => {
+                saveBtn.disabled = false;
+                if (!rulesOk) return;
+                wipeMatchSaves();
+                say("Saved " + result.data.count + " objects. The next Game or Play test starts a new match from only what you placed.");
+            });
         });
     }).catch(() => {
         saveBtn.disabled = false;
@@ -658,11 +1150,13 @@ eraseBtn.addEventListener("click", () => {
         removeSelected();
         erasing = true;
         eraseBtn.classList.add("on");
+        refreshGhost();
         return;
     }
     erasing = !erasing;
     eraseBtn.classList.toggle("on", erasing);
     say(erasing ? "Erase is on. Click a tree, or drag a box around several." : "Erase is off.");
+    refreshGhost();
 });
 pasteBtn.addEventListener("click", () => {
     const point = groundAt(mouseX, mouseY) || { x: look.x, y: groundY(look.x, look.z), z: look.z };
@@ -698,20 +1192,24 @@ window.addEventListener("keydown", (event) => {
         removeSelected();
         event.preventDefault();
     } else if (event.key.toLowerCase() === "q") {
-        turnSelected(-0.15);
+        if (ghostArmed()) quarterTurn(-1);
+        else turnSelected(-0.15);
     } else if (event.key.toLowerCase() === "e") {
-        turnSelected(0.15);
+        if (ghostArmed()) quarterTurn(1);
+        else turnSelected(0.15);
     } else if (event.key === "[") {
         sizeSelected(0.9);
     } else if (event.key === "]") {
         sizeSelected(1.1);
+    } else if (key === "t") {
+        toggleMarks();
     }
 });
 window.addEventListener("keyup", (event) => {
     keys[event.key.toLowerCase()] = false;
 });
 window.addEventListener("beforeunload", (event) => {
-    if (!dirty && !pathDirty) return;
+    if (!dirty && !pathDirty && !rulesDirty) return;
     event.preventDefault();
     event.returnValue = "";
 });
@@ -757,7 +1255,7 @@ function showBox(x0, y0, x1, y1) {
 }
 
 function followBrush(clientX, clientY) {
-    if (pathTool === null) {
+    if (pathTool === null && ruleTool === null) {
         brushRing.visible = false;
         return;
     }
@@ -772,7 +1270,6 @@ function paintStroke(clientX, clientY) {
     const point = groundAt(clientX, clientY);
     if (!point || point.y < SEA + 0.4) return;
     const radius = brushMetres();
-    const channel = pathTool === "lift" ? -1 : pathTool;
     const stamps = [];
     if (!lastPaint) stamps.push(point);
     else {
@@ -787,9 +1284,16 @@ function paintStroke(clientX, clientY) {
             });
         }
     }
-    stamps.forEach((spot) => paintPath(spot.x, spot.z, radius, channel));
+    if (ruleTool !== null) {
+        const channel = ruleTool === "lift" ? -1 : ruleTool;
+        stamps.forEach((spot) => paintRules(spot.x, spot.z, radius, channel));
+        rulesDirty = true;
+    } else {
+        const channel = pathTool === "lift" ? -1 : pathTool;
+        stamps.forEach((spot) => paintPath(spot.x, spot.z, radius, channel));
+        pathDirty = true;
+    }
     lastPaint = { x: point.x, z: point.z };
-    pathDirty = true;
     followBrush(clientX, clientY);
 }
 
@@ -801,7 +1305,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
         panX = event.clientX;
         panY = event.clientY;
     }
-    if (event.button === 0 && pathTool !== null) {
+    if (event.button === 0 && (pathTool !== null || ruleTool !== null)) {
         painting = true;
         lastPaint = null;
         paintStroke(event.clientX, event.clientY);
@@ -855,7 +1359,8 @@ window.addEventListener("pointerup", (event) => {
 window.addEventListener("pointermove", (event) => {
     mouseX = event.clientX;
     mouseY = event.clientY;
-    if (pathTool !== null) followBrush(event.clientX, event.clientY);
+    moveGhost(event.clientX, event.clientY);
+    if (pathTool !== null || ruleTool !== null) followBrush(event.clientX, event.clientY);
     if (painting) paintStroke(event.clientX, event.clientY);
     if (leftDown && Math.hypot(event.clientX - downX, event.clientY - downY) > 6) {
         boxDrag = true;
@@ -891,6 +1396,7 @@ function frame() {
     if (keys.d || keys.arrowright) x -= 1;
     if (x || y) panBy(x, y, dist * 0.85 * dt);
     flushPathPaint();
+    flushRulesPaint();
     picked.forEach((item, index) => {
         const mark = marks.children[index];
         if (mark) mark.position.set(item.mesh.position.x, item.mesh.position.y + 0.4, item.mesh.position.z);
@@ -901,7 +1407,7 @@ function frame() {
 frame();
 
 say("Loading the map…");
-new GLTFLoader().load("newmapfromex/manual.glb?v=1", (gltf) => {
+new GLTFLoader().load("newmapfromex/manual.glb?v=5", (gltf) => {
     gltf.scene.traverse((child) => {
         if (!child.isMesh) return;
         const count = child.geometry && child.geometry.attributes.position ? child.geometry.attributes.position.count : 0;
@@ -911,22 +1417,29 @@ new GLTFLoader().load("newmapfromex/manual.glb?v=1", (gltf) => {
         say("The map file has no ground.");
         return;
     }
+    if (!surface.geometry.attributes.normal) surface.geometry.computeVertexNormals();
     useGroundLook(surface);
+    surface.material.side = THREE.DoubleSide;
+    scene.add(addRulesOverlay(surface));
     rememberGround(surface);
     scene.add(surface);
     surface.geometry.computeBoundingBox();
     const bounds = surface.geometry.boundingBox;
     setPathFrame(bounds.min.x, bounds.min.z, bounds.max.x - bounds.min.x, bounds.max.z - bounds.min.z);
+    limit = Math.max(Math.abs(bounds.min.x), Math.abs(bounds.max.x), Math.abs(bounds.min.z), Math.abs(bounds.max.z)) + 80;
     loadPathPaint();
-    const mid = groundY(0, 0);
-    look.set(0, mid > SEA ? mid : SEA + 8, 0);
+    loadRulesPaint();
     const span = Math.max(bounds.max.x - bounds.min.x, bounds.max.z - bounds.min.z);
+    const land = landLook();
+    if (land) look.set(land.x, land.y, land.z);
+    else look.set((bounds.min.x + bounds.max.x) / 2, SEA + 30, (bounds.min.z + bounds.max.z) / 2);
+    dist = Math.max(900, span * 0.85);
     sea = new THREE.Mesh(
         new THREE.PlaneGeometry(span, span),
         new THREE.MeshStandardMaterial({ color: 0x2a6d86, transparent: true, opacity: 0.62, roughness: 0.2, depthWrite: false })
     );
     sea.rotation.x = -Math.PI / 2;
-    sea.position.y = SEA;
+    sea.position.set((bounds.min.x + bounds.max.x) / 2, SEA, (bounds.min.z + bounds.max.z) / 2);
     scene.add(sea);
     fetch("map-objects.json", { cache: "no-store" }).then((res) => res.ok ? res.json() : null).then(async (data) => {
         if (!data || data.map !== MAP_TOKEN || !Array.isArray(data.objects)) {
@@ -935,10 +1448,19 @@ new GLTFLoader().load("newmapfromex/manual.glb?v=1", (gltf) => {
         }
         for (let i = 0; i < data.objects.length; i++) {
             const item = data.objects[i];
+            if (item.kind === "town" && item.town) {
+                const town = townListReady.find((one) => one.id === item.town) || { id: item.town, name: item.town };
+                const y = surface ? groundY(item.x, item.z) : look.y;
+                try {
+                    await addTown(town, item.x, item.z, y, Number(item.yaw) || 0, true);
+                } catch (err) { /* a missing town stays off the map */ }
+                continue;
+            }
             const itemKind = kindById(item.kind);
             if (!itemKind) continue;
             const y = itemKind && surface ? groundY(item.x, item.z) : look.y;
-            await addObject(itemKind, item.x, item.z, y, Number(item.yaw) || 0, Number(item.scale) || 1, true);
+            const placedItem = await addObject(itemKind, item.x, item.z, y, Number(item.yaw) || 0, Number(item.scale) || 1, true);
+            if (item.team) assignTeam(placedItem, item.team);
         }
         setPicked([]);
         dirty = false;
@@ -949,6 +1471,27 @@ new GLTFLoader().load("newmapfromex/manual.glb?v=1", (gltf) => {
 }, undefined, () => {
     say("The map file did not load.");
 });
+
+function landLook() {
+    if (!heights) return null;
+    const step = Math.max(1, Math.floor(heightN / 80));
+    let sx = 0;
+    let sy = 0;
+    let sz = 0;
+    let count = 0;
+    for (let j = 0; j < heightN; j += step) {
+        for (let i = 0; i < heightN; i += step) {
+            const y = heights[j * heightN + i];
+            if (y < SEA + 2) continue;
+            sx += heightMinX + (i / (heightN - 1)) * heightSpan;
+            sy += y;
+            sz += heightMinZ + (j / (heightN - 1)) * heightSpan;
+            count++;
+        }
+    }
+    if (!count) return null;
+    return { x: sx / count, y: sy / count, z: sz / count };
+}
 
 function groundY(x, z) {
     if (!heights) {

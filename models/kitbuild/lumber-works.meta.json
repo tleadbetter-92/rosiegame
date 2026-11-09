@@ -2,11 +2,11 @@
   "kind": "kitbuild",
   "name": "Lumber works",
   "cx": 13,
-  "cz": 13.5,
+  "cz": 13,
   "materials": [
     {
       "mat": "wood",
-      "verts": 10704
+      "verts": 24084
     },
     {
       "mat": "plaster",
@@ -14,15 +14,35 @@
     },
     {
       "mat": "brick",
-      "verts": 912
+      "verts": 900
     },
     {
       "mat": "furniture",
-      "verts": 27780
+      "verts": 27780,
+      "tint": true
     },
     {
       "mat": "propmetal",
-      "verts": 98460
+      "verts": 98460,
+      "tint": true
+    },
+    {
+      "mat": "tvwalldecor",
+      "verts": 9
+    },
+    {
+      "mat": "tvWood032",
+      "verts": 42
+    },
+    {
+      "mat": "tvMetal013",
+      "verts": 36
+    },
+    {
+      "mat": "tvWood006",
+      "verts": 36
     }
-  ]
+  ],
+  "hx": 8.52,
+  "hz": 3.52
 }

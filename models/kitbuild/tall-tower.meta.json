@@ -1,12 +1,12 @@
 {
   "kind": "kitbuild",
   "name": "tall tower",
-  "cx": 14,
-  "cz": 4,
+  "cx": 12,
+  "cz": 3,
   "materials": [
     {
       "mat": "wood",
-      "verts": 21438
+      "verts": 19884
     },
     {
       "mat": "plaster",
@@ -14,15 +14,21 @@
     },
     {
       "mat": "brick",
-      "verts": 1374
+      "verts": 1194
     },
     {
       "mat": "rock",
-      "verts": 117312
+      "verts": 117498
+    },
+    {
+      "mat": "tiles",
+      "verts": 8880
     },
     {
       "mat": "metal",
-      "verts": 35892
+      "verts": 702
     }
-  ]
+  ],
+  "hx": 6,
+  "hz": 7
 }

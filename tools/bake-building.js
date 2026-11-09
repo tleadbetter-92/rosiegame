@@ -178,8 +178,21 @@ const cache = {};
 function isOverhangCorner2(name) {
     return /OverhangCorner2$/.test(name);
 }
+function isGateFrame(name) {
+    return !!(name && name.startsWith("GateFrame_"));
+}
+function isGateLeaf(name) {
+    return !!(name && name.startsWith("Gate_Wood"));
+}
 function gltfSourceName(name) {
+    if (isGateFrame(name)) return "DoorFrame_" + name.slice("GateFrame_".length);
+    if (isGateLeaf(name)) return "Door_1_Flat";
     return isOverhangCorner2(name) ? name.replace(/2$/, "") : name;
+}
+function pieceBakeScale(name) {
+    if (isGateFrame(name)) return { x: 2, y: 1.5, z: 1.15 };
+    if (isGateLeaf(name)) return { x: 1.55, y: 1.5, z: 1.15 };
+    return { x: 1, y: 1, z: 1 };
 }
 function mirrorXZ(v) {
     return [-v[0], v[1], -v[2]];
@@ -225,6 +238,7 @@ function piece(name) {
 
 function addPiece(groups, tints, name, x, y, z, yaw) {
     const parts = piece(name);
+    const sc = pieceBakeScale(name);
     for (const key of Object.keys(parts)) {
         if (!groups[key]) groups[key] = [];
         if (!tints[key]) tints[key] = [];
@@ -232,7 +246,7 @@ function addPiece(groups, tints, name, x, y, z, yaw) {
         const rgb = tints[key];
         const src = parts[key];
         for (let i = 0; i < src.length; i++) {
-            const p = turn(src[i][0][0], src[i][0][1], src[i][0][2], yaw);
+            const p = turn(src[i][0][0] * sc.x, src[i][0][1] * sc.y, src[i][0][2] * sc.z, yaw);
             const n = turn(src[i][1][0], src[i][1][1], src[i][1][2], yaw);
             const u = src[i][2][0];
             // The wagon's broad boards sit on the pale stone band of the trim sheet. Shift them onto the brown planks.
@@ -265,7 +279,7 @@ for (const p of building.pieces) {
     maxX = Math.max(maxX, p.x);
     minZ = Math.min(minZ, p.z);
     maxZ = Math.max(maxZ, p.z);
-    if (p.id.startsWith("Door_")) continue;
+    if (p.id.startsWith("Door_") || isGateLeaf(p.id)) continue;
     addPiece(groups, tints, p.id, p.x, p.y || 0, p.z, p.yaw || 0);
 }
 
@@ -302,6 +316,25 @@ for (const [mat, list] of Object.entries(groups)) {
     meta.materials.push(entry);
     console.log(outName + "-" + mat + ".bin", list.length / 6, "verts");
 }
+let meshMinX = Infinity;
+let meshMaxX = -Infinity;
+let meshMinZ = Infinity;
+let meshMaxZ = -Infinity;
+Object.keys(groups).forEach((mat) => {
+    const list = groups[mat];
+    for (let i = 0; i < list.length; i += 6) {
+        const x = list[i] - cx;
+        const z = list[i + 2] - cz;
+        if (x < meshMinX) meshMinX = x;
+        if (x > meshMaxX) meshMaxX = x;
+        if (z < meshMinZ) meshMinZ = z;
+        if (z > meshMaxZ) meshMaxZ = z;
+    }
+});
+if (Number.isFinite(meshMinX) && Number.isFinite(meshMaxX) && Number.isFinite(meshMinZ) && Number.isFinite(meshMaxZ)) {
+    meta.hx = Math.round(((meshMaxX - meshMinX) / 2) * 100) / 100;
+    meta.hz = Math.round(((meshMaxZ - meshMinZ) / 2) * 100) / 100;
+}
 fs.writeFileSync(path.join(outDir, outName + ".meta.json"), JSON.stringify(meta, null, 2));
 
 const STOREY = 3.05;
@@ -309,6 +342,10 @@ const WALL_T = 0.36;
 
 function wallAlongX(yaw) {
     return Math.abs(Math.cos(yaw)) >= Math.abs(Math.sin(yaw));
+}
+
+function isFencePiece(id) {
+    return /Fence|fence/.test(id || "") && !/door|gate/i.test(id || "");
 }
 
 function fenceBox(p) {
@@ -326,7 +363,8 @@ function fenceBox(p) {
         d,
         y0: p.y || 0,
         y1: (p.y || 0) + tall,
-        stair: false
+        stair: false,
+        fence: true
     };
 }
 
@@ -382,6 +420,29 @@ function turnedRect(px, pz, yaw, x, z, w, d) {
     return { x: minX, z: minZ, w: Math.max(0.25, maxX - minX), d: Math.max(0.25, maxZ - minZ) };
 }
 
+function isStairFlight(id) {
+    return /Stair_Interior_Simple|Stair_Interior_Solid|Stairs_Exterior_Straight|Stairs_Exterior_NoFirstStep/.test(id);
+}
+
+function isStairPlatform(id) {
+    return /Platform/.test(id);
+}
+
+function meshSolid(p, flags) {
+    const box = stairBounds(p.id);
+    const rect = turnedRect(p.x, p.z, p.yaw || 0, box.minX, box.minZ, box.maxX - box.minX, box.maxZ - box.minZ);
+    return {
+        x: rect.x,
+        z: rect.z,
+        w: rect.w,
+        d: rect.d,
+        y0: (p.y || 0) + box.minY,
+        y1: (p.y || 0) + box.maxY,
+        stair: !!(flags && flags.stair),
+        block: !!(flags && flags.block)
+    };
+}
+
 // The stair mesh starts at the pivot and climbs toward local -Z, for its real length and height.
 function stairBoxes(p) {
     const box = stairBounds(p.id);
@@ -406,7 +467,21 @@ function stairBoxes(p) {
             stair: true
         });
     }
-    return { solids: [], floors };
+    const dir = turn(0, 0, -1, yaw);
+    const alongX = Math.abs(dir[0]) >= Math.abs(dir[2]);
+    const highAtMax = alongX ? dir[0] > 0 : dir[2] > 0;
+    const rampRect = turnedRect(p.x, p.z, yaw, box.minX, box.minZ, box.maxX - box.minX, box.maxZ - box.minZ);
+    const ramps = [{
+        x: rampRect.x,
+        z: rampRect.z,
+        w: rampRect.w,
+        d: rampRect.d,
+        y0: yBase,
+        y1: yBase + rise,
+        alongX,
+        highAtMax
+    }];
+    return { solids: [meshSolid(p, { stair: true, block: true })], floors, ramps };
 }
 
 function retroSolid(id) {
@@ -425,7 +500,9 @@ function tavernBlock(id) {
     return /^wall01/.test(id) || /^column0/.test(id) || /^crate/.test(id) || /^keg/.test(id);
 }
 
+const meshBoundCache = {};
 function meshBounds(name) {
+    if (meshBoundCache[name]) return meshBoundCache[name];
     const { gltf } = loadGltf(name);
     let best = null;
     let bestSpan = -1;
@@ -438,7 +515,7 @@ function meshBounds(name) {
         }
     }
     if (!best) return null;
-    return {
+    const box = {
         minX: best.min[0],
         maxX: best.max[0],
         minY: best.min[1],
@@ -446,6 +523,24 @@ function meshBounds(name) {
         minZ: best.min[2],
         maxZ: best.max[2]
     };
+    meshBoundCache[name] = box;
+    return box;
+}
+
+function safeMeshBounds(id) {
+    try {
+        return meshBounds(gltfSourceName(id));
+    } catch (err) {
+        return null;
+    }
+}
+
+function skipPropPhysics(id) {
+    return !id || id.startsWith("Door_") || isGateLeaf(id) || /Window/.test(id) || /Vine/.test(id);
+}
+
+function isRoofPiece(id) {
+    return /^Roof_|_Roof|RoundTiles|thatch/i.test(id) || id.startsWith("Balcony_");
 }
 
 function retroBounds(name) {
@@ -497,6 +592,7 @@ function physicsFromPieces(pieces) {
     let maxY = 0;
     const solids = [];
     const floors = [];
+    const ramps = [];
     const doorAnchors = [];
 
     for (const p of pieces) {
@@ -517,7 +613,8 @@ function physicsFromPieces(pieces) {
                     d: rect.d,
                     y0: (p.y || 0) + box.minY,
                     y1: (p.y || 0) + box.maxY,
-                    stair: false
+                    stair: false,
+                    fence: isFencePiece(id)
                 });
             }
         } else if (retroFloor(id)) {
@@ -539,13 +636,30 @@ function physicsFromPieces(pieces) {
                 continue;
             }
             solids.push(wallBox(p));
-        } else if (id.startsWith("DoorFrame_")) {
+        } else if (id.startsWith("DoorFrame_") || isGateFrame(id)) {
             doorAnchors.push(p);
         } else if (id.includes("Fence")) {
             solids.push(fenceBox(p));
         } else if (id.startsWith("Stair")) {
-            const stair = stairBoxes(p);
-            floors.push(...stair.floors);
+            if (isStairFlight(id)) {
+                const stair = stairBoxes(p);
+                solids.push(...stair.solids);
+                floors.push(...stair.floors);
+                if (stair.ramps) ramps.push(...stair.ramps);
+            } else if (isStairPlatform(id)) {
+                const box = stairBounds(id);
+                const rect = turnedRect(p.x, p.z, p.yaw || 0, box.minX, box.minZ, box.maxX - box.minX, box.maxZ - box.minZ);
+                floors.push({
+                    x: rect.x,
+                    z: rect.z,
+                    w: rect.w,
+                    d: rect.d,
+                    y: (p.y || 0) + box.maxY,
+                    stair: false
+                });
+            } else {
+                solids.push(meshSolid(p, { stair: false, block: true }));
+            }
         } else if (id.startsWith("Floor_")) {
             floors.push({
                 x: p.x - 1,
@@ -582,6 +696,37 @@ function physicsFromPieces(pieces) {
                     stair: false
                 });
             }
+        } else if (!skipPropPhysics(id)) {
+            const box = safeMeshBounds(id);
+            if (box) {
+                const rect = turnedRect(p.x, p.z, p.yaw || 0, box.minX, box.minZ, box.maxX - box.minX, box.maxZ - box.minZ);
+                const y0 = (p.y || 0) + box.minY;
+                const y1 = (p.y || 0) + box.maxY;
+                const h = y1 - y0;
+                if (isRoofPiece(id) || (h < 0.5 && rect.w * rect.d > 0.8)) {
+                    floors.push({
+                        x: rect.x,
+                        z: rect.z,
+                        w: rect.w,
+                        d: rect.d,
+                        y: +(y1 - (isRoofPiece(id) ? 0.12 : 0)).toFixed(3),
+                        stair: false
+                    });
+                }
+                if (!isRoofPiece(id) && h > 0.28) {
+                    solids.push({
+                        x: rect.x,
+                        z: rect.z,
+                        w: rect.w,
+                        d: rect.d,
+                        y0: y0,
+                        y1: y1,
+                        stair: false,
+                        block: true,
+                        fence: isFencePiece(id)
+                    });
+                }
+            }
         }
     }
 
@@ -600,7 +745,7 @@ function physicsFromPieces(pieces) {
         let twin = false;
         for (let k = 0; k < doors.length; k++) {
             if (Math.abs((doors[k].y || 0) - y) > 0.5) continue;
-            if (Math.hypot(doors[k].x - doorAnchor.x, doors[k].z - doorAnchor.z) < 1.15) {
+            if (Math.hypot(doors[k].x - doorAnchor.x, doors[k].z - doorAnchor.z) < (isGateFrame(doorAnchor.id) || doors[k].gate ? 2.4 : 1.15)) {
                 twin = true;
                 break;
             }
@@ -609,11 +754,12 @@ function physicsFromPieces(pieces) {
         const yaw = doorAnchor.yaw || 0;
         const s = Math.sin(yaw);
         const c = Math.cos(yaw);
+        const gate = isGateFrame(doorAnchor.id);
         let shape = "flat";
-        let best = 1.4;
+        let best = gate ? 2.4 : 1.4;
         for (let p = 0; p < pieces.length; p++) {
             const piece = pieces[p];
-            if (!piece.id || piece.id.indexOf("Door_1_") !== 0) continue;
+            if (!piece.id || (piece.id.indexOf("Door_1_") !== 0 && !isGateLeaf(piece.id))) continue;
             if (Math.abs((piece.y || 0) - y) > 0.5) continue;
             const dist = Math.hypot(piece.x - doorAnchor.x, piece.z - doorAnchor.z);
             if (dist < best) {
@@ -628,8 +774,9 @@ function physicsFromPieces(pieces) {
             fx: -s,
             fz: -c,
             yaw,
-            wide: 0.56,
-            shape
+            wide: gate ? 3.2 : 0.56,
+            shape,
+            gate
         });
     }
     if (!String(outName).startsWith("tavern-")) {
@@ -642,7 +789,7 @@ function physicsFromPieces(pieces) {
             stair: false
         });
     }
-    return { cx, cz, shell, solids, floors, doors };
+    return { cx, cz, shell, solids, floors, doors, ramps };
 }
 
 writeDoorLeaf("Door_1_Round", "leaf-round.bin");

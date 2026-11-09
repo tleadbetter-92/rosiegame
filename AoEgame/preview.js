@@ -273,7 +273,7 @@ function pictureFor(model, name) {
         return { file: raw };
     }
     if (NAMED[raw]) return NAMED[raw];
-    if (KITS.has(raw)) return { kit: raw };
+    if (KITS.has(raw) || (raw && !/[./]/.test(raw))) return { kit: raw };
     if (NAMED[called]) return NAMED[called];
     return null;
 }

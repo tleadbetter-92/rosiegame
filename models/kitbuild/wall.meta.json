@@ -1,0 +1,48 @@
+{
+  "kind": "kitbuild",
+  "name": "WALL",
+  "cx": 26,
+  "cz": 0.375,
+  "materials": [
+    {
+      "mat": "brick",
+      "verts": 1608
+    },
+    {
+      "mat": "rock",
+      "verts": 192
+    },
+    {
+      "mat": "retroCobble",
+      "verts": 2016
+    },
+    {
+      "mat": "retroCobbleAlt",
+      "verts": 672
+    },
+    {
+      "mat": "furniture",
+      "verts": 6840,
+      "tint": true
+    },
+    {
+      "mat": "propmetal",
+      "verts": 5676
+    },
+    {
+      "mat": "villagePalette",
+      "verts": 804
+    },
+    {
+      "mat": "proppack",
+      "verts": 9576,
+      "tint": true
+    },
+    {
+      "mat": "propcloth",
+      "verts": 1710
+    }
+  ],
+  "hx": 4,
+  "hz": 2.12
+}

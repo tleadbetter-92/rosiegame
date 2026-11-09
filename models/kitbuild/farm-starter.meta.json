@@ -1,0 +1,14 @@
+{
+  "kind": "kitbuild",
+  "name": "farm starter",
+  "cx": 0,
+  "cz": 11.5,
+  "materials": [
+    {
+      "mat": "wood",
+      "verts": 2544
+    }
+  ],
+  "hx": 8.06,
+  "hz": 12.56
+}

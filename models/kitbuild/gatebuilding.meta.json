@@ -1,0 +1,47 @@
+{
+  "kind": "kitbuild",
+  "name": "GateBuilding",
+  "cx": 2.75,
+  "cz": -3,
+  "materials": [
+    {
+      "mat": "brick",
+      "verts": 15900
+    },
+    {
+      "mat": "rock",
+      "verts": 67398
+    },
+    {
+      "mat": "furniture",
+      "verts": 10524
+    },
+    {
+      "mat": "propmetal",
+      "verts": 6432
+    },
+    {
+      "mat": "propcloth",
+      "verts": 372,
+      "tint": true
+    },
+    {
+      "mat": "tvWood006",
+      "verts": 432
+    },
+    {
+      "mat": "tvwalldecor",
+      "verts": 72
+    },
+    {
+      "mat": "tvWood032",
+      "verts": 504
+    },
+    {
+      "mat": "tvMetal013",
+      "verts": 432
+    }
+  ],
+  "hx": 31.25,
+  "hz": 5.18
+}

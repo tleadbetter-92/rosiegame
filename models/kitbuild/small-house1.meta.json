@@ -2,15 +2,15 @@
   "kind": "kitbuild",
   "name": "small house1",
   "cx": 29,
-  "cz": 26.5,
+  "cz": 26,
   "materials": [
     {
       "mat": "wood",
-      "verts": 22596
+      "verts": 27780
     },
     {
       "mat": "plaster",
-      "verts": 2658
+      "verts": 2754
     },
     {
       "mat": "brick",
@@ -22,11 +22,11 @@
     },
     {
       "mat": "propmetal",
-      "verts": 26808
+      "verts": 24192
     },
     {
       "mat": "furniture",
-      "verts": 26622,
+      "verts": 26190,
       "tint": true
     },
     {
@@ -35,8 +35,14 @@
     },
     {
       "mat": "proppack",
-      "verts": 3840,
+      "verts": 3588,
       "tint": true
+    },
+    {
+      "mat": "tiles",
+      "verts": 8340
     }
-  ]
+  ],
+  "hx": 4.12,
+  "hz": 4.84
 }

@@ -1,0 +1,22 @@
+{
+  "kind": "kitbuild",
+  "name": "random",
+  "cx": 7,
+  "cz": -0.5,
+  "materials": [
+    {
+      "mat": "wood",
+      "verts": 6750
+    },
+    {
+      "mat": "plaster",
+      "verts": 1182
+    },
+    {
+      "mat": "brick",
+      "verts": 1500
+    }
+  ],
+  "hx": 5.2,
+  "hz": 5.05
+}

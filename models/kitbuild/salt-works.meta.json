@@ -18,11 +18,15 @@
     },
     {
       "mat": "furniture",
-      "verts": 27780
+      "verts": 27780,
+      "tint": true
     },
     {
       "mat": "propmetal",
-      "verts": 98460
+      "verts": 98460,
+      "tint": true
     }
-  ]
+  ],
+  "hx": 7.09,
+  "hz": 3.13
 }

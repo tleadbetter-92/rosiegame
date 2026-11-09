@@ -12,5 +12,7 @@
       "mat": "tvvegetables",
       "verts": 966
     }
-  ]
+  ],
+  "hx": 0.35,
+  "hz": 0.04
 }

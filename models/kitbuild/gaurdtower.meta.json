@@ -1,0 +1,22 @@
+{
+  "kind": "kitbuild",
+  "name": "gaurdtower",
+  "cx": 12,
+  "cz": -12,
+  "materials": [
+    {
+      "mat": "brick",
+      "verts": 1920
+    },
+    {
+      "mat": "wood",
+      "verts": 12000
+    },
+    {
+      "mat": "plaster",
+      "verts": 480
+    }
+  ],
+  "hx": 4.09,
+  "hz": 4.09
+}

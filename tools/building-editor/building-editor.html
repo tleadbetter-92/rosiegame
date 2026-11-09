@@ -45,6 +45,10 @@
         button:hover { filter: brightness(1.08); }
         #status { font-size: 12px; color: #e8c896; min-height: 2.4em; margin-top: 8px; line-height: 1.35; }
         #file { display: none; }
+        #marquee {
+            position: fixed; pointer-events: none; z-index: 5; display: none;
+            border: 1px solid #e8c896; background: rgba(232, 200, 150, 0.18);
+        }
         .row { display: flex; gap: 6px; }
         .row button { flex: 1; text-align: center; font-size: 12px; padding: 6px 4px; }
         .row.room-size { align-items: center; }
@@ -65,14 +69,14 @@
     <div id="bar">
         <h1>Building editor</h1>
         <a class="jump" href="../town-editor/town-editor.html">Town editor</a>
-        <p class="hint">2&nbsp;m grid — <b>Shift + click</b> to place or erase. Holding Shift keeps the view still. <b>WASD</b> pans. <b>R</b> rotate. <b>Q/E</b> height ±0.5&nbsp;m (half square, for tables); <b>Shift+Q/E</b> jump a full storey.</p>
+        <p class="hint">2&nbsp;m grid — <b>Shift + click</b> to place, erase, or paste. Holding Shift keeps the view still. <b>WASD</b> pans. <b>R</b> rotate. <b>Q/E</b> height ±0.25&nbsp;m; <b>Ctrl+Q/E</b> ±0.05&nbsp;m (table tops); <b>Shift+Q/E</b> jump a full storey.</p>
         <details class="hint" style="margin:6px 0;font-size:11px;line-height:1.45;color:#d9cbb4;">
             <summary style="cursor:pointer;color:#e8c896;">Floors &amp; props (megakit)</summary>
             <ul style="margin:6px 0 0;padding-left:18px;">
                 <li><b>Floor</b> — <code>Floor_Mosaic_PolyHaven</code> = real CC0 photo mosaic (Poly Haven). Procedural: <code>Floor_Mosaic_Terra</code>, <code>BlackWhite</code>, <code>Medallion</code>, <code>Meander</code>. Same 2&nbsp;m tile; <b>R</b> to rotate.</li>
                 <li><b>OverhangCorner / OverhangCorner2</b> — same L-floor; <b>2</b> is the <b>opposite</b> corner (mirrored lip). Use <b>1</b> on one outer corner of a deck, <b>2</b> on the diagonally opposite outer corner; use <b>R</b> on each cell so lips face open air.</li>
                 <li><b>Prop</b> — crates, wagon, chimneys, vines, fences, border trim; search <b>prop</b> or <b>floor</b> above.</li>
-                <li><b>Building / Interior</b> — walls and houses, then pieces sorted by what they are: furniture, large, small, decor, and work. Half-metre steps. <b>Arrow keys</b> nudge the last interior piece (0.25&nbsp;m; Shift 0.5; Ctrl 0.1).</li>
+                <li><b>Building / Interior</b> — walls and houses, then pieces sorted by what they are: furniture, large, small, decor, and work. Items step a quarter metre, so half squares and full metres still work. <b>Arrow keys</b> nudge the last interior piece (0.25&nbsp;m; Shift 0.5; Ctrl 0.1).</li>
                 <li><b>Lantern_Wall</b> / <b>Torch_Metal</b> — wall edge + 1&nbsp;m along the wall; <b>R</b> to align with the wall run.</li>
                 <li>Medieval <b>street lamps</b> are not in the village kit — use the town editor lamp or CC0 under <code>models/town-props/</code>.</li>
             </ul>
@@ -113,11 +117,13 @@
         <label for="piece">Piece</label>
         <select id="piece"></select>
         <label class="hint" style="display:flex;align-items:center;gap:8px;margin:8px 0 0;font-size:12px;">
-            <input type="checkbox" id="autoDoorLeaf" checked> Auto door leaf on <b>Wall … Door …</b> and <b>DoorFrame</b> pieces
+            <input type="checkbox" id="autoDoorLeaf" checked> A <b>DoorFrame</b> places its door. A <b>Gate</b> places a wooden double gate. A wall with a door cut-out stays an empty opening.
         </label>
         <label>Tool</label>
         <button type="button" class="mode on" data-mode="place">Place (Shift+click)</button>
         <button type="button" class="mode" data-mode="erase">Erase (Shift+click)</button>
+        <button type="button" class="mode" data-mode="copy">Copy/paste</button>
+        <p class="hint" style="font-size:11px;margin:4px 0 8px;">Copy/paste: drag a box around pieces (release copies). A see-through stamp follows the cursor. <b>Shift+click</b> pastes. Click Copy/paste again to pick a new group. <b>R</b> turns the stamp.</p>
         <label>Room</label>
         <div class="row room-size">
             <input id="roomX" type="number" min="1" max="20" value="4" aria-label="Squares along X">
@@ -161,18 +167,19 @@
         <input id="file" type="file" accept="application/json,.json">
         <p id="status">Loading kit…</p>
     </div>
+    <div id="marquee"></div>
     <script type="module">
         import * as THREE from "three";
         import { OrbitControls } from "three/addons/controls/OrbitControls.js";
         import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
         const CELL = 2;
-        /** Interior furnishing — half the structure tile (still one building.json). */
-        const FURN_CELL = 1;
         /** Megakit wall stack — one storey. */
         const STOREY_H = 3.05;
-        /** Vertical half of a 1&nbsp;m furnish square — table-height placement. */
-        const LIFT_HALF = 0.5;
+        /** Vertical step for Q/E. Quarter metre, so a half metre and a full metre are still on the ladder. */
+        const LIFT_HALF = 0.25;
+        /** Finer Q/E while Ctrl is held, so a piece can sit on a table top (~0.81&nbsp;m). */
+        const LIFT_FINE = 0.05;
         const LIFT_MAX = 24;
         const storeKey = "building-editor-draft";
         const canvas = document.getElementById("view");
@@ -264,7 +271,7 @@
         furnishGrid.position.y = 0.035;
         furnishGrid.visible = false;
         scene.add(furnishGrid);
-        const furnishFineGrid = new THREE.GridHelper(80, 160, 0x6a8060, 0x405038);
+        const furnishFineGrid = new THREE.GridHelper(80, 320, 0x6a8060, 0x405038);
         furnishFineGrid.position.y = 0.036;
         furnishFineGrid.visible = false;
         scene.add(furnishFineGrid);
@@ -275,6 +282,14 @@
         const ghostGroup = new THREE.Group();
         scene.add(ghostGroup);
         let ghostTemplate = null;
+        let ghostGen = 0;
+        let copyClip = null;
+        let copyPhase = "select";
+        let copyYaw = 0;
+        let copyDragging = false;
+        let copyStart = null;
+        let stampGhostKey = "";
+        const marqueeEl = document.getElementById("marquee");
 
         const raycaster = new THREE.Raycaster();
         const ndc = new THREE.Vector2();
@@ -295,11 +310,9 @@
             return Math.round(v * 2) / 2;
         }
 
-        function furnishStep(pieceId) {
-            if (pieceId && manifest && Array.isArray(manifest.furnishFine) && manifest.furnishFine.includes(pieceId)) {
-                return 0.5;
-            }
-            return FURN_CELL;
+        /** Quarter metre. Half metres and full metres sit on this grid too. */
+        function furnishStep() {
+            return 0.25;
         }
 
         function snapFurnish(v, pieceId) {
@@ -333,6 +346,7 @@
             if (pieceId.startsWith("WindowShutters_")) return true;
             if (pieceId.startsWith("Window_")) return true;
             if (pieceId.startsWith("DoorFrame_")) return true;
+            if (pieceId.startsWith("GateFrame_")) return true;
             return false;
         }
 
@@ -409,7 +423,7 @@
                     yaw
                 };
             }
-            if (isFurnishingPiece(p.id)) {
+            if (usesFineGrid(p.id)) {
                 if (isWallMountedPiece(p.id)) {
                     const xz = canonicalWallEdgeXZ(p, yaw, true);
                     return { id: p.id, x: xz.x, z: xz.z, y: p.y || 0, yaw };
@@ -431,9 +445,9 @@
             };
         }
 
-        /** Building pieces step by half a metre, so 1 m and 2 m marks are still valid. Kit furniture keeps its own step. */
+        /** Items step a quarter metre. Walls, floors, and roofs stay on the half-metre building grid. */
         function snapForPiece(pieceId, x, z, pieceYaw) {
-            if (isFurnishingPiece(pieceId)) {
+            if (usesFineGrid(pieceId)) {
                 if (isWallMountedPiece(pieceId)) {
                     if (wallRunsAlongX(pieceYaw)) return { x: snapFurnish(x, pieceId), z: snapGridLine(z) };
                     return { x: snapGridLine(x), z: snapFurnish(z, pieceId) };
@@ -447,7 +461,7 @@
 
         /** Door leaf pivot differs from wall-door opening — align leaf to opening when wall and door share one anchor. */
         function placementOffset(pieceId, pieceYaw) {
-            if (!pieceId || !pieceId.startsWith("Door_")) return { x: 0, z: 0 };
+            if (!pieceId || (!pieceId.startsWith("Door_") && !isGateLeaf(pieceId))) return { x: 0, z: 0 };
             const alongX = Math.abs(Math.cos(pieceYaw)) >= Math.abs(Math.sin(pieceYaw));
             const d = 0.51;
             if (alongX) return { x: -d, z: 0 };
@@ -467,49 +481,103 @@
             return "Door_1_Flat";
         }
 
+        function gateLeafIds(frameId) {
+            if (!isGateFrame(frameId)) return null;
+            return ["Gate_Wood_L", "Gate_Wood_R"];
+        }
+
+        function gateLeafSpot(frameX, frameZ, yaw, leafId) {
+            const alongX = Math.abs(Math.cos(yaw)) >= Math.abs(Math.sin(yaw));
+            const side = /_R$/.test(leafId) ? 1 : -1;
+            const span = 1.55;
+            if (alongX) return { x: frameX + side * span, z: frameZ };
+            return { x: frameX, z: frameZ + side * span };
+        }
+
         function attachDoorLeaves(list) {
+            dropTwinDoors(list);
             const used = new Set();
+            const served = [];
             for (let f = 0; f < list.length; f++) {
                 const frame = list[f];
+                const gateIds = gateLeafIds(frame.id);
                 const leafId = autoDoorLeafFor(frame.id);
-                if (!leafId) continue;
-                const pos = worldPlace(frame.x, frame.z, leafId, frame.yaw || 0);
-                let best = -1;
-                let bestD = 1.6;
-                for (let i = 0; i < list.length; i++) {
-                    if (used.has(i) || i === f) continue;
-                    const piece = list[i];
-                    if (!piece.id || !piece.id.startsWith("Door_")) continue;
-                    if (Math.abs((piece.y || 0) - (frame.y || 0)) > 0.5) continue;
-                    const dist = Math.hypot(piece.x - frame.x, piece.z - frame.z);
-                    if (dist < bestD) {
-                        bestD = dist;
-                        best = i;
+                if (!gateIds && !leafId) continue;
+                let already = false;
+                const near = isGateFrame(frame.id) ? 2.4 : 1.15;
+                for (let s = 0; s < served.length; s++) {
+                    const other = served[s];
+                    if (Math.abs((other.y || 0) - (frame.y || 0)) > 0.5) continue;
+                    if (Math.hypot(other.x - frame.x, other.z - frame.z) < near) already = true;
+                }
+                if (already) continue;
+                served.push(frame);
+                const ids = gateIds || [leafId];
+                ids.forEach((id) => {
+                    const spot = gateIds ? gateLeafSpot(frame.x, frame.z, frame.yaw || 0, id) : { x: frame.x, z: frame.z };
+                    const pos = worldPlace(spot.x, spot.z, id, frame.yaw || 0);
+                    let best = -1;
+                    let bestD = gateIds ? 2.2 : 1.6;
+                    for (let i = 0; i < list.length; i++) {
+                        if (used.has(i) || i === f) continue;
+                        const piece = list[i];
+                        if (!piece.id || (!piece.id.startsWith("Door_") && !isGateLeaf(piece.id))) continue;
+                        if (Math.abs((piece.y || 0) - (frame.y || 0)) > 0.5) continue;
+                        const dist = Math.hypot(piece.x - pos.x, piece.z - pos.z);
+                        if (dist < bestD) {
+                            bestD = dist;
+                            best = i;
+                        }
                     }
-                }
-                if (best >= 0) {
-                    used.add(best);
-                    list[best].id = leafId;
-                    list[best].x = pos.x;
-                    list[best].z = pos.z;
-                    list[best].y = frame.y || 0;
-                    list[best].yaw = frame.yaw || 0;
-                } else {
-                    list.push({
-                        id: leafId,
-                        x: pos.x,
-                        z: pos.z,
-                        y: frame.y || 0,
-                        yaw: frame.yaw || 0
-                    });
-                    used.add(list.length - 1);
-                }
+                    if (best >= 0) {
+                        used.add(best);
+                        list[best].id = id;
+                        list[best].x = pos.x;
+                        list[best].z = pos.z;
+                        list[best].y = frame.y || 0;
+                        list[best].yaw = frame.yaw || 0;
+                    } else {
+                        list.push({
+                            id: id,
+                            x: pos.x,
+                            z: pos.z,
+                            y: frame.y || 0,
+                            yaw: frame.yaw || 0
+                        });
+                        used.add(list.length - 1);
+                    }
+                });
             }
             return list;
         }
 
         function autoDoorLeafFor(pieceId) {
-            return doorLeafForWall(pieceId) || doorLeafForFrame(pieceId);
+            return doorLeafForFrame(pieceId);
+        }
+
+        function dropTwinDoors(list) {
+            const keep = [];
+            for (let i = 0; i < list.length; i++) {
+                const piece = list[i];
+                if (!piece.id || (!piece.id.startsWith("Door_") && !isGateLeaf(piece.id))) {
+                    keep.push(piece);
+                    continue;
+                }
+                let twin = false;
+                for (let k = 0; k < keep.length; k++) {
+                    const other = keep[k];
+                    if (!other.id || (!other.id.startsWith("Door_") && !isGateLeaf(other.id))) continue;
+                    if (Math.abs((other.y || 0) - (piece.y || 0)) > 0.5) continue;
+                    if (Math.hypot(other.x - piece.x, other.z - piece.z) < 0.25) {
+                        twin = true;
+                        break;
+                    }
+                }
+                if (!twin) keep.push(piece);
+            }
+            list.length = 0;
+            keep.forEach((piece) => list.push(piece));
+            return list;
         }
 
         let undoBatch = 1;
@@ -587,8 +655,16 @@
             return liftY;
         }
 
+        function usesFineGrid(pieceId) {
+            return isFurnishingPiece(pieceId) || isFormPiece(pieceId) || isInteriorPiece(pieceId) || isFoodPiece(pieceId) || isTavernPiece(pieceId);
+        }
+
+        function snapLift(y, step) {
+            return Math.round(Math.round(y / step) * step * 1000) / 1000;
+        }
+
         function snapLiftHalf(y) {
-            return Math.round(y / LIFT_HALF) * LIFT_HALF;
+            return snapLift(y, LIFT_HALF);
         }
 
         function syncFloorLevelFromLift() {
@@ -620,9 +696,9 @@
             const el = document.getElementById("editModeHint");
             if (!el) return;
             if (editMode === "interior") {
-                el.textContent = "Furniture, large pieces, small pieces, decor, and work pieces. Half-metre steps. Arrow keys nudge the last piece.";
+                el.textContent = "Furniture, large pieces, small pieces, decor, and work pieces. Quarter-metre steps. Arrow keys nudge the last piece.";
             } else if (editMode === "props") {
-                el.textContent = "Loose pieces that are not part of a wall or a room. Half-metre steps. Arrow keys nudge the last piece.";
+                el.textContent = "Loose pieces that are not part of a wall or a room. Quarter-metre steps. Arrow keys nudge the last piece.";
             } else {
                 el.textContent = "Walls, floors, roofs, and whole houses. Half-metre steps, so a piece can sit on a full metre or halfway between.";
             }
@@ -632,7 +708,7 @@
             const el = document.getElementById("floorLevelLabel");
             if (!el) return;
             const n = floorLevel + 1;
-            el.textContent = "Storey ~" + n + " · height y = " + placeY().toFixed(2) + " m (Q/E ±0.5 m)";
+            el.textContent = "Storey ~" + n + " · height y = " + placeY().toFixed(2) + " m (Q/E ±0.25 m, Ctrl ±0.05)";
         }
 
         function snapXZ(x, z, pieceId, pieceYaw) {
@@ -705,11 +781,34 @@
         }
 
         /** Corner2 is always the X+Z mirror of Corner1 (opposite outer corner). */
+        function isGateFrame(pieceId) {
+            return !!(pieceId && pieceId.startsWith("GateFrame_"));
+        }
+
+        function isGateLeaf(pieceId) {
+            return !!(pieceId && pieceId.startsWith("Gate_Wood"));
+        }
+
+        function pieceScaleOf(pieceId) {
+            if (isGateFrame(pieceId)) return { x: 2, y: 1.5, z: 1.15 };
+            if (isGateLeaf(pieceId)) return { x: 1.55, y: 1.5, z: 1.15 };
+            return null;
+        }
+
+        function applyPieceScale(obj, pieceId) {
+            const scale = pieceScaleOf(pieceId);
+            if (!scale || !obj) return;
+            const flip = /_R$/.test(pieceId || "") ? -1 : 1;
+            obj.scale.set(scale.x * flip, scale.y, scale.z);
+        }
+
         function gltfSourceName(pieceId) {
+            if (isGateFrame(pieceId)) return "DoorFrame_" + pieceId.slice("GateFrame_".length);
+            if (isGateLeaf(pieceId)) return "Door_1_Flat";
             return isOverhangCorner2(pieceId) ? pieceId.replace(/2$/, "") : pieceId;
         }
 
-        const EDITOR_BUILD = 16;
+        const EDITOR_BUILD = 19;
 
         function pieceDirFor(name) {
             if (!manifest) return "/models/village-megakit/glTF/";
@@ -864,6 +963,7 @@
             group.userData.record = record;
             loadTemplate(record.id).then((template) => {
                 const mesh = template.clone(true);
+                applyPieceScale(mesh, record.id);
                 group.add(mesh);
             }).catch((err) => {
                 console.error(record.id, err);
@@ -888,22 +988,170 @@
             if (statusDone) setStatus(statusDone);
         }
 
+        function ghostify(obj) {
+            obj.traverse((o) => {
+                if (!o.isMesh || !o.material) return;
+                o.material = o.material.clone();
+                o.material.transparent = true;
+                o.material.opacity = 0.45;
+                o.material.depthWrite = false;
+            });
+            return obj;
+        }
+
+        function hideMarquee() {
+            marqueeEl.style.display = "none";
+        }
+
+        function showMarquee(a, b) {
+            const x = Math.min(a.x, b.x);
+            const y = Math.min(a.y, b.y);
+            marqueeEl.style.display = "block";
+            marqueeEl.style.left = x + "px";
+            marqueeEl.style.top = y + "px";
+            marqueeEl.style.width = Math.abs(b.x - a.x) + "px";
+            marqueeEl.style.height = Math.abs(b.y - a.y) + "px";
+        }
+
+        function setCopySelect(on) {
+            controls.enableRotate = !on;
+            if (!on) hideMarquee();
+        }
+
+        function beginCopyMode() {
+            copyClip = null;
+            copyPhase = "select";
+            copyYaw = 0;
+            copyDragging = false;
+            copyStart = null;
+            setCopySelect(true);
+            setStatus("Copy/paste — drag a box around pieces, then release. Shift+click pastes. Click Copy/paste again to pick another group.");
+        }
+
+        function pieceScreen(p) {
+            const v = new THREE.Vector3(p.x, p.y || 0, p.z).project(camera);
+            if (v.z > 1) return null;
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: (v.x * 0.5 + 0.5) * rect.width + rect.left,
+                y: (-v.y * 0.5 + 0.5) * rect.height + rect.top
+            };
+        }
+
+        function piecesInMarquee(a, b) {
+            const x0 = Math.min(a.x, b.x);
+            const x1 = Math.max(a.x, b.x);
+            const y0 = Math.min(a.y, b.y);
+            const y1 = Math.max(a.y, b.y);
+            return placed.filter((p) => {
+                const s = pieceScreen(p);
+                return s && s.x >= x0 && s.x <= x1 && s.y >= y0 && s.y <= y1;
+            });
+        }
+
+        function rayPiece(clientX, clientY) {
+            const rect = canvas.getBoundingClientRect();
+            ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+            ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(ndc, camera);
+            const hits = raycaster.intersectObjects(rootGroup.children, true);
+            if (!hits.length) return null;
+            let obj = hits[0].object;
+            while (obj.parent && obj.parent !== rootGroup) obj = obj.parent;
+            return obj.userData.record || null;
+        }
+
+        function takeCopy(hits) {
+            if (!hits.length) {
+                setStatus("Nothing in that box. Drag around pieces, or click one.");
+                return;
+            }
+            const ox = Math.min.apply(null, hits.map((p) => p.x));
+            const oz = Math.min.apply(null, hits.map((p) => p.z));
+            const oy = Math.min.apply(null, hits.map((p) => p.y || 0));
+            copyClip = hits.map((p) => ({
+                id: p.id,
+                dx: p.x - ox,
+                dz: p.z - oz,
+                dy: (p.y || 0) - oy,
+                yaw: p.yaw || 0
+            }));
+            copyPhase = "paste";
+            copyYaw = 0;
+            setCopySelect(false);
+            hideMarquee();
+            setStatus("Copied " + hits.length + " piece" + (hits.length === 1 ? "" : "s") + ". Shift+click pastes. R turns the stamp. Copy/paste again to select another group.");
+            updateGhost();
+        }
+
+        function finishCopySelect(e) {
+            if (!copyDragging || !copyStart) return;
+            copyDragging = false;
+            const end = { x: e.clientX, y: e.clientY };
+            const wide = Math.abs(end.x - copyStart.x) > 6 || Math.abs(end.y - copyStart.y) > 6;
+            hideMarquee();
+            if (wide) takeCopy(piecesInMarquee(copyStart, end));
+            else {
+                const rec = rayPiece(e.clientX, e.clientY);
+                takeCopy(rec ? [rec] : []);
+            }
+            copyStart = null;
+        }
+
+        function pasteClip(p) {
+            if (!copyClip || !copyClip.length || !p) return;
+            grouping = true;
+            const c = Math.cos(copyYaw);
+            const s = Math.sin(copyYaw);
+            copyClip.forEach((piece) => {
+                pushPlaced(normalizePiece({
+                    id: piece.id,
+                    x: p.x + piece.dx * c + piece.dz * s,
+                    z: p.z - piece.dx * s + piece.dz * c,
+                    y: p.y + piece.dy,
+                    yaw: piece.yaw + copyYaw
+                }));
+            });
+            grouping = false;
+            undoBatch = copyClip.length;
+            setStatus("Pasted " + copyClip.length + " · " + placed.length + " pieces. Shift+click pastes again.");
+        }
+
         async function updateGhost() {
+            const gen = ++ghostGen;
+            if (mode === "copy" && copyPhase === "paste" && copyClip && copyClip.length && hover) {
+                ghostGroup.position.set(hover.x, hover.y, hover.z);
+                ghostGroup.rotation.y = copyYaw;
+                const key = copyClip.map((p) => p.id + ":" + p.dx + "," + p.dz + "," + p.dy).join("|");
+                if (stampGhostKey === key && ghostGroup.children.length) return;
+                ghostGroup.clear();
+                stampGhostKey = key;
+                try {
+                    for (let i = 0; i < copyClip.length; i++) {
+                        const piece = copyClip[i];
+                        const template = await loadTemplate(piece.id);
+                        if (gen !== ghostGen) return;
+                        const g = ghostify(template.clone(true));
+                        applyPieceScale(g, piece.id);
+                        g.position.set(piece.dx, piece.dy, piece.dz);
+                        g.rotation.y = piece.yaw;
+                        ghostGroup.add(g);
+                    }
+                } catch (err) {
+                    setStatus("Could not preview copy: " + err.message);
+                }
+                return;
+            }
+            stampGhostKey = "";
             ghostGroup.clear();
             if (mode !== "place" || !selectedPiece || !hover) return;
             try {
                 if (!ghostTemplate || ghostTemplate.name !== selectedPiece) {
                     ghostTemplate = { name: selectedPiece, obj: await loadTemplate(selectedPiece) };
                 }
-                const g = ghostTemplate.obj.clone(true);
-                g.traverse((o) => {
-                    if (o.isMesh && o.material) {
-                        o.material = o.material.clone();
-                        o.material.transparent = true;
-                        o.material.opacity = 0.45;
-                        o.material.depthWrite = false;
-                    }
-                });
+                if (gen !== ghostGen) return;
+                const g = ghostify(ghostTemplate.obj.clone(true));
+                applyPieceScale(g, selectedPiece);
                 ghostGroup.position.set(hover.x, hover.y, hover.z);
                 ghostGroup.rotation.y = yaw;
                 ghostGroup.add(g);
@@ -920,6 +1168,11 @@
             const hit = new THREE.Vector3();
             if (!raycaster.ray.intersectPlane(groundPlane, hit)) return null;
             roomAim = { x: hit.x, z: hit.z };
+            if (mode === "copy" && copyPhase === "paste") {
+                const x = snapHalf(hit.x);
+                const z = snapHalf(hit.z);
+                return { x: x, z: z, y: placeY(), sx: x, sz: z };
+            }
             const xz = snapXZ(hit.x, hit.z, selectedPiece, yaw);
             const pos = worldPlace(xz.x, xz.z, selectedPiece, yaw);
             return {
@@ -940,12 +1193,24 @@
                 y: p.y,
                 yaw
             }));
-            const frameLeaf = doorLeafForFrame(wallId);
             const autoDoor = document.getElementById("autoDoorLeaf");
-            const leafId = frameLeaf || (autoDoor && autoDoor.checked ? autoDoorLeafFor(wallId) : null);
-            if (leafId) {
-                const ax = p.sx != null ? p.sx : p.x;
-                const az = p.sz != null ? p.sz : p.z;
+            const gateIds = autoDoor && autoDoor.checked ? gateLeafIds(wallId) : null;
+            const leafId = autoDoor && autoDoor.checked ? doorLeafForFrame(wallId) : null;
+            const ax = p.sx != null ? p.sx : p.x;
+            const az = p.sz != null ? p.sz : p.z;
+            if (gateIds) {
+                gateIds.forEach((id) => {
+                    const spot = gateLeafSpot(ax, az, yaw, id);
+                    const pos = worldPlace(spot.x, spot.z, id, yaw);
+                    pushPlaced({
+                        id: id,
+                        x: pos.x,
+                        z: pos.z,
+                        y: p.y,
+                        yaw
+                    });
+                });
+            } else if (leafId) {
                 const pos = worldPlace(ax, az, leafId, yaw);
                 pushPlaced({
                     id: leafId,
@@ -956,7 +1221,7 @@
                 });
             }
             const yNote = p.y > 0.01 ? ", y=" + p.y.toFixed(2) : "";
-            const extra = leafId ? " + " + leafId : "";
+            const extra = gateIds ? " + wooden gate" : leafId ? " + " + leafId : "";
             setStatus(placed.length + " pieces · last " + wallId + extra + " @ " + p.x + ", " + p.z + yNote);
         }
 
@@ -1169,6 +1434,8 @@
             btn.addEventListener("click", () => {
                 mode = btn.dataset.mode;
                 document.querySelectorAll(".mode").forEach((b) => b.classList.toggle("on", b === btn));
+                if (mode === "copy") beginCopyMode();
+                else setCopySelect(false);
                 updateGhost();
             });
         });
@@ -1185,23 +1452,41 @@
         });
 
         canvas.addEventListener("pointerdown", (e) => {
-            if (e.button === 0 && e.shiftKey) e.stopPropagation();
+            if (e.button === 0 && (e.shiftKey || (mode === "copy" && copyPhase === "select"))) e.stopPropagation();
         }, true);
         canvas.addEventListener("contextmenu", (e) => e.preventDefault());
         canvas.addEventListener("mousemove", (e) => {
+            if (copyDragging && copyStart) {
+                showMarquee(copyStart, { x: e.clientX, y: e.clientY });
+                return;
+            }
             if (e.buttons === 2) return;
             hover = pointerGround(e.clientX, e.clientY);
             updateGhost();
         });
         canvas.addEventListener("mousedown", (e) => {
             if (e.button === 2) return;
+            if (mode === "copy" && copyPhase === "select") {
+                copyDragging = true;
+                copyStart = { x: e.clientX, y: e.clientY };
+                showMarquee(copyStart, copyStart);
+                e.preventDefault();
+                return;
+            }
             if (!e.shiftKey) return;
             if (mode === "place") {
                 hover = pointerGround(e.clientX, e.clientY);
                 if (hover && selectedPiece) addPiece(hover);
             } else if (mode === "erase") {
                 eraseAt(e.clientX, e.clientY);
+            } else if (mode === "copy" && copyPhase === "paste") {
+                hover = pointerGround(e.clientX, e.clientY);
+                pasteClip(hover);
             }
+        });
+        window.addEventListener("mouseup", (e) => {
+            if (e.button !== 0) return;
+            if (copyDragging) finishCopySelect(e);
         });
 
         function panWithKeys(delta) {
@@ -1230,15 +1515,24 @@
                 panKeys.add(e.code);
             }
             if (e.code === "KeyR") {
-                yaw = (yaw + Math.PI / 2) % (Math.PI * 2);
+                if (mode === "copy" && copyPhase === "paste") {
+                    copyYaw = (copyYaw + Math.PI / 2) % (Math.PI * 2);
+                } else {
+                    yaw = (yaw + Math.PI / 2) % (Math.PI * 2);
+                }
                 updateGhost();
             }
+            if (e.code === "Escape" && mode === "copy") {
+                document.querySelector('.mode[data-mode="place"]').click();
+            }
             if (e.code === "KeyQ") {
+                e.preventDefault();
+                const step = e.ctrlKey || e.metaKey ? LIFT_FINE : LIFT_HALF;
                 if (e.shiftKey) {
                     floorLevel = Math.max(0, floorLevel - 1);
                     liftY = snapLiftHalf(floorLevel * STOREY_H);
                 } else {
-                    liftY = snapLiftHalf(Math.max(0, liftY - LIFT_HALF));
+                    liftY = snapLift(Math.max(0, liftY - step), step);
                     syncFloorLevelFromLift();
                 }
                 updateFloorGuide();
@@ -1246,11 +1540,13 @@
                 updateFloorLevelLabel();
             }
             if (e.code === "KeyE") {
+                e.preventDefault();
+                const step = e.ctrlKey || e.metaKey ? LIFT_FINE : LIFT_HALF;
                 if (e.shiftKey) {
                     floorLevel = Math.min(7, floorLevel + 1);
                     liftY = snapLiftHalf(floorLevel * STOREY_H);
                 } else {
-                    liftY = snapLiftHalf(Math.min(LIFT_MAX, liftY + LIFT_HALF));
+                    liftY = snapLift(Math.min(LIFT_MAX, liftY + step), step);
                     syncFloorLevelFromLift();
                 }
                 updateFloorGuide();
@@ -1487,6 +1783,10 @@
                 if (foodRes.ok) mergeManifestExtra(await foodRes.json());
                 if (tavernRes.ok) mergeManifestExtra(await tavernRes.json());
                 if (pivotRes.ok) piecePivots = await pivotRes.json();
+                if (!manifest.categories.Gate) manifest.categories.Gate = [];
+                ["GateFrame_Flat_Brick", "GateFrame_Flat_WoodDark", "GateFrame_Round_Brick", "GateFrame_Round_WoodDark"].forEach((id) => {
+                    if (manifest.categories.Gate.indexOf(id) < 0) manifest.categories.Gate.push(id);
+                });
             } catch (err) {
                 setStatus("Open from a local server (repo root). Could not load manifest.json.");
                 return;
@@ -1514,5 +1814,6 @@
 
         boot();
     </script>
+    <script src="../../AoEgame/go-menu.js?v=1"></script>
 </body>
 </html>

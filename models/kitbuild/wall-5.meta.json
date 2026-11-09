@@ -1,0 +1,48 @@
+{
+  "kind": "kitbuild",
+  "name": "WALL 5",
+  "cx": 26,
+  "cz": 0.375,
+  "materials": [
+    {
+      "mat": "brick",
+      "verts": 1608
+    },
+    {
+      "mat": "rock",
+      "verts": 1176
+    },
+    {
+      "mat": "retroCobble",
+      "verts": 2016
+    },
+    {
+      "mat": "retroCobbleAlt",
+      "verts": 672
+    },
+    {
+      "mat": "furniture",
+      "verts": 3540,
+      "tint": true
+    },
+    {
+      "mat": "propmetal",
+      "verts": 18672
+    },
+    {
+      "mat": "proppack",
+      "verts": 252,
+      "tint": true
+    },
+    {
+      "mat": "retroPlanks",
+      "verts": 228
+    },
+    {
+      "mat": "retroDetails",
+      "verts": 24
+    }
+  ],
+  "hx": 4,
+  "hz": 2.14
+}

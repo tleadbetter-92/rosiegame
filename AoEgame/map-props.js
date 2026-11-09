@@ -27,6 +27,15 @@ export const TREE_CARDS = TREE_FILES.map((file, index) => ({
     card: true
 }));
 
+export const TEAM_BUILDINGS = [
+    { id: "kit-lorsmanor-courtyard", name: "Manor", kit: "lorsmanor-courtyard" },
+    { id: "kit-small-house1", name: "Small house", kit: "small-house1" },
+    { id: "kit-barracks", name: "Barracks", kit: "barracks" },
+    { id: "kit-farm", name: "Farm", kit: "farm" },
+    { id: "kit-salt-works-ex", name: "Salt works", kit: "salt-works-ex" },
+    { id: "kit-storehouse", name: "Storehouse", kit: "storehouse" }
+];
+
 export const MAP_BUILDINGS = [
     { id: "kit-barracks", name: "Barracks", kit: "barracks" },
     { id: "kit-blacksmith", name: "Blacksmith", kit: "blacksmith" },
@@ -64,9 +73,9 @@ export const MAP_KINDS = [
     { id: "rock-tall", name: "Tall rock", shape: true },
     { id: "rock-pile", name: "Rock pile", shape: true },
     { id: "rock-scree", name: "Scree", shape: true },
-    { id: "mine-stone", name: "Stone mine", shape: true },
-    { id: "mine-gold", name: "Gold mine", shape: true },
-    { id: "ore-gold", name: "Gold ore", shape: true },
+    { id: "mine-stone", name: "Stone mine", shape: true, good: "stone" },
+    { id: "mine-gold", name: "Gold mine", shape: true, good: "gold" },
+    { id: "ore-gold", name: "Iron ore", shape: true, good: "iron" },
     { id: "ruin", name: "Ruin" },
     { id: "bridge", name: "Bridge" },
     { id: "building", name: "Building" }
@@ -82,7 +91,95 @@ export function kindById(id) {
     for (let i = 0; i < MAP_BUILDINGS.length; i++) {
         if (MAP_BUILDINGS[i].id === id) return MAP_BUILDINGS[i];
     }
+    if (typeof id === "string" && id.indexOf("kit-") === 0) {
+        const kit = id.slice(4);
+        if (kit) return { id: id, name: kit, kit: kit };
+    }
     return null;
+}
+
+const KIT_PLAY = {
+    barracks: "barracks",
+    farm: "farm",
+    "farm-starter": "farm",
+    "salt-works": "salt",
+    "salt-works-ex": "salt",
+    storehouse: "store",
+    "small-house1": "house",
+    "lorsmanor-courtyard": "manor"
+};
+let SHEET_PLAY = {};
+
+export function setPlayKits(map) {
+    SHEET_PLAY = map && typeof map === "object" ? Object.assign({}, map) : {};
+}
+
+function kitFromSheetRow(row) {
+    const model = row && typeof row.model === "string" ? row.model.trim() : "";
+    if (model && !/[./]/.test(model)) return model;
+    const map = row && typeof row.map === "string" ? row.map.trim() : "";
+    if (map && !/[./]/.test(map)) return map;
+    return "";
+}
+
+function canOfferTeamBuilding(id, row) {
+    if (id === "smith") return false;
+    if (row && row.placed === false) return false;
+    return true;
+}
+
+export function sheetPlayKits() {
+    const rows = typeof window !== "undefined" && window.AoeSheet && window.AoeSheet.buildings
+        ? window.AoeSheet.buildings()
+        : null;
+    const map = {};
+    if (!rows) return map;
+    Object.keys(rows).forEach((id) => {
+        const row = rows[id];
+        if (!canOfferTeamBuilding(id, row)) return;
+        const kit = kitFromSheetRow(row);
+        if (kit && !map[kit]) map[kit] = id;
+    });
+    return map;
+}
+
+export function teamBuildings() {
+    const out = [];
+    const seen = {};
+    function add(item) {
+        if (!item || !item.kit || seen[item.kit]) return;
+        seen[item.kit] = true;
+        out.push(item);
+    }
+    TEAM_BUILDINGS.forEach(add);
+    const rows = typeof window !== "undefined" && window.AoeSheet && window.AoeSheet.buildings
+        ? window.AoeSheet.buildings()
+        : null;
+    if (!rows) return out;
+    Object.keys(rows).forEach((id) => {
+        const row = rows[id];
+        if (!canOfferTeamBuilding(id, row)) return;
+        const kit = kitFromSheetRow(row);
+        if (!kit || seen[kit]) return;
+        const spec = MAP_BUILDINGS.find((one) => one.kit === kit);
+        add({
+            id: spec ? spec.id : "kit-" + kit,
+            name: row.name || (spec && spec.name) || kit,
+            kit: kit
+        });
+    });
+    return out;
+}
+
+export function playKindFromMap(item) {
+    if (!item || item.kind === "town") return null;
+    const spec = kindById(item.kind);
+    if (!spec || !spec.kit) return null;
+    return SHEET_PLAY[spec.kit] || KIT_PLAY[spec.kit] || null;
+}
+
+export function liveMapTeam(team) {
+    return team === "you" || team === "cpu" ? team : "";
 }
 
 const KIT_SHELL = [
@@ -255,6 +352,7 @@ export function makeMapShape(kind) {
     const rockBroad = shapeMaterial("rock-broad.jpg");
     const rockDetail = shapeMaterial("rock-detail.jpg");
     const gold = shapeMaterial("rock-b.jpg", 0xd7a441);
+    const iron = shapeMaterial("rock-b.jpg", 0x8a7a68);
     if (kind.id === "rock-wide") {
         group.add(lump(rockWide, 2.6, 0.7, 1.8, 0, 0.5, 0, 0.4));
     } else if (kind.id === "rock-tall") {
@@ -273,8 +371,8 @@ export function makeMapShape(kind) {
     } else if (kind.id === "mine-gold") {
         group.add(mineMound(rockWide, gold));
     } else if (kind.id === "ore-gold") {
-        group.add(lump(gold, 0.85, 0.6, 0.75, 0, 0.45, 0, 0.4));
-        group.add(lump(gold, 0.55, 0.4, 0.5, 0.7, 0.3, 0.25, 1));
+        group.add(lump(iron, 0.85, 0.6, 0.75, 0, 0.45, 0, 0.4));
+        group.add(lump(iron, 0.55, 0.4, 0.5, 0.7, 0.3, 0.25, 1));
         group.add(lump(rockB, 0.4, 0.3, 0.38, -0.55, 0.22, 0.2, 0.2));
     } else {
         group.add(lump(rockA, 1.7, 1.35, 1.55, 0, 1.15, 0, 0.5));
@@ -302,4 +400,126 @@ export function plantModel(root) {
     });
     holder.add(root);
     return holder;
+}
+
+const TOWN_ORDER = [
+    { id: "hamletTown", name: "Ashby hamlet" },
+    { id: "hamletTownBig", name: "Large hamlet" },
+    { id: "hamlet", name: "Small hamlet" },
+    { id: "farm", name: "Farm" },
+    { id: "islandBasicTown", name: "Island town" }
+];
+
+let townBookPromise = null;
+const kitShells = {};
+const townMeshes = {};
+const stickWood = new THREE.MeshStandardMaterial({ color: 0x7a5a32, roughness: 1 });
+const stickStone = new THREE.MeshStandardMaterial({ color: 0x8a8478, roughness: 1 });
+const stickPlaster = new THREE.MeshStandardMaterial({ color: 0xd2c0a2, roughness: 1 });
+
+function stick(w, h, d, material, x, y, z) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = false;
+    return mesh;
+}
+
+function townStick(type) {
+    const group = new THREE.Group();
+    if (type === "wall" || type === "fence") {
+        group.add(stick(4, 1.7, 0.22, stickWood, 2, 0.85, 0));
+    } else if (type === "gate") {
+        group.add(stick(0.4, 2.1, 0.28, stickWood, 0.3, 1.05, 0));
+        group.add(stick(0.4, 2.1, 0.28, stickWood, 3.7, 1.05, 0));
+        group.add(stick(2.4, 0.16, 0.2, stickWood, 2, 2.15, 0));
+    } else if (type === "lamp") {
+        group.add(stick(0.22, 3, 0.22, stickWood, 0, 1.5, 0));
+        group.add(stick(0.5, 0.4, 0.5, stickStone, 0, 3.2, 0));
+    } else if (type === "archer") {
+        group.add(stick(2.2, 0.16, 2.2, stickWood, 0, 2.5, 0));
+        group.add(stick(0.16, 2.5, 0.16, stickWood, -1, 1.25, -1));
+        group.add(stick(0.16, 2.5, 0.16, stickWood, 1, 1.25, -1));
+        group.add(stick(0.16, 2.5, 0.16, stickWood, -1, 1.25, 1));
+        group.add(stick(0.16, 2.5, 0.16, stickWood, 1, 1.25, 1));
+    } else if (type === "farmhouse") {
+        group.add(stick(4.7, 4.2, 4.7, stickPlaster, 0, 2.1, 0));
+        group.add(stick(5.2, 1.4, 5.2, stickWood, 0, 4.6, 0));
+    }
+    return group;
+}
+
+export function loadTownBook() {
+    if (!townBookPromise) {
+        townBookPromise = fetch("../editor-blocks.js", { cache: "no-store" }).then((res) => {
+            if (!res.ok) return {};
+            return res.text();
+        }).then((text) => {
+            const match = String(text || "").match(/var EditorBlocks\s*=\s*(\{[\s\S]*\});?\s*$/);
+            return match ? JSON.parse(match[1]) : {};
+        }).catch(() => ({}));
+    }
+    return townBookPromise;
+}
+
+export function loadTownList() {
+    return Promise.all([
+        loadTownBook(),
+        fetch("../tools/town-editor/towns.json", { cache: "no-store" }).then((res) => res.ok ? res.json() : { towns: [] }).catch(() => ({ towns: [] }))
+    ]).then(([book, catalog]) => {
+        const seen = {};
+        const list = [];
+        const add = (town) => {
+            if (!town || !town.id || seen[town.id] || !book[town.id]) return;
+            seen[town.id] = true;
+            list.push({ id: town.id, name: town.name || town.id });
+        };
+        for (let i = 0; i < TOWN_ORDER.length; i++) add(TOWN_ORDER[i]);
+        const extra = catalog && Array.isArray(catalog.towns) ? catalog.towns : [];
+        for (let i = 0; i < extra.length; i++) add(extra[i]);
+        return list;
+    });
+}
+
+async function kitShell(id) {
+    if (!kitShells[id]) kitShells[id] = await loadKitShell(id);
+    return kitShells[id];
+}
+
+export async function makeTownMesh(id) {
+    if (townMeshes[id]) return townMeshes[id];
+    const book = await loadTownBook();
+    const layout = book[id];
+    if (!layout) return null;
+    const group = new THREE.Group();
+    const buildings = layout.buildings || [];
+    for (let i = 0; i < buildings.length; i++) {
+        const piece = buildings[i];
+        if (!piece || piece.t === "farm-stamp") continue;
+        let mesh = null;
+        if (piece.t === "kit" && piece.id) {
+            try {
+                mesh = (await kitShell(piece.id)).clone(true);
+            } catch (err) {
+                mesh = null;
+            }
+        } else mesh = townStick(piece.t);
+        if (!mesh || (mesh.isGroup && !mesh.children.length)) continue;
+        mesh.position.set(Number(piece.x) || 0, 0, Number(piece.z) || 0);
+        mesh.rotation.y = Number(piece.yaw) || 0;
+        group.add(mesh);
+    }
+    const fences = layout.fences || [];
+    for (let i = 0; i < fences.length; i++) {
+        const fence = fences[i];
+        const mesh = townStick("fence");
+        const x = Array.isArray(fence) ? fence[0] : fence.x;
+        const z = Array.isArray(fence) ? fence[1] : fence.z;
+        const yaw = Array.isArray(fence) ? fence[2] : fence.yaw;
+        mesh.position.set(Number(x) || 0, 0, Number(z) || 0);
+        mesh.rotation.y = Number(yaw) || 0;
+        group.add(mesh);
+    }
+    if (!group.children.length) return null;
+    townMeshes[id] = group;
+    return group;
 }

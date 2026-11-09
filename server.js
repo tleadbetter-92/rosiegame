@@ -35,12 +35,12 @@ const routes = {
     "/api/push-subscribe": require("./api/push-subscribe"),
     "/api/notes": require("./api/notes"),
     "/api/image": require("./api/image"),
-    "/api/campaign": require("./api/campaign"),
-    "/api/npc-chat": require("./api/npc-chat"),
-    "/api/npc-tts": require("./api/npc-tts"),
     "/api/building-save": require("./api/building-save"),
     "/api/town-save": require("./api/town-save"),
-    "/api/survey-terrain": require("./api/survey-terrain")
+    "/api/map-objects": require("./api/map-objects"),
+    "/api/map-groups": require("./api/map-groups"),
+    "/api/map-paths": require("./api/map-paths"),
+    "/api/map-rules": require("./api/map-rules")
 };
 
 const root = __dirname;
@@ -61,18 +61,21 @@ const types = {
     ".wav": "audio/wav"
 };
 
-function send(res, status, body, type) {
-    res.writeHead(status, { "Content-Type": type || "text/plain; charset=utf-8" });
+function send(res, status, body, type, extra) {
+    const headers = { "Content-Type": type || "text/plain; charset=utf-8" };
+    if (extra) Object.assign(headers, extra);
+    res.writeHead(status, headers);
     res.end(body);
 }
 
-function readBody(req) {
+function readBody(req, limit) {
+    const cap = limit || 4_200_000;
     return new Promise((resolve, reject) => {
         const chunks = [];
         let size = 0;
         req.on("data", (chunk) => {
             size += chunk.length;
-            if (size > 4_200_000) {
+            if (size > cap) {
                 reject(new Error("Body too large"));
                 req.destroy();
                 return;
@@ -136,7 +139,8 @@ const server = http.createServer((req, res) => {
     }
 
     if (routes[pathname]) {
-        readBody(req).then((body) => callHandler(routes[pathname], req, res, body)).catch(() => {
+        const limit = pathname === "/api/map-paths" || pathname === "/api/map-rules" ? 20_000_000 : 4_200_000;
+        readBody(req, limit).then((body) => callHandler(routes[pathname], req, res, body)).catch(() => {
             send(res, 400, JSON.stringify({ error: "Bad request" }), "application/json; charset=utf-8");
         });
         return;
@@ -160,8 +164,10 @@ const server = http.createServer((req, res) => {
             send(res, 404, "Not found");
             return;
         }
-        const type = types[path.extname(file).toLowerCase()] || "application/octet-stream";
-        send(res, 200, data, type);
+        const ext = path.extname(file).toLowerCase();
+        const type = types[ext] || "application/octet-stream";
+        const extra = (ext === ".html" || ext === ".js" || ext === ".json") ? { "Cache-Control": "no-store" } : null;
+        send(res, 200, data, type, extra);
     });
 });
 

@@ -1,0 +1,61 @@
+{
+  "kind": "kitbuild",
+  "name": "bARRACKS",
+  "cx": 2.5,
+  "cz": 21,
+  "materials": [
+    {
+      "mat": "wood",
+      "verts": 55440
+    },
+    {
+      "mat": "plaster",
+      "verts": 2040
+    },
+    {
+      "mat": "brick",
+      "verts": 2472
+    },
+    {
+      "mat": "rock",
+      "verts": 22608
+    },
+    {
+      "mat": "furniture",
+      "verts": 68598,
+      "tint": true
+    },
+    {
+      "mat": "propmetal",
+      "verts": 54576
+    },
+    {
+      "mat": "propcloth",
+      "verts": 25956,
+      "tint": true
+    },
+    {
+      "mat": "proppack",
+      "verts": 35418,
+      "tint": true
+    },
+    {
+      "mat": "tvMetal013",
+      "verts": 606
+    },
+    {
+      "mat": "tvWood003",
+      "verts": 492
+    },
+    {
+      "mat": "tvWood006",
+      "verts": 204
+    },
+    {
+      "mat": "tiles",
+      "verts": 117864
+    }
+  ],
+  "hx": 14.84,
+  "hz": 10.61
+}

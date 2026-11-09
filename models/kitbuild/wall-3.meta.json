@@ -1,0 +1,30 @@
+{
+  "kind": "kitbuild",
+  "name": "WALL 3",
+  "cx": 26,
+  "cz": 0.625,
+  "materials": [
+    {
+      "mat": "brick",
+      "verts": 1608
+    },
+    {
+      "mat": "rock",
+      "verts": 192
+    },
+    {
+      "mat": "retroCobble",
+      "verts": 2016
+    },
+    {
+      "mat": "retroCobbleAlt",
+      "verts": 672
+    },
+    {
+      "mat": "villagePalette",
+      "verts": 804
+    }
+  ],
+  "hx": 4,
+  "hz": 1.75
+}

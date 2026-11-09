@@ -1,16 +1,16 @@
 {
   "kind": "kitbuild",
   "name": "house type 3",
-  "cx": 25,
+  "cx": 25.125,
   "cz": 19,
   "materials": [
     {
       "mat": "wood",
-      "verts": 12840
+      "verts": 18024
     },
     {
       "mat": "plaster",
-      "verts": 1209
+      "verts": 1305
     },
     {
       "mat": "rock",
@@ -38,6 +38,28 @@
     {
       "mat": "brick",
       "verts": 180
+    },
+    {
+      "mat": "tiles",
+      "verts": 6684
+    },
+    {
+      "mat": "tvWood006",
+      "verts": 252
+    },
+    {
+      "mat": "tvwalldecor",
+      "verts": 57
+    },
+    {
+      "mat": "tvWood032",
+      "verts": 294
+    },
+    {
+      "mat": "tvMetal013",
+      "verts": 252
     }
-  ]
+  ],
+  "hx": 4.02,
+  "hz": 4.12
 }
